@@ -514,10 +514,10 @@ class StockItemFilterForm(DateRangeFilterForm):
         self.fields["unit"].queryset = Unit.objects.order_by("name")
         self.fields["q"].widget.attrs.update(
             {
-                "placeholder": (
-                    "Search project, material, supplier, phone, notes, or user…"
-                ),
+                "placeholder": "Search project, material, supplier, phone, or notes…",
                 "autocomplete": "off",
+                "aria-label": "Search inventory",
+                "data-live-filter-search": "",
             }
         )
         users = get_user_model().objects.filter(is_active=True).order_by(

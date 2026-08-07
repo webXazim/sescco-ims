@@ -337,12 +337,6 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         data = self.filter_data
-        advanced_keys = {
-            "project_status", "material", "description", "supplier", "supplier_phone",
-            "supplier_location", "quantity_min", "quantity_max", "minimum_min",
-            "minimum_max", "price_min", "price_max", "date_field", "date_preset",
-            "date_from", "date_to", "created_by", "updated_by", "columns",
-        }
         context.update(
             page_key="inventory",
             page_title="Inventory Explorer",
@@ -351,15 +345,13 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
             filter_chips=_stock_filter_chips(self.request, data) if data else [],
             visible_columns=self.get_visible_columns(),
             current_sort=data.get("sort") or "project",
-            advanced_open=(
-                bool(advanced_keys.intersection(self.request.GET.keys()))
-                or not self.filter_form.is_valid()
-            ),
+            advanced_open=not self.filter_form.is_valid(),
             clear_url=reverse("inventory:list"),
             saved_view_form=SavedViewCreateForm(),
             saved_view_type=self.view_type,
             source_query=_source_query(self.request),
             sort_choices=StockItemFilterForm.SORT_CHOICES,
+            default_columns=DEFAULT_STOCK_COLUMNS,
         )
         return context
 

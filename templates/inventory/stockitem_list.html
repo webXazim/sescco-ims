@@ -5,47 +5,41 @@
   <div class="head-actions">{% include "partials/save_view_control.html" %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a></div>
 </div>
 <section class="card explorer">
-  <form method="get" data-filter-form>
+  <form method="get" data-filter-form data-live-filter-form data-default-columns="{{ default_columns|join:',' }}">
     <div class="explorer-toolbar">
       <div class="search-field"><span class="search-glyph">⌕</span>{{ filter_form.q }}</div>
       <div class="quick-filters">
         {{ filter_form.stock_status }}
         {{ filter_form.date_preset }}
         {{ filter_form.sort }}
-        <button class="btn btn-sm" type="submit">Apply</button>
-        <button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel>More filters</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}">More filters</button>
+        <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
       </div>
     </div>
     {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
     <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
       <div class="advanced-grid">
         <div class="field"><label class="field-label">Projects</label><div class="check-list compact">{{ filter_form.project }}</div>{{ filter_form.project.errors }}</div>
-        <div class="field"><label class="field-label">Project status</label>{{ filter_form.project_status }}{{ filter_form.project_status.errors }}</div>
-        <div class="field"><label class="field-label">Record status</label>{{ filter_form.status }}{{ filter_form.status.errors }}</div>
         <div class="field"><label class="field-label">Units</label><div class="check-list compact">{{ filter_form.unit }}</div>{{ filter_form.unit.errors }}</div>
-        <div class="field"><label class="field-label">Material name</label>{{ filter_form.material }}{{ filter_form.material.errors }}</div>
-        <div class="field"><label class="field-label">Description</label>{{ filter_form.description }}{{ filter_form.description.errors }}</div>
-        <div class="field"><label class="field-label">Supplier name</label>{{ filter_form.supplier }}{{ filter_form.supplier.errors }}</div>
-        <div class="field"><label class="field-label">Supplier phone</label>{{ filter_form.supplier_phone }}{{ filter_form.supplier_phone.errors }}</div>
-        <div class="field"><label class="field-label">Supplier location</label>{{ filter_form.supplier_location }}{{ filter_form.supplier_location.errors }}</div>
-        <div class="field"><label class="field-label">Quantity from</label>{{ filter_form.quantity_min }}{{ filter_form.quantity_min.errors }}</div>
-        <div class="field"><label class="field-label">Quantity to</label>{{ filter_form.quantity_max }}{{ filter_form.quantity_max.errors }}</div>
-        <div class="field"><label class="field-label">Minimum from</label>{{ filter_form.minimum_min }}{{ filter_form.minimum_min.errors }}</div>
-        <div class="field"><label class="field-label">Minimum to</label>{{ filter_form.minimum_max }}{{ filter_form.minimum_max.errors }}</div>
-        <div class="field"><label class="field-label">Latest price from</label>{{ filter_form.price_min }}{{ filter_form.price_min.errors }}</div>
-        <div class="field"><label class="field-label">Latest price to</label>{{ filter_form.price_max }}{{ filter_form.price_max.errors }}</div>
-        <div class="field"><label class="field-label">Date field</label>{{ filter_form.date_field }}{{ filter_form.date_field.errors }}</div>
-        <div class="field"><label class="field-label">From date</label>{{ filter_form.date_from }}{{ filter_form.date_from.errors }}</div>
-        <div class="field"><label class="field-label">To date</label>{{ filter_form.date_to }}{{ filter_form.date_to.errors }}</div>
-        <div class="field"><label class="field-label">Created by</label>{{ filter_form.created_by }}{{ filter_form.created_by.errors }}</div>
-        <div class="field"><label class="field-label">Updated by</label>{{ filter_form.updated_by }}{{ filter_form.updated_by.errors }}</div>
-        <div class="field field-span-2"><label class="field-label">Visible columns</label><div class="check-list columns">{{ filter_form.columns }}</div>{{ filter_form.columns.errors }}</div>
+        <div class="filter-stack">
+          <div class="field"><label class="field-label">Project status</label>{{ filter_form.project_status }}{{ filter_form.project_status.errors }}</div>
+          <div class="field"><label class="field-label">Record status</label>{{ filter_form.status }}{{ filter_form.status.errors }}</div>
+        </div>
+        <div class="filter-stack">
+          <div class="field"><label class="field-label">Date field</label>{{ filter_form.date_field }}{{ filter_form.date_field.errors }}</div>
+          <div class="range-inputs"><div class="field"><label class="field-label">From</label>{{ filter_form.date_from }}{{ filter_form.date_from.errors }}</div><span>to</span><div class="field"><label class="field-label">To</label>{{ filter_form.date_to }}{{ filter_form.date_to.errors }}</div></div>
+        </div>
+        <div class="field"><label class="field-label">Quantity range</label><div class="range-inputs">{{ filter_form.quantity_min }}<span>to</span>{{ filter_form.quantity_max }}</div>{{ filter_form.quantity_min.errors }}{{ filter_form.quantity_max.errors }}</div>
+        <div class="field"><label class="field-label">Minimum stock range</label><div class="range-inputs">{{ filter_form.minimum_min }}<span>to</span>{{ filter_form.minimum_max }}</div>{{ filter_form.minimum_min.errors }}{{ filter_form.minimum_max.errors }}</div>
+        <div class="field"><label class="field-label">Latest price range</label><div class="range-inputs">{{ filter_form.price_min }}<span>to</span>{{ filter_form.price_max }}</div>{{ filter_form.price_min.errors }}{{ filter_form.price_max.errors }}</div>
+        <details class="column-options field-span-2"><summary>Choose visible columns</summary><div class="check-list columns">{{ filter_form.columns }}</div>{{ filter_form.columns.errors }}</details>
       </div>
-      <div class="advanced-footer"><p class="micro">Text search matches project, material, supplier, phone, notes and users. Separate search words must all match somewhere in the record.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
+      <div class="advanced-footer"><p class="micro">Use the search above for project, material, supplier, phone, location, notes, units, or users.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
     </div>
   </form>
-  {% include "partials/filter_chips.html" %}
-  <div class="table-wrap"><table><thead><tr>
+  <div data-filter-results aria-live="polite">
+    {% include "partials/filter_chips.html" %}
+    <div class="table-wrap"><table><thead><tr>
     {% if "project" in visible_columns %}<th>Project</th>{% endif %}
     {% if "material" in visible_columns %}<th>Material</th>{% endif %}
     {% if "description" in visible_columns %}<th>Description</th>{% endif %}
@@ -79,7 +73,8 @@
     {% if "created" in visible_columns %}<td>{{ item.created_at|date:"d M Y" }}<div class="cell-sub">{% if item.created_by %}{{ item.created_by.display_name }}{% endif %}</div></td>{% endif %}
     <td><a class="btn btn-sm" href="{% url 'inventory:detail' item.reference %}">Open</a></td>
   </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">▦</div><h2>No matching stock records</h2><p>Change or clear the current filters, or add new project stock.</p><a class="btn btn-primary" href="{% url 'core:add_stock' %}">Add stock</a></div></td></tr>{% endfor %}
-  </tbody></table></div>
-  {% include "partials/pagination.html" %}
+    </tbody></table></div>
+    {% include "partials/pagination.html" %}
+  </div>
 </section>
 {% endblock %}

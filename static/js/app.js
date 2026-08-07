@@ -13,15 +13,22 @@
     }
   });
 
+  const setFilterPanelState = (button, panel, open) => {
+    panel.classList.toggle("is-hidden", !open);
+    button.textContent = open ? "Hide filters" : "More filters";
+    button.setAttribute("aria-expanded", String(open));
+  };
+
   document.querySelectorAll("[data-toggle-filter-panel]").forEach((button) => {
-    const form = button.closest("[data-filter-form]");
-    const panel = form?.querySelector("[data-filter-panel]");
-    if (!panel) return;
-    button.addEventListener("click", () => {
-      panel.classList.toggle("is-hidden");
-      button.textContent = panel.classList.contains("is-hidden") ? "More filters" : "Hide filters";
-    });
-    if (!panel.classList.contains("is-hidden")) button.textContent = "Hide filters";
+    const panel = button.closest("[data-filter-form]")?.querySelector("[data-filter-panel]");
+    if (panel) setFilterPanelState(button, panel, !panel.classList.contains("is-hidden"));
+  });
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-toggle-filter-panel]");
+    if (!button) return;
+    const panel = button.closest("[data-filter-form]")?.querySelector("[data-filter-panel]");
+    if (panel) setFilterPanelState(button, panel, panel.classList.contains("is-hidden"));
   });
 
   document.querySelectorAll("[data-filter-form]").forEach((form) => {
@@ -38,6 +45,94 @@
       }
     });
   });
+
+  const liveFilterForm = document.querySelector("[data-live-filter-form]");
+  if (liveFilterForm) {
+    let liveFilterTimer = null;
+    let liveFilterRequest = null;
+
+    const cleanFilterUrl = () => {
+      const params = new URLSearchParams();
+      new FormData(liveFilterForm).forEach((value, key) => {
+        const normalized = String(value).trim();
+        if (normalized) params.append(key, normalized);
+      });
+      params.delete("page");
+      if (params.get("status") === "active") params.delete("status");
+      if (params.get("sort") === "project") params.delete("sort");
+      if (params.get("date_field") === "latest_addition_date") params.delete("date_field");
+
+      const defaults = (liveFilterForm.dataset.defaultColumns || "").split(",").filter(Boolean);
+      const columns = params.getAll("columns");
+      if (defaults.length === columns.length && defaults.every((value, index) => value === columns[index])) {
+        params.delete("columns");
+      }
+      const query = params.toString();
+      return `${window.location.pathname}${query ? `?${query}` : ""}`;
+    };
+
+    const refreshFilterResults = async () => {
+      window.clearTimeout(liveFilterTimer);
+      liveFilterRequest?.abort();
+      liveFilterRequest = new AbortController();
+      const url = cleanFilterUrl();
+      const results = document.querySelector("[data-filter-results]");
+      const status = liveFilterForm.querySelector("[data-filter-live-status]");
+      if (results) results.setAttribute("aria-busy", "true");
+      if (status) status.textContent = "Searching…";
+
+      try {
+        const response = await fetch(url, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          signal: liveFilterRequest.signal,
+        });
+        if (!response.ok) throw new Error("Search request failed");
+        const nextPage = new DOMParser().parseFromString(await response.text(), "text/html");
+        const nextResults = nextPage.querySelector("[data-filter-results]");
+        const currentHead = document.querySelector(".page-head");
+        const nextHead = nextPage.querySelector(".page-head");
+        if (!results || !nextResults) throw new Error("Search results are unavailable");
+        results.innerHTML = nextResults.innerHTML;
+        if (currentHead && nextHead) currentHead.replaceWith(nextHead);
+        const topSearch = document.querySelector('.top-search input[name="q"]');
+        const search = liveFilterForm.querySelector("[data-live-filter-search]");
+        if (topSearch && search) topSearch.value = search.value;
+        window.history.replaceState({}, "", url);
+        if (status) status.textContent = "Updated";
+      } catch (error) {
+        if (error.name !== "AbortError") window.location.assign(url);
+      } finally {
+        results?.removeAttribute("aria-busy");
+      }
+    };
+
+    const search = liveFilterForm.querySelector("[data-live-filter-search]");
+    search?.addEventListener("input", () => {
+      window.clearTimeout(liveFilterTimer);
+      liveFilterRequest?.abort();
+      const status = liveFilterForm.querySelector("[data-filter-live-status]");
+      if (status) status.textContent = "Typing…";
+      liveFilterTimer = window.setTimeout(refreshFilterResults, 300);
+    });
+
+    liveFilterForm.querySelectorAll(".quick-filters select").forEach((select) => {
+      select.addEventListener("change", () => {
+        if (select.name === "date_preset" && select.value === "custom") {
+          const button = liveFilterForm.querySelector("[data-toggle-filter-panel]");
+          const panel = liveFilterForm.querySelector("[data-filter-panel]");
+          if (button && panel) setFilterPanelState(button, panel, true);
+          liveFilterForm.querySelector('[name="date_from"]')?.focus();
+          return;
+        }
+        refreshFilterResults();
+      });
+    });
+
+    liveFilterForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      window.location.assign(cleanFilterUrl());
+    });
+  }
 
   document.querySelectorAll("form").forEach((form) => {
     form.addEventListener("submit", (event) => {

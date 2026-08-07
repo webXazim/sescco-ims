@@ -72,6 +72,18 @@ class AdvancedExplorerTests(TestCase):
         response = self.client.get(reverse("inventory:list"), {"q": "ARAMCO Metal"})
         self.assertNotContains(response, "Portland Cement")
 
+    def test_inventory_uses_compact_live_search_filter_ui(self):
+        response = self.client.get(
+            reverse("inventory:list"),
+            {"q": "cement", "quantity_min": "1"},
+        )
+        self.assertContains(response, "data-live-filter-search")
+        self.assertContains(response, "data-live-filter-form")
+        self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, 'name="quantity_min"')
+        self.assertNotContains(response, 'name="material"')
+        self.assertNotContains(response, 'name="supplier_phone"')
+
     def test_date_presets_filter_activity(self):
         response = self.client.get(reverse("core:activity"), {"date_preset": "today"})
         self.assertContains(response, "Portland Cement")
