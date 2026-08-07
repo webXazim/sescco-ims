@@ -8,7 +8,7 @@
     <a class="btn btn-primary" href="{% url 'data_exchange:opening_import' %}">Import opening stock</a>
   </div>
 </div>
-<section class="card management-search"><form class="explorer-toolbar" method="get" data-live-filter-form><div class="search-field"><span class="search-glyph">⌕</span><input name="q" value="{{ search_query }}" placeholder="Search workbook, project, status, or administrator…" autocomplete="off" data-live-filter-search></div><div class="quick-filters"><a class="btn btn-ghost btn-sm" href="{% url 'data_exchange:import_list' %}">Reset</a><span class="filter-live-status" data-filter-live-status aria-live="polite"></span></div></form></section>
+<section class="card management-search"><form class="explorer-toolbar" method="get" data-live-filter-form><div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input name="q" value="{{ search_query }}" placeholder="Search workbook, project, status, or administrator…" autocomplete="off" data-live-filter-search></div><div class="quick-filters"><a class="btn btn-ghost btn-sm" href="{% url 'data_exchange:import_list' %}">Reset</a><span class="filter-live-status" data-filter-live-status aria-live="polite"></span></div></form></section>
 <div data-filter-results aria-live="polite">
 <section class="card">
   <div class="card-head"><div><h2 class="card-title">Import history</h2><div class="card-meta">Administrator-only previews and results</div></div></div>

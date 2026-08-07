@@ -1,5 +1,5 @@
 <header class="topbar">
   <button class="menu-button" data-sidebar-toggle aria-label="Open menu">☰</button>
-  {% if page_key == 'inventory' %}<div class="topbar-context"><strong>Inventory</strong><span>Live search and filters below</span></div>{% else %}<form class="top-search" method="get" action="{% url 'inventory:list' %}"><span>⌕</span><input name="q" placeholder="Search inventory, projects, suppliers…"></form>{% endif %}
+  {% if page_key == 'inventory' %}<div class="topbar-context"><strong>Inventory</strong><span>Live search and filters below</span></div>{% else %}<form class="top-search" method="get" action="{% url 'inventory:list' %}"><span aria-hidden="true"></span><input name="q" placeholder="Search inventory, projects, suppliers…"></form>{% endif %}
   <div class="top-actions"><a class="btn btn-sm" href="{% url 'projects:list' %}">Projects</a><a class="btn btn-primary btn-sm" href="{% url 'core:add_stock' %}">Add stock</a></div>
 </header>
