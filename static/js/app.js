@@ -219,8 +219,7 @@
   if (additionForm) {
     const project = additionForm.querySelector("#id_project");
     const material = additionForm.querySelector("#id_material_name");
-    const supplier = additionForm.querySelector("#id_supplier_name");
-    const phone = additionForm.querySelector("#id_supplier_phone");
+    const supplier = additionForm.querySelector("#id_supplier");
     const quantity = additionForm.querySelector("#id_quantity");
     const matchPanel = document.querySelector("#liveMatchPanel");
     const quantityPreview = document.querySelector("#additionQuantityPreview");
@@ -257,7 +256,10 @@
     const checkMatch = () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
-        if (![project?.value, material?.value.trim(), supplier?.value.trim(), phone?.value.trim()].every(Boolean)) {
+        const supplierOption = supplier?.selectedOptions[0];
+        const supplierName = supplierOption?.dataset.name || "";
+        const supplierPhone = supplierOption?.dataset.phone || "";
+        if (![project?.value, material?.value.trim(), supplierName, supplierPhone].every(Boolean)) {
           currentBalance = null;
           if (matchPanel) matchPanel.innerHTML = "";
           updateAdditionBalance();
@@ -266,8 +268,8 @@
         const params = new URLSearchParams({
           project: project.value,
           material_name: material.value,
-          supplier_name: supplier.value,
-          supplier_phone: phone.value,
+          supplier_name: supplierName,
+          supplier_phone: supplierPhone,
         });
         try {
           const response = await fetch(`${additionForm.dataset.matchUrl}?${params}`, {
@@ -281,7 +283,7 @@
       }, 280);
     };
 
-    [project, material, supplier, phone].forEach((field) => {
+    [project, material, supplier].forEach((field) => {
       field?.addEventListener(field.tagName === "SELECT" ? "change" : "input", checkMatch);
     });
     quantity?.addEventListener("input", updateAdditionBalance);

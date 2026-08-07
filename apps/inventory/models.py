@@ -62,6 +62,54 @@ class Unit(models.Model):
         return super().save(*args, **kwargs)
 
 
+class Supplier(models.Model):
+    name = models.CharField(max_length=180)
+    normalized_name = models.CharField(max_length=180, editable=False)
+    phone = models.CharField(max_length=40)
+    normalized_phone = models.CharField(max_length=40, editable=False)
+    location = models.CharField(max_length=180, blank=True)
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name", "phone")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("normalized_name", "normalized_phone"),
+                name="uniq_supplier_identity",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("normalized_name",), name="supplier_name_norm_idx"),
+            models.Index(fields=("normalized_phone",), name="supplier_phone_norm_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} · {self.phone}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        if not normalize_text(self.name):
+            errors["name"] = "Supplier name is required."
+        if not normalize_phone(self.phone):
+            errors["phone"] = "Supplier phone is required."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.name = clean_display_text(self.name)
+        self.phone = clean_display_text(self.phone)
+        self.location = clean_display_text(self.location)
+        self.notes = (self.notes or "").strip()
+        self.normalized_name = normalize_text(self.name)
+        self.normalized_phone = normalize_phone(self.phone)
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 class StockItem(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"

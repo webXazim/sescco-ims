@@ -5,7 +5,7 @@ from django.db.models import Count, F, Q
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import StockItem, StockMovement, Unit
+from .models import StockItem, StockMovement, Supplier, Unit
 
 
 class StockStatusAdminFilter(admin.SimpleListFilter):
@@ -88,6 +88,23 @@ class UnitAdmin(admin.ModelAdmin):
             return "—"
         url = f'{reverse("inventory:list")}?{urlencode({"unit": obj.pk})}'
         return format_html('<a href="{}">Open inventory</a>', url)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Supplier)
+class SupplierAdmin(admin.ModelAdmin):
+    list_display = ("name", "phone", "location", "is_active", "updated_at")
+    list_filter = ("is_active", "location")
+    search_fields = ("name", "phone", "normalized_name", "normalized_phone", "location")
+    readonly_fields = ("normalized_name", "normalized_phone", "created_at", "updated_at")
+    ordering = ("name", "phone")
+    list_per_page = 50
+    fieldsets = (
+        ("Supplier", {"fields": (("name", "phone"), "location", "is_active", "notes")}),
+        ("System information", {"fields": ("normalized_name", "normalized_phone", "created_at", "updated_at"), "classes": ("collapse",)}),
+    )
 
     def has_delete_permission(self, request, obj=None):
         return False

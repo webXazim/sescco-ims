@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.inventory.models import StockItem, StockMovement, Unit
+from apps.inventory.models import StockItem, StockMovement, Supplier, Unit
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
 
@@ -26,6 +26,11 @@ class InventoryWorkspaceTests(TestCase):
         self.client.force_login(self.user)
         self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
         self.unit = Unit.objects.get(normalized_name="bag")
+        self.supplier = Supplier.objects.create(
+            name="Gulf Cement",
+            phone="+966 57 368 6575",
+            location="Dammam",
+        )
         self.today = timezone.localdate()
 
     def create_item(self):
@@ -136,10 +141,7 @@ class InventoryWorkspaceTests(TestCase):
                 "idempotency_key": uuid.uuid4(),
                 "project": self.project.pk,
                 "material_name": "Portland Cement",
-                "description": "50 KG bag",
-                "supplier_name": "Gulf Cement",
-                "supplier_phone": "+966 57 368 6575",
-                "supplier_location": "Dammam",
+                "supplier": self.supplier.pk,
                 "unit": self.unit.pk,
                 "minimum_quantity": "10",
                 "quantity": "50",
@@ -156,6 +158,9 @@ class InventoryWorkspaceTests(TestCase):
         )
         self.assertEqual(item.current_quantity, Decimal("50"))
         self.assertEqual(item.movements.count(), 1)
+        self.assertEqual(item.supplier_name, self.supplier.name)
+        self.assertEqual(item.supplier_phone, self.supplier.phone)
+        self.assertEqual(item.supplier_location, self.supplier.location)
 
     def test_add_stock_duplicate_post_is_idempotent(self):
         token = uuid.uuid4()
@@ -163,10 +168,7 @@ class InventoryWorkspaceTests(TestCase):
             "idempotency_key": token,
             "project": self.project.pk,
             "material_name": "Portland Cement",
-            "description": "50 KG bag",
-            "supplier_name": "Gulf Cement",
-            "supplier_phone": "+966 57 368 6575",
-            "supplier_location": "Dammam",
+            "supplier": self.supplier.pk,
             "unit": self.unit.pk,
             "minimum_quantity": "10",
             "quantity": "50",
@@ -180,6 +182,25 @@ class InventoryWorkspaceTests(TestCase):
         item = StockItem.objects.get()
         self.assertEqual(item.current_quantity, Decimal("50"))
         self.assertEqual(StockMovement.objects.count(), 1)
+
+    def test_supplier_can_be_created_and_selected_for_stock(self):
+        response = self.client.post(
+            reverse("inventory:suppliers"),
+            {
+                "name": "Eastern Steel",
+                "phone": "+966 50 123 4567",
+                "location": "Dammam",
+                "notes": "Preferred steel vendor",
+                "is_active": "on",
+            },
+        )
+        self.assertRedirects(response, reverse("inventory:suppliers"))
+        supplier = Supplier.objects.get(normalized_name="eastern steel")
+        self.assertEqual(supplier.normalized_phone, "966501234567")
+
+        response = self.client.get(reverse("core:add_stock"))
+        self.assertContains(response, "Eastern Steel")
+        self.assertNotContains(response, 'id="id_description"')
 
     def test_use_stock_page_blocks_negative_stock(self):
         item = self.add_item_stock("10").movement.stock_item

@@ -13,6 +13,8 @@ from .views import (
     StockMatchAPIView,
     StockPickerAPIView,
     StockMovementDetailView,
+    SupplierListCreateView,
+    SupplierUpdateView,
     UnitListCreateView,
     UnitUpdateView,
 )
@@ -54,4 +56,6 @@ urlpatterns = [
     path("low-stock/", LowStockListView.as_view(), name="low_stock"),
     path("units/", UnitListCreateView.as_view(), name="units"),
     path("units/<int:pk>/edit/", UnitUpdateView.as_view(), name="unit_edit"),
+    path("suppliers/", SupplierListCreateView.as_view(), name="suppliers"),
+    path("suppliers/<int:pk>/edit/", SupplierUpdateView.as_view(), name="supplier_edit"),
 ]

@@ -13,7 +13,7 @@ from apps.core.forms import StyledForm, StyledModelForm
 from apps.explorer.filtering import DATE_PRESETS
 from apps.projects.models import Project
 
-from .models import StockItem, StockMovement, Unit
+from .models import StockItem, StockMovement, Supplier, Unit
 from .services.matching import find_stock_matches
 
 
@@ -32,6 +32,29 @@ class UnitForm(StyledModelForm):
     class Meta:
         model = Unit
         fields = ("name", "symbol", "is_active")
+
+
+class SupplierForm(StyledModelForm):
+    class Meta:
+        model = Supplier
+        fields = ("name", "phone", "location", "notes", "is_active")
+        widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
+
+
+class SupplierSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value:
+            supplier = getattr(value, "instance", None)
+            if supplier:
+                option["attrs"].update(
+                    {
+                        "data-name": supplier.name,
+                        "data-phone": supplier.phone,
+                        "data-location": supplier.location,
+                    }
+                )
+        return option
 
 
 class StockItemForm(StyledModelForm):
@@ -134,10 +157,11 @@ class IdempotentMovementForm(StyledForm):
 class StockAdditionForm(IdempotentMovementForm):
     project = forms.ModelChoiceField(queryset=Project.objects.none())
     material_name = forms.CharField(max_length=180)
-    description = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
-    supplier_name = forms.CharField(max_length=180)
-    supplier_phone = forms.CharField(max_length=40)
-    supplier_location = forms.CharField(max_length=180, required=False)
+    supplier = forms.ModelChoiceField(
+        queryset=Supplier.objects.none(),
+        widget=SupplierSelect,
+        help_text="Choose a managed supplier; its phone and location are used automatically.",
+    )
     unit = forms.ModelChoiceField(queryset=Unit.objects.none())
     minimum_quantity = forms.DecimalField(
         max_digits=16,
@@ -178,6 +202,9 @@ class StockAdditionForm(IdempotentMovementForm):
             status=Project.Status.ACTIVE
         ).order_by("code")
         self.fields["unit"].queryset = Unit.objects.filter(is_active=True).order_by("name")
+        self.fields["supplier"].queryset = Supplier.objects.filter(is_active=True).order_by(
+            "name", "phone"
+        )
         self.exact_match = None
         self.similar_matches = []
 
@@ -186,14 +213,15 @@ class StockAdditionForm(IdempotentMovementForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        required = ("project", "material_name", "supplier_name", "supplier_phone", "unit")
+        required = ("project", "material_name", "supplier", "unit")
         if not all(cleaned_data.get(field) for field in required):
             return cleaned_data
+        supplier = cleaned_data["supplier"]
         result = find_stock_matches(
             project=cleaned_data["project"],
             material_name=cleaned_data["material_name"],
-            supplier_name=cleaned_data["supplier_name"],
-            supplier_phone=cleaned_data["supplier_phone"],
+            supplier_name=supplier.name,
+            supplier_phone=supplier.phone,
         )
         self.exact_match = result.exact
         self.similar_matches = list(result.similar)

@@ -29,11 +29,13 @@ from .forms import (
     StockAdjustmentForm,
     StockItemForm,
     StockUsageForm,
+    SupplierForm,
     UnitForm,
 )
-from .models import StockItem, StockMovement, Unit
+from .models import StockItem, StockMovement, Supplier, Unit
 from .selectors import (
     apply_movement_search,
+    apply_stock_search,
     filter_stock_items,
     filter_stock_movements,
     low_stock_items,
@@ -515,13 +517,14 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
         if stock_reference:
             item = _stock_item_from_reference(stock_reference)
             if item:
+                supplier = Supplier.objects.filter(
+                    normalized_name=item.normalized_supplier_name,
+                    normalized_phone=item.normalized_supplier_phone,
+                ).first()
                 initial.update(
                     project=item.project,
                     material_name=item.material_name,
-                    description=item.description,
-                    supplier_name=item.supplier_name,
-                    supplier_phone=item.supplier_phone,
-                    supplier_location=item.supplier_location,
+                    supplier=supplier,
                     unit=item.unit,
                     minimum_quantity=item.minimum_quantity,
                 )
@@ -546,10 +549,9 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
                     movement_date=data["movement_date"],
                     project=data["project"],
                     material_name=data["material_name"],
-                    description=data["description"],
-                    supplier_name=data["supplier_name"],
-                    supplier_phone=data["supplier_phone"],
-                    supplier_location=data["supplier_location"],
+                    supplier_name=data["supplier"].name,
+                    supplier_phone=data["supplier"].phone,
+                    supplier_location=data["supplier"].location,
                     unit=data["unit"],
                     minimum_quantity=data["minimum_quantity"],
                     unit_price=data["unit_price"],
@@ -945,6 +947,52 @@ class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
             page_title="Edit unit",
             page_subtitle="Existing stock keeps its unit relationship.",
             submit_label="Save unit",
+        )
+        return context
+
+
+class SupplierListCreateView(InventoryWorkspaceMixin, View):
+    template_name = "inventory/supplier_list.html"
+
+    def get(self, request):
+        return render(request, self.template_name, self._context(SupplierForm()))
+
+    def post(self, request):
+        form = SupplierForm(request.POST)
+        if form.is_valid():
+            supplier = form.save()
+            messages.success(request, f"Supplier {supplier.name} was created.")
+            return redirect("inventory:suppliers")
+        return render(request, self.template_name, self._context(form), status=400)
+
+    def _context(self, form):
+        return {
+            "page_key": "suppliers",
+            "page_title": "Suppliers",
+            "page_subtitle": "Manage reusable supplier details for faster stock entry.",
+            "form": form,
+            "suppliers": Supplier.objects.order_by("name", "phone"),
+        }
+
+
+class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
+    model = Supplier
+    form_class = SupplierForm
+    template_name = "inventory/supplier_form.html"
+    success_url = reverse_lazy("inventory:suppliers")
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f"Supplier {self.object.name} was updated.")
+        return response
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            page_key="suppliers",
+            page_title="Edit supplier",
+            page_subtitle="New stock entries will use these updated supplier details.",
+            submit_label="Save supplier",
         )
         return context
 

@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.projects.models import Project
 
-from ..models import StockItem, StockMovement, Unit
+from ..models import StockItem, StockMovement, Supplier, Unit
 from ..normalization import clean_display_text, normalize_phone, normalize_text
 
 
@@ -187,6 +187,18 @@ def add_stock(
             locked_project = Project.objects.select_for_update().get(pk=project.pk)
             if locked_project.status != Project.Status.ACTIVE:
                 raise InactiveStockError("Only active projects can receive stock.")
+
+            # Keep suppliers introduced through imports and integrations available in
+            # the managed supplier picker without changing historical stock snapshots.
+            Supplier.objects.get_or_create(
+                normalized_name=normalized_supplier,
+                normalized_phone=normalized_phone,
+                defaults={
+                    "name": supplier_name,
+                    "phone": supplier_phone,
+                    "location": supplier_location,
+                },
+            )
 
             exact = (
                 StockItem.objects.select_for_update()
