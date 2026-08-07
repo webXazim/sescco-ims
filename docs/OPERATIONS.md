@@ -41,6 +41,23 @@ docker compose --env-file .env.production restart ims_web ims_gateway
 ./scripts/deploy-production.sh
 ```
 
+## Static files return 403
+
+Static files are served by `ims_gateway` from the `ims_static_data` volume. If
+the page renders as unstyled HTML and browser requests below `/static/` return
+403, rebuild and recreate the web container so `collectstatic` applies the
+public static-file permissions:
+
+```bash
+docker compose --env-file .env.production build ims_web
+docker compose --env-file .env.production up -d --force-recreate ims_web
+docker compose --env-file .env.production restart ims_gateway
+curl -I https://ims.a2tdev.com/static/css/styles.css
+```
+
+The CSS request should return `200`. Media upload permissions remain private;
+do not make the media volume world-readable.
+
 ## Logs
 
 Django writes structured JSON to container stdout. Every request receives an

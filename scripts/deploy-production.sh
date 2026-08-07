@@ -39,6 +39,12 @@ curl --fail --silent --show-error \
   --header 'X-Forwarded-Proto: https' \
   "http://127.0.0.1:${http_port}/app/health/ready/" >/dev/null
 
+info "Verifying static assets are readable through the gateway"
+curl --fail --silent --show-error \
+  --header 'Host: ims.a2tdev.com' \
+  --header 'X-Forwarded-Proto: https' \
+  "http://127.0.0.1:${http_port}/static/css/styles.css" >/dev/null
+
 info "Deployment completed"
 printf 'Local origin: http://127.0.0.1:%s\n' "${http_port}"
 printf 'Public domain: https://ims.a2tdev.com\n'
