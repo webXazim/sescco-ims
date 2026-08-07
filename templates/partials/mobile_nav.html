@@ -1,0 +1,7 @@
+<nav class="mobile-nav">
+  <a class="mobile-link {% if page_key == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}"><span>⌂</span><span>Home</span></a>
+  <a class="mobile-link {% if page_key == 'inventory' or page_key == 'stock-detail' %}active{% endif %}" href="{% url 'inventory:list' %}"><span>▦</span><span>Stock</span></a>
+  <a class="mobile-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}"><span>＋</span><span>Add</span></a>
+  <a class="mobile-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}"><span>−</span><span>Use</span></a>
+  <a class="mobile-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}"><span>◇</span><span>Projects</span></a>
+</nav>

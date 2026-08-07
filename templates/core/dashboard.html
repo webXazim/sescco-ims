@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <form class="project-scope" method="get"><label for="dashboardProject">Viewing</label><select id="dashboardProject" name="project" onchange="this.form.submit()"><option value="">All projects</option>{% for project in projects %}<option value="{{ project.code }}" {% if selected_project == project.code %}selected{% endif %}>{{ project.code }} · {{ project.name }}</option>{% endfor %}</select></form>
+</div>
+<div class="grid grid-4">
+  <div class="card stat"><div class="stat-top"><span>Active projects</span><span class="stat-icon">◇</span></div><div><div class="stat-value">{{ active_project_count }}</div><div class="stat-note">Projects accepting inventory activity</div></div></div>
+  <div class="card stat"><div class="stat-top"><span>Stock records</span><span class="stat-icon">▦</span></div><div><div class="stat-value">{{ stock_record_count }}</div><div class="stat-note">{% if selected_project %}In {{ selected_project }}{% else %}Across all projects{% endif %}</div></div></div>
+  <div class="card stat"><div class="stat-top"><span>Added today</span><span class="stat-icon">＋</span></div><div><div class="stat-value">{{ stock_added_today }}</div><div class="stat-note">Inbound movements dated today</div></div></div>
+  <div class="card stat"><div class="stat-top"><span>Used today</span><span class="stat-icon">−</span></div><div><div class="stat-value">{{ stock_used_today }}</div><div class="stat-note">Outbound movements dated today</div></div></div>
+</div>
+<div class="grid grid-3 section-gap">
+  <div class="card compact-stat"><span>Needs attention</span><strong>{{ low_stock_count }}</strong><small>Low or out-of-stock records</small></div>
+  <div class="card compact-stat"><span>Out of stock</span><strong>{{ out_of_stock_count }}</strong><small>Records currently at zero</small></div>
+  <div class="card compact-stat"><span>Configured units</span><strong>{{ unit_count }}</strong><small>Active quantity labels</small></div>
+</div>
+<div class="action-strip section-gap">
+  <a class="card action-card" href="{% url 'core:add_stock' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon">＋</span><span><span class="action-name">Add stock</span><span class="action-desc">Receive material{% if selected_project %} into {{ selected_project }}{% else %} into a project{% endif %}</span></span></a>
+  <a class="card action-card" href="{% url 'core:remove_stock' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon">−</span><span><span class="action-name">Use stock</span><span class="action-desc">Record project material usage</span></span></a>
+  <a class="card action-card" href="{% url 'inventory:list' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon">⌕</span><span><span class="action-name">Search inventory</span><span class="action-desc">Filter project stock records</span></span></a>
+  {% if selected_project_object %}<a class="card action-card" href="{% url 'projects:detail' selected_project_object.code %}"><span class="action-icon">◇</span><span><span class="action-name">Open project</span><span class="action-desc">Manage {{ selected_project_object.code }}</span></span></a>{% else %}<a class="card action-card" href="{% url 'projects:create' %}"><span class="action-icon">◇</span><span><span class="action-name">Add project</span><span class="action-desc">Create a project tag</span></span></a>{% endif %}
+</div>
+<div class="split-main section-gap">
+  <section class="card">
+    <div class="card-head"><div><h2 class="card-title">Recent stock activity</h2><div class="card-meta">Every balance change is kept permanently</div></div><a class="btn btn-sm" href="{% url 'core:activity' %}{% if selected_project_object %}?project={{ selected_project_object.pk }}{% endif %}">View all</a></div>
+    {% if recent_movements %}<div class="activity-list">{% for movement in recent_movements %}<a class="activity-row" href="{% url 'inventory:movement_detail' movement.reference %}"><span class="activity-symbol">{% if movement.is_inbound %}＋{% else %}−{% endif %}</span><span><span class="activity-title">{{ movement.material_name_display }}</span><span class="activity-sub"><span class="tag">{{ movement.project_code_display }}</span> · {{ movement.get_movement_type_display }} · {{ movement.movement_date|date:"d M Y" }}</span></span><span class="activity-qty {% if movement.is_inbound %}text-positive{% else %}text-danger{% endif %}">{{ movement.signed_quantity_display }}</span></a>{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">↕</div><h2>No movements yet</h2><p>Add or use stock to begin the permanent inventory history.</p><a class="btn btn-primary" href="{% url 'core:add_stock' %}">Add stock</a></div>{% endif %}
+  </section>
+  <aside class="card">
+    <div class="card-head"><div><h2 class="card-title">Projects by stock records</h2><div class="card-meta">Active project coverage</div></div></div>
+    {% if project_summaries %}<div class="project-bars">{% for project in project_summaries %}<div><div class="project-bar-head"><a href="{% url 'projects:detail' project.code %}"><span class="tag">{{ project.code }}</span></a><strong>{{ project.stock_count }}</strong></div><div class="bar"><span style="width:{% if stock_record_count %}{% widthratio project.stock_count stock_record_count 100 %}{% else %}0{% endif %}%"></span></div></div>{% endfor %}</div>{% else %}<div class="empty-state"><p>No active projects.</p></div>{% endif %}
+  </aside>
+</div>
+{% endblock %}

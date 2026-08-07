@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
+<form method="post" enctype="multipart/form-data" novalidate data-stock-addition-form data-match-url="{% url 'inventory:matches' %}">
+  {% csrf_token %}{{ form.idempotency_key }}
+  <div class="form-layout">
+    <section class="card form-card">
+      {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+      <div id="liveMatchPanel"></div>
+      {% if exact_match %}<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This addition will update the existing balance.</div></div><a class="btn btn-sm" href="{% url 'inventory:detail' exact_match.reference %}">Open record</a></div><div class="match-data"><div><span>Project</span><strong>{{ exact_match.project.code }}</strong></div><div><span>Material</span><strong>{{ exact_match.material_name }}</strong></div><div><span>Current balance</span><strong>{{ exact_match.quantity_display }}</strong></div><div><span>Supplier</span><strong>{{ exact_match.supplier_name }}</strong></div></div></div>{% endif %}
+      {% if similar_matches %}<div class="alert alert-warning section-gap"><strong>Similar record found.</strong> Material and supplier match, but the supplier phone is different.</div><div class="field section-gap"><label class="check-row" for="{{ form.confirm_similar.id_for_label }}">{{ form.confirm_similar }} <span>{{ form.confirm_similar.label }}</span></label></div>{% endif %}
+      <div class="form-section"><h2 class="form-section-title">Project and material</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.project %}
+        {% include "partials/form_field.html" with field=form.material_name %}
+        <div class="field field-full"><label class="field-label" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>{{ form.description }}{% for error in form.description.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
+        {% include "partials/form_field.html" with field=form.unit %}
+        {% include "partials/form_field.html" with field=form.minimum_quantity %}
+      </div></div>
+      <div class="form-section"><h2 class="form-section-title">Supplier identity</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.supplier_name %}
+        {% include "partials/form_field.html" with field=form.supplier_phone %}
+        {% include "partials/form_field.html" with field=form.supplier_location %}
+      </div></div>
+      <div class="form-section"><h2 class="form-section-title">Stock addition</h2><div class="form-grid form-grid-3">
+        {% include "partials/form_field.html" with field=form.quantity %}
+        {% include "partials/form_field.html" with field=form.unit_price %}
+        {% include "partials/form_field.html" with field=form.movement_date %}
+        {% include "partials/form_field.html" with field=form.invoice_reference %}
+        {% include "partials/form_field.html" with field=form.attachment %}
+        <div class="field field-full"><label class="field-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>{{ form.notes }}{% for error in form.notes.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
+      </div></div>
+      <div class="form-actions"><a class="btn" href="{% url 'inventory:list' %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>Add stock</button></div>
+    </section>
+    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Safe matching</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Identity</span><span class="summary-value">Project + material + supplier + phone</span></div><div class="summary-row"><span class="summary-key">Exact match</span><span class="summary-value">Existing balance increases</span></div><div class="summary-row"><span class="summary-key">No match</span><span class="summary-value">New record is created</span></div><div class="summary-row"><span class="summary-key">History</span><span class="summary-value">Never overwritten</span></div></div><div class="balance-preview"><div class="balance-line"><span>Quantity to add</span><strong id="additionQuantityPreview">0</strong></div><div class="balance-line"><span>Current balance</span><strong id="currentBalancePreview">—</strong></div><div class="balance-line total"><span>Expected balance</span><strong id="newBalancePreview">—</strong></div></div><div class="alert alert-warning section-gap">Phone formatting differences such as spaces and hyphens are normalized before matching.</div></div></aside>
+  </div>
+</form>
+{% endblock %}

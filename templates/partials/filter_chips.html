@@ -1,0 +1,12 @@
+<div class="active-filters">
+  {% if filter_chips %}
+    {% for chip in filter_chips %}
+      {% if chip.clear_url %}<a class="filter-chip" href="{{ chip.clear_url }}" title="Remove filter">{{ chip.label }} <span aria-hidden="true">×</span></a>
+      {% else %}<span class="filter-chip filter-chip-muted">{{ chip.label }}</span>{% endif %}
+    {% endfor %}
+    <a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Clear optional filters</a>
+  {% else %}
+    <span class="filter-chip filter-chip-muted">No filters applied</span>
+  {% endif %}
+  <span class="result-meta">{{ paginator.count }} matching record{{ paginator.count|pluralize }}</span>
+</div>

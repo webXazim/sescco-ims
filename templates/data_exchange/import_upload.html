@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>{% if import_kind == 'opening' %}<div class="head-actions"><a class="btn" href="{% url 'data_exchange:opening_template' %}">Download template</a></div>{% endif %}</div>
+<form method="post" enctype="multipart/form-data" novalidate>
+  {% csrf_token %}
+  <div class="form-layout">
+    <section class="card form-card">
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="form-section"><h2 class="form-section-title">Workbook</h2><div class="form-grid">
+        {% for field in form %}{% include "partials/form_field.html" with field=field %}{% endfor %}
+      </div></div>
+      <div class="form-actions"><a class="btn" href="{% url 'data_exchange:import_list' %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>{{ submit_label }}</button></div>
+    </section>
+    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Safe import workflow</h2></div><div class="card-body"><div class="summary-list">
+      <div class="summary-row"><span class="summary-key">Step 1</span><span class="summary-value">Upload and parse</span></div>
+      <div class="summary-row"><span class="summary-key">Step 2</span><span class="summary-value">Review exact, similar and invalid rows</span></div>
+      <div class="summary-row"><span class="summary-key">Step 3</span><span class="summary-value">Confirm one atomic import</span></div>
+      <div class="summary-row"><span class="summary-key">Failure</span><span class="summary-value">No partial stock changes</span></div>
+    </div>{% if import_kind == 'legacy' %}<div class="alert alert-warning section-gap">The existing workbook has no quantity column. This import creates or updates zero-balance stock records and legacy latest-price/date metadata only.</div>{% else %}<div class="alert alert-warning section-gap">Opening stock creates immutable opening movements. Existing records with movement history are rejected.</div>{% endif %}</div></aside>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,140 @@
+name: ims
+
+services:
+  ims_db:
+    image: postgres:17.10-alpine3.23
+    restart: unless-stopped
+    env_file:
+      - ${IMS_ENV_FILE:-.env.production}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ims_postgres_data:/var/lib/postgresql/data
+    networks:
+      - ims_database
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    logging: &default_logging
+      driver: json-file
+      options:
+        max-size: ${IMS_LOG_MAX_SIZE:-10m}
+        max-file: ${IMS_LOG_MAX_FILES:-5}
+
+  ims_web:
+    build:
+      context: .
+      args:
+        APP_UID: ${IMS_APP_UID:-10001}
+        APP_GID: ${IMS_APP_GID:-10001}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${IMS_ENV_FILE:-.env.production}
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DB_ENGINE: postgresql
+      DB_NAME: ${POSTGRES_DB:?POSTGRES_DB is required}
+      DB_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_HOST: ims_db
+      DB_PORT: "5432"
+      RUN_STARTUP_TASKS: ${RUN_STARTUP_TASKS:-1}
+    command:
+      [
+        "gunicorn",
+        "--config",
+        "/app/deploy/gunicorn.conf.py",
+        "config.wsgi:application",
+      ]
+    depends_on:
+      ims_db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - ims_static_data:/app/staticfiles
+      - ims_media_data:/app/media
+    networks:
+      - ims_edge
+      - ims_database
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/app/health/ready/', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=4).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+    stop_grace_period: 45s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default_logging
+
+  ims_gateway:
+    image: nginx:1.30.4-alpine
+    restart: unless-stopped
+    depends_on:
+      ims_web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${IMS_HTTP_PORT:-8087}:8080"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ims_static_data:/srv/static:ro
+    networks:
+      - ims_edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/nginx-health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default_logging
+
+  ims_tools:
+    image: alpine:3.23
+    profiles: ["tools"]
+    volumes:
+      - ims_media_data:/data/media
+      - ${IMS_BACKUP_DIR:-./backups}:/backups
+    networks:
+      - ims_database
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  ims_edge:
+    name: ims_edge
+  ims_database:
+    name: ims_database
+    internal: true
+
+volumes:
+  ims_postgres_data:
+    name: ims_postgres_data
+  ims_static_data:
+    name: ims_static_data
+  ims_media_data:
+    name: ims_media_data

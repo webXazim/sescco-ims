@@ -1,0 +1,4 @@
+Django==5.2.17
+psycopg[binary]==3.3.4
+openpyxl==3.1.5
+defusedxml==0.7.1

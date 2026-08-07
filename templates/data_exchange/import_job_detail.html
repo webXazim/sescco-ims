@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <div class="head-actions"><a class="btn" href="{% url 'data_exchange:import_source' job.reference %}">Download source</a><a class="btn" href="{% url 'data_exchange:import_list' %}">All imports</a></div>
+</div>
+{% if job.status == 'failed' %}<div class="alert alert-danger"><strong>Import failed.</strong> {{ job.error_message }}</div>{% endif %}
+<section class="card">
+  <div class="detail-meta import-summary">
+    <div class="meta-cell"><div class="meta-label">Type</div><div class="meta-value">{{ job.get_import_type_display }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Status</div><div class="meta-value"><span class="status {% if job.status == 'completed' %}status-good{% elif job.status == 'failed' %}status-out{% else %}status-low{% endif %}">{{ job.get_status_display }}</span></div></div>
+    <div class="meta-cell"><div class="meta-label">Rows</div><div class="meta-value">{{ job.total_rows }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Valid / warning / error</div><div class="meta-value">{{ job.valid_rows }} / {{ job.warning_rows }} / {{ job.error_rows }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Imported / skipped</div><div class="meta-value">{{ job.imported_rows }} / {{ job.skipped_rows }}</div></div>
+  </div>
+</section>
+<section class="card section-gap">
+  <div class="card-head"><div><h2 class="card-title">Row preview</h2><div class="card-meta">Review what each workbook row will do before confirmation.</div></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Row</th><th>Stock identity</th><th>Values</th><th>Planned action</th><th>Status</th><th>Message</th></tr></thead><tbody>
+  {% for row in rows %}<tr>
+    <td>{{ row.row_number }}</td>
+    <td><strong>{{ row.cleaned_data.material_name|default:"—" }}</strong><div class="cell-sub">{{ row.cleaned_data.supplier_name|default:"—" }} · {{ row.cleaned_data.supplier_phone|default:"—" }}</div>{% if row.cleaned_data.project_code %}<div class="cell-sub">{{ row.cleaned_data.project_code }}</div>{% elif job.project %}<div class="cell-sub">{{ job.project.code }}</div>{% endif %}</td>
+    <td>{% if row.cleaned_data.opening_quantity %}{{ row.cleaned_data.opening_quantity }} {{ row.cleaned_data.unit }}{% elif row.cleaned_data.unit_price %}Latest price {{ row.cleaned_data.unit_price }}{% else %}Metadata only{% endif %}{% if row.cleaned_data.opening_date %}<div class="cell-sub">{{ row.cleaned_data.opening_date }}</div>{% elif row.cleaned_data.purchase_date %}<div class="cell-sub">{{ row.cleaned_data.purchase_date }}</div>{% endif %}</td>
+    <td>{{ row.get_planned_action_display }}{% if row.exact_match %}<div class="cell-sub"><a href="{% url 'inventory:detail' row.exact_match.reference %}">Open matching record</a></div>{% endif %}</td>
+    <td><span class="status {% if row.status == 'valid' or row.status == 'imported' %}status-good{% elif row.status == 'warning' %}status-low{% elif row.status == 'error' %}status-out{% else %}status-neutral{% endif %}">{{ row.get_status_display }}</span>{% if row.requires_confirmation %}<div class="cell-sub">Needs approval</div>{% endif %}</td>
+    <td>{{ row.message|default:"—" }}{% if row.imported_stock_item %}<div class="cell-sub"><a href="{% url 'inventory:detail' row.imported_stock_item.reference %}">Open imported stock</a></div>{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="6"><div class="empty-state"><h2>No preview rows</h2><p>The workbook did not contain importable data.</p></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "partials/pagination.html" %}
+</section>
+{% if job.can_confirm %}<section class="card section-gap import-confirm-card"><div class="card-head"><div><h2 class="card-title">Confirm import</h2><div class="card-meta">All eligible rows are applied in one database transaction.</div></div></div><form method="post" action="{% url 'data_exchange:import_confirm' job.reference %}" class="card-body" data-confirm="Confirm this import? Eligible rows will change inventory records.">{% csrf_token %}<div class="confirm-grid"><label class="check-row">{{ confirm_form.confirm }} <span>{{ confirm_form.confirm.label }}</span></label><label class="check-row">{{ confirm_form.include_similar_rows }} <span>{{ confirm_form.include_similar_rows.label }}</span></label></div><p class="help">{{ confirm_form.include_similar_rows.help_text }}</p><div class="form-actions"><button class="btn btn-primary" type="submit" data-submit-once>Confirm eligible rows</button></div></form></section>{% elif job.status == 'completed' %}<div class="alert alert-success section-gap">This import is complete. The preview rows now link to the created or updated stock records.</div>{% endif %}
+{% endblock %}

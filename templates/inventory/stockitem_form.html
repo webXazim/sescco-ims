@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
+<form method="post" novalidate>
+  {% csrf_token %}
+  <div class="form-layout">
+    <section class="card form-card">
+      {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+      {% if exact_match %}<div class="match-panel"><div class="match-title">Exact stock record found</div><p class="micro">Use the existing record instead of creating a duplicate.</p><a class="btn btn-sm" href="{% url 'inventory:detail' exact_match.reference %}">Open existing record</a></div>{% endif %}
+      {% if similar_matches %}<div class="alert alert-warning section-gap"><strong>Similar supplier match found.</strong> The material and supplier name match, but the phone differs. Review the existing record before saving.</div><div class="field section-gap"><label class="check-row" for="{{ form.confirm_similar.id_for_label }}">{{ form.confirm_similar }} <span>{{ form.confirm_similar.label }}</span></label>{% for error in form.confirm_similar.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>{% endif %}
+      <div class="form-section"><h2 class="form-section-title">Project and material</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.project %}
+        {% include "partials/form_field.html" with field=form.material_name %}
+        <div class="field field-full"><label class="field-label" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>{{ form.description }}{% for error in form.description.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
+        {% include "partials/form_field.html" with field=form.unit %}
+        {% include "partials/form_field.html" with field=form.minimum_quantity %}
+      </div></div>
+      <div class="form-section"><h2 class="form-section-title">Supplier identity</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.supplier_name %}
+        {% include "partials/form_field.html" with field=form.supplier_phone %}
+        {% include "partials/form_field.html" with field=form.supplier_location %}
+      </div></div>
+      <div class="form-section"><h2 class="form-section-title">Notes</h2><div class="field"><label class="field-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>{{ form.notes }}{% for error in form.notes.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div></div>
+      <div class="form-actions"><a class="btn" href="{% if object %}{% url 'inventory:detail' object.reference %}{% else %}{% url 'inventory:list' %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit">{{ submit_label }}</button></div>
+    </section>
+    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Matching rule</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Identity</span><span class="summary-value">Project + material + supplier + phone</span></div><div class="summary-row"><span class="summary-key">Quantity</span><span class="summary-value">Read-only here</span></div><div class="summary-row"><span class="summary-key">History identity</span><span class="summary-value">Saved on each movement</span></div></div><div class="alert alert-warning section-gap">A phone formatting difference such as spaces or hyphens does not create a new identity.</div>{% if similar_matches %}<div class="saved-list section-gap">{% for item in similar_matches %}<a class="saved-row" href="{% url 'inventory:detail' item.reference %}"><span class="saved-icon">≈</span><span><span class="saved-title">{{ item.material_name }}</span><span class="saved-filters">{{ item.supplier_name }} · {{ item.supplier_phone }}</span></span><span class="btn btn-sm">Review</span></a>{% endfor %}</div>{% endif %}</div></aside>
+  </div>
+</form>
+{% endblock %}

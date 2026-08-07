@@ -1,0 +1,5 @@
+<header class="topbar">
+  <button class="menu-button" data-sidebar-toggle aria-label="Open menu">☰</button>
+  <form class="top-search" method="get" action="{% url 'inventory:list' %}"><span>⌕</span><input name="q" value="{% if page_key == 'inventory' %}{{ request.GET.q }}{% endif %}" placeholder="Search inventory, projects, suppliers…"></form>
+  <div class="top-actions"><a class="btn btn-sm" href="{% url 'projects:list' %}">Projects</a><a class="btn btn-primary btn-sm" href="{% url 'core:add_stock' %}">Add stock</a></div>
+</header>

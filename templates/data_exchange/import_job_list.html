@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'data_exchange:opening_template' %}">Download opening template</a>
+    <a class="btn" href="{% url 'data_exchange:legacy_import' %}">Import existing workbook</a>
+    <a class="btn btn-primary" href="{% url 'data_exchange:opening_import' %}">Import opening stock</a>
+  </div>
+</div>
+<section class="card">
+  <div class="card-head"><div><h2 class="card-title">Import history</h2><div class="card-meta">Administrator-only previews and results</div></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Workbook</th><th>Type</th><th>Status</th><th>Rows</th><th>Result</th><th>Created</th><th></th></tr></thead><tbody>
+  {% for job in import_jobs %}<tr>
+    <td><a class="row-link" href="{% url 'data_exchange:import_detail' job.reference %}">{{ job.original_filename }}</a>{% if job.project %}<div class="cell-sub">{{ job.project.code }} · {{ job.project.name }}</div>{% endif %}</td>
+    <td>{{ job.get_import_type_display }}</td>
+    <td><span class="status {% if job.status == 'completed' %}status-good{% elif job.status == 'failed' %}status-out{% elif job.status == 'preview' %}status-low{% else %}status-neutral{% endif %}">{{ job.get_status_display }}</span></td>
+    <td>{{ job.total_rows }}<div class="cell-sub">{{ job.valid_rows }} valid · {{ job.warning_rows }} warning · {{ job.error_rows }} error</div></td>
+    <td>{{ job.imported_rows }} imported<div class="cell-sub">{{ job.skipped_rows }} skipped</div></td>
+    <td>{{ job.created_at|date:"d M Y, H:i" }}<div class="cell-sub">{{ job.created_by.display_name }}</div></td>
+    <td><a class="btn btn-sm" href="{% url 'data_exchange:import_detail' job.reference %}">Open</a></td>
+  </tr>{% empty %}<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">⇧</div><h2>No imports yet</h2><p>Start with the current Excel database or the opening-stock template.</p></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "partials/pagination.html" %}
+</section>
+{% endblock %}

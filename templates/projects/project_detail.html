@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ project.name }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <div class="head-actions"><a class="btn" href="{% url 'projects:edit' project.code %}">Edit project</a>{% url 'data_exchange:project_inventory_export' project.code 'xlsx' as xlsx_url %}{% url 'data_exchange:project_inventory_export' project.code 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=project_source_query xlsx_url=xlsx_url csv_url=csv_url %}{% if project.accepts_stock_activity %}<a class="btn" href="{% url 'core:remove_stock' %}?project={{ project.code }}">Use stock</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}?project={{ project.code }}">Add stock</a>{% endif %}</div>
+</div>
+{% if not project.accepts_stock_activity %}<div class="alert alert-warning">This project is {{ project.get_status_display|lower }}. Its inventory and history remain visible, but new stock activity is blocked.</div>{% endif %}
+<section class="card">
+  <div class="detail-hero"><div><span class="tag">{{ project.code }}</span><h2 class="detail-title">{{ project.name }}</h2><div class="detail-desc">{% if project.notes %}{{ project.notes }}{% else %}No project notes have been added.{% endif %}</div></div><div class="hero-balance"><div class="hero-label">Stock records</div><div class="hero-value">{{ project.stock_record_count }}</div><div class="micro">{{ project.low_stock_count }} need attention</div></div></div>
+  <div class="detail-meta">
+    <div class="meta-cell"><div class="meta-label">Client</div><div class="meta-value">{{ project.client_name|default:"—" }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Location</div><div class="meta-value">{{ project.location|default:"—" }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Status</div><div class="meta-value"><span class="status {% if project.status == 'active' %}status-good{% else %}status-neutral{% endif %}">{{ project.get_status_display }}</span></div></div>
+    <div class="meta-cell"><div class="meta-label">Start date</div><div class="meta-value">{{ project.start_date|date:"d M Y"|default:"—" }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Expected completion</div><div class="meta-value">{{ project.expected_completion_date|date:"d M Y"|default:"—" }}</div></div>
+  </div>
+</section>
+<div class="grid grid-3 section-gap">
+  <div class="card compact-stat"><span>Active records</span><strong>{{ active_stock_count }}</strong><small>Available for inventory activity</small></div>
+  <div class="card compact-stat"><span>Out of stock</span><strong>{{ out_of_stock_count }}</strong><small>Records currently at zero</small></div>
+  <div class="card compact-stat"><span>Movements</span><strong>{{ movement_count }}</strong><small>Permanent project history entries</small></div>
+</div>
+<section class="card explorer section-gap">
+  <div class="card-head"><div><h2 class="card-title">Project inventory</h2><div class="card-meta">Current supplier-specific stock records</div></div></div>
+  <form class="explorer-toolbar" method="get">
+    <div class="search-field"><span class="search-glyph">⌕</span><input name="q" value="{{ search_query }}" placeholder="Search this project's material or supplier…"></div>
+    <div class="quick-filters"><select class="filter-select" name="stock_status"><option value="">All stock status</option><option value="in" {% if current_stock_status == 'in' %}selected{% endif %}>In stock</option><option value="low" {% if current_stock_status == 'low' %}selected{% endif %}>Low stock</option><option value="out" {% if current_stock_status == 'out' %}selected{% endif %}>Out of stock</option></select><select class="filter-select" name="record_status"><option value="active" {% if current_record_status == 'active' %}selected{% endif %}>Active records</option><option value="all" {% if current_record_status == 'all' %}selected{% endif %}>Active and archived</option><option value="archived" {% if current_record_status == 'archived' %}selected{% endif %}>Archived records</option></select><button class="btn btn-sm" type="submit">Apply</button>{% if search_query or current_stock_status or current_record_status != 'active' %}<a class="btn btn-ghost btn-sm" href="{% url 'projects:detail' project.code %}">Reset</a>{% endif %}</div>
+  </form>
+  <div class="active-filters"><span class="filter-chip">{{ paginator.count }} project stock record{{ paginator.count|pluralize }}</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Material</th><th>Supplier</th><th>Phone</th><th>Quantity</th><th>Minimum</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>
+  {% for item in stock_items %}<tr><td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60 }}</div></td><td>{{ item.supplier_name }}</td><td>{{ item.supplier_phone }}</td><td class="qty">{{ item.quantity_display }}</td><td>{{ item.minimum_quantity }} {{ item.unit.symbol }}</td><td>{% if item.status == 'archived' %}<span class="status status-neutral">Archived</span>{% else %}<span class="status {% if item.stock_status == 'in' %}status-good{% elif item.stock_status == 'low' %}status-low{% else %}status-out{% endif %}">{{ item.stock_status_label }}</span>{% endif %}</td><td>{{ item.updated_at|date:"d M Y" }}</td><td><a class="btn btn-sm" href="{% url 'inventory:detail' item.reference %}">Open</a></td></tr>{% empty %}<tr><td colspan="8"><div class="empty-state"><strong>No matching stock records</strong><p>Create stock or clear the project filters.</p>{% if project.accepts_stock_activity %}<a class="btn btn-primary" href="{% url 'core:add_stock' %}?project={{ project.code }}">Add stock</a>{% endif %}</div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "partials/pagination.html" %}
+</section>
+<section class="card section-gap">
+  <div class="card-head"><div><h2 class="card-title">Recent project activity</h2><div class="card-meta">Latest balance changes for {{ project.code }}</div></div><a class="btn btn-sm" href="{% url 'core:activity' %}?project={{ project.code }}">View all activity</a></div>
+  {% if recent_movements %}<div class="activity-list">{% for movement in recent_movements %}<a class="activity-row" href="{% url 'inventory:movement_detail' movement.reference %}"><span class="activity-symbol">{% if movement.is_inbound %}＋{% else %}−{% endif %}</span><span><span class="activity-title">{{ movement.material_name_display }}</span><span class="activity-sub">{{ movement.get_movement_type_display }} · {{ movement.movement_date|date:"d M Y" }}{% if movement.invoice_reference %} · {{ movement.invoice_reference }}{% endif %}</span></span><span class="activity-qty {% if movement.is_inbound %}text-positive{% else %}text-danger{% endif %}">{{ movement.signed_quantity_display }}</span></a>{% endfor %}</div>{% else %}<div class="empty-state"><p>No project stock activity has been recorded.</p></div>{% endif %}
+</section>
+{% endblock %}

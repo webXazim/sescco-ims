@@ -1,0 +1,127 @@
+import uuid
+from datetime import timedelta
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from apps.inventory.models import StockMovement, Unit
+from apps.inventory.services.stock import add_stock, use_stock
+from apps.projects.models import Project
+
+User = get_user_model()
+
+
+class AdvancedExplorerTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="keeper", password="safe-password")
+        self.client.force_login(self.user)
+        self.today = timezone.localdate()
+        self.aramco = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
+        self.neom = Project.objects.create(code="NEOM-04", name="NEOM Site Works")
+        self.unit = Unit.objects.get(normalized_name="bag")
+        self.cement = add_stock(
+            user=self.user,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("50"),
+            movement_date=self.today,
+            project=self.aramco,
+            material_name="Portland Cement",
+            description="50 KG bag",
+            supplier_name="Gulf Cement",
+            supplier_phone="+966 57 368 6575",
+            supplier_location="Dammam",
+            unit=self.unit,
+            minimum_quantity=Decimal("10"),
+            unit_price=Decimal("24.50"),
+            invoice_reference="INV-100",
+        ).movement.stock_item
+        add_stock(
+            user=self.user,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("5"),
+            movement_date=self.today - timedelta(days=40),
+            project=self.neom,
+            material_name="Steel Bar",
+            supplier_name="Metal Supplier",
+            supplier_phone="+966 50 000 0000",
+            unit=self.unit,
+            minimum_quantity=Decimal("10"),
+            unit_price=Decimal("80"),
+        )
+
+    def test_inventory_combines_all_filters(self):
+        response = self.client.get(
+            reverse("inventory:list"),
+            {
+                "project": self.aramco.code,
+                "material": "cement",
+                "supplier_phone": "966573686575",
+                "quantity_min": "40",
+                "price_max": "30",
+            },
+        )
+        self.assertContains(response, "Portland Cement")
+        self.assertNotContains(response, "Steel Bar")
+
+    def test_search_terms_use_and_semantics_across_columns(self):
+        response = self.client.get(reverse("inventory:list"), {"q": "ARAMCO Gulf cement"})
+        self.assertContains(response, "Portland Cement")
+        response = self.client.get(reverse("inventory:list"), {"q": "ARAMCO Metal"})
+        self.assertNotContains(response, "Portland Cement")
+
+    def test_date_presets_filter_activity(self):
+        response = self.client.get(reverse("core:activity"), {"date_preset": "today"})
+        self.assertContains(response, "Portland Cement")
+        self.assertNotContains(response, "Steel Bar")
+
+    def test_custom_date_range_includes_boundaries(self):
+        date = self.today - timedelta(days=40)
+        response = self.client.get(
+            reverse("core:activity"),
+            {"date_preset": "custom", "date_from": date.isoformat(), "date_to": date.isoformat()},
+        )
+        self.assertContains(response, "Steel Bar")
+        self.assertNotContains(response, "Portland Cement")
+
+    def test_movement_filters_reference_user_quantity_and_type(self):
+        use_stock(
+            stock_item=self.cement,
+            user=self.user,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("2"),
+            movement_date=self.today,
+            purpose="Block work",
+            recipient="Team A",
+            invoice_reference="USE-44",
+        )
+        response = self.client.get(
+            reverse("core:activity"),
+            {
+                "movement_type": StockMovement.Type.USAGE,
+                "reference": "USE-44",
+                "recipient": "Team A",
+                "quantity_min": "2",
+                "quantity_max": "2",
+                "created_by": self.user.pk,
+            },
+        )
+        self.assertContains(response, "Block work")
+        self.assertNotContains(response, "INV-100")
+
+    def test_visible_columns_are_url_driven(self):
+        response = self.client.get(
+            reverse("inventory:list"), {"columns": ["project", "material", "quantity"]}
+        )
+        self.assertContains(response, "Project")
+        self.assertContains(response, "Material")
+        self.assertNotContains(response, "<th>Supplier location</th>")
+
+    def test_stock_detail_history_has_date_and_action_filters(self):
+        response = self.client.get(
+            reverse("inventory:detail", args=[self.cement.reference]),
+            {"movement_type": StockMovement.Type.ADDITION, "date_preset": "today"},
+        )
+        self.assertContains(response, "Stock added")

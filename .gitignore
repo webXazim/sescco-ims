@@ -1,0 +1,17 @@
+.env
+.env.production
+.env.local
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+media/
+staticfiles/
+backups/
+.deploy-lock/
+.DS_Store

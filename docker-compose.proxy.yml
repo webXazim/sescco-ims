@@ -1,0 +1,18 @@
+# Optional override when an existing reverse-proxy container should connect directly.
+# Create the external network first, or use the network already used by that proxy:
+#   docker network create a2tdev_proxy
+# Start with:
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+
+services:
+  ims_gateway:
+    networks:
+      ims_edge:
+      ims_shared_proxy:
+        aliases:
+          - ims-gateway
+
+networks:
+  ims_shared_proxy:
+    external: true
+    name: ${IMS_PROXY_NETWORK:-a2tdev_proxy}

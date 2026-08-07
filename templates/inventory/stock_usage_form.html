@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
+<form method="post" enctype="multipart/form-data" novalidate data-stock-usage-form data-picker-url="{% url 'inventory:picker' %}">
+  {% csrf_token %}{{ form.idempotency_key }}
+  <div class="form-layout">
+    <section class="card form-card">
+      {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+      <div class="form-section"><h2 class="form-section-title">Project stock</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.project %}
+        <div class="field"><label class="field-label" for="stockPickerSearch">Search material or supplier</label><input class="input" id="stockPickerSearch" type="search" placeholder="Type material, supplier or phone…" autocomplete="off" data-stock-picker-search><div class="field-help">Up to 40 matching records from the selected project.</div></div>
+        <div class="field field-full">{% include "partials/form_field.html" with field=form.stock_item %}<div class="picker-state" id="stockPickerState" aria-live="polite"></div></div>
+        {% include "partials/form_field.html" with field=form.quantity %}
+        {% include "partials/form_field.html" with field=form.movement_date %}
+      </div></div>
+      <div class="form-section"><h2 class="form-section-title">Usage details</h2><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.purpose %}
+        {% include "partials/form_field.html" with field=form.recipient %}
+        {% include "partials/form_field.html" with field=form.invoice_reference %}
+        {% include "partials/form_field.html" with field=form.attachment %}
+        <div class="field field-full"><label class="field-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>{{ form.notes }}{% for error in form.notes.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
+      </div></div>
+      <div class="form-actions"><a class="btn" href="{% url 'inventory:list' %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>Record usage</button></div>
+    </section>
+    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Balance check</h2></div><div class="card-body"><div id="usageSelectedSummary">{% if selected_stock_item %}<a class="tag" href="{% url 'projects:detail' selected_stock_item.project.code %}">{{ selected_stock_item.project.code }}</a><h3 class="summary-heading">{{ selected_stock_item.material_name }}</h3><div class="summary-list"><div class="summary-row"><span class="summary-key">Supplier</span><span class="summary-value">{{ selected_stock_item.supplier_name }}</span></div><div class="summary-row"><span class="summary-key">Available</span><span class="summary-value">{{ selected_stock_item.quantity_display }}</span></div></div>{% else %}<p class="micro">Choose a project, search, then select the stock record to use.</p>{% endif %}</div><div class="balance-preview"><div class="balance-line"><span>Available</span><strong id="usageAvailablePreview">{% if selected_stock_item %}{{ selected_stock_item.current_quantity }}{% else %}—{% endif %}</strong></div><div class="balance-line"><span>Quantity used</span><strong id="usageQuantityPreview">0</strong></div><div class="balance-line total"><span>Expected balance</span><strong id="usageNewBalancePreview">—</strong></div></div><div class="alert alert-warning section-gap">The latest balance is locked and checked again on submission, so concurrent requests cannot create negative stock.</div></div></aside>
+  </div>
+</form>
+{% endblock %}

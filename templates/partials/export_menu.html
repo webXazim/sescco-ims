@@ -1,0 +1,9 @@
+<details class="export-menu">
+  <summary class="btn btn-ghost">Export {{ export_count }} result{{ export_count|pluralize }}</summary>
+  <div class="export-popover">
+    <div class="export-popover-title">Exact filtered results</div>
+    <p class="micro">Exports all matching rows, not only the current page.</p>
+    <a class="export-option" href="{{ xlsx_url }}{% if export_query %}?{{ export_query }}{% endif %}"><span>Excel workbook</span><small>Results + filter information</small></a>
+    <a class="export-option" href="{{ csv_url }}{% if export_query %}?{{ export_query }}{% endif %}"><span>CSV file</span><small>UTF-8 data for other systems</small></a>
+  </div>
+</details>

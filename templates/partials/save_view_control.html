@@ -1,0 +1,12 @@
+<details class="save-view-control">
+  <summary class="btn btn-sm">Save current view</summary>
+  <form class="save-view-popover" method="post" action="{% url 'explorer:saved_view_create' %}">
+    {% csrf_token %}
+    <input type="hidden" name="view_type" value="{{ saved_view_type }}">
+    <input type="hidden" name="source_query" value="{{ source_query }}">
+    <label class="field-label" for="id_saved_view_name">View name</label>
+    <input class="input" id="id_saved_view_name" name="name" maxlength="100" required placeholder="e.g. This month · Aramco">
+    <p class="micro">Saves filters, sorting and visible columns. Data remains live.</p>
+    <div class="head-actions"><a class="btn btn-ghost btn-sm" href="{% url 'explorer:saved_views' %}">Manage saved views</a><button class="btn btn-primary btn-sm" type="submit">Save view</button></div>
+  </form>
+</details>

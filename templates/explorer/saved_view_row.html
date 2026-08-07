@@ -1,0 +1,4 @@
+<div class="saved-view-row">
+  <a class="saved-view-main" href="{% url 'explorer:saved_view_open' saved.pk %}"><strong>{{ saved.name }}</strong><span class="saved-filters">{{ saved.query_params|length }} saved setting{{ saved.query_params|length|pluralize }} · updated {{ saved.updated_at|date:"d M Y, H:i" }}</span></a>
+  <details class="saved-view-actions"><summary class="btn btn-sm">Manage</summary><div class="saved-view-menu"><form method="post" action="{% url 'explorer:saved_view_rename' saved.pk %}">{% csrf_token %}<label class="field-label">Rename</label><input class="input" name="name" value="{{ saved.name }}" maxlength="100" required><button class="btn btn-primary btn-sm" type="submit">Save name</button></form><form method="post" action="{% url 'explorer:saved_view_delete' saved.pk %}" data-confirm="Delete this saved view?">{% csrf_token %}<button class="btn btn-danger btn-sm" type="submit">Delete view</button></form></div></details>
+</div>
