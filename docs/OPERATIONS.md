@@ -45,13 +45,12 @@ docker compose --env-file .env.production restart ims_web ims_gateway
 
 Static files are served by `ims_gateway` from the `ims_static_data` volume. If
 the page renders as unstyled HTML and browser requests below `/static/` return
-403, rebuild and recreate the web container so `collectstatic` applies the
-public static-file permissions:
+403, deploy the current release. Startup runs `collectstatic` and repairs the
+whole shared volume so directories retained from older releases are readable
+by the separate Nginx container:
 
 ```bash
-docker compose --env-file .env.production build ims_web
-docker compose --env-file .env.production up -d --force-recreate ims_web
-docker compose --env-file .env.production restart ims_gateway
+./scripts/deploy-production.sh
 curl -I https://ims.a2tdev.com/static/css/styles.css
 ```
 

@@ -28,6 +28,10 @@ if [ "${RUN_STARTUP_TASKS:-1}" = "1" ]; then
     python manage.py check --deploy --fail-level ERROR
     python manage.py migrate --noinput
     python manage.py collectstatic --noinput --clear
+    # The static volume is read by Nginx in a separate container with a
+    # different uid/gid. Repair permissions on both new files and any
+    # directories retained from an older deployment.
+    chmod -R u=rwX,go=rX /app/staticfiles
 fi
 
 exec "$@"
