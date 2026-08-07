@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}"><link rel="stylesheet" href="{% static 'admin/css/inventory_admin.css' %}">{% endblock %}
+{% block coltype %}colMS{% endblock %}
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <section class="admin-operations" aria-labelledby="operations-title">
+    <div class="admin-section-heading"><div><h2 id="operations-title">Daily operations</h2><p>Use these protected workflows for every stock balance change.</p></div></div>
+    <div class="admin-shortcuts">
+      <a href="{% url 'inventory:list' %}"><strong>Inventory</strong><span>Search, filter and open stock records</span></a>
+      <a href="{% url 'core:add_stock' %}"><strong>Add stock</strong><span>Receive stock with movement history</span></a>
+      <a href="{% url 'core:remove_stock' %}"><strong>Use stock</strong><span>Issue stock and validate the balance</span></a>
+      <a href="{% url 'core:activity' %}"><strong>Activity</strong><span>Review additions, usage and corrections</span></a>
+      <a href="{% url 'inventory:low_stock' %}"><strong>Low stock</strong><span>Review shortages and reorder levels</span></a>
+      <a href="{% url 'data_exchange:import_list' %}"><strong>Excel imports</strong><span>Preview and confirm controlled imports</span></a>
+    </div>
+  </section>
+  <div class="admin-section-heading admin-model-heading"><div><h2>Configuration and audit</h2><p>Manage accounts and master data, or inspect protected system records.</p></div></div>
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related">
+  <div class="module" id="recent-actions-module">
+    <h2>{% translate 'Recent actions' %}</h2>
+    <h3>{% translate 'My actions' %}</h3>
+    {% load log %}{% get_admin_log 10 as admin_log for_user user %}
+    {% if not admin_log %}<p>{% translate 'None available' %}</p>{% else %}
+    <ul class="actionlist">
+      {% for entry in admin_log %}
+      <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+        {% if entry.is_deletion or not entry.get_admin_url %}{{ entry.object_repr }}{% else %}<a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>{% endif %}<br>
+        {% if entry.content_type %}<span class="mini quiet">{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

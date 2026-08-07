@@ -1,0 +1,73 @@
+.admin-operations {
+  margin-bottom: 28px;
+}
+
+.admin-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.admin-section-heading h2 {
+  margin: 0;
+  color: var(--body-fg);
+  font-size: 18px;
+}
+
+.admin-section-heading p {
+  margin: 4px 0 0;
+  color: var(--body-quiet-color);
+}
+
+.admin-model-heading {
+  margin-top: 6px;
+}
+
+.admin-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-shortcuts a {
+  display: grid;
+  gap: 5px;
+  min-height: 68px;
+  padding: 14px;
+  border: 1px solid var(--hairline-color);
+  border-radius: 8px;
+  background: var(--body-bg);
+  color: var(--body-fg);
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+}
+
+.admin-shortcuts a:hover {
+  border-color: var(--link-fg);
+  background: var(--darkened-bg);
+}
+
+.admin-shortcuts strong {
+  color: var(--link-fg);
+  font-size: 14px;
+}
+
+.admin-shortcuts span {
+  color: var(--body-quiet-color);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .admin-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-shortcuts {
+    grid-template-columns: 1fr;
+  }
+}
