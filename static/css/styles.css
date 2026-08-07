@@ -60,6 +60,9 @@ svg { display: block; }
 .top-search input { width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 13px 0 38px; background: #f8f9fa; outline: none; transition: .15s; }
 .top-search input:focus { background: #fff; border-color: #aeb6bf; box-shadow: 0 0 0 3px rgba(30,79,107,.08); }
 .top-search svg { position: absolute; left: 13px; top: 10px; color: #7e8790; }
+.topbar-context { display: grid; gap: 2px; }
+.topbar-context strong { font-size: 12px; }
+.topbar-context span { color: var(--muted); font-size: 10px; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .content { padding: 24px; max-width: 1580px; margin: 0 auto; }
 
@@ -148,6 +151,12 @@ svg { display: block; }
 .search-field svg { position: absolute; top: 10px; left: 12px; color: #7d858e; }
 .quick-filters { display: flex; gap: 7px; flex-wrap: wrap; }
 .filter-live-status { min-width: 54px; align-self: center; color: var(--muted); font-size: 10px; }
+.quick-filters #id_project { max-width: 190px; }
+.quick-filters #id_sort { max-width: 210px; }
+.quick-date-range { min-height: 58px; padding: 9px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: #fafbfb; }
+.quick-date-range > label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.quick-date-range .input { width: 150px; height: 36px; }
+.quick-date-range > .micro { margin-left: auto; }
 .filter-select { height: 38px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; padding: 0 30px 0 11px; color: #33383d; font-size: 11px; font-weight: 560; outline: 0; }
 .view-tabs { display: flex; gap: 3px; background: #eff1f3; padding: 3px; border-radius: 8px; }
 .view-tab { height: 32px; padding: 0 11px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 11px; color: var(--muted); font-weight: 620; }
@@ -428,6 +437,14 @@ input[type="file"].input { height: auto; min-height: 40px; padding: 8px 10px; }
   .explorer-toolbar .input,
   .explorer-toolbar .select { width: 100%; }
   .quick-filters > * { min-width: 0; }
+  .quick-filters #id_project,
+  .quick-filters #id_sort { max-width: none; }
+  .quick-date-range { align-items: stretch; }
+  .quick-date-range > .field-label,
+  .quick-date-range > .micro { width: 100%; margin-left: 0; }
+  .quick-date-range > label { flex: 1; display: grid; }
+  .quick-date-range .input { width: 100%; }
+  .topbar-context span { display: none; }
 }
 
 /* Upgrade 4: complete storekeeper workspace */

@@ -420,21 +420,21 @@ class StockItemFilterForm(DateRangeFilterForm):
         ("updated_at", "Last updated date"),
     )
     SORT_CHOICES = (
-        ("project", "Project"),
-        ("material", "Material A–Z"),
-        ("-material", "Material Z–A"),
-        ("supplier", "Supplier A–Z"),
-        ("-supplier", "Supplier Z–A"),
-        ("quantity", "Quantity: low first"),
-        ("-quantity", "Quantity: high first"),
-        ("minimum", "Minimum: low first"),
-        ("-minimum", "Minimum: high first"),
-        ("price", "Price: low first"),
-        ("-price", "Price: high first"),
-        ("latest-addition", "Latest addition: newest"),
-        ("oldest-addition", "Latest addition: oldest"),
-        ("updated", "Recently updated"),
-        ("created", "Recently created"),
+        ("project", "Sort by project"),
+        ("material", "Sort by material A–Z"),
+        ("-material", "Sort by material Z–A"),
+        ("supplier", "Sort by supplier A–Z"),
+        ("-supplier", "Sort by supplier Z–A"),
+        ("quantity", "Sort by quantity: low first"),
+        ("-quantity", "Sort by quantity: high first"),
+        ("minimum", "Sort by minimum: low first"),
+        ("-minimum", "Sort by minimum: high first"),
+        ("price", "Sort by price: low first"),
+        ("-price", "Sort by price: high first"),
+        ("latest-addition", "Sort by latest addition: newest"),
+        ("oldest-addition", "Sort by latest addition: oldest"),
+        ("updated", "Sort by recently updated"),
+        ("created", "Sort by recently created"),
     )
     COLUMN_CHOICES = (
         ("project", "Project"),
@@ -454,12 +454,12 @@ class StockItemFilterForm(DateRangeFilterForm):
     )
 
     q = forms.CharField(required=False, label="Search all fields")
-    project = forms.ModelMultipleChoiceField(
+    project = forms.ModelChoiceField(
         queryset=Project.objects.none(),
         to_field_name="code",
         required=False,
-        widget=forms.CheckboxSelectMultiple,
-        label="Projects",
+        empty_label="All projects",
+        label="Project",
     )
     project_status = forms.ChoiceField(
         required=False,

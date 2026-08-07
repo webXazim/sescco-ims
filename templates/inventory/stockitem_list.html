@@ -9,6 +9,7 @@
     <div class="explorer-toolbar">
       <div class="search-field"><span class="search-glyph">⌕</span>{{ filter_form.q }}</div>
       <div class="quick-filters">
+        {{ filter_form.project }}
         {{ filter_form.stock_status }}
         {{ filter_form.date_preset }}
         {{ filter_form.sort }}
@@ -16,18 +17,19 @@
         <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
       </div>
     </div>
+    <div class="quick-date-range{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range>
+      <span class="field-label">Date range</span>
+      <label><span>From</span>{{ filter_form.date_from }}</label>
+      <label><span>To</span>{{ filter_form.date_to }}</label>
+      <span class="micro">Filters by latest stock addition date.</span>
+      {{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}
+    </div>
     {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
     <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
       <div class="advanced-grid">
-        <div class="field"><label class="field-label">Projects</label><div class="check-list compact">{{ filter_form.project }}</div>{{ filter_form.project.errors }}</div>
         <div class="field"><label class="field-label">Units</label><div class="check-list compact">{{ filter_form.unit }}</div>{{ filter_form.unit.errors }}</div>
         <div class="filter-stack">
-          <div class="field"><label class="field-label">Project status</label>{{ filter_form.project_status }}{{ filter_form.project_status.errors }}</div>
           <div class="field"><label class="field-label">Record status</label>{{ filter_form.status }}{{ filter_form.status.errors }}</div>
-        </div>
-        <div class="filter-stack">
-          <div class="field"><label class="field-label">Date field</label>{{ filter_form.date_field }}{{ filter_form.date_field.errors }}</div>
-          <div class="range-inputs"><div class="field"><label class="field-label">From</label>{{ filter_form.date_from }}{{ filter_form.date_from.errors }}</div><span>to</span><div class="field"><label class="field-label">To</label>{{ filter_form.date_to }}{{ filter_form.date_to.errors }}</div></div>
         </div>
         <div class="field"><label class="field-label">Quantity range</label><div class="range-inputs">{{ filter_form.quantity_min }}<span>to</span>{{ filter_form.quantity_max }}</div>{{ filter_form.quantity_min.errors }}{{ filter_form.quantity_max.errors }}</div>
         <div class="field"><label class="field-label">Minimum stock range</label><div class="range-inputs">{{ filter_form.minimum_min }}<span>to</span>{{ filter_form.minimum_max }}</div>{{ filter_form.minimum_min.errors }}{{ filter_form.minimum_max.errors }}</div>

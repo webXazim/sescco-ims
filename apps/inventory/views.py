@@ -115,8 +115,8 @@ def _stock_filter_chips(request, data: dict) -> list[dict[str, str]]:
     if data.get("q"):
         chips.append(_chip(f'Search: {data["q"]}', request, "q"))
     if data.get("project"):
-        names = ", ".join(project.code for project in data["project"])
-        chips.append(_chip(f"Project: {names}", request, "project"))
+        project = data["project"]
+        chips.append(_chip(f"Project: {project.code}", request, "project"))
     if data.get("project_status"):
         status_label = dict(Project.Status.choices)[data["project_status"]]
         chips.append(
@@ -346,6 +346,7 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
             visible_columns=self.get_visible_columns(),
             current_sort=data.get("sort") or "project",
             advanced_open=not self.filter_form.is_valid(),
+            custom_date_open=data.get("date_preset") == "custom",
             clear_url=reverse("inventory:list"),
             saved_view_form=SavedViewCreateForm(),
             saved_view_type=self.view_type,

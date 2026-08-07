@@ -80,9 +80,25 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, "data-live-filter-search")
         self.assertContains(response, "data-live-filter-form")
         self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, "All projects")
+        self.assertContains(response, "Sort by project")
         self.assertContains(response, 'name="quantity_min"')
         self.assertNotContains(response, 'name="material"')
+        self.assertNotContains(response, 'name="project_status"')
         self.assertNotContains(response, 'name="supplier_phone"')
+
+    def test_custom_dates_render_beside_quick_filters(self):
+        response = self.client.get(
+            reverse("inventory:list"),
+            {
+                "date_preset": "custom",
+                "date_from": self.today.isoformat(),
+                "date_to": self.today.isoformat(),
+            },
+        )
+        self.assertContains(response, 'class="quick-date-range"')
+        self.assertContains(response, "Filters by latest stock addition date.")
+        self.assertContains(response, 'class="advanced-panel is-hidden"')
 
     def test_date_presets_filter_activity(self):
         response = self.client.get(reverse("core:activity"), {"date_preset": "today"})

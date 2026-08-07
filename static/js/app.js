@@ -39,7 +39,7 @@
     from?.addEventListener("change", markCustom);
     to?.addEventListener("change", markCustom);
     preset?.addEventListener("change", () => {
-      if (preset.value && preset.value !== "custom") {
+      if (preset.value !== "custom") {
         if (from) from.value = "";
         if (to) to.value = "";
       }
@@ -107,6 +107,12 @@
     };
 
     const search = liveFilterForm.querySelector("[data-live-filter-search]");
+    const datePreset = liveFilterForm.querySelector('[name="date_preset"]');
+    const dateFrom = liveFilterForm.querySelector('[name="date_from"]');
+    const dateTo = liveFilterForm.querySelector('[name="date_to"]');
+    const dateRange = liveFilterForm.querySelector("[data-quick-date-range]");
+    const showDateRange = (show) => dateRange?.classList.toggle("is-hidden", !show);
+
     search?.addEventListener("input", () => {
       window.clearTimeout(liveFilterTimer);
       liveFilterRequest?.abort();
@@ -118,12 +124,22 @@
     liveFilterForm.querySelectorAll(".quick-filters select").forEach((select) => {
       select.addEventListener("change", () => {
         if (select.name === "date_preset" && select.value === "custom") {
-          const button = liveFilterForm.querySelector("[data-toggle-filter-panel]");
-          const panel = liveFilterForm.querySelector("[data-filter-panel]");
-          if (button && panel) setFilterPanelState(button, panel, true);
-          liveFilterForm.querySelector('[name="date_from"]')?.focus();
+          showDateRange(true);
+          const status = liveFilterForm.querySelector("[data-filter-live-status]");
+          if (status) status.textContent = "Choose dates";
+          dateFrom?.focus();
           return;
         }
+        if (select.name === "date_preset") showDateRange(false);
+        refreshFilterResults();
+      });
+    });
+
+    [dateFrom, dateTo].forEach((input) => {
+      input?.addEventListener("change", () => {
+        const hasDate = Boolean(dateFrom?.value || dateTo?.value);
+        if (datePreset) datePreset.value = hasDate ? "custom" : "";
+        showDateRange(hasDate);
         refreshFilterResults();
       });
     });

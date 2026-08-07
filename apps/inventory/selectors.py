@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from django.db.models import F, Q, QuerySet
+from django.db.models import F, Model, Q, QuerySet
 
 from apps.explorer.filtering import resolve_date_range
 
@@ -126,7 +126,10 @@ def apply_movement_search(
     return queryset
 
 
-def _ids(values: Iterable[object] | None) -> list[int]:
+def _ids(values: Iterable[Model] | Model | None) -> list[int]:
+    item_id = getattr(values, "pk", None)
+    if item_id is not None:
+        return [item_id]
     return [value.pk for value in values or []]
 
 
