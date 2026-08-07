@@ -411,6 +411,7 @@ label.field-label { color: #4d555e; font-size: 10px; font-weight: 680; }
 /* Project, stock-record and transaction workspace */
 .search-glyph { position: absolute; left: 12px; top: 8px; z-index: 1; color: #7d858e; font-size: 18px; }
 .narrow-form { width: min(720px, 100%); }
+.management-search { margin-bottom: 14px; }
 .field input[type="checkbox"] { width: 17px; height: 17px; accent-color: #17191c; }
 .field:has(input[type="checkbox"]) { align-content: start; }
 .errorlist { margin: 0; padding: 0; list-style: none; color: var(--danger); font-size: 10px; }

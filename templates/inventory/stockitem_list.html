@@ -5,7 +5,7 @@
   <div class="head-actions">{% include "partials/save_view_control.html" %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a></div>
 </div>
 <section class="card explorer">
-  <form method="get" data-filter-form data-live-filter-form data-default-columns="{{ default_columns|join:',' }}">
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="project" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
     <div class="explorer-toolbar">
       <div class="search-field"><span class="search-glyph">⌕</span>{{ filter_form.q }}</div>
       <div class="quick-filters">

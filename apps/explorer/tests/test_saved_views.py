@@ -89,3 +89,21 @@ class SavedViewTests(TestCase):
         self.assertEqual(saved.name, "New name")
         self.client.post(reverse("explorer:saved_view_delete", args=[saved.pk]))
         self.assertFalse(SavedView.objects.filter(pk=saved.pk).exists())
+
+    def test_saved_view_management_search_is_live(self):
+        SavedView.objects.create(
+            owner=self.user,
+            name="Daily additions",
+            view_type=SavedView.ViewType.ACTIVITY,
+            query_params={"date_preset": "today"},
+        )
+        SavedView.objects.create(
+            owner=self.user,
+            name="Low cement",
+            view_type=SavedView.ViewType.LOW_STOCK,
+            query_params={"q": "cement"},
+        )
+        response = self.client.get(reverse("explorer:saved_views"), {"q": "daily"})
+        self.assertContains(response, "data-live-filter-search")
+        self.assertContains(response, "Daily additions")
+        self.assertNotContains(response, "Low cement")

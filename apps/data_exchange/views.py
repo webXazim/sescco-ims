@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
@@ -110,11 +111,22 @@ class ImportJobListView(InventoryAdminRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return ImportJob.objects.select_related(
+        queryset = ImportJob.objects.select_related(
             "project",
             "default_unit",
             "created_by",
         )
+        query = self.request.GET.get("q", "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(original_filename__icontains=query)
+                | Q(project__code__icontains=query)
+                | Q(project__name__icontains=query)
+                | Q(created_by__username__icontains=query)
+                | Q(status__icontains=query)
+                | Q(import_type__icontains=query)
+            )
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -124,6 +136,7 @@ class ImportJobListView(InventoryAdminRequiredMixin, ListView):
             page_subtitle=(
                 "Preview every workbook row before creating records or opening stock."
             ),
+            search_query=self.request.GET.get("q", ""),
         )
         return context
 

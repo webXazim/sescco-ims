@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -34,6 +35,11 @@ class SavedViewListView(InventoryWorkspaceMixin, View):
 
     def get(self, request):
         views = SavedView.objects.filter(owner=request.user)
+        query = request.GET.get("q", "").strip()
+        if query:
+            views = views.filter(
+                Q(name__icontains=query) | Q(view_type__icontains=query)
+            )
         return render(
             request,
             self.template_name,
@@ -44,6 +50,7 @@ class SavedViewListView(InventoryWorkspaceMixin, View):
                 "inventory_views": views.filter(view_type=SavedView.ViewType.INVENTORY),
                 "activity_views": views.filter(view_type=SavedView.ViewType.ACTIVITY),
                 "low_stock_views": views.filter(view_type=SavedView.ViewType.LOW_STOCK),
+                "search_query": query,
             },
         )
 

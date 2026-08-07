@@ -101,6 +101,25 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, "data-close-date-range")
         self.assertContains(response, 'class="advanced-panel is-hidden"')
 
+    def test_activity_uses_compact_live_search_with_closed_filters(self):
+        response = self.client.get(reverse("core:activity"), {"q": "cement"})
+        self.assertContains(response, "data-live-filter-search")
+        self.assertContains(response, "data-live-filter-form")
+        self.assertContains(response, "data-filter-results")
+        self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, "data-quick-date-range")
+
+    def test_management_unit_and_supplier_searches_are_live(self):
+        units = self.client.get(reverse("inventory:units"), {"q": "bag"})
+        self.assertContains(units, "data-live-filter-search")
+        self.assertContains(units, '<td class="cell-main">Bag</td>')
+        self.assertNotContains(units, '<td class="cell-main">Box</td>')
+
+        suppliers = self.client.get(reverse("inventory:suppliers"), {"q": "573686575"})
+        self.assertContains(suppliers, "data-live-filter-search")
+        self.assertContains(suppliers, "Gulf Cement")
+        self.assertNotContains(suppliers, "Metal Supplier")
+
     def test_date_presets_filter_activity(self):
         response = self.client.get(reverse("core:activity"), {"date_preset": "today"})
         self.assertContains(response, "Portland Cement")

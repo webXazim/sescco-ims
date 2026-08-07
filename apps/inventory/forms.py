@@ -645,6 +645,8 @@ class MovementFilterForm(DateRangeFilterForm):
                     "Search project, material, supplier, reference, purpose, or user…"
                 ),
                 "autocomplete": "off",
+                "aria-label": "Search stock activity",
+                "data-live-filter-search": "",
             }
         )
         self.fields["created_by"].queryset = get_user_model().objects.filter(

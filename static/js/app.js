@@ -58,9 +58,12 @@
         if (normalized) params.append(key, normalized);
       });
       params.delete("page");
-      if (params.get("status") === "active") params.delete("status");
-      if (params.get("sort") === "project") params.delete("sort");
-      if (params.get("date_field") === "latest_addition_date") params.delete("date_field");
+      ["status", "sort", "date_field"].forEach((name) => {
+        const key = `default${name.replace(/(^|_)([a-z])/g, (_, __, letter) => letter.toUpperCase())}`;
+        if (liveFilterForm.dataset[key] && params.get(name) === liveFilterForm.dataset[key]) {
+          params.delete(name);
+        }
+      });
 
       const defaults = (liveFilterForm.dataset.defaultColumns || "").split(",").filter(Boolean);
       const columns = params.getAll("columns");

@@ -734,11 +734,6 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         data = self.filter_data
-        advanced_keys = {
-            "project_status", "material", "supplier", "supplier_phone", "quantity_min",
-            "quantity_max", "price_min", "price_max", "reference", "purpose",
-            "recipient", "reason", "created_by", "date_from", "date_to", "columns",
-        }
         context.update(
             page_key="activity",
             page_title="Stock activity",
@@ -750,15 +745,14 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
             filter_chips=_movement_filter_chips(self.request, data) if data else [],
             visible_columns=self.get_visible_columns(),
             current_sort=data.get("sort") or "-date",
-            advanced_open=(
-                bool(advanced_keys.intersection(self.request.GET.keys()))
-                or not self.filter_form.is_valid()
-            ),
+            advanced_open=not self.filter_form.is_valid(),
             clear_url=reverse("core:activity"),
             saved_view_form=SavedViewCreateForm(),
             saved_view_type=self.view_type,
             source_query=_source_query(self.request),
             sort_choices=MovementFilterForm.SORT_CHOICES,
+            default_columns=DEFAULT_MOVEMENT_COLUMNS,
+            custom_date_open=data.get("date_preset") == "custom",
         )
         return context
 
@@ -920,12 +914,17 @@ class UnitListCreateView(InventoryWorkspaceMixin, View):
         return render(request, self.template_name, self._context(form), status=400)
 
     def _context(self, form):
+        query = self.request.GET.get("q", "").strip()
+        units = Unit.objects.annotate(stock_count=Count("stock_items"))
+        if query:
+            units = units.filter(Q(name__icontains=query) | Q(symbol__icontains=query))
         return {
             "page_key": "units",
             "page_title": "Units",
             "page_subtitle": "Manage the labels used for stock quantities.",
             "form": form,
-            "units": Unit.objects.annotate(stock_count=Count("stock_items")).order_by("name"),
+            "units": units.order_by("name"),
+            "search_query": query,
         }
 
 
@@ -966,12 +965,23 @@ class SupplierListCreateView(InventoryWorkspaceMixin, View):
         return render(request, self.template_name, self._context(form), status=400)
 
     def _context(self, form):
+        query = self.request.GET.get("q", "").strip()
+        suppliers = Supplier.objects.all()
+        if query:
+            suppliers = suppliers.filter(
+                Q(name__icontains=query)
+                | Q(phone__icontains=query)
+                | Q(normalized_phone__icontains=query)
+                | Q(location__icontains=query)
+                | Q(notes__icontains=query)
+            )
         return {
             "page_key": "suppliers",
             "page_title": "Suppliers",
             "page_subtitle": "Manage reusable supplier details for faster stock entry.",
             "form": form,
-            "suppliers": Supplier.objects.order_by("name", "phone"),
+            "suppliers": suppliers.order_by("name", "phone"),
+            "search_query": query,
         }
 
 

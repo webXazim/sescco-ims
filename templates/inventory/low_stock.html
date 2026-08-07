@@ -5,10 +5,10 @@
   <div class="head-actions">{% include "partials/save_view_control.html" %}{% url 'data_exchange:low_stock_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:low_stock_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}<a class="btn" href="{% url 'inventory:list' %}">All inventory</a></div>
 </div>
 <section class="card explorer">
-  <form method="get" data-filter-form>
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="quantity" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
     <div class="explorer-toolbar">
       <div class="search-field"><span class="search-glyph">⌕</span>{{ filter_form.q }}</div>
-      <div class="quick-filters">{{ filter_form.stock_status }}{{ filter_form.date_preset }}{{ filter_form.sort }}<button class="btn btn-sm" type="submit">Apply</button><button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel>More filters</button></div>
+      <div class="quick-filters">{{ filter_form.stock_status }}<div class="date-filter-control" data-date-filter-control>{{ filter_form.date_preset }}<div class="date-range-popover{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range role="dialog" aria-label="Custom date range"><div class="date-range-head"><div><strong>Custom date range</strong><span>Selected inventory date field</span></div><button type="button" class="popover-close" data-close-date-range aria-label="Close date range">×</button></div><div class="date-range-fields"><label><span>From</span>{{ filter_form.date_from }}</label><label><span>To</span>{{ filter_form.date_to }}</label></div>{{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}<div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div></div></div>{{ filter_form.sort }}<button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}">More filters</button><span class="filter-live-status" data-filter-live-status aria-live="polite"></span></div>
     </div>
     {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
     <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
@@ -23,13 +23,12 @@
         <div class="field"><label class="field-label">Configured minimum from</label>{{ filter_form.minimum_min }}</div>
         <div class="field"><label class="field-label">Configured minimum to</label>{{ filter_form.minimum_max }}</div>
         <div class="field"><label class="field-label">Date field</label>{{ filter_form.date_field }}</div>
-        <div class="field"><label class="field-label">From date</label>{{ filter_form.date_from }}{{ filter_form.date_from.errors }}</div>
-        <div class="field"><label class="field-label">To date</label>{{ filter_form.date_to }}{{ filter_form.date_to.errors }}</div>
         <div class="field field-span-2"><label class="field-label">Visible columns</label><div class="check-list columns">{{ filter_form.columns }}</div></div>
       </div>
       <div class="advanced-footer"><p class="micro">This page always stays limited to active low-stock and out-of-stock records.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
     </div>
   </form>
+  <div data-filter-results aria-live="polite">
   {% include "partials/filter_chips.html" %}
   <div class="table-wrap"><table><thead><tr>
     {% if "project" in visible_columns %}<th>Project</th>{% endif %}
@@ -63,5 +62,6 @@
     </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">✓</div><h2>No matching low-stock records</h2><p>All active stock may be above its minimum, or the current filters have no matches.</p></div></td></tr>{% endfor %}
   </tbody></table></div>
   {% include "partials/pagination.html" %}
+  </div>
 </section>
 {% endblock %}

@@ -5,18 +5,19 @@
   <div class="head-actions"><a class="btn btn-primary" href="{% url 'projects:create' %}">＋ Add project</a></div>
 </div>
 <section class="card">
-  <form class="explorer-toolbar" method="get">
-    <div class="search-field"><span class="search-glyph">⌕</span><input name="q" value="{{ search_query }}" placeholder="Search project code, name, client or location…"></div>
+  <form class="explorer-toolbar" method="get" data-live-filter-form>
+    <div class="search-field"><span class="search-glyph">⌕</span><input name="q" value="{{ search_query }}" placeholder="Search project code, name, client or location…" autocomplete="off" data-live-filter-search></div>
     <div class="quick-filters">
       <select class="filter-select" name="status">
         <option value="">All status</option>
         {% for value,label in status_choices %}<option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
-      <button class="btn btn-sm" type="submit">Apply</button>
-      {% if search_query or current_status %}<a class="btn btn-ghost btn-sm" href="{% url 'projects:list' %}">Reset</a>{% endif %}
+      <a class="btn btn-ghost btn-sm" href="{% url 'projects:list' %}">Reset</a>
+      <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
     </div>
   </form>
 </section>
+<div data-filter-results aria-live="polite">
 {% if projects %}
 <div class="project-grid section-gap">
   {% for project in projects %}
@@ -36,4 +37,5 @@
 {% else %}
 <section class="card section-gap"><div class="empty-state"><div class="empty-icon">◇</div><h2>No projects found</h2><p>Create the first contracting project or clear the current filters.</p><a class="btn btn-primary" href="{% url 'projects:create' %}">Add project</a></div></section>
 {% endif %}
+</div>
 {% endblock %}

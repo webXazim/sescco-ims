@@ -88,6 +88,8 @@ class ProjectWorkspaceTests(TestCase):
         )
         self.assertContains(response, "DONE-01")
         self.assertNotContains(response, "ACTIVE-01")
+        self.assertContains(response, "data-live-filter-search")
+        self.assertContains(response, "data-filter-results")
 
 
     def test_project_detail_defaults_to_active_records_and_can_show_archived(self):
