@@ -11,18 +11,22 @@
       <div class="quick-filters">
         {{ filter_form.project }}
         {{ filter_form.stock_status }}
-        {{ filter_form.date_preset }}
+        <div class="date-filter-control" data-date-filter-control>
+          {{ filter_form.date_preset }}
+          <div class="date-range-popover{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range role="dialog" aria-label="Custom date range">
+            <div class="date-range-head"><div><strong>Custom date range</strong><span>Latest stock addition date</span></div><button type="button" class="popover-close" data-close-date-range aria-label="Close date range">×</button></div>
+            <div class="date-range-fields">
+              <label><span>From</span>{{ filter_form.date_from }}</label>
+              <label><span>To</span>{{ filter_form.date_to }}</label>
+            </div>
+            {{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}
+            <div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div>
+          </div>
+        </div>
         {{ filter_form.sort }}
         <button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}">More filters</button>
         <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
       </div>
-    </div>
-    <div class="quick-date-range{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range>
-      <span class="field-label">Date range</span>
-      <label><span>From</span>{{ filter_form.date_from }}</label>
-      <label><span>To</span>{{ filter_form.date_to }}</label>
-      <span class="micro">Filters by latest stock addition date.</span>
-      {{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}
     </div>
     {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
     <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>

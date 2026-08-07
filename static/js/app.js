@@ -144,6 +144,40 @@
       });
     });
 
+    const closeDateRange = () => {
+      showDateRange(false);
+      if (datePreset?.value === "custom" && !dateFrom?.value && !dateTo?.value) {
+        datePreset.value = "";
+        refreshFilterResults();
+      }
+    };
+
+    liveFilterForm.querySelectorAll("[data-close-date-range]").forEach((button) => {
+      button.addEventListener("click", closeDateRange);
+    });
+
+    liveFilterForm.querySelector("[data-clear-date-range]")?.addEventListener("click", () => {
+      if (dateFrom) dateFrom.value = "";
+      if (dateTo) dateTo.value = "";
+      if (datePreset) datePreset.value = "";
+      showDateRange(false);
+      refreshFilterResults();
+    });
+
+    document.addEventListener("click", (event) => {
+      const control = liveFilterForm.querySelector("[data-date-filter-control]");
+      if (dateRange && !dateRange.classList.contains("is-hidden") && !control?.contains(event.target)) {
+        closeDateRange();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && dateRange && !dateRange.classList.contains("is-hidden")) {
+        closeDateRange();
+        datePreset?.focus();
+      }
+    });
+
     liveFilterForm.addEventListener("submit", (event) => {
       event.preventDefault();
       window.location.assign(cleanFilterUrl());

@@ -96,8 +96,9 @@ class AdvancedExplorerTests(TestCase):
                 "date_to": self.today.isoformat(),
             },
         )
-        self.assertContains(response, 'class="quick-date-range"')
-        self.assertContains(response, "Filters by latest stock addition date.")
+        self.assertContains(response, 'class="date-range-popover"')
+        self.assertContains(response, "Latest stock addition date")
+        self.assertContains(response, "data-close-date-range")
         self.assertContains(response, 'class="advanced-panel is-hidden"')
 
     def test_date_presets_filter_activity(self):
