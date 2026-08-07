@@ -19,4 +19,12 @@
     </div>{% if import_kind == 'legacy' %}<div class="alert alert-warning section-gap">The existing workbook has no quantity column. This import creates or updates zero-balance stock records and legacy latest-price/date metadata only.</div>{% else %}<div class="alert alert-warning section-gap">Opening stock creates immutable opening movements. Existing records with movement history are rejected.</div>{% endif %}</div></aside>
   </div>
 </form>
+{% if import_kind == 'opening' %}
+<section class="card import-format-guide section-gap">
+  <div class="card-head"><div><h2 class="card-title">Accepted opening-stock workbook format</h2><div class="card-meta">Use the exact headers below in the Opening Stock sheet. Header rows are detected within the first 30 rows.</div></div><a class="btn btn-sm" href="{% url 'data_exchange:opening_template' %}">Download ready template</a></div>
+  <div class="import-format-summary"><div><strong>XLSX or XLSM</strong><span>Maximum file size: 20 MB</span></div><div><strong>Opening Stock</strong><span>Preferred worksheet name</span></div><div><strong>Preview first</strong><span>No data is saved before confirmation</span></div></div>
+  <div class="table-wrap"><table class="format-table"><thead><tr><th>Column</th><th>Requirement</th><th>Accepted format</th><th>Example</th></tr></thead><tbody>{% for column in opening_columns %}<tr><td class="cell-main">{{ column.name }}</td><td><span class="status {% if column.required %}status-low{% else %}status-neutral{% endif %}">{% if column.required %}Required{% else %}Optional{% endif %}</span></td><td>{{ column.format }}</td><td><code>{{ column.example }}</code></td></tr>{% endfor %}</tbody></table></div>
+  <div class="import-rule-list">{% for rule in opening_rules %}<div><span aria-hidden="true">✓</span><span>{{ rule }}</span></div>{% endfor %}</div>
+</section>
+{% endif %}
 {% endblock %}

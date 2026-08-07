@@ -34,6 +34,7 @@ from apps.inventory.selectors import (
 from apps.projects.models import Project
 
 from ..models import ExportAudit
+from ..opening_schema import OPENING_IMPORT_COLUMNS, OPENING_IMPORT_RULES
 
 
 DEFAULT_STOCK_COLUMNS = (
@@ -611,31 +612,33 @@ def opening_stock_template_response(*, user) -> HttpResponse:
     instructions = workbook.active
     instructions.title = "Instructions"
     instructions.append(["Opening stock import template"])
-    instructions.append(["1", "Use one row for each project/material/supplier/phone identity."])
-    instructions.append(["2", "Project Code and Unit must match the dropdown values."])
-    instructions.append(["3", "Opening Quantity must be greater than zero."])
-    instructions.append(["4", "Opening Date cannot be in the future."])
-    instructions.append(["5", "Do not combine the same identity in multiple rows."])
+    for index, rule in enumerate(OPENING_IMPORT_RULES, start=1):
+        instructions.append([str(index), rule])
+    instructions.append([])
+    instructions.append(["Accepted columns", "Required", "Format", "Example"])
+    for column in OPENING_IMPORT_COLUMNS:
+        instructions.append(
+            [
+                column["name"],
+                "Required" if column["required"] else "Optional",
+                column["format"],
+                column["example"],
+            ]
+        )
     instructions.column_dimensions["A"].width = 8
-    instructions.column_dimensions["B"].width = 88
+    instructions.column_dimensions["B"].width = 22
+    instructions.column_dimensions["C"].width = 36
+    instructions.column_dimensions["D"].width = 28
     instructions["A1"].font = Font(size=16, bold=True)
+    for cell in instructions[8]:
+        cell.fill = PatternFill("solid", fgColor="172033")
+        cell.font = Font(color="FFFFFF", bold=True)
+    for row in instructions.iter_rows(min_row=9, max_row=8 + len(OPENING_IMPORT_COLUMNS)):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
 
     sheet = workbook.create_sheet("Opening Stock")
-    headers = [
-        "Project Code",
-        "Material Name",
-        "Description",
-        "Supplier Name",
-        "Supplier Phone",
-        "Supplier Location",
-        "Unit",
-        "Opening Quantity",
-        "Unit Price",
-        "Opening Date",
-        "Minimum Quantity",
-        "Reference",
-        "Notes",
-    ]
+    headers = [column["name"] for column in OPENING_IMPORT_COLUMNS]
     sheet.append(headers)
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = "A1:M1000"
@@ -647,10 +650,13 @@ def opening_stock_template_response(*, user) -> HttpResponse:
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[_excel_column(index)].width = width
     for row in range(2, 1001):
+        sheet.cell(row=row, column=1).number_format = "@"
+        sheet.cell(row=row, column=5).number_format = "@"
         sheet.cell(row=row, column=8).number_format = "0.000"
         sheet.cell(row=row, column=9).number_format = "0.00"
         sheet.cell(row=row, column=10).number_format = "yyyy-mm-dd"
         sheet.cell(row=row, column=11).number_format = "0.000"
+        sheet.cell(row=row, column=12).number_format = "@"
     sheet.conditional_formatting.add(
         "H2:H1000",
         FormulaRule(formula=["H2<=0"], fill=PatternFill("solid", fgColor="FEE2E2")),

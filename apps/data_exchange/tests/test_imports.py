@@ -308,7 +308,20 @@ class ImportWorkflowTests(TestCase):
         self.assertEqual(len(validations), 2)
         self.assertEqual(generated["Lists"]["A2"].value, self.project.code)
         self.assertEqual(generated["Lists"].sheet_state, "hidden")
+        self.assertEqual(generated["Instructions"]["A8"].value, "Accepted columns")
+        self.assertEqual(generated["Instructions"]["A9"].value, "Project Code")
+        self.assertEqual(generated["Opening Stock"]["E2"].number_format, "@")
+        self.assertEqual(generated["Opening Stock"]["J2"].number_format, "yyyy-mm-dd")
         generated.close()
+
+    def test_opening_upload_page_explains_accepted_columns(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("data_exchange:opening_import"))
+        self.assertContains(response, "Accepted opening-stock workbook format")
+        self.assertContains(response, "Project Code")
+        self.assertContains(response, "Supplier Phone")
+        self.assertContains(response, "YYYY-MM-DD recommended")
+        self.assertContains(response, "Maximum file size: 20 MB")
 
     def test_import_pages_require_administrator(self):
         self.client.force_login(self.keeper)

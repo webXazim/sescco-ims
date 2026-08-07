@@ -18,6 +18,7 @@ from .forms import (
     OpeningStockImportUploadForm,
 )
 from .models import ImportJob
+from .opening_schema import OPENING_IMPORT_COLUMNS, OPENING_IMPORT_RULES
 from .services.exporting import (
     activity_dataset,
     export_response,
@@ -225,6 +226,8 @@ class OpeningImportCreateView(InventoryAdminRequiredMixin, View):
             "form": form,
             "submit_label": "Build preview",
             "import_kind": "opening",
+            "opening_columns": OPENING_IMPORT_COLUMNS,
+            "opening_rules": OPENING_IMPORT_RULES,
         }
 
 
