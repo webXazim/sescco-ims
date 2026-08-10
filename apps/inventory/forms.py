@@ -476,6 +476,8 @@ class StockItemFilterForm(DateRangeFilterForm):
         ("updated_at", "Last updated date"),
     )
     SORT_CHOICES = (
+        ("updated", "Recently updated"),
+        ("created", "Newest records"),
         ("project", "Sort by project"),
         ("material", "Sort by material A–Z"),
         ("-material", "Sort by material Z–A"),
@@ -491,8 +493,6 @@ class StockItemFilterForm(DateRangeFilterForm):
         ("-value", "Sort by stock value: high first"),
         ("latest-addition", "Sort by latest addition: newest"),
         ("oldest-addition", "Sort by latest addition: oldest"),
-        ("updated", "Sort by recently updated"),
-        ("created", "Sort by recently created"),
     )
     COLUMN_CHOICES = (
         ("project", "Project"),

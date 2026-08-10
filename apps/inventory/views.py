@@ -383,7 +383,7 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
             {
                 "status": StockItem.Status.ACTIVE,
                 "date_field": "latest_addition_date",
-                "sort": "project",
+                "sort": "updated",
                 "columns": DEFAULT_STOCK_COLUMNS,
             },
         )
@@ -395,8 +395,8 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
         if self.filter_form.is_valid():
             self.filter_data = self.filter_form.cleaned_data
             queryset = filter_stock_items(queryset, self.filter_data)
-            sort = self.filter_data.get("sort") or "project"
-            return queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["project"]))
+            sort = self.filter_data.get("sort") or "updated"
+            return queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["updated"]))
         self.filter_data = {}
         return queryset.none()
 

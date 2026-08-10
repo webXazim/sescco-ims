@@ -31,10 +31,10 @@
   <form id="columnSettingsForm" method="post" action="{{ column_settings_url }}" hidden>{% csrf_token %}<input type="hidden" name="view_type" value="{{ saved_view_type }}"><input type="hidden" name="next" value="{{ column_return_url }}"></form>
   <div data-filter-results aria-live="polite">
   {% include "partials/filter_chips.html" %}
-  <div class="table-wrap"><table><thead><tr>
+  <div class="table-wrap"><table data-resizable-description><thead><tr>
     {% if "project" in visible_columns %}<th>Project</th>{% endif %}
     {% if "material" in visible_columns %}<th>Material</th>{% endif %}
-    {% if "description" in visible_columns %}<th>Description</th>{% endif %}
+    {% if "description" in visible_columns %}<th class="description-column"><span>Description</span><span class="column-resize-handle" data-description-resize-handle role="separator" tabindex="0" aria-label="Resize description column" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="640" title="Drag to resize; double-click to reset"></span></th>{% endif %}
     {% if "supplier" in visible_columns %}<th>Supplier</th>{% endif %}
     {% if "phone" in visible_columns %}<th>Phone</th>{% endif %}
     {% if "quantity" in visible_columns %}<th>Available</th>{% endif %}
@@ -50,7 +50,7 @@
     {% for item in stock_items %}<tr>
       {% if "project" in visible_columns %}<td><a class="tag" href="{% url 'projects:detail' item.project.code %}">{{ item.project.code }}</a></td>{% endif %}
       {% if "material" in visible_columns %}<td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a></td>{% endif %}
-      {% if "description" in visible_columns %}<td>{{ item.description|truncatechars:70|default:"—" }}</td>{% endif %}
+      {% if "description" in visible_columns %}<td class="description-column"><div class="description-cell" title="{{ item.description|default:'—' }}">{{ item.description|default:"—" }}</div></td>{% endif %}
       {% if "supplier" in visible_columns %}<td>{{ item.supplier_name }}</td>{% endif %}
       {% if "phone" in visible_columns %}<td>{{ item.supplier_phone }}</td>{% endif %}
       {% if "quantity" in visible_columns %}<td class="qty">{{ item.current_quantity }}</td>{% endif %}

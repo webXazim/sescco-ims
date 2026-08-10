@@ -1,5 +1,56 @@
 (() => {
   const body = document.body;
+  const initResizableDescriptions = (root = document) => root.querySelectorAll("[data-resizable-description]").forEach((table) => {
+    if (table.dataset.resizeReady === "true") return;
+    table.dataset.resizeReady = "true";
+    const handle = table.querySelector("[data-description-resize-handle]");
+    if (!handle) return;
+    const storageKey = "inventory-description-column-width";
+    const defaultWidth = 360;
+    const clampWidth = (value) => Math.max(220, Math.min(640, Math.round(value)));
+    const setWidth = (value, persist = false) => {
+      const width = clampWidth(value);
+      table.style.setProperty("--description-column-width", `${width}px`);
+      handle.setAttribute("aria-valuenow", String(width));
+      if (persist) {
+        try { window.localStorage.setItem(storageKey, String(width)); } catch (_) {}
+      }
+    };
+    try {
+      const savedWidth = Number(window.localStorage.getItem(storageKey));
+      if (Number.isFinite(savedWidth) && savedWidth > 0) setWidth(savedWidth);
+    } catch (_) {}
+
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = table.querySelector("th.description-column").getBoundingClientRect().width;
+      handle.setPointerCapture(event.pointerId);
+      body.classList.add("is-resizing-column");
+      const move = (moveEvent) => setWidth(startWidth + moveEvent.clientX - startX);
+      const finish = (upEvent) => {
+        move(upEvent);
+        handle.releasePointerCapture?.(event.pointerId);
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        body.classList.remove("is-resizing-column");
+        const width = table.querySelector("th.description-column").getBoundingClientRect().width;
+        setWidth(width, true);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+    });
+    handle.addEventListener("dblclick", () => setWidth(defaultWidth, true));
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+      event.preventDefault();
+      const current = table.querySelector("th.description-column").getBoundingClientRect().width;
+      setWidth(event.key === "Home" ? defaultWidth : current + (event.key === "ArrowRight" ? 20 : -20), true);
+    });
+  });
+  initResizableDescriptions();
   document.querySelectorAll("[data-sidebar-toggle]").forEach((button) => {
     button.addEventListener("click", () => body.classList.toggle("sidebar-open"));
   });
@@ -158,6 +209,7 @@
         const nextHead = nextPage.querySelector(".page-head");
         if (!results || !nextResults) throw new Error("Search results are unavailable");
         results.innerHTML = nextResults.innerHTML;
+        initResizableDescriptions(results);
         if (currentHead && nextHead) currentHead.replaceWith(nextHead);
         const topSearch = document.querySelector('.top-search input[name="q"]');
         const search = liveFilterForm.querySelector("[data-live-filter-search]");

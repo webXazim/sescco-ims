@@ -5,7 +5,7 @@
   <div class="head-actions">{% include "partials/save_view_control.html" %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a></div>
 </div>
 <section class="card explorer">
-  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="project" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
     <div class="explorer-toolbar">
       <div class="search-field"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
       <div class="quick-filters">
@@ -45,10 +45,10 @@
   <form id="columnSettingsForm" method="post" action="{{ column_settings_url }}" hidden>{% csrf_token %}<input type="hidden" name="view_type" value="{{ saved_view_type }}"><input type="hidden" name="next" value="{{ column_return_url }}"></form>
   <div data-filter-results aria-live="polite">
     {% include "partials/filter_chips.html" %}
-    <div class="table-wrap"><table><thead><tr>
+    <div class="table-wrap"><table data-resizable-description><thead><tr>
     {% if "project" in visible_columns %}<th>Project</th>{% endif %}
     {% if "material" in visible_columns %}<th>Material</th>{% endif %}
-    {% if "description" in visible_columns %}<th>Description</th>{% endif %}
+    {% if "description" in visible_columns %}<th class="description-column"><span>Description</span><span class="column-resize-handle" data-description-resize-handle role="separator" tabindex="0" aria-label="Resize description column" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="640" title="Drag to resize; double-click to reset"></span></th>{% endif %}
     {% if "supplier" in visible_columns %}<th>Supplier</th>{% endif %}
     {% if "phone" in visible_columns %}<th>Phone</th>{% endif %}
     {% if "location" in visible_columns %}<th>Supplier location</th>{% endif %}
@@ -66,7 +66,7 @@
   {% for item in stock_items %}<tr>
     {% if "project" in visible_columns %}<td><a class="tag" href="{% url 'projects:detail' item.project.code %}">{{ item.project.code }}</a><div class="cell-sub">{{ item.project.name }}</div></td>{% endif %}
     {% if "material" in visible_columns %}<td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a></td>{% endif %}
-    {% if "description" in visible_columns %}<td>{{ item.description|truncatechars:70|default:"—" }}</td>{% endif %}
+    {% if "description" in visible_columns %}<td class="description-column"><div class="description-cell" title="{{ item.description|default:'—' }}">{{ item.description|default:"—" }}</div></td>{% endif %}
     {% if "supplier" in visible_columns %}<td>{{ item.supplier_name }}</td>{% endif %}
     {% if "phone" in visible_columns %}<td>{{ item.supplier_phone }}</td>{% endif %}
     {% if "location" in visible_columns %}<td>{{ item.supplier_location|default:"—" }}</td>{% endif %}

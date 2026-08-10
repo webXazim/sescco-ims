@@ -253,6 +253,13 @@ svg { display: block; }
 table { width: 100%; border-collapse: collapse; }
 th { height: 41px; padding: 0 12px; text-align: left; background: #fafafa; border-bottom: 1px solid var(--line); color: #68717a; font-size: 10px; text-transform: uppercase; letter-spacing: .045em; font-weight: 720; white-space: nowrap; }
 td { padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 11px; vertical-align: middle; white-space: nowrap; }
+.description-column { width: var(--description-column-width, 360px); min-width: var(--description-column-width, 360px); max-width: var(--description-column-width, 360px); }
+th.description-column { position: relative; padding-right: 19px; }
+.description-cell { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.column-resize-handle { position: absolute; z-index: 2; top: 6px; right: 2px; bottom: 6px; width: 10px; cursor: col-resize; touch-action: none; }
+.column-resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; border-radius: 2px; background: #d7dde1; transition: background .12s, box-shadow .12s; }
+.column-resize-handle:hover::after, .column-resize-handle:focus-visible::after, body.is-resizing-column .column-resize-handle::after { background: #71808b; box-shadow: 0 0 0 2px rgba(113,128,139,.12); }
+body.is-resizing-column { cursor: col-resize; user-select: none; }
 tbody tr { transition: .12s; }
 tbody tr:hover { background: #fbfcfc; }
 tbody tr:last-child td { border-bottom: 0; }

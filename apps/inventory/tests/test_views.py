@@ -75,6 +75,26 @@ class InventoryWorkspaceTests(TestCase):
         )
         self.assertEqual(StockItem.objects.count(), 0)
 
+    def test_inventory_defaults_to_recently_updated_and_description_is_resizable(self):
+        older = self.create_item()
+        newer = StockItem.objects.create(
+            project=self.project,
+            material_name="Steel Bar",
+            description="Reinforcement steel",
+            supplier_name="Metal Supplier",
+            supplier_phone="+966 50 000 0000",
+            unit=self.unit,
+        )
+        StockItem.objects.filter(pk=older.pk).update(
+            updated_at=timezone.now() - timedelta(days=2)
+        )
+        response = self.client.get(reverse("inventory:list"), {"columns": "description"})
+
+        self.assertEqual(response.context["stock_items"][0].pk, newer.pk)
+        self.assertEqual(response.context["filter_form"].cleaned_data["sort"], "updated")
+        self.assertContains(response, "data-resizable-description")
+        self.assertContains(response, "data-description-resize-handle")
+
     def test_stock_identity_edit_cannot_collide_with_existing_record(self):
         existing = self.create_item()
         second = StockItem.objects.create(
