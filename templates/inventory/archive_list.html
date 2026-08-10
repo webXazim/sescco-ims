@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">Archive</h1><p class="page-subtitle">Review inactive records and restore them without losing history.</p></div>
+</div>
+<section class="card explorer">
+  <div class="archive-tabs" role="navigation" aria-label="Archive categories">
+    <a class="archive-tab{% if archive_kind == 'stock' %} active{% endif %}" href="?kind=stock"><span>Stock records</span><strong>{{ archive_counts.stock }}</strong></a>
+    <a class="archive-tab{% if archive_kind == 'projects' %} active{% endif %}" href="?kind=projects"><span>Projects</span><strong>{{ archive_counts.projects }}</strong></a>
+    <a class="archive-tab{% if archive_kind == 'units' %} active{% endif %}" href="?kind=units"><span>Units</span><strong>{{ archive_counts.units }}</strong></a>
+    <a class="archive-tab{% if archive_kind == 'suppliers' %} active{% endif %}" href="?kind=suppliers"><span>Suppliers</span><strong>{{ archive_counts.suppliers }}</strong></a>
+  </div>
+  <form method="get" class="archive-search" data-filter-form data-live-filter-form>
+    <input type="hidden" name="kind" value="{{ archive_kind }}">
+    <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" placeholder="Search archived {{ archive_kind }}…" autocomplete="off" aria-label="Search archived records" data-live-filter-search></div>
+    {% if search_query %}<a class="btn btn-ghost btn-sm" href="?kind={{ archive_kind }}">Clear</a>{% endif %}
+    <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
+  </form>
+  <div data-filter-results aria-live="polite">
+    <div class="archive-result-head"><span>{{ paginator.count }} archived {{ archive_kind }}</span><span>Archived records remain in history and reports.</span></div>
+    <div class="table-wrap"><table>
+      {% if archive_kind == 'stock' %}
+        <thead><tr><th>Project</th><th>Material</th><th>Supplier</th><th>Balance</th><th>Archived status</th><th></th></tr></thead>
+        <tbody>{% for item in objects %}<tr><td><a class="tag" href="{% url 'projects:detail' item.project.code %}">{{ item.project.code }}</a></td><td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60|default:'—' }}</div></td><td>{{ item.supplier_name }}<div class="cell-sub">{{ item.supplier_phone }}</div></td><td class="qty">{{ item.current_quantity }} {{ item.unit.symbol }}</td><td><span class="status status-neutral">Archived</span></td><td>{% include "partials/stock_actions_menu.html" with item=item %}</td></tr>{% empty %}{% include "partials/archive_empty_row.html" with colspan=6 %}{% endfor %}</tbody>
+      {% elif archive_kind == 'projects' %}
+        <thead><tr><th>Project</th><th>Client</th><th>Location</th><th>Updated</th><th></th></tr></thead>
+        <tbody>{% for project in objects %}<tr><td><a class="row-link" href="{% url 'projects:detail' project.code %}">{{ project.code }}</a><div class="cell-sub">{{ project.name }}</div></td><td>{{ project.client_name|default:'—' }}</td><td>{{ project.location|default:'—' }}</td><td>{{ project.updated_at|date:'d M Y' }}</td><td><div class="head-actions"><form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="btn btn-sm" type="submit">Reactivate</button></form><a class="btn btn-ghost btn-sm" href="{% url 'projects:detail' project.code %}">Open</a></div></td></tr>{% empty %}{% include "partials/archive_empty_row.html" with colspan=5 %}{% endfor %}</tbody>
+      {% elif archive_kind == 'units' %}
+        <thead><tr><th>Unit</th><th>Symbol</th><th></th></tr></thead>
+        <tbody>{% for unit in objects %}<tr><td class="cell-main">{{ unit.name }}</td><td>{{ unit.symbol }}</td><td><div class="head-actions"><form method="post" action="{% url 'inventory:unit_status' unit.pk %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="btn btn-sm" type="submit">Reactivate</button></form><a class="btn btn-ghost btn-sm" href="{% url 'inventory:unit_edit' unit.pk %}">Edit</a></div></td></tr>{% empty %}{% include "partials/archive_empty_row.html" with colspan=3 %}{% endfor %}</tbody>
+      {% else %}
+        <thead><tr><th>Supplier</th><th>Phone</th><th>Location</th><th></th></tr></thead>
+        <tbody>{% for supplier in objects %}<tr><td class="cell-main">{{ supplier.name }}</td><td>{{ supplier.phone }}</td><td>{{ supplier.location|default:'—' }}</td><td><div class="head-actions"><form method="post" action="{% url 'inventory:supplier_status' supplier.pk %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="btn btn-sm" type="submit">Reactivate</button></form><a class="btn btn-ghost btn-sm" href="{% url 'inventory:supplier_edit' supplier.pk %}">Edit</a></div></td></tr>{% empty %}{% include "partials/archive_empty_row.html" with colspan=4 %}{% endfor %}</tbody>
+      {% endif %}
+    </table></div>
+    {% include "partials/pagination.html" %}
+  </div>
+</section>
+{% endblock %}

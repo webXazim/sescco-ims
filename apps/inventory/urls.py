@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ArchiveListView,
     InventoryColumnPreferenceView,
     LowStockListView,
     MovementAttachmentView,
@@ -29,6 +30,7 @@ from .views import (
 app_name = "inventory"
 
 urlpatterns = [
+    path("archive/", ArchiveListView.as_view(), name="archive"),
     path("table-columns/", InventoryColumnPreferenceView.as_view(), name="column_preferences"),
     path("inventory/", StockItemListView.as_view(), name="list"),
     path("inventory/new/", StockItemCreateView.as_view(), name="create"),

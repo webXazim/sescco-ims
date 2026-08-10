@@ -528,6 +528,46 @@ class InventoryWorkspaceTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ARCHIVED)
 
+    def test_archive_workspace_lists_all_record_types_and_can_restore(self):
+        stock_item = self.create_item()
+        self.client.post(
+            reverse("inventory:status", kwargs={"reference": stock_item.reference}),
+            {"action": "archive"},
+        )
+        archived_project = Project.objects.create(
+            code="ARCHIVE-01",
+            name="Archived project",
+            status=Project.Status.ARCHIVED,
+        )
+        archived_unit = Unit.objects.create(name="Archived crate", symbol="acr", is_active=False)
+        archived_supplier = Supplier.objects.create(
+            name="Archived supplier", phone="0500000999", is_active=False
+        )
+
+        stock_response = self.client.get(reverse("inventory:archive"))
+        self.assertContains(stock_response, "Archive")
+        self.assertContains(stock_response, "Portland Cement")
+        self.assertContains(stock_response, "Reactivate record")
+        self.assertContains(stock_response, reverse("inventory:archive"))
+
+        project_response = self.client.get(reverse("inventory:archive"), {"kind": "projects"})
+        self.assertContains(project_response, archived_project.code)
+        unit_response = self.client.get(reverse("inventory:archive"), {"kind": "units"})
+        self.assertContains(unit_response, archived_unit.name)
+        supplier_response = self.client.get(reverse("inventory:archive"), {"kind": "suppliers"})
+        self.assertContains(supplier_response, archived_supplier.name)
+
+        response = self.client.post(
+            reverse("inventory:status", kwargs={"reference": stock_item.reference}),
+            {"action": "reactivate"},
+        )
+        self.assertRedirects(
+            response,
+            reverse("inventory:detail", kwargs={"reference": stock_item.reference}),
+        )
+        stock_item.refresh_from_db()
+        self.assertEqual(stock_item.status, StockItem.Status.ACTIVE)
+
     def test_unit_and_supplier_lifecycle_permissions(self):
         unit = Unit.objects.create(name="Pallet", symbol="plt")
         supplier = Supplier.objects.create(name="Unused Vendor", phone="0500000111")

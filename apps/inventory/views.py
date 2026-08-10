@@ -1038,6 +1038,76 @@ class LowStockListView(StockItemListView):
         return context
 
 
+class ArchiveListView(InventoryWorkspaceMixin, View):
+    template_name = "inventory/archive_list.html"
+    kinds = {"stock", "projects", "units", "suppliers"}
+
+    def get(self, request):
+        kind = request.GET.get("kind", "stock").strip()
+        if kind not in self.kinds:
+            kind = "stock"
+        query = request.GET.get("q", "").strip()
+
+        archived_stock = stock_items().filter(status=StockItem.Status.ARCHIVED)
+        archived_projects = Project.objects.filter(status=Project.Status.ARCHIVED)
+        archived_units = Unit.objects.filter(is_active=False)
+        archived_suppliers = Supplier.objects.filter(is_active=False)
+        counts = {
+            "stock": archived_stock.count(),
+            "projects": archived_projects.count(),
+            "units": archived_units.count(),
+            "suppliers": archived_suppliers.count(),
+        }
+
+        if kind == "stock":
+            objects = apply_stock_search(archived_stock, query) if query else archived_stock
+            objects = objects.order_by("project__code", "material_name", "supplier_name")
+        elif kind == "projects":
+            objects = archived_projects
+            if query:
+                objects = objects.filter(
+                    Q(code__icontains=query)
+                    | Q(name__icontains=query)
+                    | Q(client_name__icontains=query)
+                    | Q(location__icontains=query)
+                )
+            objects = objects.order_by("code")
+        elif kind == "units":
+            objects = archived_units
+            if query:
+                objects = objects.filter(Q(name__icontains=query) | Q(symbol__icontains=query))
+            objects = objects.order_by("name")
+        else:
+            objects = archived_suppliers
+            if query:
+                objects = objects.filter(
+                    Q(name__icontains=query)
+                    | Q(phone__icontains=query)
+                    | Q(location__icontains=query)
+                    | Q(notes__icontains=query)
+                )
+            objects = objects.order_by("name", "phone")
+
+        paginator = Paginator(objects, 30)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_key": "archive",
+                "page_title": "Archive",
+                "page_subtitle": "Review inactive records and restore them when needed.",
+                "archive_kind": kind,
+                "archive_counts": counts,
+                "search_query": query,
+                "objects": page_obj.object_list,
+                "page_obj": page_obj,
+                "paginator": paginator,
+                "is_paginated": paginator.num_pages > 1,
+            },
+        )
+
+
 class UnitListCreateView(InventoryWorkspaceMixin, View):
     template_name = "inventory/unit_list.html"
 
