@@ -77,7 +77,7 @@
     {% if "stock_status" in visible_columns %}<td>{% if item.status == 'archived' %}<span class="status status-neutral">Archived</span>{% else %}<span class="status {% if item.stock_status == 'in' %}status-good{% elif item.stock_status == 'low' %}status-low{% else %}status-out{% endif %}">{{ item.stock_status_label }}</span>{% endif %}</td>{% endif %}
     {% if "updated" in visible_columns %}<td>{{ item.updated_at|date:"d M Y" }}<div class="cell-sub">{% if item.updated_by %}{{ item.updated_by.display_name }}{% endif %}</div></td>{% endif %}
     {% if "created" in visible_columns %}<td>{{ item.created_at|date:"d M Y" }}<div class="cell-sub">{% if item.created_by %}{{ item.created_by.display_name }}{% endif %}</div></td>{% endif %}
-    <td><a class="btn btn-sm" href="{% url 'inventory:detail' item.reference %}">Open</a></td>
+    <td>{% include "partials/stock_actions_menu.html" with item=item %}</td>
   </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">▦</div><h2>No matching stock records</h2><p>Change or clear the current filters, or add new project stock.</p><a class="btn btn-primary" href="{% url 'core:add_stock' %}">Add stock</a></div></td></tr>{% endfor %}
     </tbody></table></div>
     {% include "partials/pagination.html" %}

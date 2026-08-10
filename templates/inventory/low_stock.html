@@ -58,7 +58,7 @@
       {% if "latest_addition" in visible_columns %}<td>{{ item.latest_addition_date|date:"d M Y"|default:"—" }}</td>{% endif %}
       {% if "stock_status" in visible_columns %}<td><span class="status {% if item.stock_status == 'low' %}status-low{% else %}status-out{% endif %}">{{ item.stock_status_label }}</span></td>{% endif %}
       {% if "updated" in visible_columns %}<td>{{ item.updated_at|date:"d M Y" }}</td>{% endif %}
-      <td><a class="btn btn-sm" href="{% url 'inventory:detail' item.reference %}">Open</a></td>
+      <td>{% include "partials/stock_actions_menu.html" with item=item %}</td>
     </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">✓</div><h2>No matching low-stock records</h2><p>All active stock may be above its minimum, or the current filters have no matches.</p></div></td></tr>{% endfor %}
   </tbody></table></div>
   {% include "partials/pagination.html" %}

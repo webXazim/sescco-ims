@@ -13,6 +13,20 @@
     }
   });
 
+  document.addEventListener("click", (event) => {
+    const currentMenu = event.target.closest("[data-row-actions]");
+    document.querySelectorAll("[data-row-actions][open]").forEach((menu) => {
+      if (menu !== currentMenu) menu.removeAttribute("open");
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll("[data-row-actions][open]").forEach((menu) => {
+      menu.removeAttribute("open");
+      menu.querySelector("summary")?.focus();
+    });
+  });
+
   const setFilterPanelState = (button, panel, open) => {
     panel.classList.toggle("is-hidden", !open);
     button.textContent = open ? "Hide filters" : "More filters";

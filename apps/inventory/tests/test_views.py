@@ -493,6 +493,41 @@ class InventoryWorkspaceTests(TestCase):
         )
         self.assertTrue(StockItem.objects.filter(pk=protected.pk).exists())
 
+    def test_stock_tables_use_role_aware_action_dropdowns(self):
+        item = self.create_item()
+        inventory_response = self.client.get(reverse("inventory:list"))
+        self.assertContains(inventory_response, "data-row-actions")
+        self.assertContains(inventory_response, "Open details")
+        self.assertContains(inventory_response, "Edit record")
+        self.assertContains(inventory_response, "Archive record")
+        self.assertNotContains(
+            inventory_response,
+            reverse("inventory:delete", kwargs={"reference": item.reference}),
+        )
+
+        low_stock_response = self.client.get(reverse("inventory:low_stock"))
+        self.assertContains(low_stock_response, "data-row-actions")
+        project_response = self.client.get(
+            reverse("projects:detail", kwargs={"code": self.project.code})
+        )
+        self.assertContains(project_response, "data-row-actions")
+
+        self.client.force_login(self.admin)
+        admin_response = self.client.get(reverse("inventory:list"))
+        self.assertContains(
+            admin_response,
+            reverse("inventory:delete", kwargs={"reference": item.reference}),
+        )
+        self.assertContains(admin_response, "Archive record")
+        self.assertContains(admin_response, "Delete permanently")
+
+        self.client.post(
+            reverse("inventory:status", kwargs={"reference": item.reference}),
+            {"action": "archive"},
+        )
+        item.refresh_from_db()
+        self.assertEqual(item.status, StockItem.Status.ARCHIVED)
+
     def test_unit_and_supplier_lifecycle_permissions(self):
         unit = Unit.objects.create(name="Pallet", symbol="plt")
         supplier = Supplier.objects.create(name="Unused Vendor", phone="0500000111")

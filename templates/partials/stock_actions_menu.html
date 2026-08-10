@@ -1,0 +1,17 @@
+<details class="row-actions" data-row-actions>
+  <summary class="btn btn-sm" aria-label="Actions for {{ item.material_name }}">Actions <span class="row-actions-chevron" aria-hidden="true">⌄</span></summary>
+  <div class="row-actions-menu">
+    <a class="row-action-option" href="{% url 'inventory:detail' item.reference %}"><span>Open details</span><small>View balance and history</small></a>
+    <a class="row-action-option" href="{% url 'inventory:edit' item.reference %}"><span>Edit record</span><small>Identity, document and notes</small></a>
+    {% if item.status == 'active' and item.project.accepts_stock_activity and item.unit.is_active %}
+      <div class="row-action-divider"></div>
+      <a class="row-action-option" href="{% url 'core:add_stock' %}?stock={{ item.reference }}"><span>Add stock</span><small>Record an inbound movement</small></a>
+      {% if item.current_quantity > 0 %}<a class="row-action-option" href="{% url 'core:remove_stock' %}?stock={{ item.reference }}"><span>Use stock</span><small>Record project usage</small></a>{% endif %}
+      <a class="row-action-option" href="{% url 'inventory:adjust' item.reference %}"><span>Adjust balance</span><small>Correct a physical count</small></a>
+      {% if item.current_quantity == 0 %}<div class="row-action-divider"></div><form method="post" action="{% url 'inventory:status' item.reference %}" data-confirm="Archive this zero-balance stock record?">{% csrf_token %}<input type="hidden" name="action" value="archive"><button class="row-action-option" type="submit"><span>Archive record</span><small>Hide it from active inventory</small></button></form>{% endif %}
+    {% elif item.status == 'archived' and item.project.accepts_stock_activity and item.unit.is_active %}
+      <div class="row-action-divider"></div><form method="post" action="{% url 'inventory:status' item.reference %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="row-action-option" type="submit"><span>Reactivate record</span><small>Return it to active inventory</small></button></form>
+    {% endif %}
+    {% if request.user.is_inventory_admin %}<div class="row-action-divider"></div><form method="post" action="{% url 'inventory:delete' item.reference %}" data-confirm="Permanently delete this unused stock record? This cannot be undone.">{% csrf_token %}<button class="row-action-option row-action-danger" type="submit"><span>Delete permanently</span><small>Only unused records qualify</small></button></form>{% endif %}
+  </div>
+</details>
