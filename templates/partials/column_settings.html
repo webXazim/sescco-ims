@@ -1,0 +1,25 @@
+<details class="column-settings" data-column-settings>
+  <summary class="btn btn-ghost btn-sm premium-control" aria-label="Choose table columns">
+    <span class="column-settings-icon" aria-hidden="true"></span>
+    <span>Columns</span>
+    <span class="control-chevron" aria-hidden="true"></span>
+  </summary>
+  <div class="column-settings-popover">
+    <div class="popover-section-head">
+      <div><strong>Table columns</strong><span>Choose what you need for this view.</span></div>
+      <span class="saved-setting-badge">Saved</span>
+    </div>
+    <div class="column-settings-grid">
+      {% for value, label in column_choices %}
+        <label class="column-setting-option">
+          <input type="checkbox" name="columns" value="{{ value }}" form="columnSettingsForm"{% if value in visible_columns %} checked{% endif %}>
+          <span>{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <div class="popover-actions">
+      <button class="btn btn-ghost btn-sm" type="submit" name="reset" value="1" form="columnSettingsForm">Restore default</button>
+      <button class="btn btn-primary btn-sm" type="submit" form="columnSettingsForm">Save columns</button>
+    </div>
+  </div>
+</details>

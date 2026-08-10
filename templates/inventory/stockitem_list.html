@@ -24,25 +24,25 @@
           </div>
         </div>
         {{ filter_form.sort }}
-        <button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}">More filters</button>
+        <div class="filter-panel-control"><button class="btn btn-ghost btn-sm premium-control" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span data-filter-toggle-label>More filters</span><span class="control-chevron" aria-hidden="true"></span></button>
+        <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
+          <div class="popover-section-head"><div><strong>More filters</strong><span>Narrow the inventory without changing your saved columns.</span></div></div>
+          <div class="advanced-grid">
+            <div class="field"><label class="field-label">Units</label><div class="check-list compact">{{ filter_form.unit }}</div>{{ filter_form.unit.errors }}</div>
+            <div class="field"><label class="field-label">Record status</label>{{ filter_form.status }}{{ filter_form.status.errors }}</div>
+            <div class="field"><label class="field-label">Quantity range</label><div class="range-inputs">{{ filter_form.quantity_min }}<span>to</span>{{ filter_form.quantity_max }}</div></div>
+            <div class="field"><label class="field-label">Minimum stock range</label><div class="range-inputs">{{ filter_form.minimum_min }}<span>to</span>{{ filter_form.minimum_max }}</div></div>
+            <div class="field"><label class="field-label">Latest price range</label><div class="range-inputs">{{ filter_form.price_min }}<span>to</span>{{ filter_form.price_max }}</div></div>
+          </div>
+          <div class="advanced-footer"><p class="micro">Search project, material, description, supplier, unit, notes, reference, or user.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
+        </div></div>
+        {% include "partials/column_settings.html" %}
         <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
       </div>
     </div>
     {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
-    <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
-      <div class="advanced-grid">
-        <div class="field"><label class="field-label">Units</label><div class="check-list compact">{{ filter_form.unit }}</div>{{ filter_form.unit.errors }}</div>
-        <div class="filter-stack">
-          <div class="field"><label class="field-label">Record status</label>{{ filter_form.status }}{{ filter_form.status.errors }}</div>
-        </div>
-        <div class="field"><label class="field-label">Quantity range</label><div class="range-inputs">{{ filter_form.quantity_min }}<span>to</span>{{ filter_form.quantity_max }}</div>{{ filter_form.quantity_min.errors }}{{ filter_form.quantity_max.errors }}</div>
-        <div class="field"><label class="field-label">Minimum stock range</label><div class="range-inputs">{{ filter_form.minimum_min }}<span>to</span>{{ filter_form.minimum_max }}</div>{{ filter_form.minimum_min.errors }}{{ filter_form.minimum_max.errors }}</div>
-        <div class="field"><label class="field-label">Latest price range</label><div class="range-inputs">{{ filter_form.price_min }}<span>to</span>{{ filter_form.price_max }}</div>{{ filter_form.price_min.errors }}{{ filter_form.price_max.errors }}</div>
-        <details class="column-options field-span-2"><summary>Choose visible columns</summary><div class="check-list columns">{{ filter_form.columns }}</div>{{ filter_form.columns.errors }}</details>
-      </div>
-      <div class="advanced-footer"><p class="micro">Search project details, material and description, supplier details, units, record notes, reference, or responsible users.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
-    </div>
   </form>
+  <form id="columnSettingsForm" method="post" action="{{ column_settings_url }}" hidden>{% csrf_token %}<input type="hidden" name="view_type" value="{{ saved_view_type }}"><input type="hidden" name="next" value="{{ column_return_url }}"></form>
   <div data-filter-results aria-live="polite">
     {% include "partials/filter_chips.html" %}
     <div class="table-wrap"><table><thead><tr>

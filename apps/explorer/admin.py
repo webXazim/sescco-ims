@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import SavedView
+from .models import SavedView, TablePreference
 
 
 @admin.register(SavedView)
@@ -27,3 +27,12 @@ class SavedViewAdmin(admin.ModelAdmin):
             {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
         ),
     )
+
+
+@admin.register(TablePreference)
+class TablePreferenceAdmin(admin.ModelAdmin):
+    list_display = ("owner", "view_type", "updated_at")
+    list_filter = ("view_type", "updated_at")
+    search_fields = ("owner__username", "owner__first_name", "owner__last_name")
+    readonly_fields = ("updated_at",)
+    autocomplete_fields = ("owner",)

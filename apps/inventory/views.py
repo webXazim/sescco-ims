@@ -1,33 +1,34 @@
 from __future__ import annotations
 
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models.deletion import ProtectedError
 from django.db.models import Count, F, Q
+from django.db.models.deletion import ProtectedError
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import DetailView, ListView, UpdateView
 
 from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
-from apps.explorer.models import SavedView
+from apps.explorer.models import SavedView, TablePreference
 from apps.projects.models import Project
 from apps.projects.selectors import active_projects
 
 from .forms import (
     MovementFilterForm,
-    StockHistoryFilterForm,
-    StockItemFilterForm,
     MovementReversalForm,
     StockAdditionForm,
     StockAdjustmentForm,
+    StockHistoryFilterForm,
+    StockItemFilterForm,
     StockItemForm,
     StockUsageForm,
     SupplierForm,
@@ -53,8 +54,6 @@ from .services.stock import (
     use_stock,
 )
 
-
-
 DEFAULT_STOCK_COLUMNS = (
     "project", "material", "supplier", "phone", "quantity", "minimum", "unit",
     "price", "latest_addition", "stock_status", "updated",
@@ -62,6 +61,46 @@ DEFAULT_STOCK_COLUMNS = (
 DEFAULT_MOVEMENT_COLUMNS = (
     "date", "project", "material", "type", "quantity", "balance", "reference", "user",
 )
+
+COLUMN_SETTINGS = {
+    SavedView.ViewType.INVENTORY: (
+        StockItemFilterForm.COLUMN_CHOICES,
+        DEFAULT_STOCK_COLUMNS,
+        "inventory:list",
+    ),
+    SavedView.ViewType.LOW_STOCK: (
+        StockItemFilterForm.COLUMN_CHOICES,
+        DEFAULT_STOCK_COLUMNS,
+        "inventory:low_stock",
+    ),
+    SavedView.ViewType.ACTIVITY: (
+        MovementFilterForm.COLUMN_CHOICES,
+        DEFAULT_MOVEMENT_COLUMNS,
+        "core:activity",
+    ),
+}
+
+
+def _saved_columns(request, view_type, choices, defaults):
+    allowed = {value for value, _ in choices}
+    if "columns" in request.GET:
+        selected = [value for value in request.GET.getlist("columns") if value in allowed]
+        return tuple(selected) if selected else defaults
+    preference = TablePreference.objects.filter(owner=request.user, view_type=view_type).first()
+    selected = [value for value in (preference.columns if preference else []) if value in allowed]
+    return tuple(selected) if selected else defaults
+
+
+def _without_columns(url: str) -> str:
+    parts = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key != "columns"
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 STOCK_SORTS = {
     "project": ("project__code", "material_name", "supplier_name"),
     "material": ("material_name", "supplier_name"),
@@ -95,7 +134,7 @@ def _bound_filter_data(request, defaults: dict[str, object]):
     for key, value in defaults.items():
         if key in data:
             continue
-        if isinstance(value, (tuple, list)):
+        if isinstance(value, tuple | list):
             data.setlist(key, [str(item) for item in value])
         else:
             data[key] = str(value)
@@ -332,10 +371,9 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
         return queryset.none()
 
     def get_visible_columns(self):
-        requested = self.request.GET.getlist("columns")
-        allowed = {value for value, _ in StockItemFilterForm.COLUMN_CHOICES}
-        selected = [value for value in requested if value in allowed]
-        return tuple(selected) if selected else DEFAULT_STOCK_COLUMNS
+        return _saved_columns(
+            self.request, self.view_type, StockItemFilterForm.COLUMN_CHOICES, DEFAULT_STOCK_COLUMNS
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -356,6 +394,9 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
             source_query=_source_query(self.request),
             sort_choices=StockItemFilterForm.SORT_CHOICES,
             default_columns=DEFAULT_STOCK_COLUMNS,
+            column_choices=StockItemFilterForm.COLUMN_CHOICES,
+            column_settings_url=reverse("inventory:column_preferences"),
+            column_return_url=_without_columns(self.request.get_full_path()),
         )
         return context
 
@@ -770,10 +811,12 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
         return queryset.none()
 
     def get_visible_columns(self):
-        requested = self.request.GET.getlist("columns")
-        allowed = {value for value, _ in MovementFilterForm.COLUMN_CHOICES}
-        selected = [value for value in requested if value in allowed]
-        return tuple(selected) if selected else DEFAULT_MOVEMENT_COLUMNS
+        return _saved_columns(
+            self.request,
+            self.view_type,
+            MovementFilterForm.COLUMN_CHOICES,
+            DEFAULT_MOVEMENT_COLUMNS,
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -797,8 +840,44 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
             sort_choices=MovementFilterForm.SORT_CHOICES,
             default_columns=DEFAULT_MOVEMENT_COLUMNS,
             custom_date_open=data.get("date_preset") == "custom",
+            column_choices=MovementFilterForm.COLUMN_CHOICES,
+            column_settings_url=reverse("inventory:column_preferences"),
+            column_return_url=_without_columns(self.request.get_full_path()),
         )
         return context
+
+
+class InventoryColumnPreferenceView(InventoryWorkspaceMixin, View):
+    def post(self, request):
+        view_type = request.POST.get("view_type", "")
+        settings = COLUMN_SETTINGS.get(view_type)
+        if settings is None:
+            raise Http404("Unknown table view")
+        choices, _defaults, fallback_name = settings
+        allowed = {value for value, _ in choices}
+        columns = [value for value in request.POST.getlist("columns") if value in allowed]
+
+        if request.POST.get("reset"):
+            TablePreference.objects.filter(owner=request.user, view_type=view_type).delete()
+            messages.success(request, "Default table columns restored.")
+        elif columns:
+            TablePreference.objects.update_or_create(
+                owner=request.user,
+                view_type=view_type,
+                defaults={"columns": columns},
+            )
+            messages.success(request, "Table columns saved to your account.")
+        else:
+            messages.error(request, "Choose at least one table column.")
+
+        target = _without_columns(request.POST.get("next", ""))
+        if not target or not url_has_allowed_host_and_scheme(
+            target,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            target = reverse(fallback_name)
+        return redirect(target)
 
 
 class StockMovementDetailView(InventoryWorkspaceMixin, DetailView):

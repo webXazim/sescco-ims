@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.explorer.models import TablePreference
 from apps.inventory.models import StockMovement, Unit
 from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
@@ -102,7 +103,9 @@ class AdvancedExplorerTests(TestCase):
         )
         self.assertContains(response, "data-live-filter-search")
         self.assertContains(response, "data-live-filter-form")
-        self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, "filter-popover is-hidden")
+        self.assertContains(response, "data-column-settings")
+        self.assertContains(response, "Save columns")
         self.assertContains(response, "All projects")
         self.assertContains(response, "Sort by project")
         self.assertContains(response, 'name="quantity_min"')
@@ -122,14 +125,15 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, 'class="date-range-popover"')
         self.assertContains(response, "Latest stock addition date")
         self.assertContains(response, "data-close-date-range")
-        self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, "filter-popover is-hidden")
 
     def test_activity_uses_compact_live_search_with_closed_filters(self):
         response = self.client.get(reverse("core:activity"), {"q": "cement"})
         self.assertContains(response, "data-live-filter-search")
         self.assertContains(response, "data-live-filter-form")
         self.assertContains(response, "data-filter-results")
-        self.assertContains(response, 'class="advanced-panel is-hidden"')
+        self.assertContains(response, "filter-popover is-hidden")
+        self.assertContains(response, "data-column-settings")
         self.assertContains(response, "data-quick-date-range")
 
     def test_management_unit_and_supplier_searches_are_live(self):
@@ -189,6 +193,41 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, "Project")
         self.assertContains(response, "Material")
         self.assertNotContains(response, "<th>Supplier location</th>")
+
+    def test_table_columns_are_saved_per_user_and_view(self):
+        endpoint = reverse("inventory:column_preferences")
+        response = self.client.post(
+            endpoint,
+            {
+                "view_type": "inventory",
+                "columns": ["project", "material", "quantity"],
+                "next": reverse("inventory:list"),
+            },
+        )
+        self.assertRedirects(response, reverse("inventory:list"))
+        preference = TablePreference.objects.get(owner=self.user, view_type="inventory")
+        self.assertEqual(preference.columns, ["project", "material", "quantity"])
+
+        response = self.client.get(reverse("inventory:list"))
+        self.assertEqual(response.context["visible_columns"], ("project", "material", "quantity"))
+        self.assertNotContains(response, "<th>Supplier</th>")
+
+        activity = self.client.get(reverse("core:activity"))
+        self.assertIn("date", activity.context["visible_columns"])
+        self.assertFalse(
+            TablePreference.objects.filter(owner=self.user, view_type="activity").exists()
+        )
+
+        response = self.client.post(
+            endpoint,
+            {"view_type": "inventory", "reset": "1", "next": reverse("inventory:list")},
+        )
+        self.assertRedirects(response, reverse("inventory:list"))
+        self.assertFalse(
+            TablePreference.objects.filter(
+                owner=self.user, view_type="inventory"
+            ).exists()
+        )
 
     def test_stock_detail_history_has_date_and_action_filters(self):
         response = self.client.get(

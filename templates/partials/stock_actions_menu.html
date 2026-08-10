@@ -1,6 +1,7 @@
 <details class="row-actions" data-row-actions>
-  <summary class="btn btn-sm" aria-label="Actions for {{ item.material_name }}">Actions <span class="row-actions-chevron" aria-hidden="true">⌄</span></summary>
+  <summary class="btn btn-sm row-actions-trigger" aria-label="Actions for {{ item.material_name }}"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
   <div class="row-actions-menu">
+    <div class="row-actions-head"><span>{{ item.project.code }}</span><strong>{{ item.material_name }}</strong></div>
     <a class="row-action-option" href="{% url 'inventory:detail' item.reference %}"><span>Open details</span><small>View balance and history</small></a>
     <a class="row-action-option" href="{% url 'inventory:edit' item.reference %}"><span>Edit record</span><small>Identity, document and notes</small></a>
     {% if item.status == 'active' and item.project.accepts_stock_activity and item.unit.is_active %}

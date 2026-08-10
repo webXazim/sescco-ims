@@ -13,11 +13,45 @@
     }
   });
 
+  const positionRowActions = (details) => {
+    const trigger = details.querySelector("summary");
+    const menu = details.querySelector(".row-actions-menu");
+    if (!trigger || !menu || !details.open) return;
+    menu.style.visibility = "hidden";
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const gap = 8;
+    const edge = 12;
+    let left = triggerRect.right - menuRect.width;
+    left = Math.max(edge, Math.min(left, window.innerWidth - menuRect.width - edge));
+    let top = triggerRect.bottom + gap;
+    if (top + menuRect.height > window.innerHeight - edge) {
+      top = Math.max(edge, triggerRect.top - menuRect.height - gap);
+    }
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.visibility = "visible";
+  };
+
+  document.addEventListener("toggle", (event) => {
+    const details = event.target.closest?.("[data-row-actions]");
+    if (!details || !details.open) return;
+    document.querySelectorAll("[data-row-actions][open]").forEach((menu) => {
+      if (menu !== details) menu.removeAttribute("open");
+    });
+    window.requestAnimationFrame(() => positionRowActions(details));
+  }, true);
+
   document.addEventListener("click", (event) => {
     const currentMenu = event.target.closest("[data-row-actions]");
     document.querySelectorAll("[data-row-actions][open]").forEach((menu) => {
       if (menu !== currentMenu) menu.removeAttribute("open");
     });
+  });
+  window.addEventListener("resize", () => {
+    document.querySelectorAll("[data-row-actions][open]").forEach(positionRowActions);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
@@ -29,7 +63,9 @@
 
   const setFilterPanelState = (button, panel, open) => {
     panel.classList.toggle("is-hidden", !open);
-    button.textContent = open ? "Hide filters" : "More filters";
+    const label = button.querySelector("[data-filter-toggle-label]");
+    if (label) label.textContent = open ? "Hide filters" : "More filters";
+    else button.textContent = open ? "Hide filters" : "More filters";
     button.setAttribute("aria-expanded", String(open));
   };
 
@@ -43,6 +79,18 @@
     if (!button) return;
     const panel = button.closest("[data-filter-form]")?.querySelector("[data-filter-panel]");
     if (panel) setFilterPanelState(button, panel, panel.classList.contains("is-hidden"));
+  });
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("[data-column-settings][open]").forEach((settings) => {
+      if (!settings.contains(event.target)) settings.removeAttribute("open");
+    });
+    const form = event.target.closest("[data-filter-form]");
+    const panel = form?.querySelector("[data-filter-panel]");
+    const toggle = form?.querySelector("[data-toggle-filter-panel]");
+    if (panel && toggle && !panel.classList.contains("is-hidden") && !panel.contains(event.target) && !toggle.contains(event.target)) {
+      setFilterPanelState(toggle, panel, false);
+    }
   });
 
   document.querySelectorAll("[data-filter-form]").forEach((form) => {

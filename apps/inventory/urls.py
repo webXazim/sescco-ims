@@ -1,26 +1,27 @@
 from django.urls import path
 
 from .views import (
+    InventoryColumnPreferenceView,
     LowStockListView,
     MovementAttachmentView,
     MovementReversalView,
     StockAdjustmentView,
     StockDocumentAttachmentView,
     StockItemCreateView,
+    StockItemDeleteView,
     StockItemDetailView,
     StockItemListView,
     StockItemStatusView,
-    StockItemDeleteView,
     StockItemUpdateView,
     StockMatchAPIView,
-    StockPickerAPIView,
     StockMovementDetailView,
-    SupplierListCreateView,
+    StockPickerAPIView,
     SupplierDeleteView,
+    SupplierListCreateView,
     SupplierStatusView,
     SupplierUpdateView,
-    UnitListCreateView,
     UnitDeleteView,
+    UnitListCreateView,
     UnitStatusView,
     UnitUpdateView,
 )
@@ -28,6 +29,7 @@ from .views import (
 app_name = "inventory"
 
 urlpatterns = [
+    path("table-columns/", InventoryColumnPreferenceView.as_view(), name="column_preferences"),
     path("inventory/", StockItemListView.as_view(), name="list"),
     path("inventory/new/", StockItemCreateView.as_view(), name="create"),
     path("inventory/matches/", StockMatchAPIView.as_view(), name="matches"),

@@ -5,10 +5,11 @@
 <form method="get" data-filter-form data-live-filter-form data-default-sort="-date" data-default-columns="{{ default_columns|join:',' }}">
   <div class="explorer-toolbar">
     <div class="search-field"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
-    <div class="quick-filters"><div class="date-filter-control" data-date-filter-control>{{ filter_form.date_preset }}<div class="date-range-popover{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range role="dialog" aria-label="Custom date range"><div class="date-range-head"><div><strong>Custom date range</strong><span>Movement date</span></div><button type="button" class="popover-close" data-close-date-range aria-label="Close date range">×</button></div><div class="date-range-fields"><label><span>From</span>{{ filter_form.date_from }}</label><label><span>To</span>{{ filter_form.date_to }}</label></div>{{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}<div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div></div></div>{{ filter_form.sort }}<button class="btn btn-ghost btn-sm" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}">More filters</button><span class="filter-live-status" data-filter-live-status aria-live="polite"></span></div>
+    <div class="quick-filters"><div class="date-filter-control" data-date-filter-control>{{ filter_form.date_preset }}<div class="date-range-popover{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range role="dialog" aria-label="Custom date range"><div class="date-range-head"><div><strong>Custom date range</strong><span>Movement date</span></div><button type="button" class="popover-close" data-close-date-range aria-label="Close date range">×</button></div><div class="date-range-fields"><label><span>From</span>{{ filter_form.date_from }}</label><label><span>To</span>{{ filter_form.date_to }}</label></div>{{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}<div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div></div></div>{{ filter_form.sort }}<button class="btn btn-ghost btn-sm premium-control" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span data-filter-toggle-label>More filters</span><span class="control-chevron" aria-hidden="true"></span></button>{% include "partials/column_settings.html" %}<span class="filter-live-status" data-filter-live-status aria-live="polite"></span></div>
   </div>
   {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
-  <div class="advanced-panel{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
+  <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
+    <div class="popover-section-head"><div><strong>More filters</strong><span>Search permanent movement history by recorded details.</span></div></div>
     <div class="advanced-grid">
       <div class="field"><label class="field-label">Projects</label><div class="check-list compact">{{ filter_form.project }}</div>{{ filter_form.project.errors }}</div>
       <div class="field"><label class="field-label">Project status</label>{{ filter_form.project_status }}</div>
@@ -25,11 +26,11 @@
       <div class="field"><label class="field-label">Quantity to</label>{{ filter_form.quantity_max }}</div>
       <div class="field"><label class="field-label">Unit price from</label>{{ filter_form.price_min }}</div>
       <div class="field"><label class="field-label">Unit price to</label>{{ filter_form.price_max }}</div>
-      <div class="field field-span-2"><label class="field-label">Visible columns</label><div class="check-list columns">{{ filter_form.columns }}</div></div>
     </div>
     <div class="advanced-footer"><p class="micro">Search uses permanent historical snapshots, so old supplier names and phone numbers remain findable after a stock record is edited.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
   </div>
 </form>
+<form id="columnSettingsForm" method="post" action="{{ column_settings_url }}" hidden>{% csrf_token %}<input type="hidden" name="view_type" value="{{ saved_view_type }}"><input type="hidden" name="next" value="{{ column_return_url }}"></form>
 <div data-filter-results aria-live="polite">
 {% include "partials/filter_chips.html" %}
 <div class="table-wrap"><table><thead><tr>
