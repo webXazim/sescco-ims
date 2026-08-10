@@ -1,6 +1,9 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import connection, models
-from django.db.models import Count
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
@@ -59,6 +62,31 @@ class DashboardView(WorkspaceTemplateView):
             project_summaries = project_summaries.filter(pk=selected_project_object.pk)
 
         today = timezone.localdate()
+        value_field = DecimalField(max_digits=32, decimal_places=5)
+        stock_value = ExpressionWrapper(
+            F("current_quantity") * F("latest_unit_price"),
+            output_field=value_field,
+        )
+        movement_value = ExpressionWrapper(
+            F("quantity") * F("unit_price"),
+            output_field=value_field,
+        )
+        inbound_today = movements.filter(
+            movement_date=today,
+            movement_type__in=(
+                StockMovement.Type.OPENING,
+                StockMovement.Type.ADDITION,
+                StockMovement.Type.ADJUSTMENT_IN,
+            ),
+        )
+        outbound_today = movements.filter(
+            movement_date=today,
+            movement_type__in=(
+                StockMovement.Type.USAGE,
+                StockMovement.Type.ADJUSTMENT_OUT,
+            ),
+        )
+        zero_value = Value(Decimal("0"), output_field=value_field)
         context.update(
             projects=projects,
             selected_project=selected_project,
@@ -72,21 +100,22 @@ class DashboardView(WorkspaceTemplateView):
                 status=StockItem.Status.ACTIVE, current_quantity=0
             ).count(),
             unit_count=Unit.objects.filter(is_active=True).count(),
-            stock_added_today=movements.filter(
-                movement_date=today,
-                movement_type__in=(
-                    StockMovement.Type.OPENING,
-                    StockMovement.Type.ADDITION,
-                    StockMovement.Type.ADJUSTMENT_IN,
-                ),
+            inventory_value=items.aggregate(
+                value=Coalesce(Sum(stock_value), zero_value, output_field=value_field)
+            )["value"],
+            unpriced_stock_count=items.filter(
+                current_quantity__gt=0, latest_unit_price__isnull=True
             ).count(),
-            stock_used_today=movements.filter(
-                movement_date=today,
-                movement_type__in=(
-                    StockMovement.Type.USAGE,
-                    StockMovement.Type.ADJUSTMENT_OUT,
-                ),
-            ).count(),
+            stock_added_today=inbound_today.count(),
+            stock_added_today_value=inbound_today.aggregate(
+                value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
+            )["value"],
+            stock_added_today_unpriced=inbound_today.filter(unit_price__isnull=True).count(),
+            stock_used_today=outbound_today.count(),
+            stock_used_today_value=outbound_today.aggregate(
+                value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
+            )["value"],
+            stock_used_today_unpriced=outbound_today.filter(unit_price__isnull=True).count(),
             recent_movements=movements[:8],
             project_summaries=project_summaries.annotate(
                 stock_count=Count(

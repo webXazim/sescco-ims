@@ -330,6 +330,12 @@ class StockItem(models.Model):
         quantity = f"{self.current_quantity:f}".rstrip("0").rstrip(".") or "0"
         return f"{quantity} {self.unit.symbol}"
 
+    @property
+    def stock_value(self) -> Decimal | None:
+        if self.latest_unit_price is None:
+            return None
+        return self.current_quantity * self.latest_unit_price
+
 
 class StockDocument(models.Model):
     """An immutable supporting document attached to a stock record."""

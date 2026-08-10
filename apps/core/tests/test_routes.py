@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.inventory.models import StockItem, Unit
-from apps.inventory.services.stock import add_stock
+from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
 
 User = get_user_model()
@@ -90,3 +90,32 @@ class WorkspaceRouteTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["database"], "ready")
+
+    def test_dashboard_calculates_basic_inventory_values(self):
+        add_stock(
+            user=self.user,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("2"),
+            movement_date=timezone.localdate(),
+            project=self.project,
+            material_name="Portland Cement",
+            supplier_name="Gulf Cement",
+            supplier_phone="+966 57 368 6575",
+            unit=self.unit,
+            unit_price=Decimal("7"),
+        )
+        self.item.refresh_from_db()
+        use_stock(
+            stock_item=self.item,
+            user=self.user,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("3"),
+            movement_date=timezone.localdate(),
+            purpose="Valuation test",
+        )
+
+        response = self.client.get(reverse("core:dashboard"))
+        self.assertEqual(response.context["inventory_value"], Decimal("63"))
+        self.assertEqual(response.context["stock_added_today_value"], Decimal("14"))
+        self.assertEqual(response.context["stock_used_today_value"], Decimal("21"))
+        self.assertContains(response, "Estimated stock value")

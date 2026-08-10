@@ -41,6 +41,7 @@
     {% if "minimum" in visible_columns %}<th>Minimum</th>{% endif %}
     {% if "unit" in visible_columns %}<th>Unit</th>{% endif %}
     {% if "price" in visible_columns %}<th>Latest price</th>{% endif %}
+    {% if "value" in visible_columns %}<th>Stock value</th>{% endif %}
     {% if "latest_addition" in visible_columns %}<th>Latest addition</th>{% endif %}
     {% if "stock_status" in visible_columns %}<th>Status</th>{% endif %}
     {% if "updated" in visible_columns %}<th>Updated</th>{% endif %}
@@ -56,6 +57,7 @@
       {% if "minimum" in visible_columns %}<td>{{ item.minimum_quantity }}</td>{% endif %}
       {% if "unit" in visible_columns %}<td>{{ item.unit.symbol }}</td>{% endif %}
       {% if "price" in visible_columns %}<td>{% if item.latest_unit_price is not None %}{{ item.latest_unit_price }}{% else %}—{% endif %}</td>{% endif %}
+      {% if "value" in visible_columns %}<td class="price">{% if item.stock_value is not None %}{{ item.stock_value|floatformat:"2g" }}{% else %}—{% endif %}</td>{% endif %}
       {% if "latest_addition" in visible_columns %}<td>{{ item.latest_addition_date|date:"d M Y"|default:"—" }}</td>{% endif %}
       {% if "stock_status" in visible_columns %}<td><span class="status {% if item.stock_status == 'low' %}status-low{% else %}status-out{% endif %}">{{ item.stock_status_label }}</span></td>{% endif %}
       {% if "updated" in visible_columns %}<td>{{ item.updated_at|date:"d M Y" }}</td>{% endif %}

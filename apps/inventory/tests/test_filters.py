@@ -194,6 +194,13 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, "Material")
         self.assertNotContains(response, "<th>Supplier location</th>")
 
+    def test_inventory_shows_and_sorts_calculated_stock_value(self):
+        self.assertEqual(self.cement.stock_value, Decimal("1225.00000"))
+        response = self.client.get(reverse("inventory:list"), {"sort": "-value"})
+        self.assertContains(response, "Stock value")
+        self.assertContains(response, "1,225.00")
+        self.assertEqual(response.context["stock_items"][0], self.cement)
+
     def test_table_columns_are_saved_per_user_and_view(self):
         endpoint = reverse("inventory:column_preferences")
         response = self.client.post(

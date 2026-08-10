@@ -56,7 +56,7 @@ from .services.stock import (
 
 DEFAULT_STOCK_COLUMNS = (
     "project", "material", "supplier", "phone", "quantity", "minimum", "unit",
-    "price", "latest_addition", "stock_status", "updated",
+    "price", "value", "latest_addition", "stock_status", "updated",
 )
 DEFAULT_MOVEMENT_COLUMNS = (
     "date", "project", "material", "type", "quantity", "balance", "reference", "user",
@@ -117,6 +117,14 @@ STOCK_SORTS = {
     "oldest-addition": (F("latest_addition_date").asc(nulls_last=True), "material_name"),
     "price": (F("latest_unit_price").asc(nulls_last=True), "material_name"),
     "-price": (F("latest_unit_price").desc(nulls_last=True), "material_name"),
+    "value": (
+        (F("current_quantity") * F("latest_unit_price")).asc(nulls_last=True),
+        "material_name",
+    ),
+    "-value": (
+        (F("current_quantity") * F("latest_unit_price")).desc(nulls_last=True),
+        "material_name",
+    ),
 }
 MOVEMENT_SORTS = {
     "-date": ("-movement_date", "-created_at", "-pk"),
