@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from uuid import UUID
 
 from django.db.models import F, Model, Q, QuerySet
 
@@ -66,6 +67,7 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
             | Q(project__name__icontains=query)
             | Q(project__client_name__icontains=query)
             | Q(project__location__icontains=query)
+            | Q(project__notes__icontains=query)
             | Q(material_name__icontains=query)
             | Q(description__icontains=query)
             | Q(supplier_name__icontains=query)
@@ -77,10 +79,16 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
             | Q(created_by__username__icontains=query)
             | Q(created_by__first_name__icontains=query)
             | Q(created_by__last_name__icontains=query)
+            | Q(created_by__email__icontains=query)
             | Q(updated_by__username__icontains=query)
             | Q(updated_by__first_name__icontains=query)
             | Q(updated_by__last_name__icontains=query)
+            | Q(updated_by__email__icontains=query)
         )
+        try:
+            condition |= Q(reference=UUID(query))
+        except (ValueError, AttributeError):
+            pass
         phone_query = normalize_phone(query)
         if phone_query:
             condition |= Q(normalized_supplier_phone__icontains=phone_query)

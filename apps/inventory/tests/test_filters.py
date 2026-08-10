@@ -72,6 +72,29 @@ class AdvancedExplorerTests(TestCase):
         response = self.client.get(reverse("inventory:list"), {"q": "ARAMCO Metal"})
         self.assertNotContains(response, "Portland Cement")
 
+    def test_inventory_search_covers_record_context_and_reference(self):
+        self.aramco.client_name = "Saudi Aramco"
+        self.aramco.location = "Eastern Province"
+        self.aramco.notes = "Coastal expansion package"
+        self.aramco.save()
+        self.user.email = "keeper@inventory.example"
+        self.user.save(update_fields=["email"])
+
+        searchable_values = (
+            "Saudi",
+            "Eastern",
+            "Coastal",
+            "50 KG",
+            "Dammam",
+            "bag",
+            "keeper@inventory.example",
+            str(self.cement.reference),
+        )
+        for query in searchable_values:
+            with self.subTest(query=query):
+                response = self.client.get(reverse("inventory:list"), {"q": query})
+                self.assertContains(response, "Portland Cement")
+
     def test_inventory_uses_compact_live_search_filter_ui(self):
         response = self.client.get(
             reverse("inventory:list"),

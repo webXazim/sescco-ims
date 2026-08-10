@@ -524,6 +524,7 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
                 initial.update(
                     project=item.project,
                     material_name=item.material_name,
+                    description=item.description,
                     supplier=supplier,
                     unit=item.unit,
                     minimum_quantity=item.minimum_quantity,
@@ -549,6 +550,7 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
                     movement_date=data["movement_date"],
                     project=data["project"],
                     material_name=data["material_name"],
+                    description=data["description"],
                     supplier_name=data["supplier"].name,
                     supplier_phone=data["supplier"].phone,
                     supplier_location=data["supplier"].location,

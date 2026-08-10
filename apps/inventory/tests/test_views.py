@@ -141,6 +141,7 @@ class InventoryWorkspaceTests(TestCase):
                 "idempotency_key": uuid.uuid4(),
                 "project": self.project.pk,
                 "material_name": "Portland Cement",
+                "description": "Sulphate-resistant 50 kg bag",
                 "supplier": self.supplier.pk,
                 "unit": self.unit.pk,
                 "minimum_quantity": "10",
@@ -161,6 +162,7 @@ class InventoryWorkspaceTests(TestCase):
         self.assertEqual(item.supplier_name, self.supplier.name)
         self.assertEqual(item.supplier_phone, self.supplier.phone)
         self.assertEqual(item.supplier_location, self.supplier.location)
+        self.assertEqual(item.description, "Sulphate-resistant 50 kg bag")
 
     def test_add_stock_duplicate_post_is_idempotent(self):
         token = uuid.uuid4()
@@ -200,7 +202,7 @@ class InventoryWorkspaceTests(TestCase):
 
         response = self.client.get(reverse("core:add_stock"))
         self.assertContains(response, "Eastern Steel")
-        self.assertNotContains(response, 'id="id_description"')
+        self.assertContains(response, 'id="id_description"')
 
     def test_use_stock_page_blocks_negative_stock(self):
         item = self.add_item_stock("10").movement.stock_item
@@ -416,3 +418,4 @@ class PrivateMovementAttachmentTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Disposition"], 'attachment; filename="invoice.pdf"')
+        response.close()

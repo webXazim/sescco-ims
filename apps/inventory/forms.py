@@ -157,6 +157,13 @@ class IdempotentMovementForm(StyledForm):
 class StockAdditionForm(IdempotentMovementForm):
     project = forms.ModelChoiceField(queryset=Project.objects.none())
     material_name = forms.CharField(max_length=180)
+    description = forms.CharField(
+        required=False,
+        label="Description / specification",
+        widget=forms.TextInput(
+            attrs={"placeholder": "Optional size, grade, model, or specification"}
+        ),
+    )
     supplier = forms.ModelChoiceField(
         queryset=Supplier.objects.none(),
         widget=SupplierSelect,
@@ -542,7 +549,9 @@ class StockItemFilterForm(DateRangeFilterForm):
         self.fields["unit"].queryset = Unit.objects.order_by("name")
         self.fields["q"].widget.attrs.update(
             {
-                "placeholder": "Search project, material, supplier, phone, or notes…",
+                "placeholder": (
+                    "Search project, material, description, supplier, unit, notes, or user…"
+                ),
                 "autocomplete": "off",
                 "aria-label": "Search inventory",
                 "data-live-filter-search": "",

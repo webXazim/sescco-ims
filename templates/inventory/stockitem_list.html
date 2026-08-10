@@ -40,7 +40,7 @@
         <div class="field"><label class="field-label">Latest price range</label><div class="range-inputs">{{ filter_form.price_min }}<span>to</span>{{ filter_form.price_max }}</div>{{ filter_form.price_min.errors }}{{ filter_form.price_max.errors }}</div>
         <details class="column-options field-span-2"><summary>Choose visible columns</summary><div class="check-list columns">{{ filter_form.columns }}</div>{{ filter_form.columns.errors }}</details>
       </div>
-      <div class="advanced-footer"><p class="micro">Use the search above for project, material, supplier, phone, location, notes, units, or users.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
+      <div class="advanced-footer"><p class="micro">Search project details, material and description, supplier details, units, record notes, reference, or responsible users.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
     </div>
   </form>
   <div data-filter-results aria-live="polite">

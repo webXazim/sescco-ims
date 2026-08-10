@@ -12,6 +12,7 @@
       <div class="form-section"><h2 class="form-section-title">Project and material</h2><div class="form-grid">
         <div class="field"><label class="field-label required" for="{{ form.project.id_for_label }}">{{ form.project.label }}</label><div class="field-control-row">{{ form.project }}<a class="btn field-add" href="{% url 'projects:create' %}" title="Add project" aria-label="Add project">＋</a></div>{% for error in form.project.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
         {% include "partials/form_field.html" with field=form.material_name %}
+        <div class="field field-full"><label class="field-label" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>{{ form.description }}{% for error in form.description.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
         <div class="field"><label class="field-label required" for="{{ form.unit.id_for_label }}">{{ form.unit.label }}</label><div class="field-control-row">{{ form.unit }}<a class="btn field-add" href="{% url 'inventory:units' %}#add-unit" title="Add unit" aria-label="Add unit">＋</a></div>{% for error in form.unit.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
         {% include "partials/form_field.html" with field=form.minimum_quantity %}
       </div></div>
