@@ -33,6 +33,11 @@ class ProjectModelTests(TestCase):
 class ProjectWorkspaceTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper", password="safe-password")
+        self.admin = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password="safe-password",
+        )
         self.client.force_login(self.user)
 
     def test_storekeeper_can_create_project(self):
@@ -144,3 +149,41 @@ class ProjectWorkspaceTests(TestCase):
         project.status = Project.Status.COMPLETED
         with self.assertRaises(ValidationError):
             project.save()
+
+    def test_storekeeper_can_archive_project_but_only_admin_can_delete(self):
+        project = Project.objects.create(code="LIFE-02", name="Lifecycle Controls")
+        status_url = reverse("projects:status", kwargs={"code": project.code})
+        delete_url = reverse("projects:delete", kwargs={"code": project.code})
+
+        response = self.client.post(status_url, {"action": "archive"})
+        self.assertRedirects(response, reverse("projects:detail", args=[project.code]))
+        project.refresh_from_db()
+        self.assertEqual(project.status, Project.Status.ARCHIVED)
+
+        self.assertEqual(self.client.post(delete_url).status_code, 403)
+        self.assertTrue(Project.objects.filter(pk=project.pk).exists())
+
+        self.client.force_login(self.admin)
+        response = self.client.post(delete_url)
+        self.assertRedirects(response, reverse("projects:list"))
+        self.assertFalse(Project.objects.filter(pk=project.pk).exists())
+
+    def test_project_with_inventory_history_cannot_be_deleted(self):
+        from apps.inventory.models import StockItem, Unit
+
+        project = Project.objects.create(code="LIFE-03", name="Protected Project")
+        unit = Unit.objects.get(normalized_name="piece")
+        StockItem.objects.create(
+            project=project,
+            material_name="Cable",
+            supplier_name="Cable Supplier",
+            supplier_phone="0500000222",
+            unit=unit,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("projects:delete", kwargs={"code": project.code})
+        )
+        self.assertRedirects(response, reverse("projects:detail", args=[project.code]))
+        self.assertTrue(Project.objects.filter(pk=project.pk).exists())

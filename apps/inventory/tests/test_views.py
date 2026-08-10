@@ -469,6 +469,96 @@ class InventoryWorkspaceTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ACTIVE)
 
+    def test_stock_delete_is_admin_only_and_protects_history(self):
+        unused = self.create_item()
+        delete_url = reverse(
+            "inventory:delete", kwargs={"reference": unused.reference}
+        )
+        response = self.client.post(delete_url)
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(StockItem.objects.filter(pk=unused.pk).exists())
+
+        self.client.force_login(self.admin)
+        response = self.client.post(delete_url)
+        self.assertRedirects(response, reverse("inventory:list"))
+        self.assertFalse(StockItem.objects.filter(pk=unused.pk).exists())
+
+        protected = self.add_item_stock().movement.stock_item
+        response = self.client.post(
+            reverse("inventory:delete", kwargs={"reference": protected.reference})
+        )
+        self.assertRedirects(
+            response,
+            reverse("inventory:detail", kwargs={"reference": protected.reference}),
+        )
+        self.assertTrue(StockItem.objects.filter(pk=protected.pk).exists())
+
+    def test_unit_and_supplier_lifecycle_permissions(self):
+        unit = Unit.objects.create(name="Pallet", symbol="plt")
+        supplier = Supplier.objects.create(name="Unused Vendor", phone="0500000111")
+
+        self.client.post(
+            reverse("inventory:unit_status", kwargs={"pk": unit.pk}),
+            {"action": "archive"},
+        )
+        self.client.post(
+            reverse("inventory:supplier_status", kwargs={"pk": supplier.pk}),
+            {"action": "archive"},
+        )
+        unit.refresh_from_db()
+        supplier.refresh_from_db()
+        self.assertFalse(unit.is_active)
+        self.assertFalse(supplier.is_active)
+
+        self.assertEqual(
+            self.client.post(
+                reverse("inventory:unit_delete", kwargs={"pk": unit.pk})
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse("inventory:supplier_delete", kwargs={"pk": supplier.pk})
+            ).status_code,
+            403,
+        )
+
+        self.client.force_login(self.admin)
+        self.assertRedirects(
+            self.client.post(reverse("inventory:unit_delete", kwargs={"pk": unit.pk})),
+            reverse("inventory:units"),
+        )
+        self.assertRedirects(
+            self.client.post(
+                reverse("inventory:supplier_delete", kwargs={"pk": supplier.pk})
+            ),
+            reverse("inventory:suppliers"),
+        )
+        self.assertFalse(Unit.objects.filter(pk=unit.pk).exists())
+        self.assertFalse(Supplier.objects.filter(pk=supplier.pk).exists())
+
+    def test_used_unit_and_supplier_must_be_archived_not_deleted(self):
+        item = self.add_item_stock().movement.stock_item
+        self.client.force_login(self.admin)
+
+        unit_response = self.client.post(
+            reverse("inventory:unit_delete", kwargs={"pk": item.unit_id})
+        )
+        supplier_response = self.client.post(
+            reverse("inventory:supplier_delete", kwargs={"pk": self.supplier.pk})
+        )
+
+        self.assertRedirects(
+            unit_response,
+            reverse("inventory:unit_edit", kwargs={"pk": item.unit_id}),
+        )
+        self.assertRedirects(
+            supplier_response,
+            reverse("inventory:supplier_edit", kwargs={"pk": self.supplier.pk}),
+        )
+        self.assertTrue(Unit.objects.filter(pk=item.unit_id).exists())
+        self.assertTrue(Supplier.objects.filter(pk=self.supplier.pk).exists())
+
 
 
 class PrivateMovementAttachmentTests(TestCase):

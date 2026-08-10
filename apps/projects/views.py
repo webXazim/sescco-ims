@@ -1,10 +1,14 @@
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
 from django.db.models import F, Q
+from django.db.models.deletion import ProtectedError
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from apps.core.access import InventoryWorkspaceMixin
+from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
 from apps.inventory.models import StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
@@ -32,7 +36,7 @@ class ProjectListView(InventoryWorkspaceMixin, ListView):
             )
         if status in Project.Status.values:
             queryset = queryset.filter(status=status)
-        return queryset
+        return queryset.order_by("code")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -101,6 +105,50 @@ class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
+class ProjectStatusView(InventoryWorkspaceMixin, View):
+    def post(self, request, code):
+        project = get_object_or_404(Project, code=code)
+        action = request.POST.get("action", "").strip()
+        target = {
+            "archive": Project.Status.ARCHIVED,
+            "reactivate": Project.Status.ACTIVE,
+        }.get(action)
+        if not target:
+            messages.error(request, "Choose a valid project lifecycle action.")
+            return redirect("projects:detail", code=project.code)
+        project.status = target
+        project.updated_by = request.user
+        try:
+            project.save()
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
+        else:
+            messages.success(
+                request,
+                f"Project {project.code} was "
+                f"{'reactivated' if target == Project.Status.ACTIVE else 'archived'}.",
+            )
+        return redirect("projects:detail", code=project.code)
+
+
+class ProjectDeleteView(InventoryAdminRequiredMixin, View):
+    def post(self, request, code):
+        project = get_object_or_404(Project, code=code)
+        if project.stock_items.exists() or project.import_jobs.exists():
+            messages.error(
+                request,
+                "This project has inventory or import history. Archive it instead of deleting it.",
+            )
+            return redirect("projects:detail", code=project.code)
+        try:
+            project.delete()
+        except ProtectedError:
+            messages.error(request, "This project is still referenced and cannot be deleted.")
+            return redirect("projects:detail", code=project.code)
+        messages.success(request, f"Unused project {code} was permanently deleted.")
+        return redirect("projects:list")
+
+
 class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
     model = Project
     template_name = "projects/project_detail.html"
@@ -164,6 +212,10 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
             movement_count=project_movements.count(),
             recent_movements=project_movements[:6],
             project_source_query=self._source_query(),
+            can_archive_project=(
+                self.object.status == Project.Status.ACTIVE
+                and not all_project_items.filter(current_quantity__gt=0).exists()
+            ),
         )
         return context
 

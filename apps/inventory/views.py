@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Count, F, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -447,6 +448,32 @@ class StockItemStatusView(InventoryWorkspaceMixin, View):
             verb = "reactivated" if updated.status == StockItem.Status.ACTIVE else "archived"
             messages.success(request, f"Stock record was {verb}.")
         return redirect("inventory:detail", reference=stock_item.reference)
+
+
+class StockItemDeleteView(InventoryAdminRequiredMixin, View):
+    def post(self, request, reference):
+        stock_item = get_object_or_404(StockItem, reference=reference)
+        if stock_item.current_quantity != 0:
+            messages.error(request, "Use or adjust the remaining quantity before deletion.")
+            return redirect("inventory:detail", reference=reference)
+        if (
+            stock_item.movements.exists()
+            or stock_item.documents.exists()
+            or stock_item.import_rows.exists()
+            or stock_item.import_rows_matched.exists()
+        ):
+            messages.error(
+                request,
+                "This record has protected history. Archive it instead of deleting it.",
+            )
+            return redirect("inventory:detail", reference=reference)
+        try:
+            stock_item.delete()
+        except ProtectedError:
+            messages.error(request, "This record is still referenced and cannot be deleted.")
+            return redirect("inventory:detail", reference=reference)
+        messages.success(request, "Unused stock record was permanently deleted.")
+        return redirect("inventory:list")
 
 
 class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
@@ -983,6 +1010,41 @@ class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
+class UnitStatusView(InventoryWorkspaceMixin, View):
+    def post(self, request, pk):
+        unit = get_object_or_404(Unit, pk=pk)
+        action = request.POST.get("action", "").strip()
+        if action not in {"archive", "reactivate"}:
+            messages.error(request, "Choose a valid unit lifecycle action.")
+            return redirect("inventory:unit_edit", pk=unit.pk)
+        unit.is_active = action == "reactivate"
+        try:
+            unit.save()
+        except ValidationError as exc:
+            messages.error(request, _operation_error_message(exc))
+        else:
+            messages.success(
+                request,
+                f"Unit {unit.name} was {'reactivated' if unit.is_active else 'archived'}.",
+            )
+        return redirect("inventory:unit_edit", pk=unit.pk)
+
+
+class UnitDeleteView(InventoryAdminRequiredMixin, View):
+    def post(self, request, pk):
+        unit = get_object_or_404(Unit, pk=pk)
+        if unit.stock_items.exists() or unit.import_jobs.exists():
+            messages.error(request, "This unit is in use. Archive it instead of deleting it.")
+            return redirect("inventory:unit_edit", pk=unit.pk)
+        try:
+            unit.delete()
+        except ProtectedError:
+            messages.error(request, "This unit is still referenced and cannot be deleted.")
+            return redirect("inventory:unit_edit", pk=unit.pk)
+        messages.success(request, f"Unused unit {unit.name} was permanently deleted.")
+        return redirect("inventory:units")
+
+
 class SupplierListCreateView(InventoryWorkspaceMixin, View):
     template_name = "inventory/supplier_list.html"
 
@@ -1038,6 +1100,42 @@ class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
             submit_label="Save supplier",
         )
         return context
+
+
+class SupplierStatusView(InventoryWorkspaceMixin, View):
+    def post(self, request, pk):
+        supplier = get_object_or_404(Supplier, pk=pk)
+        action = request.POST.get("action", "").strip()
+        if action not in {"archive", "reactivate"}:
+            messages.error(request, "Choose a valid supplier lifecycle action.")
+            return redirect("inventory:supplier_edit", pk=supplier.pk)
+        supplier.is_active = action == "reactivate"
+        supplier.save()
+        messages.success(
+            request,
+            f"Supplier {supplier.name} was "
+            f"{'reactivated' if supplier.is_active else 'archived'}.",
+        )
+        return redirect("inventory:supplier_edit", pk=supplier.pk)
+
+
+class SupplierDeleteView(InventoryAdminRequiredMixin, View):
+    def post(self, request, pk):
+        supplier = get_object_or_404(Supplier, pk=pk)
+        used = StockItem.objects.filter(
+            normalized_supplier_name=supplier.normalized_name,
+            normalized_supplier_phone=supplier.normalized_phone,
+        ).exists()
+        if used:
+            messages.error(
+                request,
+                "This supplier appears in stock history. Archive it instead of deleting it.",
+            )
+            return redirect("inventory:supplier_edit", pk=supplier.pk)
+        name = supplier.name
+        supplier.delete()
+        messages.success(request, f"Unused supplier {name} was permanently deleted.")
+        return redirect("inventory:suppliers")
 
 
 class StockPickerAPIView(InventoryWorkspaceMixin, View):

@@ -8,6 +8,15 @@ from django.utils.html import format_html
 from .models import StockDocument, StockItem, StockMovement, Supplier, Unit
 
 
+class GuardedDeleteAdminMixin:
+    """Allow per-record admin deletion without exposing unsafe bulk deletion."""
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
+
+
 @admin.register(StockDocument)
 class StockDocumentAdmin(admin.ModelAdmin):
     list_display = ("original_name", "stock_item", "uploaded_by", "uploaded_at")
@@ -66,7 +75,7 @@ class StockStatusAdminFilter(admin.SimpleListFilter):
 
 
 @admin.register(Unit)
-class UnitAdmin(admin.ModelAdmin):
+class UnitAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_display = ("name", "symbol", "is_active", "active_stock_count", "inventory_link")
     list_filter = ("is_active",)
     search_fields = ("name", "symbol", "normalized_name", "normalized_symbol")
@@ -123,11 +132,13 @@ class UnitAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">Open inventory</a>', url)
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        if not request.user.is_inventory_admin:
+            return False
+        return obj is None or not (obj.stock_items.exists() or obj.import_jobs.exists())
 
 
 @admin.register(Supplier)
-class SupplierAdmin(admin.ModelAdmin):
+class SupplierAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_display = ("name", "phone", "location", "is_active", "updated_at")
     list_filter = ("is_active", "location")
     search_fields = ("name", "phone", "normalized_name", "normalized_phone", "location")
@@ -140,11 +151,18 @@ class SupplierAdmin(admin.ModelAdmin):
     )
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        if not request.user.is_inventory_admin:
+            return False
+        if obj is None:
+            return True
+        return not StockItem.objects.filter(
+            normalized_supplier_name=obj.normalized_name,
+            normalized_supplier_phone=obj.normalized_phone,
+        ).exists()
 
 
 @admin.register(StockItem)
-class StockItemAdmin(admin.ModelAdmin):
+class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
         "material_name",
         "project",
@@ -311,7 +329,17 @@ class StockItemAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        if not request.user.is_inventory_admin:
+            return False
+        if obj is None:
+            return True
+        return (
+            obj.current_quantity == 0
+            and not obj.movements.exists()
+            and not obj.documents.exists()
+            and not obj.import_rows.exists()
+            and not obj.import_rows_matched.exists()
+        )
 
 
 @admin.register(StockMovement)

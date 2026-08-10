@@ -10,13 +10,18 @@ from .views import (
     StockItemDetailView,
     StockItemListView,
     StockItemStatusView,
+    StockItemDeleteView,
     StockItemUpdateView,
     StockMatchAPIView,
     StockPickerAPIView,
     StockMovementDetailView,
     SupplierListCreateView,
+    SupplierDeleteView,
+    SupplierStatusView,
     SupplierUpdateView,
     UnitListCreateView,
+    UnitDeleteView,
+    UnitStatusView,
     UnitUpdateView,
 )
 
@@ -33,6 +38,11 @@ urlpatterns = [
         "stock/<uuid:reference>/status/",
         StockItemStatusView.as_view(),
         name="status",
+    ),
+    path(
+        "stock/<uuid:reference>/delete/",
+        StockItemDeleteView.as_view(),
+        name="delete",
     ),
     path(
         "stock/<uuid:reference>/adjust/",
@@ -62,6 +72,18 @@ urlpatterns = [
     path("low-stock/", LowStockListView.as_view(), name="low_stock"),
     path("units/", UnitListCreateView.as_view(), name="units"),
     path("units/<int:pk>/edit/", UnitUpdateView.as_view(), name="unit_edit"),
+    path("units/<int:pk>/status/", UnitStatusView.as_view(), name="unit_status"),
+    path("units/<int:pk>/delete/", UnitDeleteView.as_view(), name="unit_delete"),
     path("suppliers/", SupplierListCreateView.as_view(), name="suppliers"),
     path("suppliers/<int:pk>/edit/", SupplierUpdateView.as_view(), name="supplier_edit"),
+    path(
+        "suppliers/<int:pk>/status/",
+        SupplierStatusView.as_view(),
+        name="supplier_status",
+    ),
+    path(
+        "suppliers/<int:pk>/delete/",
+        SupplierDeleteView.as_view(),
+        name="supplier_delete",
+    ),
 ]

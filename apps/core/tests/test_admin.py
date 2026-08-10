@@ -92,6 +92,22 @@ class AdministrationExperienceTests(TestCase):
         self.assertContains(response, "Reverse safely")
         self.assertNotContains(response, 'name="_save"')
 
+    def test_admin_can_delete_unused_configuration_but_not_audited_stock(self):
+        unused_project = Project.objects.create(code="DELETE-01", name="Unused Project")
+        delete_url = reverse("admin:projects_project_delete", args=[unused_project.pk])
+        self.assertEqual(self.client.get(delete_url).status_code, 200)
+        response = self.client.post(delete_url, {"post": "yes"})
+        self.assertRedirects(response, reverse("admin:projects_project_changelist"))
+        self.assertFalse(Project.objects.filter(pk=unused_project.pk).exists())
+
+        protected_url = reverse(
+            "admin:inventory_stockitem_delete", args=[self.stock_item.pk]
+        )
+        self.assertEqual(self.client.get(protected_url).status_code, 403)
+
+        changelist = self.client.get(reverse("admin:inventory_unit_changelist"))
+        self.assertNotContains(changelist, "Delete selected")
+
     def test_bulk_deactivation_protects_current_admin(self):
         response = self.client.post(
             reverse("admin:accounts_user_changelist"),

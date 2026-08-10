@@ -90,4 +90,11 @@ class ProjectAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        if not request.user.is_inventory_admin:
+            return False
+        return obj is None or not (obj.stock_items.exists() or obj.import_jobs.exists())
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
