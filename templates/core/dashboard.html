@@ -7,11 +7,14 @@
 <div class="grid grid-4">
   <div class="card stat"><div class="stat-top"><span>Active projects</span><span class="stat-icon">◇</span></div><div><div class="stat-value">{{ active_project_count }}</div><div class="stat-note">Projects accepting inventory activity</div></div></div>
   <div class="card stat"><div class="stat-top"><span>Stock records</span><span class="stat-icon">▦</span></div><div><div class="stat-value">{{ stock_record_count }}</div><div class="stat-note">{% if selected_project %}In {{ selected_project }}{% else %}Across all projects{% endif %}</div></div></div>
-  <div class="card stat"><div class="stat-top"><span>Added today</span><span class="stat-icon">＋</span></div><div><div class="stat-value">{{ stock_added_today }}</div><div class="stat-note">{{ stock_added_today_value|floatformat:"2g" }} received value{% if stock_added_today_unpriced %} · {{ stock_added_today_unpriced }} unpriced{% endif %}</div></div></div>
-  <div class="card stat"><div class="stat-top"><span>Used today</span><span class="stat-icon">−</span></div><div><div class="stat-value">{{ stock_used_today }}</div><div class="stat-note">{{ stock_used_today_value|floatformat:"2g" }} issued value{% if stock_used_today_unpriced %} · {{ stock_used_today_unpriced }} unpriced{% endif %}</div></div></div>
+  <div class="card stat"><div class="stat-top"><span>Added today</span><span class="stat-icon">＋</span></div><div><div class="stat-value">{{ stock_added_today }}</div><div class="stat-note" title="{{ stock_added_today_value|floatformat:'2g' }}">{{ stock_added_today_value_compact }} received value{% if stock_added_today_unpriced %} · {{ stock_added_today_unpriced }} unpriced{% endif %}</div></div></div>
+  <div class="card stat"><div class="stat-top"><span>Used today</span><span class="stat-icon">−</span></div><div><div class="stat-value">{{ stock_used_today }}</div><div class="stat-note" title="{{ stock_used_today_value|floatformat:'2g' }}">{{ stock_used_today_value_compact }} issued value{% if stock_used_today_unpriced %} · {{ stock_used_today_unpriced }} unpriced{% endif %}</div></div></div>
 </div>
-<div class="grid grid-4 section-gap">
-  <div class="card compact-stat"><span>Estimated stock value</span><strong>{{ inventory_value|floatformat:"2g" }}</strong><small>Quantity × latest recorded price{% if unpriced_stock_count %} · {{ unpriced_stock_count }} unpriced{% endif %}</small></div>
+<section class="card valuation-card section-gap">
+  <div class="valuation-copy"><span class="valuation-eyebrow">Estimated stock value</span><h2>Current inventory valuation</h2><p>Quantity × latest recorded unit price{% if selected_project %} for {{ selected_project }}{% endif %}.</p></div>
+  <div class="valuation-total"><strong>{{ inventory_value_compact }}</strong><span title="{{ inventory_value|floatformat:'2g' }}">Exact: {{ inventory_value|floatformat:"2g" }}</span>{% if unpriced_stock_count %}<small>{{ unpriced_stock_count }} active record{{ unpriced_stock_count|pluralize }} missing a price</small>{% else %}<small>All stocked records are priced</small>{% endif %}</div>
+</section>
+<div class="grid grid-3 section-gap">
   <div class="card compact-stat"><span>Needs attention</span><strong>{{ low_stock_count }}</strong><small>Low or out-of-stock records</small></div>
   <div class="card compact-stat"><span>Out of stock</span><strong>{{ out_of_stock_count }}</strong><small>Records currently at zero</small></div>
   <div class="card compact-stat"><span>Configured units</span><strong>{{ unit_count }}</strong><small>Active quantity labels</small></div>

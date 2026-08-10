@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.core.views import _compact_value
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
@@ -119,3 +120,8 @@ class WorkspaceRouteTests(TestCase):
         self.assertEqual(response.context["stock_added_today_value"], Decimal("14"))
         self.assertEqual(response.context["stock_used_today_value"], Decimal("21"))
         self.assertContains(response, "Estimated stock value")
+
+    def test_large_values_use_compact_dashboard_labels(self):
+        self.assertEqual(_compact_value(Decimal("5000021024")), "5.00B")
+        self.assertEqual(_compact_value(Decimal("2500000")), "2.50M")
+        self.assertEqual(_compact_value(Decimal("999.5")), "999.50")

@@ -21,6 +21,22 @@ from apps.projects.models import Project
 from .access import InventoryWorkspaceMixin
 
 
+def _compact_value(value: Decimal) -> str:
+    absolute = abs(value)
+    if absolute >= Decimal("1000000000000000000"):
+        return f"{value:.3E}"
+    for threshold, suffix in (
+        (Decimal("1000000000000000"), "Q"),
+        (Decimal("1000000000000"), "T"),
+        (Decimal("1000000000"), "B"),
+        (Decimal("1000000"), "M"),
+        (Decimal("1000"), "K"),
+    ):
+        if absolute >= threshold:
+            return f"{value / threshold:,.2f}{suffix}"
+    return f"{value:,.2f}"
+
+
 class WorkspaceTemplateView(InventoryWorkspaceMixin, TemplateView):
     page_key = ""
     page_title = ""
@@ -87,6 +103,15 @@ class DashboardView(WorkspaceTemplateView):
             ),
         )
         zero_value = Value(Decimal("0"), output_field=value_field)
+        inventory_value = items.aggregate(
+            value=Coalesce(Sum(stock_value), zero_value, output_field=value_field)
+        )["value"]
+        added_today_value = inbound_today.aggregate(
+            value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
+        )["value"]
+        used_today_value = outbound_today.aggregate(
+            value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
+        )["value"]
         context.update(
             projects=projects,
             selected_project=selected_project,
@@ -100,21 +125,18 @@ class DashboardView(WorkspaceTemplateView):
                 status=StockItem.Status.ACTIVE, current_quantity=0
             ).count(),
             unit_count=Unit.objects.filter(is_active=True).count(),
-            inventory_value=items.aggregate(
-                value=Coalesce(Sum(stock_value), zero_value, output_field=value_field)
-            )["value"],
+            inventory_value=inventory_value,
+            inventory_value_compact=_compact_value(inventory_value),
             unpriced_stock_count=items.filter(
                 current_quantity__gt=0, latest_unit_price__isnull=True
             ).count(),
             stock_added_today=inbound_today.count(),
-            stock_added_today_value=inbound_today.aggregate(
-                value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
-            )["value"],
+            stock_added_today_value=added_today_value,
+            stock_added_today_value_compact=_compact_value(added_today_value),
             stock_added_today_unpriced=inbound_today.filter(unit_price__isnull=True).count(),
             stock_used_today=outbound_today.count(),
-            stock_used_today_value=outbound_today.aggregate(
-                value=Coalesce(Sum(movement_value), zero_value, output_field=value_field)
-            )["value"],
+            stock_used_today_value=used_today_value,
+            stock_used_today_value_compact=_compact_value(used_today_value),
             stock_used_today_unpriced=outbound_today.filter(unit_price__isnull=True).count(),
             recent_movements=movements[:8],
             project_summaries=project_summaries.annotate(
