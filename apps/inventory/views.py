@@ -32,7 +32,7 @@ from .forms import (
     SupplierForm,
     UnitForm,
 )
-from .models import StockItem, StockMovement, Supplier, Unit
+from .models import StockDocument, StockItem, StockMovement, Supplier, Unit
 from .selectors import (
     apply_movement_search,
     apply_stock_search,
@@ -382,9 +382,17 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
 
     def form_valid(self, form):
         form.instance.updated_by = self.request.user
+        attachment = form.cleaned_data.get("attachment")
         try:
             with transaction.atomic():
                 response = super().form_valid(form)
+                if attachment:
+                    StockDocument.objects.create(
+                        stock_item=self.object,
+                        file=attachment,
+                        original_name=attachment.name,
+                        uploaded_by=self.request.user,
+                    )
         except IntegrityError:
             form.add_error(
                 None,
@@ -392,7 +400,10 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
                 "Review the project, material, supplier, and phone.",
             )
             return self.form_invalid(form)
-        messages.success(self.request, "Stock record information was updated.")
+        if attachment:
+            messages.success(self.request, "Stock record information and attachment were saved.")
+        else:
+            messages.success(self.request, "Stock record information was updated.")
         return response
 
     def get_success_url(self):
@@ -407,6 +418,7 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
             submit_label="Save changes",
             similar_matches=getattr(context["form"], "similar_matches", []),
             exact_match=getattr(context["form"], "exact_match", None),
+            stock_documents=self.object.documents.select_related("uploaded_by"),
             movement_attachments=self.object.movements.exclude(attachment="").order_by(
                 "-movement_date", "-created_at"
             ),
@@ -793,6 +805,22 @@ class MovementAttachmentView(InventoryWorkspaceMixin, View):
             raise Http404("Attachment file was not found.") from exc
         filename = movement.attachment.name.rsplit("/", 1)[-1]
         response = FileResponse(file_handle, as_attachment=True, filename=filename)
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class StockDocumentAttachmentView(InventoryWorkspaceMixin, View):
+    def get(self, request, reference):
+        document = get_object_or_404(StockDocument, reference=reference)
+        try:
+            file_handle = document.file.open("rb")
+        except FileNotFoundError as exc:
+            raise Http404("Attachment file was not found.") from exc
+        response = FileResponse(
+            file_handle,
+            as_attachment=True,
+            filename=document.original_name,
+        )
         response["Cache-Control"] = "private, no-store"
         return response
 

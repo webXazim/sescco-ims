@@ -5,7 +5,40 @@ from django.db.models import Count, F, Q
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import StockItem, StockMovement, Supplier, Unit
+from .models import StockDocument, StockItem, StockMovement, Supplier, Unit
+
+
+@admin.register(StockDocument)
+class StockDocumentAdmin(admin.ModelAdmin):
+    list_display = ("original_name", "stock_item", "uploaded_by", "uploaded_at")
+    search_fields = (
+        "original_name",
+        "reference",
+        "stock_item__reference",
+        "stock_item__project__code",
+        "stock_item__material_name",
+        "uploaded_by__username",
+    )
+    list_filter = ("uploaded_at", "stock_item__project", "uploaded_by")
+    readonly_fields = (
+        "reference",
+        "stock_item",
+        "file",
+        "original_name",
+        "uploaded_by",
+        "uploaded_at",
+    )
+    date_hierarchy = "uploaded_at"
+    list_select_related = ("stock_item", "stock_item__project", "uploaded_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class StockStatusAdminFilter(admin.SimpleListFilter):

@@ -5,6 +5,7 @@ from .views import (
     MovementAttachmentView,
     MovementReversalView,
     StockAdjustmentView,
+    StockDocumentAttachmentView,
     StockItemCreateView,
     StockItemDetailView,
     StockItemListView,
@@ -37,6 +38,11 @@ urlpatterns = [
         "stock/<uuid:reference>/adjust/",
         StockAdjustmentView.as_view(),
         name="adjust",
+    ),
+    path(
+        "stock-documents/<uuid:reference>/attachment/",
+        StockDocumentAttachmentView.as_view(),
+        name="stock_document_attachment",
     ),
     path(
         "movements/<uuid:reference>/",

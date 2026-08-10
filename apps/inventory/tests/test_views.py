@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.inventory.models import StockItem, StockMovement, Supplier, Unit
+from apps.inventory.models import StockDocument, StockItem, StockMovement, Supplier, Unit
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
 
@@ -183,11 +183,8 @@ class InventoryWorkspaceTests(TestCase):
 
             self.assertContains(response, '<textarea name="description"')
             self.assertContains(response, 'rows="3"')
+            self.assertContains(response, 'type="file" name="attachment"')
             self.assertContains(response, "Stock added attachment")
-            self.assertContains(
-                response,
-                f"{reverse('core:add_stock')}?stock={item.reference}#id_attachment",
-            )
             self.assertContains(
                 response,
                 reverse(
@@ -195,6 +192,62 @@ class InventoryWorkspaceTests(TestCase):
                     kwargs={"reference": movement.reference},
                 ),
             )
+
+            edit_response = self.client.post(
+                reverse("inventory:edit", kwargs={"reference": item.reference}),
+                {
+                    "project": self.project.pk,
+                    "material_name": item.material_name,
+                    "description": item.description,
+                    "supplier_name": item.supplier_name,
+                    "supplier_phone": item.supplier_phone,
+                    "supplier_location": item.supplier_location,
+                    "unit": self.unit.pk,
+                    "minimum_quantity": item.minimum_quantity,
+                    "notes": "Specification saved with the record",
+                    "attachment": SimpleUploadedFile(
+                        "cement-specification.pdf",
+                        b"stock-record-document",
+                        "application/pdf",
+                    ),
+                },
+            )
+            self.assertRedirects(
+                edit_response,
+                reverse("inventory:detail", kwargs={"reference": item.reference}),
+            )
+            document = StockDocument.objects.get(stock_item=item)
+            self.assertEqual(document.original_name, "cement-specification.pdf")
+            self.assertEqual(document.uploaded_by, self.user)
+
+            response = self.client.get(
+                reverse("inventory:edit", kwargs={"reference": item.reference})
+            )
+            self.assertContains(response, "cement-specification.pdf")
+            self.assertContains(
+                response,
+                reverse(
+                    "inventory:stock_document_attachment",
+                    kwargs={"reference": document.reference},
+                ),
+            )
+            download_response = self.client.get(
+                reverse(
+                    "inventory:stock_document_attachment",
+                    kwargs={"reference": document.reference},
+                )
+            )
+            self.assertEqual(download_response.status_code, 200)
+            self.assertEqual(
+                download_response["Content-Disposition"],
+                'attachment; filename="cement-specification.pdf"',
+            )
+            download_response.close()
+
+            search_response = self.client.get(
+                reverse("inventory:list"), {"q": "cement-specification"}
+            )
+            self.assertContains(search_response, "Portland Cement")
 
         add_response = self.client.get(reverse("core:add_stock"))
         self.assertContains(add_response, '<textarea name="description"')

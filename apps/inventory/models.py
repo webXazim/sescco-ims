@@ -331,6 +331,49 @@ class StockItem(models.Model):
         return f"{quantity} {self.unit.symbol}"
 
 
+class StockDocument(models.Model):
+    """An immutable supporting document attached to a stock record."""
+
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    stock_item = models.ForeignKey(
+        StockItem,
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
+    file = models.FileField(
+        upload_to="stock-records/%Y/%m/",
+        validators=[
+            FileExtensionValidator(allowed_extensions=("pdf", "jpg", "jpeg", "png")),
+            validate_attachment_size,
+        ],
+    )
+    original_name = models.CharField(max_length=255)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="stock_documents_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-uploaded_at",)
+
+    def __str__(self) -> str:
+        return f"{self.stock_item} · {self.original_name}"
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("Stock documents are immutable and cannot be edited.")
+        self.original_name = self.original_name.strip()
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Stock documents are immutable and cannot be deleted.")
+
+
 class StockMovement(models.Model):
     class Type(models.TextChoices):
         OPENING = "opening", "Opening stock"

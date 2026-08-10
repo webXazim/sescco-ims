@@ -76,6 +76,7 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
             | Q(unit__name__icontains=query)
             | Q(unit__symbol__icontains=query)
             | Q(notes__icontains=query)
+            | Q(documents__original_name__icontains=query)
             | Q(created_by__username__icontains=query)
             | Q(created_by__first_name__icontains=query)
             | Q(created_by__last_name__icontains=query)
@@ -93,7 +94,7 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
         if phone_query:
             condition |= Q(normalized_supplier_phone__icontains=phone_query)
         queryset = queryset.filter(condition)
-    return queryset
+    return queryset.distinct()
 
 
 def apply_movement_search(

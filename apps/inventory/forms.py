@@ -58,6 +58,10 @@ class SupplierSelect(forms.Select):
 
 
 class StockItemForm(StyledModelForm):
+    attachment = forms.FileField(
+        required=False,
+        help_text="Optional PDF, JPG or PNG, maximum 10 MB.",
+    )
     confirm_similar = forms.BooleanField(
         required=False,
         label="I reviewed the similar record and this is intentionally separate",
@@ -111,6 +115,9 @@ class StockItemForm(StyledModelForm):
             )
         self.exact_match = None
         self.similar_matches = []
+
+    def clean_attachment(self):
+        return validate_uploaded_attachment(self.cleaned_data.get("attachment"))
 
     def clean(self):
         cleaned_data = super().clean()
