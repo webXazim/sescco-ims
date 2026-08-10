@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">{{ record_type }} deletion</div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
+<div class="detail-grid delete-confirm-grid">
+  <section class="card">
+    <div class="card-head"><div><h2 class="card-title">{{ record_label }}</h2><div class="card-meta">This is a recoverable deletion for {{ retention_days }} days.</div></div></div>
+    <div class="card-body">
+      <h3 class="form-section-title">What will happen</h3>
+      <ul class="effect-list">{% for effect in effects %}<li>{{ effect }}</li>{% endfor %}</ul>
+      <div class="alert alert-warning section-gap"><strong>Recovery window</strong><br>You can restore this record from Trash until the displayed purge date. After {{ retention_days }} days it becomes unavailable for restoration; protected audit evidence remains an internal tombstone where required.</div>
+    </div>
+  </section>
+  <aside class="card">
+    <div class="card-head"><h2 class="card-title">Confirm deletion</h2></div>
+    <form method="post" class="card-body form-stack">{% csrf_token %}
+      {% if form_error %}<div class="form-error">{{ form_error }}</div>{% endif %}
+      <label class="field"><span>Reason for deletion <b>*</b></span><textarea class="textarea" name="reason" rows="4" required>{{ reason }}</textarea><small>This reason is shown in Trash for administrators.</small></label>
+      <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong> <b>*</b></span><input class="input" name="confirmation" autocomplete="off" required></label>
+      <label class="confirm-check"><input type="checkbox" name="acknowledge" value="yes" required><span>I understand the effects above and the {{ retention_days }}-day recovery limit.</span></label>
+      <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn btn-danger" type="submit">Move to Trash</button></div>
+    </form>
+  </aside>
+</div>
+{% endblock %}

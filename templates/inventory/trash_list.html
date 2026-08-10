@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
+<section class="card section-gap">
+  <div class="trash-toolbar">
+    <form method="get" class="archive-search" data-live-filter-form><div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" placeholder="Search deleted records or reasons…" autocomplete="off" data-live-filter-search></div>{% if search_query %}<a class="btn btn-ghost btn-sm" href="{% url 'inventory:trash' %}">Clear</a>{% endif %}</form>
+    <span class="micro">{{ paginator.count }} recoverable record{{ paginator.count|pluralize }} · automatically expires after {{ retention_days }} days</span>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Type</th><th>Record</th><th>Reason</th><th>Deleted</th><th>Restore until</th><th></th></tr></thead><tbody>
+  {% for entry in trash_entries %}<tr><td><span class="status status-neutral">{{ entry.kind|title }}</span></td><td><strong>{{ entry.label }}</strong><div class="cell-sub">{{ entry.detail }}</div></td><td>{{ entry.object.deletion_reason|truncatechars:90 }}</td><td>{{ entry.object.deleted_at|date:'d M Y, H:i' }}<div class="cell-sub">{% if entry.object.deleted_by %}{{ entry.object.deleted_by.display_name }}{% else %}System{% endif %}</div></td><td>{{ entry.object.purge_after|date:'d M Y, H:i' }}</td><td><form method="post" action="{% url 'inventory:trash_restore' entry.kind entry.identifier %}" data-confirm="Restore this record to the workspace?">{% csrf_token %}<button class="btn btn-sm" type="submit">Restore</button></form></td></tr>
+  {% empty %}<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">♲</div><h2>Trash is empty</h2><p>Deleted records remain recoverable here for {{ retention_days }} days.</p></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "partials/pagination.html" %}
+</section>
+{% endblock %}

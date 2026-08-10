@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
-from io import BytesIO
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 
 from django.db import transaction
 from django.db.models import Q
@@ -392,17 +392,22 @@ def _preview_opening(job: ImportJob, workbook) -> None:
                 messages.append(parsed_phone.warning)
             project_code = _display(raw.get("project_code")).upper()
             unit_value = _display(raw.get("unit"))
-            project = Project.objects.filter(
-                code=project_code,
-                status=Project.Status.ACTIVE,
-            ).first()
+            project = (
+                Project.objects.filter(deleted_at__isnull=True)
+                .filter(
+                    code=project_code,
+                    status=Project.Status.ACTIVE,
+                )
+                .first()
+            )
             if not project:
                 raise ValueError(f"Active project {project_code or '—'} was not found.")
             normalized_unit = normalize_text(unit_value)
-            unit = Unit.objects.filter(is_active=True).filter(
-                Q(normalized_name=normalized_unit)
-                | Q(normalized_symbol=normalized_unit)
-            ).first()
+            unit = (
+                Unit.objects.filter(is_active=True, deleted_at__isnull=True)
+                .filter(Q(normalized_name=normalized_unit) | Q(normalized_symbol=normalized_unit))
+                .first()
+            )
             if not unit:
                 raise ValueError(f"Active unit {unit_value or '—'} was not found.")
             cleaned = {
@@ -484,8 +489,7 @@ def _preview_opening(job: ImportJob, workbook) -> None:
                     raw=raw,
                     cleaned=cleaned,
                     messages=(
-                        messages
-                        or ["Opening stock will be added to the empty matching record."]
+                        messages or ["Opening stock will be added to the empty matching record."]
                     ),
                     exact_match=matches.exact,
                 )
@@ -514,8 +518,7 @@ def _preview_opening(job: ImportJob, workbook) -> None:
                     raw=raw,
                     cleaned=cleaned,
                     messages=(
-                        messages
-                        or ["A new stock record and opening movement will be created."]
+                        messages or ["A new stock record and opening movement will be created."]
                     ),
                 )
         except ValueError as exc:

@@ -93,24 +93,26 @@ class StockItemForm(StyledModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        active_projects = Project.objects.filter(status=Project.Status.ACTIVE)
-        active_units = Unit.objects.filter(is_active=True)
+        active_projects = Project.objects.filter(
+            status=Project.Status.ACTIVE, deleted_at__isnull=True
+        )
+        active_units = Unit.objects.filter(is_active=True, deleted_at__isnull=True)
         if self.instance.pk:
-            active_projects = Project.objects.filter(
+            active_projects = Project.objects.filter(deleted_at__isnull=True).filter(
                 models.Q(status=Project.Status.ACTIVE) | models.Q(pk=self.instance.project_id)
             )
-            active_units = Unit.objects.filter(
+            active_units = Unit.objects.filter(deleted_at__isnull=True).filter(
                 models.Q(is_active=True) | models.Q(pk=self.instance.unit_id)
             )
         self.fields["project"].queryset = active_projects.order_by("code")
         self.fields["unit"].queryset = active_units.order_by("name")
         if self.instance.pk and self.instance.movements.exists():
             self.fields["project"].disabled = True
-            self.fields["project"].help_text = (
-                "Project is locked after the first stock movement."
-            )
+            self.fields["project"].help_text = "Project is locked after the first stock movement."
             self.fields["unit"].disabled = True
-            self.fields["unit"].help_text = (
+            self.fields[
+                "unit"
+            ].help_text = (
                 "Unit is locked after the first stock movement to keep quantities consistent."
             )
         self.exact_match = None
@@ -222,12 +224,14 @@ class StockAdditionForm(IdempotentMovementForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["project"].queryset = Project.objects.filter(
-            status=Project.Status.ACTIVE
+            status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
-        self.fields["unit"].queryset = Unit.objects.filter(is_active=True).order_by("name")
-        self.fields["supplier"].queryset = Supplier.objects.filter(is_active=True).order_by(
-            "name", "phone"
-        )
+        self.fields["unit"].queryset = Unit.objects.filter(
+            is_active=True, deleted_at__isnull=True
+        ).order_by("name")
+        self.fields["supplier"].queryset = Supplier.objects.filter(
+            is_active=True, deleted_at__isnull=True
+        ).order_by("name", "phone")
         self.exact_match = None
         self.similar_matches = []
 
@@ -251,8 +255,7 @@ class StockAdditionForm(IdempotentMovementForm):
         if result.exact and result.exact.unit_id != cleaned_data["unit"].pk:
             self.add_error(
                 "unit",
-                f"The existing record uses {result.exact.unit.name} "
-                f"({result.exact.unit.symbol}).",
+                f"The existing record uses {result.exact.unit.name} ({result.exact.unit.symbol}).",
             )
         if self.similar_matches and not cleaned_data.get("confirm_similar"):
             raise ValidationError(
@@ -321,7 +324,7 @@ class StockUsageForm(IdempotentMovementForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["project"].queryset = Project.objects.filter(
-            status=Project.Status.ACTIVE
+            status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
 
         selected_item_id = None
@@ -344,19 +347,21 @@ class StockUsageForm(IdempotentMovementForm):
         queryset = StockItem.objects.select_related("project", "unit").filter(
             status=StockItem.Status.ACTIVE,
             project__status=Project.Status.ACTIVE,
+            deleted_at__isnull=True,
+            project__deleted_at__isnull=True,
             current_quantity__gt=0,
         )
         if selected_project_id and str(selected_project_id).isdigit():
             queryset = queryset.filter(project_id=int(selected_project_id))
         elif selected_item_id and str(selected_item_id).isdigit():
-            item_project = StockItem.objects.filter(pk=int(selected_item_id)).values_list(
-                "project_id", flat=True
-            ).first()
+            item_project = (
+                StockItem.objects.filter(pk=int(selected_item_id))
+                .values_list("project_id", flat=True)
+                .first()
+            )
             if item_project:
                 queryset = queryset.filter(project_id=item_project)
-        self.fields["stock_item"].queryset = queryset.order_by(
-            "material_name", "supplier_name"
-        )
+        self.fields["stock_item"].queryset = queryset.order_by("material_name", "supplier_name")
         self.fields["project"].widget.attrs["data-stock-picker-project"] = ""
         self.fields["stock_item"].widget.attrs["data-stock-picker-select"] = ""
 
@@ -564,8 +569,10 @@ class StockItemFilterForm(DateRangeFilterForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.order_by("code")
-        self.fields["unit"].queryset = Unit.objects.order_by("name")
+        self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
+            "code"
+        )
+        self.fields["unit"].queryset = Unit.objects.filter(deleted_at__isnull=True).order_by("name")
         self.fields["q"].widget.attrs.update(
             {
                 "placeholder": (
@@ -576,9 +583,13 @@ class StockItemFilterForm(DateRangeFilterForm):
                 "data-live-filter-search": "",
             }
         )
-        users = get_user_model().objects.filter(is_active=True).order_by(
-            "first_name",
-            "username",
+        users = (
+            get_user_model()
+            .objects.filter(is_active=True)
+            .order_by(
+                "first_name",
+                "username",
+            )
         )
         self.fields["created_by"].queryset = users
         self.fields["updated_by"].queryset = users
@@ -666,20 +677,20 @@ class MovementFilterForm(DateRangeFilterForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.order_by("code")
+        self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
+            "code"
+        )
         self.fields["q"].widget.attrs.update(
             {
-                "placeholder": (
-                    "Search project, material, supplier, reference, purpose, or user…"
-                ),
+                "placeholder": ("Search project, material, supplier, reference, purpose, or user…"),
                 "autocomplete": "off",
                 "aria-label": "Search stock activity",
                 "data-live-filter-search": "",
             }
         )
-        self.fields["created_by"].queryset = get_user_model().objects.filter(
-            is_active=True
-        ).order_by("first_name", "username")
+        self.fields["created_by"].queryset = (
+            get_user_model().objects.filter(is_active=True).order_by("first_name", "username")
+        )
         self.fields["sort"].initial = "-date"
 
     def clean(self):
@@ -692,6 +703,7 @@ class MovementFilterForm(DateRangeFilterForm):
                 if cleaned[lower] > cleaned[upper]:
                     self.add_error(upper, f"{label} maximum cannot be below its minimum.")
         return cleaned
+
 
 class StockHistoryFilterForm(DateRangeFilterForm):
     q = forms.CharField(required=False, label="Search history")
@@ -717,7 +729,7 @@ class StockHistoryFilterForm(DateRangeFilterForm):
                 "autocomplete": "off",
             }
         )
-        self.fields["created_by"].queryset = get_user_model().objects.filter(
-            is_active=True
-        ).order_by("first_name", "username")
+        self.fields["created_by"].queryset = (
+            get_user_model().objects.filter(is_active=True).order_by("first_name", "username")
+        )
         self.fields["sort"].initial = "-date"

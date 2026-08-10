@@ -11,7 +11,8 @@
     <a class="nav-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}"><span class="nav-glyph">◇</span><span>Projects</span></a>
     <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}"><span class="nav-glyph">U</span><span>Units</span></a>
     <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}"><span class="nav-glyph">S</span><span>Suppliers</span></a>
-    <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}"><span class="nav-glyph">□</span><span>Archive</span></a>
+    <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}"><span class="nav-glyph">□</span><span>Archive</span><span class="nav-count">{{ NAV_ARCHIVE_COUNT }}</span></a>
+    {% if request.user.is_inventory_admin %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}"><span class="nav-glyph">♲</span><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span></a>{% endif %}
     <a class="nav-link {% if page_key == 'low-stock' %}active{% endif %}" href="{% url 'inventory:low_stock' %}"><span class="nav-glyph">!</span><span>Low stock</span><span class="nav-count">{{ NAV_LOW_STOCK_COUNT }}</span></a>
     <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}"><span class="nav-glyph">▮</span><span>Saved views</span></a>
     {% if request.user.is_inventory_admin %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}"><span class="nav-glyph">⇧</span><span>Excel imports</span></a>{% endif %}

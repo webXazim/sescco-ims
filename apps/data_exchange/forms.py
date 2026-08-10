@@ -9,7 +9,6 @@ from apps.projects.models import Project
 
 from .models import MAX_IMPORT_SIZE
 
-
 ALLOWED_IMPORT_EXTENSIONS = {"xlsx", "xlsm"}
 
 
@@ -49,11 +48,11 @@ class LegacyImportUploadForm(StyledForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["project"].queryset = Project.objects.filter(
-            status=Project.Status.ACTIVE
+            status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
-        self.fields["default_unit"].queryset = Unit.objects.filter(is_active=True).order_by(
-            "name"
-        )
+        self.fields["default_unit"].queryset = Unit.objects.filter(
+            is_active=True, deleted_at__isnull=True
+        ).order_by("name")
 
     def clean_source_file(self):
         return validate_workbook(self.cleaned_data.get("source_file"))

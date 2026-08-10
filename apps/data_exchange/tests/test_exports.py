@@ -80,13 +80,14 @@ class FilteredExportTests(TestCase):
         self.assertIn("Material", metadata["Columns"])
 
     def test_spreadsheet_formula_injection_is_neutralized(self):
-        self.add(index=1, material="  =HYPERLINK(\"https://example.test\")")
+        self.add(index=1, material='  =HYPERLINK("https://example.test")')
         response = self.client.get(
             reverse("data_exchange:inventory_export", args=["csv"]),
             {"columns": ["material"]},
         )
         rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
-        self.assertTrue(rows[1][0].startswith("'  ="))
+        self.assertTrue(rows[1][0].lstrip("'").lstrip().startswith("="))
+        self.assertTrue(rows[1][0].startswith("'"))
 
     def test_activity_export_uses_current_filters(self):
         item = self.add(index=1)

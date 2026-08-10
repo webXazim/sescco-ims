@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO, StringIO
-from typing import Callable, Iterable
 
 from django.db.models import F
 from django.http import HttpResponse
@@ -35,7 +35,6 @@ from apps.projects.models import Project
 
 from ..models import ExportAudit
 from ..opening_schema import OPENING_IMPORT_COLUMNS, OPENING_IMPORT_RULES
-
 
 DEFAULT_STOCK_COLUMNS = (
     "project",
@@ -197,9 +196,7 @@ STOCK_COLUMNS = {
         "stock_status",
         "Stock status",
         lambda item: (
-            "Archived"
-            if item.status == StockItem.Status.ARCHIVED
-            else item.stock_status_label
+            "Archived" if item.status == StockItem.Status.ARCHIVED else item.stock_status_label
         ),
         16,
     ),
@@ -230,9 +227,7 @@ MOVEMENT_COLUMNS = {
     "project": ExportColumn(
         "project",
         "Project",
-        lambda movement: (
-            f"{movement.project_code_display} · {movement.project_name_display}"
-        ),
+        lambda movement: (f"{movement.project_code_display} · {movement.project_name_display}"),
         28,
     ),
     "material": ExportColumn(
@@ -548,9 +543,7 @@ def _csv_payload(dataset: ExportDataset) -> bytes:
             value = _cell_value(column.value(item))
             if isinstance(value, (date, datetime)):
                 value = (
-                    value.isoformat(sep=" ")
-                    if isinstance(value, datetime)
-                    else value.isoformat()
+                    value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
                 )
             values.append(value)
         writer.writerow(values)
@@ -582,9 +575,7 @@ def export_response(
     row_count = dataset.queryset.count()
     if file_format == ExportAudit.Format.XLSX:
         payload = _xlsx_payload(dataset, user, row_count)
-        content_type = (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         payload = _csv_payload(dataset)
         content_type = "text/csv; charset=utf-8"
@@ -606,8 +597,12 @@ def export_response(
 
 
 def opening_stock_template_response(*, user) -> HttpResponse:
-    projects = list(Project.objects.filter(status=Project.Status.ACTIVE).order_by("code"))
-    units = list(Unit.objects.filter(is_active=True).order_by("name"))
+    projects = list(
+        Project.objects.filter(status=Project.Status.ACTIVE, deleted_at__isnull=True).order_by(
+            "code"
+        )
+    )
+    units = list(Unit.objects.filter(is_active=True, deleted_at__isnull=True).order_by("name"))
     workbook = Workbook()
     instructions = workbook.active
     instructions.title = "Instructions"

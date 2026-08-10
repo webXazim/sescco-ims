@@ -96,7 +96,6 @@ class ProjectWorkspaceTests(TestCase):
         self.assertContains(response, "data-live-filter-search")
         self.assertContains(response, "data-filter-results")
 
-
     def test_project_detail_defaults_to_active_records_and_can_show_archived(self):
         from apps.inventory.models import StockItem, Unit
 
@@ -164,9 +163,13 @@ class ProjectWorkspaceTests(TestCase):
         self.assertTrue(Project.objects.filter(pk=project.pk).exists())
 
         self.client.force_login(self.admin)
-        response = self.client.post(delete_url)
+        response = self.client.post(
+            delete_url,
+            {"confirmation": f"DELETE {project.code}", "reason": "Duplicate", "acknowledge": "yes"},
+        )
         self.assertRedirects(response, reverse("projects:list"))
-        self.assertFalse(Project.objects.filter(pk=project.pk).exists())
+        project.refresh_from_db()
+        self.assertIsNotNone(project.deleted_at)
 
     def test_project_with_inventory_history_cannot_be_deleted(self):
         from apps.inventory.models import StockItem, Unit
@@ -183,7 +186,14 @@ class ProjectWorkspaceTests(TestCase):
         self.client.force_login(self.admin)
 
         response = self.client.post(
-            reverse("projects:delete", kwargs={"code": project.code})
+            reverse("projects:delete", kwargs={"code": project.code}),
+            {
+                "confirmation": f"DELETE {project.code}",
+                "reason": "Project cancelled",
+                "acknowledge": "yes",
+            },
         )
-        self.assertRedirects(response, reverse("projects:detail", args=[project.code]))
+        self.assertRedirects(response, reverse("projects:list"))
+        project.refresh_from_db()
+        self.assertIsNotNone(project.deleted_at)
         self.assertTrue(Project.objects.filter(pk=project.pk).exists())

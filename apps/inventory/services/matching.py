@@ -24,7 +24,9 @@ def find_stock_matches(
     supplier_phone: str,
     exclude_pk: int | None = None,
 ) -> StockMatchResult:
-    base = StockItem.objects.select_related("project", "unit").filter(project=project)
+    base = StockItem.objects.select_related("project", "unit").filter(
+        project=project, deleted_at__isnull=True, project__deleted_at__isnull=True
+    )
     if exclude_pk:
         base = base.exclude(pk=exclude_pk)
 

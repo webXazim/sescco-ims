@@ -15,6 +15,6 @@
     {% elif item.status == 'archived' %}
       <div class="row-action-divider"></div><div class="row-action-option row-action-disabled" aria-disabled="true"><span>Reactivate record</span><small>Reactivate its project and unit first</small></div>
     {% endif %}
-    {% if request.user.is_inventory_admin %}<div class="row-action-divider"></div><form method="post" action="{% url 'inventory:delete' item.reference %}" data-confirm="Permanently delete this unused stock record? This cannot be undone.">{% csrf_token %}<button class="row-action-option row-action-danger" type="submit"><span>Delete permanently</span><small>Only unused records qualify</small></button></form>{% endif %}
+    {% if request.user.is_inventory_admin %}<div class="row-action-divider"></div><a class="row-action-option row-action-danger" href="{% url 'inventory:delete' item.reference %}"><span>Move to Trash</span><small>Review effects · restore within 30 days</small></a>{% endif %}
   </div>
 </details>

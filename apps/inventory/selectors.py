@@ -11,7 +11,6 @@ from apps.explorer.filtering import resolve_date_range
 from .models import StockItem, StockMovement
 from .normalization import normalize_phone
 
-
 LOW_STOCK_CONDITION = Q(current_quantity=0) | Q(
     minimum_quantity__gt=0,
     current_quantity__gt=0,
@@ -20,11 +19,16 @@ LOW_STOCK_CONDITION = Q(current_quantity=0) | Q(
 
 
 def stock_items() -> QuerySet[StockItem]:
-    return StockItem.objects.select_related("project", "unit", "created_by", "updated_by")
+    return StockItem.objects.filter(
+        deleted_at__isnull=True, project__deleted_at__isnull=True
+    ).select_related("project", "unit", "created_by", "updated_by")
 
 
 def stock_movements() -> QuerySet[StockMovement]:
-    return StockMovement.objects.select_related(
+    return StockMovement.objects.filter(
+        stock_item__deleted_at__isnull=True,
+        stock_item__project__deleted_at__isnull=True,
+    ).select_related(
         "stock_item",
         "stock_item__project",
         "stock_item__unit",
@@ -97,9 +101,7 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
     return queryset.distinct()
 
 
-def apply_movement_search(
-    queryset: QuerySet[StockMovement], value: str
-) -> QuerySet[StockMovement]:
+def apply_movement_search(queryset: QuerySet[StockMovement], value: str) -> QuerySet[StockMovement]:
     """Search immutable identity snapshots and current stock identity."""
     for query in _search_terms(value):
         condition = (
@@ -127,9 +129,8 @@ def apply_movement_search(
         )
         phone_query = normalize_phone(query)
         if phone_query:
-            condition |= (
-                Q(supplier_phone_normalized_snapshot__icontains=phone_query)
-                | Q(stock_item__normalized_supplier_phone__icontains=phone_query)
+            condition |= Q(supplier_phone_normalized_snapshot__icontains=phone_query) | Q(
+                stock_item__normalized_supplier_phone__icontains=phone_query
             )
         queryset = queryset.filter(condition)
     return queryset
@@ -162,9 +163,7 @@ def filter_stock_items(queryset: QuerySet[StockItem], data: dict) -> QuerySet[St
         else:
             queryset = queryset.none()
     if data.get("supplier_location"):
-        queryset = queryset.filter(
-            supplier_location__icontains=data["supplier_location"].strip()
-        )
+        queryset = queryset.filter(supplier_location__icontains=data["supplier_location"].strip())
     unit_ids = _ids(data.get("unit"))
     if unit_ids:
         queryset = queryset.filter(unit_id__in=unit_ids)

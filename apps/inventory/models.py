@@ -13,7 +13,6 @@ from apps.projects.models import Project
 
 from .normalization import clean_display_text, normalize_phone, normalize_text
 
-
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
 
 
@@ -28,6 +27,16 @@ class Unit(models.Model):
     symbol = models.CharField(max_length=20)
     normalized_symbol = models.CharField(max_length=20, unique=True, editable=False)
     is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
+    deletion_reason = models.TextField(blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="units_deleted",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -70,6 +79,16 @@ class Supplier(models.Model):
     location = models.CharField(max_length=180, blank=True)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
+    deletion_reason = models.TextField(blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="suppliers_deleted",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -137,6 +156,16 @@ class StockItem(models.Model):
     latest_addition_date = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
+    deletion_reason = models.TextField(blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="stock_items_deleted",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         blank=True,
@@ -212,11 +241,16 @@ class StockItem(models.Model):
         original_status = None
         has_movements = False
         if self.pk:
-            original = type(self).objects.filter(pk=self.pk).values(
-                "project_id",
-                "unit_id",
-                "status",
-            ).first()
+            original = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values(
+                    "project_id",
+                    "unit_id",
+                    "status",
+                )
+                .first()
+            )
             if original:
                 original_project_id = original["project_id"]
                 original_unit_id = original["unit_id"]
@@ -234,13 +268,19 @@ class StockItem(models.Model):
         ):
             errors["status"] = "A stock record can be archived only at zero balance."
         if self.status == self.Status.ACTIVE and original_status == self.Status.ARCHIVED:
-            if self.project_id and not Project.objects.filter(
-                pk=self.project_id, status=Project.Status.ACTIVE
-            ).exists():
+            if (
+                self.project_id
+                and not Project.objects.filter(
+                    pk=self.project_id, status=Project.Status.ACTIVE, deleted_at__isnull=True
+                ).exists()
+            ):
                 errors["status"] = "Reactivate the project before this stock record."
-            if self.unit_id and not Unit.objects.filter(
-                pk=self.unit_id, is_active=True
-            ).exists():
+            if (
+                self.unit_id
+                and not Unit.objects.filter(
+                    pk=self.unit_id, is_active=True, deleted_at__isnull=True
+                ).exists()
+            ):
                 errors["status"] = "Reactivate the unit before this stock record."
 
         project_is_active = (
@@ -248,21 +288,26 @@ class StockItem(models.Model):
             and Project.objects.filter(
                 pk=self.project_id,
                 status=Project.Status.ACTIVE,
+                deleted_at__isnull=True,
             ).exists()
         )
-        if self.project_id and not project_is_active and (
-            self._state.adding or self.project_id != original_project_id
+        if (
+            self.project_id
+            and not project_is_active
+            and (self._state.adding or self.project_id != original_project_id)
         ):
-            errors["project"] = (
-                "New stock records and project changes require an active project."
-            )
+            errors["project"] = "New stock records and project changes require an active project."
 
         unit_is_active = (
             self.unit_id
-            and Unit.objects.filter(pk=self.unit_id, is_active=True).exists()
+            and Unit.objects.filter(
+                pk=self.unit_id, is_active=True, deleted_at__isnull=True
+            ).exists()
         )
-        if self.unit_id and not unit_is_active and (
-            self._state.adding or self.unit_id != original_unit_id
+        if (
+            self.unit_id
+            and not unit_is_active
+            and (self._state.adding or self.unit_id != original_unit_id)
         ):
             errors["unit"] = "New stock records and unit changes require an active unit."
         if errors:
@@ -293,9 +338,9 @@ class StockItem(models.Model):
                     "Latest purchase fields are controlled by the inventory service."
                 )
         elif self.pk and not inventory_service:
-            original = type(self).objects.filter(pk=self.pk).values(
-                *self.PROTECTED_BALANCE_FIELDS
-            ).first()
+            original = (
+                type(self).objects.filter(pk=self.pk).values(*self.PROTECTED_BALANCE_FIELDS).first()
+            )
             if original:
                 changed = [
                     field
@@ -321,9 +366,7 @@ class StockItem(models.Model):
 
     @property
     def stock_status_label(self) -> str:
-        return {"out": "Out of stock", "low": "Low stock", "in": "In stock"}[
-            self.stock_status
-        ]
+        return {"out": "Out of stock", "low": "Low stock", "in": "In stock"}[self.stock_status]
 
     @property
     def quantity_display(self) -> str:
@@ -552,9 +595,7 @@ class StockMovement(models.Model):
                 self.supplier_name_snapshot = item.supplier_name
                 self.supplier_phone_snapshot = item.supplier_phone
                 self.unit_symbol_snapshot = item.unit.symbol
-            self.supplier_phone_normalized_snapshot = normalize_phone(
-                self.supplier_phone_snapshot
-            )
+            self.supplier_phone_normalized_snapshot = normalize_phone(self.supplier_phone_snapshot)
         self.invoice_reference = clean_display_text(self.invoice_reference)
         self.purpose = clean_display_text(self.purpose)
         self.recipient = clean_display_text(self.recipient)

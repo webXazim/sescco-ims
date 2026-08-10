@@ -1,14 +1,14 @@
 from django.contrib import messages
-from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db.models import F, Q
-from django.db.models.deletion import ProtectedError
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
+from apps.core.trash import TRASH_RETENTION_DAYS, move_to_trash
 from apps.inventory.models import StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
@@ -83,7 +83,7 @@ class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
     slug_url_kwarg = "code"
 
     def get_queryset(self):
-        return Project.objects.all()
+        return Project.objects.filter(deleted_at__isnull=True)
 
     def form_valid(self, form):
         form.instance.updated_by = self.request.user
@@ -107,7 +107,7 @@ class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
 
 class ProjectStatusView(InventoryWorkspaceMixin, View):
     def post(self, request, code):
-        project = get_object_or_404(Project, code=code)
+        project = get_object_or_404(Project, code=code, deleted_at__isnull=True)
         action = request.POST.get("action", "").strip()
         target = {
             "archive": Project.Status.ARCHIVED,
@@ -132,20 +132,53 @@ class ProjectStatusView(InventoryWorkspaceMixin, View):
 
 
 class ProjectDeleteView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/delete_confirm.html"
+
+    def _context(self, project):
+        stock = project.stock_items.all()
+        return {
+            "page_key": "projects",
+            "page_title": "Move project to Trash",
+            "page_subtitle": "Review the project-wide effect before continuing.",
+            "record_label": str(project),
+            "record_type": "Project",
+            "confirmation_phrase": f"DELETE {project.code}",
+            "retention_days": TRASH_RETENTION_DAYS,
+            "cancel_url": reverse("projects:detail", kwargs={"code": project.code}),
+            "effects": (
+                f"Stock records hidden with this project: {stock.count()}",
+                f"Current quantity-bearing records: {stock.filter(current_quantity__gt=0).count()}",
+                (
+                    "Protected activity entries retained: "
+                    f"{sum(item.movements.count() for item in stock)}"
+                ),
+                (
+                    "The project and its inventory disappear from search, activity, "
+                    "alerts, and totals."
+                ),
+                "The project and linked inventory return together if restored within 30 days.",
+            ),
+        }
+
+    def get(self, request, code):
+        project = get_object_or_404(Project, code=code, deleted_at__isnull=True)
+        return render(request, self.template_name, self._context(project))
+
     def post(self, request, code):
-        project = get_object_or_404(Project, code=code)
-        if project.stock_items.exists() or project.import_jobs.exists():
-            messages.error(
-                request,
-                "This project has inventory or import history. Archive it instead of deleting it.",
+        project = get_object_or_404(Project, code=code, deleted_at__isnull=True)
+        context = self._context(project)
+        if (
+            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
+            or not request.POST.get("acknowledge")
+            or not request.POST.get("reason", "").strip()
+        ):
+            context.update(
+                form_error="Enter the exact phrase, a reason, and confirm the effect.",
+                reason=request.POST.get("reason", ""),
             )
-            return redirect("projects:detail", code=project.code)
-        try:
-            project.delete()
-        except ProtectedError:
-            messages.error(request, "This project is still referenced and cannot be deleted.")
-            return redirect("projects:detail", code=project.code)
-        messages.success(request, f"Unused project {code} was permanently deleted.")
+            return render(request, self.template_name, context, status=400)
+        move_to_trash(project, user=request.user, reason=request.POST["reason"])
+        messages.success(request, f"Project {code} was moved to Trash for 30 days.")
         return redirect("projects:list")
 
 
@@ -161,8 +194,10 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        stock_items = self.object.stock_items.select_related("unit").order_by(
-            "material_name", "supplier_name"
+        stock_items = (
+            self.object.stock_items.filter(deleted_at__isnull=True)
+            .select_related("unit")
+            .order_by("material_name", "supplier_name")
         )
         query = self.request.GET.get("q", "").strip()
         stock_status = self.request.GET.get("stock_status", "").strip()
@@ -203,9 +238,7 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
             search_query=query,
             current_stock_status=stock_status,
             current_record_status=record_status,
-            active_stock_count=all_project_items.filter(
-                status=StockItem.Status.ACTIVE
-            ).count(),
+            active_stock_count=all_project_items.filter(status=StockItem.Status.ACTIVE).count(),
             out_of_stock_count=all_project_items.filter(
                 status=StockItem.Status.ACTIVE, current_quantity=0
             ).count(),

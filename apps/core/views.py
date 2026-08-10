@@ -63,7 +63,7 @@ class DashboardView(WorkspaceTemplateView):
         selected_project = self.request.GET.get("project", "").strip()
         items = stock_items().filter(status=StockItem.Status.ACTIVE)
         movements = stock_movements()
-        projects = Project.objects.order_by("code")
+        projects = Project.objects.filter(deleted_at__isnull=True).order_by("code")
         selected_project_object = None
         if selected_project:
             selected_project_object = projects.filter(code=selected_project).first()
@@ -73,7 +73,9 @@ class DashboardView(WorkspaceTemplateView):
             else:
                 selected_project = ""
 
-        project_summaries = Project.objects.filter(status=Project.Status.ACTIVE)
+        project_summaries = Project.objects.filter(
+            status=Project.Status.ACTIVE, deleted_at__isnull=True
+        )
         if selected_project_object:
             project_summaries = project_summaries.filter(pk=selected_project_object.pk)
 
@@ -116,7 +118,9 @@ class DashboardView(WorkspaceTemplateView):
             projects=projects,
             selected_project=selected_project,
             selected_project_object=selected_project_object,
-            active_project_count=Project.objects.filter(status=Project.Status.ACTIVE).count(),
+            active_project_count=Project.objects.filter(
+                status=Project.Status.ACTIVE, deleted_at__isnull=True
+            ).count(),
             stock_record_count=items.count(),
             low_stock_count=items.filter(status=StockItem.Status.ACTIVE)
             .filter(LOW_STOCK_CONDITION)
@@ -124,7 +128,7 @@ class DashboardView(WorkspaceTemplateView):
             out_of_stock_count=items.filter(
                 status=StockItem.Status.ACTIVE, current_quantity=0
             ).count(),
-            unit_count=Unit.objects.filter(is_active=True).count(),
+            unit_count=Unit.objects.filter(is_active=True, deleted_at__isnull=True).count(),
             inventory_value=inventory_value,
             inventory_value_compact=_compact_value(inventory_value),
             unpriced_stock_count=items.filter(

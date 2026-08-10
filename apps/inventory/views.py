@@ -7,7 +7,6 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Q
-from django.db.models.deletion import ProtectedError
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -16,6 +15,7 @@ from django.views import View
 from django.views.generic import DetailView, ListView, UpdateView
 
 from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
+from apps.core.trash import TRASH_RETENTION_DAYS, active_trash, move_to_trash, restore_from_trash
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
 from apps.explorer.models import SavedView, TablePreference
@@ -55,11 +55,28 @@ from .services.stock import (
 )
 
 DEFAULT_STOCK_COLUMNS = (
-    "project", "material", "supplier", "phone", "quantity", "minimum", "unit",
-    "price", "value", "latest_addition", "stock_status", "updated",
+    "project",
+    "material",
+    "supplier",
+    "phone",
+    "quantity",
+    "minimum",
+    "unit",
+    "price",
+    "value",
+    "latest_addition",
+    "stock_status",
+    "updated",
 )
 DEFAULT_MOVEMENT_COLUMNS = (
-    "date", "project", "material", "type", "quantity", "balance", "reference", "user",
+    "date",
+    "project",
+    "material",
+    "type",
+    "quantity",
+    "balance",
+    "reference",
+    "user",
 )
 
 COLUMN_SETTINGS = {
@@ -137,6 +154,7 @@ MOVEMENT_SORTS = {
     "user": ("created_by__first_name", "created_by__username", "-movement_date"),
 }
 
+
 def _bound_filter_data(request, defaults: dict[str, object]):
     data = request.GET.copy()
     for key, value in defaults.items():
@@ -148,6 +166,7 @@ def _bound_filter_data(request, defaults: dict[str, object]):
             data[key] = str(value)
     return data
 
+
 def _query_url_without(request, *keys: str) -> str:
     query = request.GET.copy()
     query.pop("page", None)
@@ -157,13 +176,15 @@ def _query_url_without(request, *keys: str) -> str:
     encoded = query.urlencode()
     return f"{request.path}?{encoded}" if encoded else request.path
 
+
 def _chip(label: str, request, *keys: str) -> dict[str, str]:
     return {"label": label, "clear_url": _query_url_without(request, *keys)}
+
 
 def _stock_filter_chips(request, data: dict) -> list[dict[str, str]]:
     chips = []
     if data.get("q"):
-        chips.append(_chip(f'Search: {data["q"]}', request, "q"))
+        chips.append(_chip(f"Search: {data['q']}", request, "q"))
     if data.get("project"):
         project = data["project"]
         chips.append(_chip(f"Project: {project.code}", request, "project"))
@@ -256,7 +277,7 @@ def _stock_filter_chips(request, data: dict) -> list[dict[str, str]]:
 def _movement_filter_chips(request, data: dict) -> list[dict[str, str]]:
     chips = []
     if data.get("q"):
-        chips.append(_chip(f'Search: {data["q"]}', request, "q"))
+        chips.append(_chip(f"Search: {data['q']}", request, "q"))
     if data.get("project"):
         project_names = ", ".join(project.code for project in data["project"])
         chips.append(_chip(f"Project: {project_names}", request, "project"))
@@ -334,6 +355,7 @@ def _source_query(request) -> str:
     query.pop("page", None)
     query.pop("movement_page", None)
     return query.urlencode()
+
 
 def _operation_error_message(exc: ValidationError) -> str:
     return exc.messages[0] if exc.messages else "The inventory operation could not be completed."
@@ -430,6 +452,9 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
     slug_field = "reference"
     slug_url_kwarg = "reference"
 
+    def get_queryset(self):
+        return stock_items()
+
     def form_valid(self, form):
         form.instance.updated_by = self.request.user
         attachment = form.cleaned_data.get("attachment")
@@ -500,28 +525,49 @@ class StockItemStatusView(InventoryWorkspaceMixin, View):
 
 
 class StockItemDeleteView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/delete_confirm.html"
+
+    def _context(self, stock_item):
+        phrase = f"DELETE {stock_item.material_name}"
+        return {
+            "page_key": "inventory",
+            "page_title": "Move stock record to Trash",
+            "page_subtitle": "Review the exact effect before removing it from the workspace.",
+            "record_label": str(stock_item),
+            "record_type": "Stock record",
+            "confirmation_phrase": phrase,
+            "retention_days": TRASH_RETENTION_DAYS,
+            "cancel_url": reverse("inventory:detail", kwargs={"reference": stock_item.reference}),
+            "effects": (
+                f"Current balance: {stock_item.quantity_display}",
+                f"Estimated stock value: {stock_item.stock_value or 0}",
+                f"Protected activity entries retained: {stock_item.movements.count()}",
+                f"Attachments retained: {stock_item.documents.count()}",
+                (
+                    "The record disappears from inventory, search, low-stock alerts, "
+                    "activity, and totals."
+                ),
+                "Its audit history remains protected and returns if the record is restored.",
+            ),
+        }
+
+    def get(self, request, reference):
+        stock_item = get_object_or_404(StockItem, reference=reference, deleted_at__isnull=True)
+        return render(request, self.template_name, self._context(stock_item))
+
     def post(self, request, reference):
-        stock_item = get_object_or_404(StockItem, reference=reference)
-        if stock_item.current_quantity != 0:
-            messages.error(request, "Use or adjust the remaining quantity before deletion.")
-            return redirect("inventory:detail", reference=reference)
+        stock_item = get_object_or_404(StockItem, reference=reference, deleted_at__isnull=True)
+        context = self._context(stock_item)
         if (
-            stock_item.movements.exists()
-            or stock_item.documents.exists()
-            or stock_item.import_rows.exists()
-            or stock_item.import_rows_matched.exists()
+            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
+            or not request.POST.get("acknowledge")
+            or not request.POST.get("reason", "").strip()
         ):
-            messages.error(
-                request,
-                "This record has protected history. Archive it instead of deleting it.",
-            )
-            return redirect("inventory:detail", reference=reference)
-        try:
-            stock_item.delete()
-        except ProtectedError:
-            messages.error(request, "This record is still referenced and cannot be deleted.")
-            return redirect("inventory:detail", reference=reference)
-        messages.success(request, "Unused stock record was permanently deleted.")
+            context["form_error"] = "Enter the exact phrase, a reason, and confirm the effect."
+            context["reason"] = request.POST.get("reason", "")
+            return render(request, self.template_name, context, status=400)
+        move_to_trash(stock_item, user=request.user, reason=request.POST["reason"])
+        messages.success(request, f"{stock_item.material_name} was moved to Trash for 30 days.")
         return redirect("inventory:list")
 
 
@@ -574,17 +620,14 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
             total_movement_count=stock_movements().filter(stock_item=self.object).count(),
             history_form=history_form,
             history_chips=(
-                _movement_filter_chips(self.request, history_data)
-                if history_data
-                else []
+                _movement_filter_chips(self.request, history_data) if history_data else []
             ),
             history_advanced_open=(
                 bool(set(self.request.GET.keys()) - {"movement_page"})
                 or not history_form.is_valid()
             ),
             can_archive=(
-                self.object.status == StockItem.Status.ACTIVE
-                and self.object.current_quantity == 0
+                self.object.status == StockItem.Status.ACTIVE and self.object.current_quantity == 0
             ),
             can_reactivate=(
                 self.object.status == StockItem.Status.ARCHIVED
@@ -592,9 +635,7 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
                 and self.object.unit.is_active
             ),
             history_source_query=_source_query(self.request),
-            import_rows=self.object.import_rows.select_related("job").filter(
-                status="imported"
-            )[:5],
+            import_rows=self.object.import_rows.select_related("job").filter(status="imported")[:5],
         )
         return context
 
@@ -833,8 +874,7 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
             page_key="activity",
             page_title="Stock activity",
             page_subtitle=(
-                "Search additions, usage, adjustments and reversals by every "
-                "recorded field."
+                "Search additions, usage, adjustments and reversals by every recorded field."
             ),
             filter_form=self.filter_form,
             filter_chips=_movement_filter_chips(self.request, data) if data else [],
@@ -1037,9 +1077,7 @@ class LowStockListView(StockItemListView):
         context.update(
             page_key="low-stock",
             page_title="Low stock",
-            page_subtitle=(
-                "Deep filtering for active records at or below their minimum quantity."
-            ),
+            page_subtitle=("Deep filtering for active records at or below their minimum quantity."),
             clear_url=reverse("inventory:low_stock"),
             saved_view_type=self.view_type,
         )
@@ -1057,9 +1095,11 @@ class ArchiveListView(InventoryWorkspaceMixin, View):
         query = request.GET.get("q", "").strip()
 
         archived_stock = stock_items().filter(status=StockItem.Status.ARCHIVED)
-        archived_projects = Project.objects.filter(status=Project.Status.ARCHIVED)
-        archived_units = Unit.objects.filter(is_active=False)
-        archived_suppliers = Supplier.objects.filter(is_active=False)
+        archived_projects = Project.objects.filter(
+            status=Project.Status.ARCHIVED, deleted_at__isnull=True
+        )
+        archived_units = Unit.objects.filter(is_active=False, deleted_at__isnull=True)
+        archived_suppliers = Supplier.objects.filter(is_active=False, deleted_at__isnull=True)
         counts = {
             "stock": archived_stock.count(),
             "projects": archived_projects.count(),
@@ -1116,6 +1156,86 @@ class ArchiveListView(InventoryWorkspaceMixin, View):
         )
 
 
+class TrashListView(InventoryAdminRequiredMixin, ListView):
+    template_name = "inventory/trash_list.html"
+    context_object_name = "trash_entries"
+    paginate_by = 25
+
+    def get_queryset(self):
+        entries = []
+        groups = (
+            ("stock", active_trash(StockItem.objects.select_related("project", "deleted_by"))),
+            ("project", active_trash(Project.objects.select_related("deleted_by"))),
+            ("unit", active_trash(Unit.objects.select_related("deleted_by"))),
+            ("supplier", active_trash(Supplier.objects.select_related("deleted_by"))),
+        )
+        for kind, objects in groups:
+            for item in objects:
+                if kind == "stock":
+                    identifier, label, detail = (
+                        str(item.reference),
+                        item.material_name,
+                        item.project.code,
+                    )
+                elif kind == "project":
+                    identifier, label, detail = item.code, item.code, item.name
+                elif kind == "unit":
+                    identifier, label, detail = str(item.pk), item.name, item.symbol
+                else:
+                    identifier, label, detail = str(item.pk), item.name, item.phone
+                entries.append(
+                    {
+                        "kind": kind,
+                        "identifier": identifier,
+                        "label": label,
+                        "detail": detail,
+                        "object": item,
+                    }
+                )
+        query = self.request.GET.get("q", "").strip().casefold()
+        if query:
+            entries = [
+                entry
+                for entry in entries
+                if query in (
+                    f"{entry['label']} {entry['detail']} "
+                    f"{entry['object'].deletion_reason}"
+                ).casefold()
+            ]
+        return sorted(entries, key=lambda entry: entry["object"].deleted_at, reverse=True)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            page_key="trash",
+            page_title="Trash",
+            page_subtitle="Restore deleted records before their 30-day retention period ends.",
+            search_query=self.request.GET.get("q", ""),
+            retention_days=TRASH_RETENTION_DAYS,
+        )
+        return context
+
+
+class TrashRestoreView(InventoryAdminRequiredMixin, View):
+    def post(self, request, kind, identifier):
+        model, lookup = {
+            "stock": (StockItem, {"reference": identifier}),
+            "project": (Project, {"code": identifier}),
+            "unit": (Unit, {"pk": identifier}),
+            "supplier": (Supplier, {"pk": identifier}),
+        }.get(kind, (None, None))
+        if model is None:
+            raise Http404
+        instance = get_object_or_404(model, deleted_at__isnull=False, **lookup)
+        if restore_from_trash(instance):
+            messages.success(request, f"{instance} was restored.")
+        else:
+            messages.error(
+                request, "The retention period has ended, so this record can no longer be restored."
+            )
+        return redirect("inventory:trash")
+
+
 class UnitListCreateView(InventoryWorkspaceMixin, View):
     template_name = "inventory/unit_list.html"
 
@@ -1132,7 +1252,9 @@ class UnitListCreateView(InventoryWorkspaceMixin, View):
 
     def _context(self, form):
         query = self.request.GET.get("q", "").strip()
-        units = Unit.objects.annotate(stock_count=Count("stock_items"))
+        units = Unit.objects.filter(deleted_at__isnull=True).annotate(
+            stock_count=Count("stock_items")
+        )
         if query:
             units = units.filter(Q(name__icontains=query) | Q(symbol__icontains=query))
         return {
@@ -1150,6 +1272,9 @@ class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
     form_class = UnitForm
     template_name = "inventory/unit_form.html"
     success_url = reverse_lazy("inventory:units")
+
+    def get_queryset(self):
+        return Unit.objects.filter(deleted_at__isnull=True)
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -1169,7 +1294,7 @@ class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
 
 class UnitStatusView(InventoryWorkspaceMixin, View):
     def post(self, request, pk):
-        unit = get_object_or_404(Unit, pk=pk)
+        unit = get_object_or_404(Unit, pk=pk, deleted_at__isnull=True)
         action = request.POST.get("action", "").strip()
         if action not in {"archive", "reactivate"}:
             messages.error(request, "Choose a valid unit lifecycle action.")
@@ -1188,17 +1313,48 @@ class UnitStatusView(InventoryWorkspaceMixin, View):
 
 
 class UnitDeleteView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/delete_confirm.html"
+
+    def _context(self, unit):
+        return {
+            "page_key": "units",
+            "page_title": "Move unit to Trash",
+            "page_subtitle": "Review where this unit is used before continuing.",
+            "record_label": str(unit),
+            "record_type": "Unit",
+            "confirmation_phrase": f"DELETE {unit.name}",
+            "retention_days": TRASH_RETENTION_DAYS,
+            "cancel_url": reverse("inventory:unit_edit", kwargs={"pk": unit.pk}),
+            "effects": (
+                f"Stock records using this unit: {unit.stock_items.count()}",
+                f"Import jobs using this unit: {unit.import_jobs.count()}",
+                "The unit is removed from management and new stock-entry choices.",
+                "Existing stock and audit history remain intact.",
+            ),
+        }
+
+    def get(self, request, pk):
+        return render(
+            request,
+            self.template_name,
+            self._context(get_object_or_404(Unit, pk=pk, deleted_at__isnull=True)),
+        )
+
     def post(self, request, pk):
-        unit = get_object_or_404(Unit, pk=pk)
-        if unit.stock_items.exists() or unit.import_jobs.exists():
-            messages.error(request, "This unit is in use. Archive it instead of deleting it.")
-            return redirect("inventory:unit_edit", pk=unit.pk)
-        try:
-            unit.delete()
-        except ProtectedError:
-            messages.error(request, "This unit is still referenced and cannot be deleted.")
-            return redirect("inventory:unit_edit", pk=unit.pk)
-        messages.success(request, f"Unused unit {unit.name} was permanently deleted.")
+        unit = get_object_or_404(Unit, pk=pk, deleted_at__isnull=True)
+        context = self._context(unit)
+        if (
+            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
+            or not request.POST.get("acknowledge")
+            or not request.POST.get("reason", "").strip()
+        ):
+            context.update(
+                form_error="Enter the exact phrase, a reason, and confirm the effect.",
+                reason=request.POST.get("reason", ""),
+            )
+            return render(request, self.template_name, context, status=400)
+        move_to_trash(unit, user=request.user, reason=request.POST["reason"])
+        messages.success(request, f"{unit.name} was moved to Trash for 30 days.")
         return redirect("inventory:units")
 
 
@@ -1218,7 +1374,7 @@ class SupplierListCreateView(InventoryWorkspaceMixin, View):
 
     def _context(self, form):
         query = self.request.GET.get("q", "").strip()
-        suppliers = Supplier.objects.all()
+        suppliers = Supplier.objects.filter(deleted_at__isnull=True)
         if query:
             suppliers = suppliers.filter(
                 Q(name__icontains=query)
@@ -1243,6 +1399,9 @@ class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
     template_name = "inventory/supplier_form.html"
     success_url = reverse_lazy("inventory:suppliers")
 
+    def get_queryset(self):
+        return Supplier.objects.filter(deleted_at__isnull=True)
+
     def form_valid(self, form):
         response = super().form_valid(form)
         messages.success(self.request, f"Supplier {self.object.name} was updated.")
@@ -1261,7 +1420,7 @@ class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
 
 class SupplierStatusView(InventoryWorkspaceMixin, View):
     def post(self, request, pk):
-        supplier = get_object_or_404(Supplier, pk=pk)
+        supplier = get_object_or_404(Supplier, pk=pk, deleted_at__isnull=True)
         action = request.POST.get("action", "").strip()
         if action not in {"archive", "reactivate"}:
             messages.error(request, "Choose a valid supplier lifecycle action.")
@@ -1270,28 +1429,57 @@ class SupplierStatusView(InventoryWorkspaceMixin, View):
         supplier.save()
         messages.success(
             request,
-            f"Supplier {supplier.name} was "
-            f"{'reactivated' if supplier.is_active else 'archived'}.",
+            f"Supplier {supplier.name} was {'reactivated' if supplier.is_active else 'archived'}.",
         )
         return redirect("inventory:supplier_edit", pk=supplier.pk)
 
 
 class SupplierDeleteView(InventoryAdminRequiredMixin, View):
-    def post(self, request, pk):
-        supplier = get_object_or_404(Supplier, pk=pk)
-        used = StockItem.objects.filter(
+    template_name = "inventory/delete_confirm.html"
+
+    def _context(self, supplier):
+        stock_count = StockItem.objects.filter(
             normalized_supplier_name=supplier.normalized_name,
             normalized_supplier_phone=supplier.normalized_phone,
-        ).exists()
-        if used:
-            messages.error(
-                request,
-                "This supplier appears in stock history. Archive it instead of deleting it.",
+        ).count()
+        return {
+            "page_key": "suppliers",
+            "page_title": "Move supplier to Trash",
+            "page_subtitle": "Review where this supplier identity appears before continuing.",
+            "record_label": str(supplier),
+            "record_type": "Supplier",
+            "confirmation_phrase": f"DELETE {supplier.name}",
+            "retention_days": TRASH_RETENTION_DAYS,
+            "cancel_url": reverse("inventory:supplier_edit", kwargs={"pk": supplier.pk}),
+            "effects": (
+                f"Stock records containing this supplier identity: {stock_count}",
+                "The supplier is removed from management and new stock-entry choices.",
+                "Copied supplier details and historical activity remain intact.",
+            ),
+        }
+
+    def get(self, request, pk):
+        return render(
+            request,
+            self.template_name,
+            self._context(get_object_or_404(Supplier, pk=pk, deleted_at__isnull=True)),
+        )
+
+    def post(self, request, pk):
+        supplier = get_object_or_404(Supplier, pk=pk, deleted_at__isnull=True)
+        context = self._context(supplier)
+        if (
+            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
+            or not request.POST.get("acknowledge")
+            or not request.POST.get("reason", "").strip()
+        ):
+            context.update(
+                form_error="Enter the exact phrase, a reason, and confirm the effect.",
+                reason=request.POST.get("reason", ""),
             )
-            return redirect("inventory:supplier_edit", pk=supplier.pk)
-        name = supplier.name
-        supplier.delete()
-        messages.success(request, f"Unused supplier {name} was permanently deleted.")
+            return render(request, self.template_name, context, status=400)
+        move_to_trash(supplier, user=request.user, reason=request.POST["reason"])
+        messages.success(request, f"{supplier.name} was moved to Trash for 30 days.")
         return redirect("inventory:suppliers")
 
 
@@ -1311,9 +1499,9 @@ class StockPickerAPIView(InventoryWorkspaceMixin, View):
             status=StockItem.Status.ACTIVE,
             current_quantity__gt=0,
         )
-        queryset = apply_stock_search(queryset, query).order_by(
-            "material_name", "supplier_name"
-        )[:40]
+        queryset = apply_stock_search(queryset, query).order_by("material_name", "supplier_name")[
+            :40
+        ]
         return JsonResponse(
             {
                 "results": [
@@ -1327,9 +1515,7 @@ class StockPickerAPIView(InventoryWorkspaceMixin, View):
                         "quantity": str(item.current_quantity),
                         "quantity_display": item.quantity_display,
                         "unit": item.unit.symbol,
-                        "url": reverse(
-                            "inventory:detail", kwargs={"reference": item.reference}
-                        ),
+                        "url": reverse("inventory:detail", kwargs={"reference": item.reference}),
                     }
                     for item in queryset
                 ]

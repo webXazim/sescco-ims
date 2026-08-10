@@ -132,6 +132,8 @@ def _create_movement(
 
 
 def _require_active_stock_item(stock_item: StockItem) -> None:
+    if stock_item.deleted_at or stock_item.project.deleted_at:
+        raise InactiveStockError("Deleted stock records cannot receive new activity.")
     if stock_item.status != StockItem.Status.ACTIVE:
         raise InactiveStockError("Archived stock records cannot receive new activity.")
     if stock_item.project.status != Project.Status.ACTIVE:
@@ -160,6 +162,8 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
+    if project.deleted_at or unit.deleted_at:
+        raise InactiveStockError("Deleted projects and units cannot receive new stock.")
     duplicate = _existing_idempotent_result(idempotency_key)
     if duplicate:
         return duplicate
@@ -308,8 +312,10 @@ def add_opening_stock(
 
     try:
         with transaction.atomic():
-            locked = StockItem.objects.select_for_update().select_related("project", "unit").get(
-                pk=stock_item.pk
+            locked = (
+                StockItem.objects.select_for_update()
+                .select_related("project", "unit")
+                .get(pk=stock_item.pk)
             )
             _require_active_stock_item(locked)
             if locked.movements.exists():
@@ -347,6 +353,7 @@ def add_opening_stock(
             return duplicate
         raise
 
+
 def use_stock(
     *,
     stock_item: StockItem,
@@ -370,15 +377,15 @@ def use_stock(
 
     try:
         with transaction.atomic():
-            locked = StockItem.objects.select_for_update().select_related("project", "unit").get(
-                pk=stock_item.pk
+            locked = (
+                StockItem.objects.select_for_update()
+                .select_related("project", "unit")
+                .get(pk=stock_item.pk)
             )
             _require_active_stock_item(locked)
             previous_balance = locked.current_quantity
             if quantity > previous_balance:
-                raise InsufficientStockError(
-                    f"Only {locked.quantity_display} is available."
-                )
+                raise InsufficientStockError(f"Only {locked.quantity_display} is available.")
             new_balance = previous_balance - quantity
             _save_balance(stock_item=locked, new_balance=new_balance, user=user)
             movement = _create_movement(
@@ -430,8 +437,10 @@ def adjust_stock(
 
     try:
         with transaction.atomic():
-            locked = StockItem.objects.select_for_update().select_related("project", "unit").get(
-                pk=stock_item.pk
+            locked = (
+                StockItem.objects.select_for_update()
+                .select_related("project", "unit")
+                .get(pk=stock_item.pk)
             )
             _require_active_stock_item(locked)
             previous_balance = locked.current_quantity
@@ -441,9 +450,7 @@ def adjust_stock(
             else:
                 movement_type = StockMovement.Type.ADJUSTMENT_OUT
                 if quantity > previous_balance:
-                    raise InsufficientStockError(
-                        f"Only {locked.quantity_display} is available."
-                    )
+                    raise InsufficientStockError(f"Only {locked.quantity_display} is available.")
                 new_balance = previous_balance - quantity
             _save_balance(stock_item=locked, new_balance=new_balance, user=user)
             movement = _create_movement(
@@ -477,9 +484,9 @@ def _unreversed_additions(stock_item: StockItem):
 
 
 def _latest_unreversed_addition(stock_item: StockItem) -> StockMovement | None:
-    return _unreversed_additions(stock_item).order_by(
-        "-movement_date", "-created_at", "-pk"
-    ).first()
+    return (
+        _unreversed_additions(stock_item).order_by("-movement_date", "-created_at", "-pk").first()
+    )
 
 
 def _latest_unreversed_priced_addition(stock_item: StockItem) -> StockMovement | None:
