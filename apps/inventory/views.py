@@ -407,6 +407,9 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
             submit_label="Save changes",
             similar_matches=getattr(context["form"], "similar_matches", []),
             exact_match=getattr(context["form"], "exact_match", None),
+            movement_attachments=self.object.movements.exclude(attachment="").order_by(
+                "-movement_date", "-created_at"
+            ),
         )
         return context
 

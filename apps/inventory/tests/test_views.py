@@ -42,7 +42,7 @@ class InventoryWorkspaceTests(TestCase):
             unit=self.unit,
         )
 
-    def add_item_stock(self, quantity="50"):
+    def add_item_stock(self, quantity="50", attachment=None):
         return add_stock(
             user=self.user,
             idempotency_key=uuid.uuid4(),
@@ -58,6 +58,7 @@ class InventoryWorkspaceTests(TestCase):
             minimum_quantity=Decimal("10"),
             unit_price=Decimal("24.50"),
             invoice_reference="INV-100",
+            attachment=attachment,
         )
 
     def test_legacy_new_stock_url_redirects_to_add_stock(self):
@@ -163,6 +164,41 @@ class InventoryWorkspaceTests(TestCase):
         self.assertEqual(item.supplier_phone, self.supplier.phone)
         self.assertEqual(item.supplier_location, self.supplier.location)
         self.assertEqual(item.description, "Sulphate-resistant 50 kg bag")
+
+    def test_add_and_edit_use_matching_description_fields_and_audited_attachments(self):
+        with tempfile.TemporaryDirectory() as media_root, override_settings(
+            MEDIA_ROOT=media_root
+        ):
+            result = self.add_item_stock(
+                attachment=SimpleUploadedFile(
+                    "delivery.pdf", b"delivery-document", "application/pdf"
+                )
+            )
+            movement = result.movement
+            item = movement.stock_item
+
+            response = self.client.get(
+                reverse("inventory:edit", kwargs={"reference": item.reference})
+            )
+
+            self.assertContains(response, '<textarea name="description"')
+            self.assertContains(response, 'rows="3"')
+            self.assertContains(response, "Stock added attachment")
+            self.assertContains(
+                response,
+                f"{reverse('core:add_stock')}?stock={item.reference}#id_attachment",
+            )
+            self.assertContains(
+                response,
+                reverse(
+                    "inventory:movement_attachment",
+                    kwargs={"reference": movement.reference},
+                ),
+            )
+
+        add_response = self.client.get(reverse("core:add_stock"))
+        self.assertContains(add_response, '<textarea name="description"')
+        self.assertContains(add_response, 'rows="3"')
 
     def test_add_stock_duplicate_post_is_idempotent(self):
         token = uuid.uuid4()

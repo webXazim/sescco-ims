@@ -77,9 +77,15 @@ class StockItemForm(StyledModelForm):
             "notes",
         )
         widgets = {
-            "description": forms.Textarea(attrs={"rows": 3}),
+            "description": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "Optional size, grade, model, or specification",
+                }
+            ),
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
+        labels = {"description": "Description / specification"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -160,8 +166,11 @@ class StockAdditionForm(IdempotentMovementForm):
     description = forms.CharField(
         required=False,
         label="Description / specification",
-        widget=forms.TextInput(
-            attrs={"placeholder": "Optional size, grade, model, or specification"}
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "Optional size, grade, model, or specification",
+            }
         ),
     )
     supplier = forms.ModelChoiceField(
