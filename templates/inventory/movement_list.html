@@ -12,6 +12,8 @@
     <div class="popover-section-head"><div><strong>More filters</strong><span>Search permanent movement history by recorded details.</span></div></div>
     <div class="advanced-grid">
       <div class="field"><label class="field-label">Projects</label><div class="check-list compact">{{ filter_form.project }}</div>{{ filter_form.project.errors }}</div>
+      <div class="field"><label class="field-label">Locations</label><div class="check-list compact">{{ filter_form.location }}</div></div>
+      <div class="field"><label class="field-label">Conditions</label><div class="check-list compact">{{ filter_form.condition }}</div></div>
       <div class="field"><label class="field-label">Project status</label>{{ filter_form.project_status }}</div>
       <div class="field"><label class="field-label">Actions</label><div class="check-list compact">{{ filter_form.movement_type }}</div></div>
       <div class="field"><label class="field-label">User</label>{{ filter_form.created_by }}</div>
@@ -35,7 +37,8 @@
 {% include "partials/filter_chips.html" %}
 <div class="table-wrap"><table><thead><tr>
   {% if "date" in visible_columns %}<th>Date</th>{% endif %}
-  {% if "project" in visible_columns %}<th>Project</th>{% endif %}
+  {% if "project" in visible_columns %}<th>Location</th>{% endif %}
+  {% if "condition" in visible_columns %}<th>Condition</th>{% endif %}
   {% if "material" in visible_columns %}<th>Material</th>{% endif %}
   {% if "supplier" in visible_columns %}<th>Supplier</th>{% endif %}
   {% if "phone" in visible_columns %}<th>Phone</th>{% endif %}
@@ -48,7 +51,8 @@
   <th></th>
 </tr></thead><tbody>{% for movement in movements %}<tr>
   {% if "date" in visible_columns %}<td>{{ movement.movement_date|date:"d M Y" }}<div class="cell-sub">{{ movement.created_at|date:"H:i" }}</div></td>{% endif %}
-  {% if "project" in visible_columns %}<td><a class="tag" href="{% url 'projects:detail' movement.stock_item.project.code %}">{{ movement.project_code_display }}</a></td>{% endif %}
+  {% if "project" in visible_columns %}<td>{% if movement.stock_item.project %}<a class="tag" href="{% url 'projects:detail' movement.stock_item.project.code %}">{{ movement.location_code_display }}</a>{% else %}<a class="tag" href="{% url 'inventory:office' %}">{{ movement.location_code_display }}</a>{% endif %}<div class="cell-sub">{{ movement.condition_display|title }}</div></td>{% endif %}
+  {% if "condition" in visible_columns %}<td><span class="status status-neutral">{{ movement.condition_display|title }}</span></td>{% endif %}
   {% if "material" in visible_columns %}<td><a class="row-link" href="{% url 'inventory:detail' movement.stock_item.reference %}">{{ movement.material_name_display }}</a></td>{% endif %}
   {% if "supplier" in visible_columns %}<td>{{ movement.supplier_name_display }}</td>{% endif %}
   {% if "phone" in visible_columns %}<td>{{ movement.supplier_phone_display }}</td>{% endif %}

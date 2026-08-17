@@ -5,7 +5,16 @@ from django.db.models import Count, F, Q
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import StockDocument, StockItem, StockMovement, Supplier, Unit
+from .models import (
+    InventoryLocation,
+    StockDocument,
+    StockItem,
+    StockMovement,
+    StockTransfer,
+    StockTransferLine,
+    Supplier,
+    Unit,
+)
 
 
 class GuardedDeleteAdminMixin:
@@ -165,7 +174,8 @@ class SupplierAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
 class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
         "material_name",
-        "project",
+        "location",
+        "condition",
         "supplier_name",
         "unit",
         "current_quantity",
@@ -178,7 +188,8 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_filter = (
         StockStatusAdminFilter,
         "status",
-        "project",
+        "location",
+        "condition",
         "unit",
         "latest_addition_date",
     )
@@ -194,7 +205,7 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
         "supplier_location",
         "notes",
     )
-    autocomplete_fields = ("project", "unit")
+    autocomplete_fields = ("location", "project", "unit")
     readonly_fields = (
         "workspace_actions",
         "movement_history_link",
@@ -211,7 +222,7 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    list_select_related = ("project", "unit")
+    list_select_related = ("location", "project", "unit")
     date_hierarchy = "created_at"
     list_per_page = 50
     show_full_result_count = False
@@ -226,7 +237,19 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
                 ),
             },
         ),
-        ("Stock identity", {"fields": ("project", "material_name", "description", "unit")}),
+        (
+            "Stock identity",
+            {
+                "fields": (
+                    "location",
+                    "project",
+                    "condition",
+                    "material_name",
+                    "description",
+                    "unit",
+                )
+            },
+        ),
         (
             "Supplier",
             {"fields": ("supplier_name", "supplier_phone", "supplier_location")},
@@ -296,8 +319,16 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
         if not obj or not obj.pk:
             return "—"
         detail = reverse("inventory:detail", kwargs={"reference": obj.reference})
-        add = f'{reverse("core:add_stock")}?{urlencode({"project": obj.project.code})}'
-        use = f'{reverse("core:remove_stock")}?{urlencode({"stock": obj.reference})}'
+        add = (
+            f'{reverse("core:add_stock")}?{urlencode({"project": obj.project.code})}'
+            if obj.project
+            else reverse("inventory:transfer_create")
+        )
+        use = (
+            f'{reverse("core:remove_stock")}?{urlencode({"stock": obj.reference})}'
+            if obj.project
+            else f'{reverse("inventory:transfer_create")}?{urlencode({"source": obj.location_id})}'
+        )
         adjust = reverse("inventory:adjust", kwargs={"reference": obj.reference})
         return format_html(
             '<a class="button" href="{}">Open record</a> '
@@ -313,7 +344,7 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
         if obj and obj.movements.exists():
-            fields.extend(("project", "unit"))
+            fields.extend(("location", "project", "condition", "unit"))
         return tuple(dict.fromkeys(fields))
 
     def save_model(self, request, obj, form, change):
@@ -469,7 +500,13 @@ class StockMovementAdmin(admin.ModelAdmin):
 
     @admin.display(description="Correction")
     def reversal_action(self, obj):
-        if not obj or not obj.pk or obj.movement_type == StockMovement.Type.REVERSAL or obj.is_reversed:
+        if (
+            not obj
+            or not obj.pk
+            or obj.movement_type == StockMovement.Type.REVERSAL
+            or obj.is_reversed
+            or obj.transfer_line_id
+        ):
             return "—"
         url = reverse("inventory:movement_reverse", kwargs={"reference": obj.reference})
         return format_html('<a class="button" href="{}">Reverse safely</a>', url)
@@ -488,6 +525,86 @@ class StockMovementAdmin(admin.ModelAdmin):
         if lookup == "stock_item__id__exact":
             return True
         return super().lookup_allowed(lookup, value, request)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InventoryLocation)
+class InventoryLocationAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "location_type", "project", "is_active", "updated_at")
+    list_filter = ("location_type", "is_active")
+    search_fields = ("code", "name", "project__code", "project__name")
+    autocomplete_fields = ("project",)
+    readonly_fields = ("reference", "location_type", "project", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        if not request.user.is_inventory_admin:
+            return False
+        if obj is None:
+            return True
+        return bool(
+            obj.project_id
+            and not obj.stock_items.exists()
+            and not obj.outgoing_transfers.exists()
+            and not obj.incoming_transfers.exists()
+        )
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        actions.pop("delete_selected", None)
+        return actions
+
+
+@admin.register(StockTransfer)
+class StockTransferAdmin(admin.ModelAdmin):
+    list_display = (
+        "short_reference",
+        "transfer_date",
+        "source_location",
+        "destination_location",
+        "status",
+        "created_by",
+    )
+    list_filter = ("status", "transfer_date", "source_location", "destination_location")
+    search_fields = (
+        "reference",
+        "document_reference",
+        "source_location__code",
+        "destination_location__code",
+    )
+    readonly_fields = tuple(field.name for field in StockTransfer._meta.fields)
+    date_hierarchy = "transfer_date"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(StockTransferLine)
+class StockTransferLineAdmin(admin.ModelAdmin):
+    list_display = ("transfer", "source_stock_item", "outcome", "quantity", "destination_stock_item")
+    list_filter = ("outcome",)
+    search_fields = (
+        "transfer__reference",
+        "source_stock_item__material_name",
+        "destination_stock_item__material_name",
+    )
+    readonly_fields = tuple(field.name for field in StockTransferLine._meta.fields)
 
     def has_add_permission(self, request):
         return False

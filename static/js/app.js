@@ -455,7 +455,7 @@
       const options = ['<option value="">Select stock record</option>'];
       results.forEach((item) => {
         const selected = String(item.id) === String(selectedValue) ? " selected" : "";
-        options.push(`<option value="${escapeHtml(item.id)}" data-balance="${escapeHtml(item.quantity)}" data-unit="${escapeHtml(item.unit)}" data-project="${escapeHtml(item.project_code)}" data-material="${escapeHtml(item.material_name)}" data-supplier="${escapeHtml(item.supplier_name)}"${selected}>${escapeHtml(item.material_name)} · ${escapeHtml(item.supplier_name)} (${escapeHtml(item.quantity_display)})</option>`);
+        options.push(`<option value="${escapeHtml(item.id)}" data-balance="${escapeHtml(item.quantity)}" data-unit="${escapeHtml(item.unit)}" data-project="${escapeHtml(item.project_code)}" data-material="${escapeHtml(item.material_name)}" data-supplier="${escapeHtml(item.supplier_name)}" data-condition="${escapeHtml(item.condition)}"${selected}>${escapeHtml(item.material_name)} · ${escapeHtml(item.condition)} · ${escapeHtml(item.supplier_name)} (${escapeHtml(item.quantity_display)})</option>`);
       });
       stockSelect.innerHTML = options.join("");
       stockSelect.disabled = false;
@@ -510,5 +510,33 @@
     quantity?.addEventListener("input", updateUsageBalance);
     updateUsageBalance();
     loadStockOptions({ preserveSelection: true });
+  }
+
+  const transferForm = document.querySelector("[data-transfer-form]");
+  if (transferForm) {
+    const updateTransferSummary = () => {
+      let total = 0;
+      let lost = 0;
+      transferForm.querySelectorAll("[data-transfer-quantity]").forEach((input) => {
+        const quantity = numberValue(input.value);
+        total += quantity;
+        if (input.dataset.outcome === "lost") lost += quantity;
+      });
+      const totalTarget = transferForm.querySelector("[data-transfer-total]");
+      const receivedTarget = transferForm.querySelector("[data-transfer-received]");
+      const lostTarget = transferForm.querySelector("[data-transfer-lost]");
+      if (totalTarget) totalTarget.textContent = formatQuantity(total);
+      if (receivedTarget) receivedTarget.textContent = formatQuantity(total - lost);
+      if (lostTarget) lostTarget.textContent = formatQuantity(lost);
+      transferForm.querySelectorAll("[data-transfer-row]").forEach((row) => {
+        const allocated = Array.from(row.querySelectorAll("[data-transfer-quantity]"))
+          .reduce((sum, input) => sum + numberValue(input.value), 0);
+        row.classList.toggle("transfer-row-error", allocated > numberValue(row.dataset.available));
+      });
+    };
+    transferForm.querySelectorAll("[data-transfer-quantity]").forEach((input) => {
+      input.addEventListener("input", updateTransferSummary);
+    });
+    updateTransferSummary();
   }
 })();

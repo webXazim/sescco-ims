@@ -22,10 +22,14 @@ def find_stock_matches(
     material_name: str,
     supplier_name: str,
     supplier_phone: str,
+    condition: str = StockItem.Condition.NEW,
     exclude_pk: int | None = None,
 ) -> StockMatchResult:
     base = StockItem.objects.select_related("project", "unit").filter(
-        project=project, deleted_at__isnull=True, project__deleted_at__isnull=True
+        project=project,
+        condition=condition,
+        deleted_at__isnull=True,
+        project__deleted_at__isnull=True,
     )
     if exclude_pk:
         base = base.exclude(pk=exclude_pk)

@@ -1,16 +1,17 @@
 <details class="row-actions" data-row-actions>
   <summary class="btn btn-sm row-actions-trigger" aria-label="Actions for {{ item.material_name }}"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
   <div class="row-actions-menu">
-    <div class="row-actions-head"><span>{{ item.project.code }}</span><strong>{{ item.material_name }}</strong></div>
+    <div class="row-actions-head"><span>{{ item.location.code }}</span><strong>{{ item.material_name }}</strong></div>
     <a class="row-action-option" href="{% url 'inventory:detail' item.reference %}"><span>Open details</span><small>View balance and history</small></a>
-    <a class="row-action-option" href="{% url 'inventory:edit' item.reference %}"><span>Edit record</span><small>Identity, document and notes</small></a>
-    {% if item.status == 'active' and item.project.accepts_stock_activity and item.unit.is_active %}
+    {% if item.project %}<a class="row-action-option" href="{% url 'inventory:edit' item.reference %}"><span>Edit record</span><small>Identity, document and notes</small></a>{% endif %}
+    {% if item.status == 'active' and item.location.accepts_stock_activity and item.unit.is_active %}
       <div class="row-action-divider"></div>
-      <a class="row-action-option" href="{% url 'core:add_stock' %}?stock={{ item.reference }}"><span>Add stock</span><small>Record an inbound movement</small></a>
-      {% if item.current_quantity > 0 %}<a class="row-action-option" href="{% url 'core:remove_stock' %}?stock={{ item.reference }}"><span>Use stock</span><small>Record project usage</small></a>{% endif %}
+      {% if item.project %}<a class="row-action-option" href="{% url 'core:add_stock' %}?stock={{ item.reference }}"><span>Add stock</span><small>Record an inbound movement</small></a>{% endif %}
+      {% if item.project and item.current_quantity > 0 %}<a class="row-action-option" href="{% url 'core:remove_stock' %}?stock={{ item.reference }}"><span>Use stock</span><small>Record project usage</small></a>{% endif %}
+      {% if item.current_quantity > 0 %}<a class="row-action-option" href="{% url 'inventory:transfer_create' %}?source={{ item.location.pk }}"><span>Transfer stock</span><small>Move to a project or office</small></a>{% endif %}
       <a class="row-action-option" href="{% url 'inventory:adjust' item.reference %}"><span>Adjust balance</span><small>Correct a physical count</small></a>
       <div class="row-action-divider"></div>{% if item.current_quantity == 0 %}<form method="post" action="{% url 'inventory:status' item.reference %}" data-confirm="Archive this zero-balance stock record?">{% csrf_token %}<input type="hidden" name="action" value="archive"><button class="row-action-option" type="submit"><span>Archive record</span><small>Hide it from active inventory</small></button></form>{% else %}<div class="row-action-option row-action-disabled" aria-disabled="true"><span>Archive record</span><small>Available when balance reaches zero</small></div>{% endif %}
-    {% elif item.status == 'archived' and item.project.accepts_stock_activity and item.unit.is_active %}
+    {% elif item.status == 'archived' and item.location.accepts_stock_activity and item.unit.is_active %}
       <div class="row-action-divider"></div><form method="post" action="{% url 'inventory:status' item.reference %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="row-action-option" type="submit"><span>Reactivate record</span><small>Return it to active inventory</small></button></form>
     {% elif item.status == 'archived' %}
       <div class="row-action-divider"></div><div class="row-action-option row-action-disabled" aria-disabled="true"><span>Reactivate record</span><small>Reactivate its project and unit first</small></div>

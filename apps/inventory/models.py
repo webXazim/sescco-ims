@@ -129,13 +129,107 @@ class Supplier(models.Model):
         return super().save(*args, **kwargs)
 
 
+class InventoryLocation(models.Model):
+    class Type(models.TextChoices):
+        OFFICE = "office", "Office"
+        PROJECT = "project", "Project"
+
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    code = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=180)
+    location_type = models.CharField(max_length=20, choices=Type.choices)
+    project = models.OneToOneField(
+        Project,
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE,
+        related_name="inventory_location",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("location_type", "code")
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(location_type="project", project__isnull=False)
+                    | Q(location_type="office", project__isnull=True)
+                ),
+                name="location_type_project_consistent",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.name}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        if self.location_type == self.Type.PROJECT and not self.project_id:
+            errors["project"] = "A project location must reference a project."
+        if self.location_type == self.Type.OFFICE and self.project_id:
+            errors["project"] = "An office location cannot reference a project."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.code = clean_display_text(self.code).upper()
+        self.name = clean_display_text(self.name)
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def accepts_stock_activity(self) -> bool:
+        if not self.is_active:
+            return False
+        if self.location_type == self.Type.PROJECT:
+            return bool(self.project and self.project.accepts_stock_activity)
+        return True
+
+
+class StockItemManager(models.Manager):
+    def bulk_create(self, objs, *args, **kwargs):
+        project_ids = {obj.project_id for obj in objs if obj.project_id and not obj.location_id}
+        locations = {
+            location.project_id: location
+            for location in InventoryLocation.objects.filter(project_id__in=project_ids)
+        }
+        for obj in objs:
+            if obj.project_id and not obj.location_id:
+                obj.location = locations[obj.project_id]
+        return super().bulk_create(objs, *args, **kwargs)
+
+
 class StockItem(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         ARCHIVED = "archived", "Archived"
 
+    class Condition(models.TextChoices):
+        NEW = "new", "New"
+        USED = "used", "Used"
+        NO_VALUE = "no_value", "No value"
+
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    project = models.ForeignKey(Project, on_delete=models.PROTECT, related_name="stock_items")
+    project = models.ForeignKey(
+        Project,
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="stock_items",
+    )
+    location = models.ForeignKey(
+        InventoryLocation,
+        on_delete=models.PROTECT,
+        related_name="stock_items",
+    )
+    condition = models.CharField(
+        max_length=20,
+        choices=Condition.choices,
+        default=Condition.NEW,
+    )
     material_name = models.CharField(max_length=180)
     normalized_material_name = models.CharField(max_length=180, editable=False)
     description = models.TextField(blank=True)
@@ -188,18 +282,20 @@ class StockItem(models.Model):
         "latest_unit_price",
         "latest_addition_date",
     )
+    objects = StockItemManager()
 
     class Meta:
         ordering = ("project", "material_name", "supplier_name")
         constraints = [
             models.UniqueConstraint(
                 fields=(
-                    "project",
+                    "location",
                     "normalized_material_name",
                     "normalized_supplier_name",
                     "normalized_supplier_phone",
+                    "condition",
                 ),
-                name="uniq_stock_identity_per_project",
+                name="uniq_stock_identity_per_location_condition",
             ),
             models.CheckConstraint(
                 condition=Q(current_quantity__gte=0),
@@ -212,7 +308,7 @@ class StockItem(models.Model):
         ]
         indexes = [
             models.Index(
-                fields=("project", "status", "material_name"),
+                fields=("location", "status", "material_name"),
                 name="stock_project_status_name_idx",
             ),
             models.Index(
@@ -227,7 +323,7 @@ class StockItem(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.project.code} · {self.material_name} · {self.supplier_name}"
+        return f"{self.location.code} · {self.material_name} · {self.get_condition_display()}"
 
     def clean(self) -> None:
         super().clean()
@@ -237,6 +333,7 @@ class StockItem(models.Model):
         if self.minimum_quantity is not None and self.minimum_quantity < 0:
             errors["minimum_quantity"] = "Minimum quantity cannot be negative."
         original_project_id = None
+        original_location_id = None
         original_unit_id = None
         original_status = None
         has_movements = False
@@ -246,6 +343,7 @@ class StockItem(models.Model):
                 .objects.filter(pk=self.pk)
                 .values(
                     "project_id",
+                    "location_id",
                     "unit_id",
                     "status",
                 )
@@ -253,12 +351,15 @@ class StockItem(models.Model):
             )
             if original:
                 original_project_id = original["project_id"]
+                original_location_id = original["location_id"]
                 original_unit_id = original["unit_id"]
                 original_status = original["status"]
                 has_movements = self.movements.exists()
 
         if has_movements and self.project_id != original_project_id:
             errors["project"] = "Project is locked after the first stock movement."
+        if has_movements and self.location_id != original_location_id:
+            errors["location"] = "Location is locked after the first stock movement."
         if has_movements and self.unit_id != original_unit_id:
             errors["unit"] = "Unit is locked after the first stock movement."
         if (
@@ -269,10 +370,11 @@ class StockItem(models.Model):
             errors["status"] = "A stock record can be archived only at zero balance."
         if self.status == self.Status.ACTIVE and original_status == self.Status.ARCHIVED:
             if (
-                self.project_id
+                self.location_id
                 and not Project.objects.filter(
                     pk=self.project_id, status=Project.Status.ACTIVE, deleted_at__isnull=True
                 ).exists()
+                and self.location.location_type == InventoryLocation.Type.PROJECT
             ):
                 errors["status"] = "Reactivate the project before this stock record."
             if (
@@ -283,20 +385,18 @@ class StockItem(models.Model):
             ):
                 errors["status"] = "Reactivate the unit before this stock record."
 
-        project_is_active = (
-            self.project_id
-            and Project.objects.filter(
-                pk=self.project_id,
-                status=Project.Status.ACTIVE,
-                deleted_at__isnull=True,
-            ).exists()
-        )
+        location_is_active = bool(self.location_id and self.location.accepts_stock_activity)
         if (
-            self.project_id
-            and not project_is_active
-            and (self._state.adding or self.project_id != original_project_id)
+            self.location_id
+            and not location_is_active
+            and (self._state.adding or self.location_id != original_location_id)
         ):
-            errors["project"] = "New stock records and project changes require an active project."
+            errors["location"] = "New stock records require an active inventory location."
+
+        if self.location_id:
+            expected_project_id = self.location.project_id
+            if self.project_id != expected_project_id:
+                errors["project"] = "The project must match the selected inventory location."
 
         unit_is_active = (
             self.unit_id
@@ -315,6 +415,15 @@ class StockItem(models.Model):
 
     def save(self, *args, **kwargs):
         inventory_service = kwargs.pop("_inventory_service", False)
+        if self.project_id and not self.location_id:
+            self.location, _ = InventoryLocation.objects.get_or_create(
+                project_id=self.project_id,
+                defaults={
+                    "code": self.project.code,
+                    "name": self.project.name,
+                    "location_type": InventoryLocation.Type.PROJECT,
+                },
+            )
         self.material_name = clean_display_text(self.material_name)
         self.description = (self.description or "").strip()
         self.supplier_name = clean_display_text(self.supplier_name)
@@ -430,10 +539,13 @@ class StockMovement(models.Model):
         USAGE = "usage", "Stock used"
         ADJUSTMENT_IN = "adjustment_in", "Positive adjustment"
         ADJUSTMENT_OUT = "adjustment_out", "Negative adjustment"
+        TRANSFER_IN = "transfer_in", "Transfer in"
+        TRANSFER_OUT = "transfer_out", "Transfer out"
+        LOSS = "loss", "Lost in transfer"
         REVERSAL = "reversal", "Reversal"
 
-    INBOUND_TYPES = {Type.OPENING, Type.ADDITION, Type.ADJUSTMENT_IN}
-    OUTBOUND_TYPES = {Type.USAGE, Type.ADJUSTMENT_OUT}
+    INBOUND_TYPES = {Type.OPENING, Type.ADDITION, Type.ADJUSTMENT_IN, Type.TRANSFER_IN}
+    OUTBOUND_TYPES = {Type.USAGE, Type.ADJUSTMENT_OUT, Type.TRANSFER_OUT, Type.LOSS}
 
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     idempotency_key = models.UUIDField(unique=True, editable=False)
@@ -445,6 +557,11 @@ class StockMovement(models.Model):
     movement_type = models.CharField(max_length=24, choices=Type.choices)
     project_code_snapshot = models.CharField(max_length=30, blank=True, default="", editable=False)
     project_name_snapshot = models.CharField(max_length=180, blank=True, default="", editable=False)
+    location_code_snapshot = models.CharField(max_length=30, blank=True, default="", editable=False)
+    location_name_snapshot = models.CharField(
+        max_length=180, blank=True, default="", editable=False
+    )
+    condition_snapshot = models.CharField(max_length=20, blank=True, default="", editable=False)
     material_name_snapshot = models.CharField(
         max_length=180, blank=True, default="", editable=False
     )
@@ -487,6 +604,13 @@ class StockMovement(models.Model):
         on_delete=models.PROTECT,
         related_name="reversal",
     )
+    transfer_line = models.ForeignKey(
+        "StockTransferLine",
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="movements",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         blank=True,
@@ -526,11 +650,12 @@ class StockMovement(models.Model):
             models.Index(fields=("created_by", "-movement_date"), name="movement_user_date_idx"),
             models.Index(fields=("unit_price",), name="movement_unit_price_idx"),
             models.Index(fields=("project_code_snapshot",), name="movement_project_snap_idx"),
+            models.Index(fields=("location_code_snapshot",), name="movement_location_snap_idx"),
         ]
 
     def __str__(self) -> str:
         identity = self.material_name_snapshot or self.stock_item.material_name
-        project = self.project_code_snapshot or self.stock_item.project.code
+        project = self.location_code_display
         return f"{project} · {identity} · {self.get_movement_type_display()} · {self.quantity}"
 
     def clean(self) -> None:
@@ -583,14 +708,20 @@ class StockMovement(models.Model):
                 source = self.reversal_of
                 self.project_code_snapshot = source.project_code_display
                 self.project_name_snapshot = source.project_name_display
+                self.location_code_snapshot = source.location_code_display
+                self.location_name_snapshot = source.location_name_display
+                self.condition_snapshot = source.condition_display
                 self.material_name_snapshot = source.material_name_display
                 self.supplier_name_snapshot = source.supplier_name_display
                 self.supplier_phone_snapshot = source.supplier_phone_display
                 self.unit_symbol_snapshot = source.unit_symbol_display
             else:
                 item = self.stock_item
-                self.project_code_snapshot = item.project.code
-                self.project_name_snapshot = item.project.name
+                self.project_code_snapshot = item.project.code if item.project else ""
+                self.project_name_snapshot = item.project.name if item.project else ""
+                self.location_code_snapshot = item.location.code
+                self.location_name_snapshot = item.location.name
+                self.condition_snapshot = item.condition
                 self.material_name_snapshot = item.material_name
                 self.supplier_name_snapshot = item.supplier_name
                 self.supplier_phone_snapshot = item.supplier_phone
@@ -623,11 +754,23 @@ class StockMovement(models.Model):
 
     @property
     def project_code_display(self) -> str:
-        return self.project_code_snapshot or self.stock_item.project.code
+        return self.project_code_snapshot or self.location_code_display
 
     @property
     def project_name_display(self) -> str:
-        return self.project_name_snapshot or self.stock_item.project.name
+        return self.project_name_snapshot or self.location_name_display
+
+    @property
+    def location_code_display(self) -> str:
+        return self.location_code_snapshot or self.stock_item.location.code
+
+    @property
+    def location_name_display(self) -> str:
+        return self.location_name_snapshot or self.stock_item.location.name
+
+    @property
+    def condition_display(self) -> str:
+        return self.condition_snapshot or self.stock_item.condition
 
     @property
     def material_name_display(self) -> str:
@@ -650,3 +793,185 @@ class StockMovement(models.Model):
         sign = "+" if self.is_inbound else "−"
         quantity = f"{self.quantity:f}".rstrip("0").rstrip(".")
         return f"{sign}{quantity} {self.unit_symbol_display}"
+
+
+class StockTransfer(models.Model):
+    class Status(models.TextChoices):
+        COMPLETED = "completed", "Completed"
+        REVERSED = "reversed", "Reversed"
+
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    idempotency_key = models.UUIDField(unique=True, editable=False)
+    source_location = models.ForeignKey(
+        InventoryLocation,
+        on_delete=models.PROTECT,
+        related_name="outgoing_transfers",
+    )
+    destination_location = models.ForeignKey(
+        InventoryLocation,
+        on_delete=models.PROTECT,
+        related_name="incoming_transfers",
+    )
+    transfer_date = models.DateField()
+    document_reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+    attachment = models.FileField(
+        upload_to="stock-transfers/%Y/%m/",
+        blank=True,
+        validators=[
+            FileExtensionValidator(allowed_extensions=("pdf", "jpg", "jpeg", "png")),
+            validate_attachment_size,
+        ],
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.COMPLETED,
+        editable=False,
+    )
+    reversal_reason = models.CharField(max_length=240, blank=True, editable=False)
+    reversal_idempotency_key = models.UUIDField(
+        blank=True,
+        null=True,
+        unique=True,
+        editable=False,
+    )
+    reversed_at = models.DateTimeField(blank=True, null=True, editable=False)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="stock_transfers_reversed",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="stock_transfers_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-transfer_date", "-created_at", "-pk")
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(source_location=models.F("destination_location")),
+                name="transfer_locations_different",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("source_location", "-transfer_date"), name="transfer_source_idx"),
+            models.Index(
+                fields=("destination_location", "-transfer_date"),
+                name="transfer_destination_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{str(self.reference)[:8].upper()} · {self.source_location.code} → {self.destination_location.code}"
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.source_location_id
+            and self.destination_location_id
+            and self.source_location_id == self.destination_location_id
+        ):
+            raise ValidationError(
+                {"destination_location": "Source and destination must be different."}
+            )
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            allowed = kwargs.pop("_inventory_service", False)
+            if not allowed:
+                raise ValidationError("Stock transfers are immutable and cannot be edited.")
+        self.document_reference = clean_display_text(self.document_reference)
+        self.notes = (self.notes or "").strip()
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @property
+    def short_reference(self) -> str:
+        return str(self.reference)[:8].upper()
+
+
+class StockTransferLine(models.Model):
+    class Outcome(models.TextChoices):
+        NEW = StockItem.Condition.NEW, "New"
+        USED = StockItem.Condition.USED, "Used"
+        NO_VALUE = StockItem.Condition.NO_VALUE, "No value"
+        LOST = "lost", "Lost"
+
+    transfer = models.ForeignKey(
+        StockTransfer,
+        on_delete=models.PROTECT,
+        related_name="lines",
+    )
+    source_stock_item = models.ForeignKey(
+        StockItem,
+        on_delete=models.PROTECT,
+        related_name="outgoing_transfer_lines",
+    )
+    destination_stock_item = models.ForeignKey(
+        StockItem,
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name="incoming_transfer_lines",
+    )
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    quantity = models.DecimalField(
+        max_digits=16,
+        decimal_places=3,
+        validators=[MinValueValidator(Decimal("0.001"))],
+    )
+    source_condition_snapshot = models.CharField(max_length=20, editable=False)
+    unit_price_snapshot = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        blank=True,
+        null=True,
+    )
+
+    class Meta:
+        ordering = ("pk",)
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(quantity__gt=0),
+                name="transfer_line_quantity_positive",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(outcome="lost", destination_stock_item__isnull=True)
+                    | (
+                        ~Q(outcome="lost")
+                        & Q(destination_stock_item__isnull=False)
+                    )
+                ),
+                name="transfer_line_destination_consistent",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.transfer.short_reference} · {self.source_stock_item.material_name} · {self.get_outcome_display()}"
+
+    @property
+    def source_condition_display(self) -> str:
+        return dict(StockItem.Condition.choices).get(
+            self.source_condition_snapshot,
+            self.source_condition_snapshot.replace("_", " ").title(),
+        )
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("Stock transfer lines are immutable and cannot be edited.")
+        if self.source_stock_item_id and not self.source_condition_snapshot:
+            self.source_condition_snapshot = self.source_stock_item.condition
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Stock transfer lines are immutable and cannot be deleted.")

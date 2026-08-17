@@ -13,6 +13,8 @@ Core capabilities:
 - projects and compact project tags across the system;
 - stock identity by Project + normalized material + supplier + supplier phone;
 - safe additions, usage, adjustments, opening stock and linked reversals;
+- atomic project-to-project, project-to-office and office-to-project transfers;
+- condition allocation for new, used, no-value and lost closeout quantities;
 - immutable stock history, row locking, idempotency and negative-stock blocking;
 - complete storekeeper dashboard and operational management screens;
 - advanced server-side search across stock and activity;
@@ -42,6 +44,8 @@ Open:
 - Storekeeper workspace: `http://127.0.0.1:8000/app/`
 - Inventory Explorer: `http://127.0.0.1:8000/app/inventory/`
 - Stock activity: `http://127.0.0.1:8000/app/activity/`
+- Stock transfers: `http://127.0.0.1:8000/app/transfers/`
+- Office inventory: `http://127.0.0.1:8000/app/office/`
 - Imports: `http://127.0.0.1:8000/app/imports/`
 - Administrator: `http://127.0.0.1:8000/admin/`
 
@@ -111,6 +115,9 @@ are recorded in `docs/VALIDATION.md`.
 - Projects and units lock after the first movement.
 - Closed or archived projects cannot receive stock activity.
 - Stock records can be archived only at zero balance.
+- Transfers create linked immutable outbound and inbound movements in one transaction.
+- Lost transfer quantities never create destination stock; no-value stock carries zero value.
+- A transfer reversal always reverses the complete transfer and requires destination stock.
 - Completed movements are corrected through linked administrator reversals.
 - Export and import actions retain user and filter provenance.
 - Private uploads are served only through authenticated Django routes.

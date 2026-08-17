@@ -30,11 +30,21 @@ from .forms import (
     StockHistoryFilterForm,
     StockItemFilterForm,
     StockItemForm,
+    StockTransferForm,
+    StockTransferReversalForm,
     StockUsageForm,
     SupplierForm,
     UnitForm,
 )
-from .models import StockDocument, StockItem, StockMovement, Supplier, Unit
+from .models import (
+    InventoryLocation,
+    StockDocument,
+    StockItem,
+    StockMovement,
+    StockTransfer,
+    Supplier,
+    Unit,
+)
 from .selectors import (
     apply_movement_search,
     apply_stock_search,
@@ -53,9 +63,11 @@ from .services.stock import (
     set_stock_item_status,
     use_stock,
 )
+from .services.transfers import reverse_transfer, transfer_stock
 
 DEFAULT_STOCK_COLUMNS = (
     "project",
+    "condition",
     "material",
     "supplier",
     "phone",
@@ -71,6 +83,7 @@ DEFAULT_STOCK_COLUMNS = (
 DEFAULT_MOVEMENT_COLUMNS = (
     "date",
     "project",
+    "condition",
     "material",
     "type",
     "quantity",
@@ -119,7 +132,7 @@ def _without_columns(url: str) -> str:
 
 
 STOCK_SORTS = {
-    "project": ("project__code", "material_name", "supplier_name"),
+    "project": ("location__code", "material_name", "supplier_name"),
     "material": ("material_name", "supplier_name"),
     "-material": ("-material_name", "supplier_name"),
     "supplier": ("supplier_name", "material_name"),
@@ -188,6 +201,12 @@ def _stock_filter_chips(request, data: dict) -> list[dict[str, str]]:
     if data.get("project"):
         project = data["project"]
         chips.append(_chip(f"Project: {project.code}", request, "project"))
+    if data.get("location"):
+        chips.append(_chip(f"Location: {data['location'].code}", request, "location"))
+    if data.get("condition"):
+        labels = dict(StockItem.Condition.choices)
+        values = ", ".join(labels[value] for value in data["condition"])
+        chips.append(_chip(f"Condition: {values}", request, "condition"))
     if data.get("project_status"):
         status_label = dict(Project.Status.choices)[data["project_status"]]
         chips.append(
@@ -281,6 +300,13 @@ def _movement_filter_chips(request, data: dict) -> list[dict[str, str]]:
     if data.get("project"):
         project_names = ", ".join(project.code for project in data["project"])
         chips.append(_chip(f"Project: {project_names}", request, "project"))
+    if data.get("location"):
+        locations = ", ".join(location.code for location in data["location"])
+        chips.append(_chip(f"Location: {locations}", request, "location"))
+    if data.get("condition"):
+        labels = dict(StockItem.Condition.choices)
+        values = ", ".join(labels[value] for value in data["condition"])
+        chips.append(_chip(f"Condition: {values}", request, "condition"))
     if data.get("project_status"):
         status_label = dict(Project.Status.choices)[data["project_status"]]
         chips.append(
@@ -631,7 +657,7 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
             ),
             can_reactivate=(
                 self.object.status == StockItem.Status.ARCHIVED
-                and self.object.project.status == Project.Status.ACTIVE
+                and self.object.location.accepts_stock_activity
                 and self.object.unit.is_active
             ),
             history_source_query=_source_query(self.request),
@@ -832,6 +858,271 @@ class StockAdjustmentView(InventoryWorkspaceMixin, View):
             "stock_item": self.stock_item,
             "form": form,
         }
+
+
+class StockTransferListView(InventoryWorkspaceMixin, ListView):
+    model = StockTransfer
+    template_name = "inventory/transfer_list.html"
+    context_object_name = "transfers"
+    paginate_by = 40
+
+    def get_queryset(self):
+        queryset = StockTransfer.objects.select_related(
+            "source_location", "destination_location", "created_by", "reversed_by"
+        ).prefetch_related("lines")
+        query = self.request.GET.get("q", "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(source_location__code__icontains=query)
+                | Q(source_location__name__icontains=query)
+                | Q(destination_location__code__icontains=query)
+                | Q(destination_location__name__icontains=query)
+                | Q(document_reference__icontains=query)
+                | Q(reference__icontains=query)
+            )
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            page_key="transfers",
+            page_title="Stock transfers",
+            page_subtitle="Linked project and office stock movements with condition outcomes.",
+            search_query=self.request.GET.get("q", ""),
+        )
+        return context
+
+
+class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
+    model = StockItem
+    template_name = "inventory/office_inventory.html"
+    context_object_name = "stock_items"
+    paginate_by = 50
+
+    def dispatch(self, request, *args, **kwargs):
+        self.office = get_object_or_404(
+            InventoryLocation,
+            location_type=InventoryLocation.Type.OFFICE,
+            is_active=True,
+        )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        queryset = stock_items().filter(location=self.office, status=StockItem.Status.ACTIVE)
+        return apply_stock_search(queryset, self.request.GET.get("q", "")).order_by(
+            "material_name", "condition", "supplier_name"
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            page_key="office",
+            page_title=self.office.name,
+            page_subtitle="Office-held new, used, and no-value stock.",
+            office=self.office,
+            search_query=self.request.GET.get("q", ""),
+        )
+        return context
+
+
+class StockTransferCreateView(InventoryWorkspaceMixin, View):
+    template_name = "inventory/transfer_form.html"
+
+    def _closeout_project(self, request):
+        code = (request.GET.get("closeout") or request.POST.get("closeout") or "").strip()
+        if not code:
+            return None
+        return get_object_or_404(
+            Project,
+            code=code,
+            status=Project.Status.ACTIVE,
+            deleted_at__isnull=True,
+        )
+
+    def _source_location(self, request, closeout_project=None):
+        if closeout_project:
+            return closeout_project.inventory_location
+        value = (request.GET.get("source") or request.POST.get("source_location") or "").strip()
+        if value and value.isdigit():
+            return InventoryLocation.objects.select_related("project").filter(pk=int(value)).first()
+        return None
+
+    def get(self, request):
+        closeout_project = self._closeout_project(request)
+        source = self._source_location(request, closeout_project)
+        form = StockTransferForm(
+            source_location=source,
+            require_full_transfer=bool(closeout_project),
+            lock_source=bool(closeout_project),
+        )
+        return render(request, self.template_name, self._context(form, source, closeout_project))
+
+    def post(self, request):
+        closeout_project = self._closeout_project(request)
+        source = self._source_location(request, closeout_project)
+        form = StockTransferForm(
+            request.POST,
+            request.FILES,
+            source_location=source,
+            require_full_transfer=bool(closeout_project),
+            lock_source=bool(closeout_project),
+        )
+        if form.is_valid():
+            data = form.cleaned_data
+            try:
+                with transaction.atomic():
+                    result = transfer_stock(
+                        user=request.user,
+                        idempotency_key=data["idempotency_key"],
+                        source_location=data["source_location"],
+                        destination_location=data["destination_location"],
+                        transfer_date=data["transfer_date"],
+                        allocations=form.allocations,
+                        document_reference=data["document_reference"],
+                        notes=data["notes"],
+                        attachment=data["attachment"],
+                    )
+                    if closeout_project and not result.duplicate_submission:
+                        locked_project = Project.objects.select_for_update().get(
+                            pk=closeout_project.pk
+                        )
+                        if locked_project.stock_items.filter(current_quantity__gt=0).exists():
+                            raise InventoryOperationError(
+                                "Every project balance must reach zero before completion."
+                            )
+                        locked_project.status = Project.Status.COMPLETED
+                        locked_project.updated_by = request.user
+                        locked_project.save()
+            except InventoryOperationError as exc:
+                form.add_error(None, _operation_error_message(exc))
+            else:
+                if result.duplicate_submission:
+                    messages.info(request, "This transfer was already recorded.")
+                elif closeout_project:
+                    messages.success(
+                        request,
+                        f"Stock transferred and project {closeout_project.code} completed.",
+                    )
+                else:
+                    messages.success(request, "Stock transfer completed safely.")
+                return redirect("inventory:transfer_detail", reference=result.transfer.reference)
+        return render(
+            request,
+            self.template_name,
+            self._context(form, source, closeout_project),
+            status=400,
+        )
+
+    def _context(self, form, source, closeout_project):
+        return {
+            "page_key": "transfers",
+            "page_title": "Close project stock" if closeout_project else "Transfer stock",
+            "page_subtitle": (
+                "Allocate every remaining quantity before completing the project."
+                if closeout_project
+                else "Move stock between projects and the office with condition outcomes."
+            ),
+            "form": form,
+            "source": source,
+            "source_locations": InventoryLocation.objects.select_related("project")
+            .filter(is_active=True)
+            .order_by("location_type", "code"),
+            "closeout_project": closeout_project,
+        }
+
+
+class StockTransferDetailView(InventoryWorkspaceMixin, DetailView):
+    model = StockTransfer
+    slug_field = "reference"
+    slug_url_kwarg = "reference"
+    template_name = "inventory/transfer_detail.html"
+    context_object_name = "transfer"
+
+    def get_queryset(self):
+        return StockTransfer.objects.select_related(
+            "source_location", "destination_location", "created_by", "reversed_by"
+        ).prefetch_related(
+            "lines__source_stock_item__unit",
+            "lines__destination_stock_item",
+            "lines__movements",
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        lines = list(self.object.lines.all())
+        context.update(
+            page_key="transfers",
+            page_title=f"Transfer {self.object.short_reference}",
+            page_subtitle="Permanent linked source, destination, condition, and loss history.",
+            lines=lines,
+            total_quantity=sum((line.quantity for line in lines), 0),
+            lost_quantity=sum((line.quantity for line in lines if line.outcome == "lost"), 0),
+            can_reverse_transfer=(
+                self.object.status == StockTransfer.Status.COMPLETED
+                and self.object.source_location.accepts_stock_activity
+                and self.object.destination_location.accepts_stock_activity
+            ),
+        )
+        return context
+
+
+class StockTransferAttachmentView(InventoryWorkspaceMixin, View):
+    def get(self, request, reference):
+        transfer = get_object_or_404(StockTransfer, reference=reference)
+        if not transfer.attachment:
+            raise Http404("This transfer has no attachment.")
+        try:
+            file_handle = transfer.attachment.open("rb")
+        except FileNotFoundError as exc:
+            raise Http404("Attachment file was not found.") from exc
+        filename = transfer.attachment.name.rsplit("/", 1)[-1]
+        response = FileResponse(file_handle, as_attachment=True, filename=filename)
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class StockTransferReversalView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/transfer_reverse.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.transfer = get_object_or_404(
+            StockTransfer.objects.select_related("source_location", "destination_location"),
+            reference=kwargs["reference"],
+        )
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, *args, **kwargs):
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_key": "transfers",
+                "transfer": self.transfer,
+                "form": StockTransferReversalForm(),
+            },
+        )
+
+    def post(self, request, *args, **kwargs):
+        form = StockTransferReversalForm(request.POST)
+        if form.is_valid():
+            try:
+                reverse_transfer(
+                    transfer=self.transfer,
+                    user=request.user,
+                    idempotency_key=form.cleaned_data["idempotency_key"],
+                    reason=form.cleaned_data["reason"],
+                )
+            except InventoryOperationError as exc:
+                form.add_error(None, _operation_error_message(exc))
+            else:
+                messages.success(request, "The complete transfer was reversed safely.")
+                return redirect("inventory:transfer_detail", reference=self.transfer.reference)
+        return render(
+            request,
+            self.template_name,
+            {"page_key": "transfers", "transfer": self.transfer, "form": form},
+            status=400,
+        )
 
 
 class StockMovementListView(InventoryWorkspaceMixin, ListView):
@@ -1164,7 +1455,12 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
     def get_queryset(self):
         entries = []
         groups = (
-            ("stock", active_trash(StockItem.objects.select_related("project", "deleted_by"))),
+            (
+                "stock",
+                active_trash(
+                    StockItem.objects.select_related("location", "project", "deleted_by")
+                ),
+            ),
             ("project", active_trash(Project.objects.select_related("deleted_by"))),
             ("unit", active_trash(Unit.objects.select_related("deleted_by"))),
             ("supplier", active_trash(Supplier.objects.select_related("deleted_by"))),
@@ -1175,7 +1471,7 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
                     identifier, label, detail = (
                         str(item.reference),
                         item.material_name,
-                        item.project.code,
+                        item.location.code,
                     )
                 elif kind == "project":
                     identifier, label, detail = item.code, item.code, item.name
@@ -1512,6 +1808,7 @@ class StockPickerAPIView(InventoryWorkspaceMixin, View):
                         "material_name": item.material_name,
                         "supplier_name": item.supplier_name,
                         "supplier_phone": item.supplier_phone,
+                        "condition": item.get_condition_display(),
                         "quantity": str(item.current_quantity),
                         "quantity_display": item.quantity_display,
                         "unit": item.unit.symbol,

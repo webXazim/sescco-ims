@@ -38,6 +38,7 @@ from ..opening_schema import OPENING_IMPORT_COLUMNS, OPENING_IMPORT_RULES
 
 DEFAULT_STOCK_COLUMNS = (
     "project",
+    "condition",
     "material",
     "supplier",
     "phone",
@@ -52,6 +53,7 @@ DEFAULT_STOCK_COLUMNS = (
 DEFAULT_MOVEMENT_COLUMNS = (
     "date",
     "project",
+    "condition",
     "material",
     "type",
     "quantity",
@@ -60,7 +62,7 @@ DEFAULT_MOVEMENT_COLUMNS = (
     "user",
 )
 STOCK_SORTS = {
-    "project": ("project__code", "material_name", "supplier_name"),
+    "project": ("location__code", "material_name", "supplier_name"),
     "material": ("material_name", "supplier_name"),
     "-material": ("-material_name", "supplier_name"),
     "supplier": ("supplier_name", "material_name"),
@@ -79,7 +81,7 @@ STOCK_SORTS = {
 MOVEMENT_SORTS = {
     "-date": ("-movement_date", "-created_at", "-pk"),
     "date": ("movement_date", "created_at", "pk"),
-    "project": ("project_code_snapshot", "material_name_snapshot", "-movement_date"),
+    "project": ("location_code_snapshot", "material_name_snapshot", "-movement_date"),
     "material": ("material_name_snapshot", "-movement_date"),
     "type": ("movement_type", "-movement_date"),
     "quantity": ("quantity", "-movement_date"),
@@ -150,8 +152,11 @@ STOCK_COLUMNS = {
     "project": ExportColumn(
         "project",
         "Project",
-        lambda item: f"{item.project.code} · {item.project.name}",
+        lambda item: f"{item.location.code} · {item.location.name}",
         28,
+    ),
+    "condition": ExportColumn(
+        "condition", "Condition", lambda item: item.get_condition_display(), 16
     ),
     "material": ExportColumn("material", "Material", lambda item: item.material_name, 26),
     "description": ExportColumn("description", "Description", lambda item: item.description, 36),
@@ -226,9 +231,15 @@ MOVEMENT_COLUMNS = {
     ),
     "project": ExportColumn(
         "project",
-        "Project",
-        lambda movement: (f"{movement.project_code_display} · {movement.project_name_display}"),
+        "Location",
+        lambda movement: (f"{movement.location_code_display} · {movement.location_name_display}"),
         28,
+    ),
+    "condition": ExportColumn(
+        "condition",
+        "Condition",
+        lambda movement: movement.condition_display.replace("_", " ").title(),
+        16,
     ),
     "material": ExportColumn(
         "material",
@@ -296,7 +307,7 @@ def _with_defaults(query: QueryDict, defaults: dict[str, object]) -> QueryDict:
     for key, value in defaults.items():
         if key in data:
             continue
-        if isinstance(value, (tuple, list)):
+        if isinstance(value, tuple | list):
             data.setlist(key, [str(item) for item in value])
         else:
             data[key] = str(value)
@@ -417,7 +428,7 @@ def stock_history_dataset(stock_item: StockItem, query: QueryDict) -> ExportData
         filters=querydict_to_plain(data, form.fields.keys()),
         sort=sort,
         scope_reference=str(stock_item.reference),
-        scope_label=f"{stock_item.project.code} · {stock_item.material_name}",
+        scope_label=f"{stock_item.location.code} · {stock_item.material_name}",
     )
 
 
@@ -541,7 +552,7 @@ def _csv_payload(dataset: ExportDataset) -> bytes:
         values = []
         for column in dataset.columns:
             value = _cell_value(column.value(item))
-            if isinstance(value, (date, datetime)):
+            if isinstance(value, date | datetime):
                 value = (
                     value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
                 )

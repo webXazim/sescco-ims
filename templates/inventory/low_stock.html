@@ -32,7 +32,8 @@
   <div data-filter-results aria-live="polite">
   {% include "partials/filter_chips.html" %}
   <div class="table-wrap"><table data-resizable-description><thead><tr>
-    {% if "project" in visible_columns %}<th>Project</th>{% endif %}
+    {% if "project" in visible_columns %}<th>Location</th>{% endif %}
+    {% if "condition" in visible_columns %}<th>Condition</th>{% endif %}
     {% if "material" in visible_columns %}<th>Material</th>{% endif %}
     {% if "description" in visible_columns %}<th class="description-column"><span>Description</span><span class="column-resize-handle" data-description-resize-handle role="separator" tabindex="0" aria-label="Resize description column" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="640" title="Drag to resize; double-click to reset"></span></th>{% endif %}
     {% if "supplier" in visible_columns %}<th>Supplier</th>{% endif %}
@@ -48,7 +49,8 @@
     <th></th>
   </tr></thead><tbody>
     {% for item in stock_items %}<tr>
-      {% if "project" in visible_columns %}<td><a class="tag" href="{% url 'projects:detail' item.project.code %}">{{ item.project.code }}</a></td>{% endif %}
+      {% if "project" in visible_columns %}<td>{% if item.project %}<a class="tag" href="{% url 'projects:detail' item.project.code %}">{{ item.location.code }}</a>{% else %}<a class="tag" href="{% url 'inventory:office' %}">{{ item.location.code }}</a>{% endif %}<div class="cell-sub">{{ item.get_condition_display }}</div></td>{% endif %}
+      {% if "condition" in visible_columns %}<td><span class="status status-neutral">{{ item.get_condition_display }}</span></td>{% endif %}
       {% if "material" in visible_columns %}<td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a></td>{% endif %}
       {% if "description" in visible_columns %}<td class="description-column"><div class="description-cell" title="{{ item.description|default:'—' }}">{{ item.description|default:"—" }}</div></td>{% endif %}
       {% if "supplier" in visible_columns %}<td>{{ item.supplier_name }}</td>{% endif %}

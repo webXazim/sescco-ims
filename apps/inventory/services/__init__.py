@@ -11,6 +11,13 @@ from .stock import (
     set_stock_item_status,
     use_stock,
 )
+from .transfers import (
+    TransferAllocation,
+    TransferAlreadyReversedError,
+    TransferResult,
+    reverse_transfer,
+    transfer_stock,
+)
 
 __all__ = [
     "InactiveStockError",
@@ -24,4 +31,9 @@ __all__ = [
     "reverse_movement",
     "set_stock_item_status",
     "use_stock",
+    "TransferAllocation",
+    "TransferAlreadyReversedError",
+    "TransferResult",
+    "reverse_transfer",
+    "transfer_stock",
 ]

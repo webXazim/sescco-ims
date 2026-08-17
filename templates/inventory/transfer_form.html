@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a></div></div>
+
+{% if not source %}
+<section class="card form-card section-gap">
+  <form method="get">
+    <div class="form-section"><h2 class="form-section-title">Choose the source location</h2><div class="form-grid">
+      <div class="field"><label class="field-label" for="sourceLocation">From</label><select class="input" id="sourceLocation" name="source" required><option value="">Select project or office</option>{% for location in source_locations %}<option value="{{ location.pk }}">{{ location.code }} · {{ location.name }} ({{ location.get_location_type_display }})</option>{% endfor %}</select></div>
+    </div></div>
+    <div class="form-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Cancel</a><button class="btn btn-primary" type="submit">Load available stock</button></div>
+  </form>
+</section>
+{% else %}
+<form method="post" enctype="multipart/form-data" novalidate data-transfer-form>{% csrf_token %}{{ form.idempotency_key }}<input type="hidden" name="source_location" value="{{ source.pk }}">{% if closeout_project %}<input type="hidden" name="closeout" value="{{ closeout_project.code }}">{% endif %}
+  {% if form.non_field_errors %}<div class="alert alert-danger section-gap">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+  <section class="card section-gap">
+    <div class="card-head"><div><h2 class="card-title">{{ source.code }} · {{ source.name }}</h2><div class="card-meta">Available source stock — classify every quantity being moved</div></div>{% if not closeout_project %}<a class="btn btn-sm" href="{% url 'inventory:transfer_create' %}">Change source</a>{% endif %}</div>
+    {% if form.allocation_rows %}
+    <div class="table-wrap"><table class="data-table transfer-table"><thead><tr><th>Material</th><th>Available</th><th>Current condition</th><th>New</th><th>Used</th><th>No value</th><th>Lost</th></tr></thead><tbody>
+      {% for row in form.allocation_rows %}<tr data-transfer-row data-available="{{ row.item.current_quantity }}"><td><strong>{{ row.item.material_name }}</strong><div class="cell-sub">{{ row.item.supplier_name }}</div></td><td class="qty">{{ row.item.quantity_display }}</td><td><span class="status status-neutral">{{ row.item.get_condition_display }}</span></td>{% for field in row.fields %}<td>{{ field }}{% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</td>{% endfor %}</tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="empty-state"><strong>No transferable stock</strong><p>This location has no active stock with a positive balance.</p></div>{% endif %}
+  </section>
+
+  {% if form.allocation_rows %}<div class="form-layout section-gap"><section class="card form-card">
+    <div class="form-section"><h2 class="form-section-title">Destination and transfer details</h2><div class="form-grid">
+      {% include "partials/form_field.html" with field=form.destination_location %}
+      {% include "partials/form_field.html" with field=form.transfer_date %}
+      {% include "partials/form_field.html" with field=form.document_reference %}
+      {% include "partials/form_field.html" with field=form.attachment %}
+      <div class="field field-full">{% include "partials/form_field.html" with field=form.notes %}</div>
+    </div></div>
+    <div class="form-actions"><a class="btn" href="{% if closeout_project %}{% url 'projects:detail' closeout_project.code %}{% else %}{% url 'inventory:transfer_list' %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>{% if closeout_project %}Transfer and complete project{% else %}Complete transfer{% endif %}</button></div>
+  </section><aside class="card summary-card"><div class="card-head"><h2 class="card-title">Reconciliation</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Allocated</span><span class="summary-value" data-transfer-total>0</span></div><div class="summary-row"><span class="summary-key">Received</span><span class="summary-value" data-transfer-received>0</span></div><div class="summary-row"><span class="summary-key">Lost</span><span class="summary-value" data-transfer-lost>0</span></div></div><div class="alert alert-warning section-gap">Lost quantities leave the source but never create destination stock. No-value quantities remain physically visible with zero estimated value.</div>{% if closeout_project %}<div class="alert alert-info section-gap">Closeout requires every remaining source quantity to be allocated.</div>{% endif %}</div></aside></div>{% endif %}
+</form>
+{% endif %}
+{% endblock %}

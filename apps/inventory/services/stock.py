@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.projects.models import Project
 
-from ..models import StockItem, StockMovement, Supplier, Unit
+from ..models import StockItem, StockMovement, StockTransferLine, Supplier, Unit
 from ..normalization import clean_display_text, normalize_phone, normalize_text
 
 
@@ -99,6 +99,7 @@ def _create_movement(
     notes: str = "",
     attachment=None,
     reversal_of: StockMovement | None = None,
+    transfer_line: StockTransferLine | None = None,
 ) -> StockMovement:
     movement = StockMovement(
         stock_item=stock_item,
@@ -115,6 +116,7 @@ def _create_movement(
         notes=notes,
         attachment=attachment,
         reversal_of=reversal_of,
+        transfer_line=transfer_line,
         created_by=user,
         idempotency_key=idempotency_key,
     )
@@ -132,11 +134,11 @@ def _create_movement(
 
 
 def _require_active_stock_item(stock_item: StockItem) -> None:
-    if stock_item.deleted_at or stock_item.project.deleted_at:
+    if stock_item.deleted_at or (stock_item.project and stock_item.project.deleted_at):
         raise InactiveStockError("Deleted stock records cannot receive new activity.")
     if stock_item.status != StockItem.Status.ACTIVE:
         raise InactiveStockError("Archived stock records cannot receive new activity.")
-    if stock_item.project.status != Project.Status.ACTIVE:
+    if not stock_item.location.accepts_stock_activity:
         raise InactiveStockError("Completed or archived projects cannot receive new activity.")
 
 
@@ -212,6 +214,7 @@ def add_stock(
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                     normalized_supplier_phone=normalized_phone,
+                    condition=StockItem.Condition.NEW,
                 )
                 .first()
             )
@@ -227,6 +230,7 @@ def add_stock(
             else:
                 similar = StockItem.objects.filter(
                     project=locked_project,
+                    condition=StockItem.Condition.NEW,
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                 ).exclude(normalized_supplier_phone=normalized_phone)
@@ -237,6 +241,7 @@ def add_stock(
                     )
                 stock_item = StockItem(
                     project=locked_project,
+                    condition=StockItem.Condition.NEW,
                     material_name=material_name,
                     description=description,
                     supplier_name=supplier_name,
@@ -520,11 +525,20 @@ def reverse_movement(
         with transaction.atomic():
             original = (
                 StockMovement.objects.select_for_update()
-                .select_related("stock_item", "stock_item__project", "stock_item__unit")
+                .select_related(
+                    "stock_item",
+                    "stock_item__location",
+                    "stock_item__project",
+                    "stock_item__unit",
+                )
                 .get(pk=movement.pk)
             )
             if original.movement_type == StockMovement.Type.REVERSAL:
                 raise InventoryOperationError("A reversal movement cannot be reversed.")
+            if original.transfer_line_id:
+                raise InventoryOperationError(
+                    "Transfer movements must be reversed from the complete transfer record."
+                )
             if movement_date < original.movement_date:
                 raise InventoryOperationError(
                     "Reversal date cannot be earlier than the original movement date."
@@ -534,7 +548,7 @@ def reverse_movement(
 
             stock_item = (
                 StockItem.objects.select_for_update()
-                .select_related("project", "unit")
+                .select_related("location", "project", "unit")
                 .get(pk=original.stock_item_id)
             )
             _require_active_stock_item(stock_item)
@@ -592,7 +606,7 @@ def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockI
     with transaction.atomic():
         locked = (
             StockItem.objects.select_for_update()
-            .select_related("project", "unit")
+            .select_related("location", "location__project", "project", "unit")
             .get(pk=stock_item.pk)
         )
         if locked.status == status:
@@ -604,9 +618,9 @@ def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockI
                     "Use or adjust the remaining stock first."
                 )
         else:
-            if locked.project.status != Project.Status.ACTIVE:
+            if not locked.location.accepts_stock_activity:
                 raise InventoryOperationError(
-                    "Reactivate the project before reactivating this stock record."
+                    "Reactivate the inventory location before reactivating this stock record."
                 )
             if not locked.unit.is_active:
                 raise InventoryOperationError(

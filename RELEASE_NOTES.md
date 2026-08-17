@@ -1,5 +1,13 @@
 # Project Inventory 1.0.0
 
+## Stock transfer upgrade
+
+- Added first-class project and office inventory locations.
+- Added New, Used and No value stock conditions with Lost as an audited transfer outcome.
+- Added atomic project-to-project, project-to-office and office-to-project transfers.
+- Added project closeout allocation, office inventory, transfer receipts and whole-transfer reversal.
+- Added location and condition support to inventory, activity, filters and exports.
+
 This release completes the seven planned build upgrades and is prepared for an
 isolated production deployment at `ims.a2tdev.com` beside other Docker Compose
 projects.

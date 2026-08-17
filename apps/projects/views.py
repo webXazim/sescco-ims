@@ -111,6 +111,7 @@ class ProjectStatusView(InventoryWorkspaceMixin, View):
         action = request.POST.get("action", "").strip()
         target = {
             "archive": Project.Status.ARCHIVED,
+            "complete": Project.Status.COMPLETED,
             "reactivate": Project.Status.ACTIVE,
         }.get(action)
         if not target:
@@ -126,7 +127,7 @@ class ProjectStatusView(InventoryWorkspaceMixin, View):
             messages.success(
                 request,
                 f"Project {project.code} was "
-                f"{'reactivated' if target == Project.Status.ACTIVE else 'archived'}.",
+                f"{'reactivated' if target == Project.Status.ACTIVE else target}.",
             )
         return redirect("projects:detail", code=project.code)
 
@@ -248,6 +249,14 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
             can_archive_project=(
                 self.object.status == Project.Status.ACTIVE
                 and not all_project_items.filter(current_quantity__gt=0).exists()
+            ),
+            can_complete_project=(
+                self.object.status == Project.Status.ACTIVE
+                and not all_project_items.filter(current_quantity__gt=0).exists()
+            ),
+            has_stock_to_closeout=(
+                self.object.status == Project.Status.ACTIVE
+                and all_project_items.filter(current_quantity__gt=0).exists()
             ),
         )
         return context

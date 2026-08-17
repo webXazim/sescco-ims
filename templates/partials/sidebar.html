@@ -6,6 +6,8 @@
     <a class="nav-link {% if page_key == 'inventory' or page_key == 'stock-detail' %}active{% endif %}" href="{% url 'inventory:list' %}"><span class="nav-glyph">▦</span><span>Inventory</span></a>
     <a class="nav-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}"><span class="nav-glyph">＋</span><span>Add stock</span></a>
     <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}"><span class="nav-glyph">−</span><span>Use stock</span></a>
+    <a class="nav-link {% if page_key == 'transfers' %}active{% endif %}" href="{% url 'inventory:transfer_list' %}"><span class="nav-glyph">⇄</span><span>Transfers</span></a>
+    <a class="nav-link {% if page_key == 'office' %}active{% endif %}" href="{% url 'inventory:office' %}"><span class="nav-glyph">▣</span><span>Office stock</span></a>
     <a class="nav-link {% if page_key == 'activity' %}active{% endif %}" href="{% url 'core:activity' %}"><span class="nav-glyph">↕</span><span>Activity</span></a>
     <div class="nav-label">Management</div>
     <a class="nav-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}"><span class="nav-glyph">◇</span><span>Projects</span></a>

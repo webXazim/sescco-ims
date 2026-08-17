@@ -13,8 +13,16 @@ from apps.core.forms import StyledForm, StyledModelForm
 from apps.explorer.filtering import DATE_PRESETS
 from apps.projects.models import Project
 
-from .models import StockItem, StockMovement, Supplier, Unit
+from .models import (
+    InventoryLocation,
+    StockItem,
+    StockMovement,
+    StockTransferLine,
+    Supplier,
+    Unit,
+)
 from .services.matching import find_stock_matches
+from .services.transfers import TransferAllocation
 
 
 def validate_uploaded_attachment(file):
@@ -132,6 +140,7 @@ class StockItemForm(StyledModelForm):
             material_name=cleaned_data["material_name"],
             supplier_name=cleaned_data["supplier_name"],
             supplier_phone=cleaned_data["supplier_phone"],
+            condition=self.instance.condition or StockItem.Condition.NEW,
             exclude_pk=self.instance.pk,
         )
         self.exact_match = result.exact
@@ -277,6 +286,7 @@ class StockItemSelect(forms.Select):
                     "data-project": item.project.code,
                     "data-material": item.material_name,
                     "data-supplier": item.supplier_name,
+                    "data-condition": item.get_condition_display(),
                 }
             )
         return option
@@ -287,7 +297,8 @@ class StockItemChoiceField(forms.ModelChoiceField):
 
     def label_from_instance(self, item):
         return (
-            f"{item.project.code} · {item.material_name} · {item.supplier_name} "
+            f"{item.project.code} · {item.material_name} · {item.get_condition_display()} · "
+            f"{item.supplier_name} "
             f"({item.quantity_display})"
         )
 
@@ -424,6 +435,160 @@ class MovementReversalForm(IdempotentMovementForm):
     )
 
 
+class StockTransferForm(StyledForm):
+    idempotency_key = forms.UUIDField(widget=forms.HiddenInput)
+    source_location = forms.ModelChoiceField(
+        queryset=InventoryLocation.objects.none(),
+        label="From",
+    )
+    destination_location = forms.ModelChoiceField(
+        queryset=InventoryLocation.objects.none(),
+        label="To",
+    )
+    transfer_date = forms.DateField(
+        label="Transfer date",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    document_reference = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Reference",
+    )
+    attachment = forms.FileField(
+        required=False,
+        help_text="Optional PDF, JPG or PNG, maximum 10 MB.",
+    )
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 4}))
+
+    OUTCOMES = (
+        StockTransferLine.Outcome.NEW,
+        StockTransferLine.Outcome.USED,
+        StockTransferLine.Outcome.NO_VALUE,
+        StockTransferLine.Outcome.LOST,
+    )
+
+    def __init__(
+        self,
+        *args,
+        source_location=None,
+        require_full_transfer=False,
+        lock_source=False,
+        **kwargs,
+    ):
+        initial = kwargs.setdefault("initial", {})
+        initial.setdefault("idempotency_key", uuid.uuid4())
+        initial.setdefault("transfer_date", timezone.localdate())
+        if source_location:
+            initial.setdefault("source_location", source_location)
+        self.require_full_transfer = require_full_transfer
+        self.lock_source = lock_source
+        super().__init__(*args, **kwargs)
+        locations = InventoryLocation.objects.select_related("project").filter(is_active=True)
+        self.fields["source_location"].queryset = locations.order_by("location_type", "code")
+        self.fields["destination_location"].queryset = locations.order_by(
+            "location_type", "code"
+        )
+        if lock_source:
+            self.fields["source_location"].disabled = True
+
+        if not source_location:
+            selected = self.data.get(self.add_prefix("source_location")) if self.is_bound else None
+            if selected and str(selected).isdigit():
+                source_location = locations.filter(pk=int(selected)).first()
+            elif initial.get("source_location"):
+                source_location = initial["source_location"]
+        self.source_location = source_location
+        self.source_items = []
+        self.allocation_rows = []
+        if source_location:
+            self.source_items = list(
+                StockItem.objects.select_related("unit", "location")
+                .filter(
+                    location=source_location,
+                    status=StockItem.Status.ACTIVE,
+                    deleted_at__isnull=True,
+                    current_quantity__gt=0,
+                )
+                .order_by("material_name", "supplier_name", "condition")
+            )
+            for item in self.source_items:
+                fields = []
+                for outcome in self.OUTCOMES:
+                    name = f"item_{item.pk}_{outcome}"
+                    self.fields[name] = forms.DecimalField(
+                        required=False,
+                        min_value=Decimal("0"),
+                        max_digits=16,
+                        decimal_places=3,
+                        label=StockTransferLine.Outcome(outcome).label,
+                        widget=forms.NumberInput(
+                            attrs={
+                                "class": "input transfer-quantity",
+                                "min": "0",
+                                "step": "0.001",
+                                "data-transfer-quantity": "",
+                                "data-item": item.pk,
+                                "data-outcome": outcome,
+                            }
+                        ),
+                    )
+                    fields.append(self[name])
+                self.allocation_rows.append({"item": item, "fields": fields})
+
+    def clean_attachment(self):
+        return validate_uploaded_attachment(self.cleaned_data.get("attachment"))
+
+    def clean_transfer_date(self):
+        value = self.cleaned_data["transfer_date"]
+        if value > timezone.localdate():
+            raise ValidationError("Date cannot be in the future.")
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        source = cleaned.get("source_location")
+        destination = cleaned.get("destination_location")
+        if source and destination and source.pk == destination.pk:
+            self.add_error("destination_location", "Source and destination must be different.")
+        self.allocations = []
+        for row in self.allocation_rows:
+            item = row["item"]
+            total = Decimal("0")
+            for outcome in self.OUTCOMES:
+                name = f"item_{item.pk}_{outcome}"
+                quantity = cleaned.get(name) or Decimal("0")
+                total += quantity
+                if quantity > 0:
+                    self.allocations.append(TransferAllocation(item, outcome, quantity))
+            if total > item.current_quantity:
+                self.add_error(
+                    f"item_{item.pk}_{self.OUTCOMES[-1]}",
+                    f"Allocated {total:f}; only {item.quantity_display} is available.",
+                )
+            if self.require_full_transfer and total != item.current_quantity:
+                self.add_error(
+                    f"item_{item.pk}_{self.OUTCOMES[-1]}",
+                    f"Project closeout requires all {item.quantity_display} to be allocated.",
+                )
+        if not self.allocations:
+            raise ValidationError("Enter at least one New, Used, No value, or Lost quantity.")
+        return cleaned
+
+
+class StockTransferReversalForm(StyledForm):
+    idempotency_key = forms.UUIDField(widget=forms.HiddenInput)
+    reason = forms.CharField(
+        max_length=240,
+        widget=forms.Textarea(attrs={"rows": 4}),
+        help_text="Explain why both sides of this transfer must be reversed.",
+    )
+
+    def __init__(self, *args, **kwargs):
+        initial = kwargs.setdefault("initial", {})
+        initial.setdefault("idempotency_key", uuid.uuid4())
+        super().__init__(*args, **kwargs)
+
+
 class DateRangeFilterForm(StyledForm):
     date_preset = forms.ChoiceField(required=False, choices=DATE_PRESETS, label="Period")
     date_from = forms.DateField(
@@ -495,7 +660,8 @@ class StockItemFilterForm(DateRangeFilterForm):
         ("oldest-addition", "Sort by latest addition: oldest"),
     )
     COLUMN_CHOICES = (
-        ("project", "Project"),
+        ("project", "Location"),
+        ("condition", "Condition"),
         ("material", "Material"),
         ("description", "Description"),
         ("supplier", "Supplier"),
@@ -519,6 +685,19 @@ class StockItemFilterForm(DateRangeFilterForm):
         required=False,
         empty_label="All projects",
         label="Project",
+    )
+    location = forms.ModelChoiceField(
+        queryset=InventoryLocation.objects.none(),
+        to_field_name="code",
+        required=False,
+        empty_label="All locations",
+        label="Location",
+    )
+    condition = forms.MultipleChoiceField(
+        required=False,
+        choices=StockItem.Condition.choices,
+        widget=forms.CheckboxSelectMultiple,
+        label="Conditions",
     )
     project_status = forms.ChoiceField(
         required=False,
@@ -572,6 +751,9 @@ class StockItemFilterForm(DateRangeFilterForm):
         self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
             "code"
         )
+        self.fields["location"].queryset = InventoryLocation.objects.filter(
+            is_active=True
+        ).order_by("location_type", "code")
         self.fields["unit"].queryset = Unit.objects.filter(deleted_at__isnull=True).order_by("name")
         self.fields["q"].widget.attrs.update(
             {
@@ -623,7 +805,8 @@ class MovementFilterForm(DateRangeFilterForm):
     )
     COLUMN_CHOICES = (
         ("date", "Date"),
-        ("project", "Project"),
+        ("project", "Location"),
+        ("condition", "Condition"),
         ("material", "Material"),
         ("supplier", "Supplier"),
         ("phone", "Supplier phone"),
@@ -642,6 +825,19 @@ class MovementFilterForm(DateRangeFilterForm):
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Projects",
+    )
+    location = forms.ModelMultipleChoiceField(
+        queryset=InventoryLocation.objects.none(),
+        to_field_name="code",
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Locations",
+    )
+    condition = forms.MultipleChoiceField(
+        required=False,
+        choices=StockItem.Condition.choices,
+        widget=forms.CheckboxSelectMultiple,
+        label="Conditions",
     )
     project_status = forms.ChoiceField(
         required=False,
@@ -679,6 +875,9 @@ class MovementFilterForm(DateRangeFilterForm):
         super().__init__(*args, **kwargs)
         self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
             "code"
+        )
+        self.fields["location"].queryset = InventoryLocation.objects.order_by(
+            "location_type", "code"
         )
         self.fields["q"].widget.attrs.update(
             {

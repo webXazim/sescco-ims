@@ -19,17 +19,17 @@ LOW_STOCK_CONDITION = Q(current_quantity=0) | Q(
 
 
 def stock_items() -> QuerySet[StockItem]:
-    return StockItem.objects.filter(
-        deleted_at__isnull=True, project__deleted_at__isnull=True
-    ).select_related("project", "unit", "created_by", "updated_by")
+    return StockItem.objects.filter(deleted_at__isnull=True).filter(
+        Q(project__isnull=True) | Q(project__deleted_at__isnull=True)
+    ).select_related("location", "location__project", "project", "unit", "created_by", "updated_by")
 
 
 def stock_movements() -> QuerySet[StockMovement]:
-    return StockMovement.objects.filter(
-        stock_item__deleted_at__isnull=True,
-        stock_item__project__deleted_at__isnull=True,
+    return StockMovement.objects.filter(stock_item__deleted_at__isnull=True).filter(
+        Q(stock_item__project__isnull=True) | Q(stock_item__project__deleted_at__isnull=True)
     ).select_related(
         "stock_item",
+        "stock_item__location",
         "stock_item__project",
         "stock_item__unit",
         "created_by",
@@ -39,7 +39,12 @@ def stock_movements() -> QuerySet[StockMovement]:
 
 
 def low_stock_items() -> QuerySet[StockItem]:
-    return stock_items().filter(status=StockItem.Status.ACTIVE).filter(LOW_STOCK_CONDITION)
+    return (
+        stock_items()
+        .filter(status=StockItem.Status.ACTIVE)
+        .exclude(condition=StockItem.Condition.NO_VALUE)
+        .filter(LOW_STOCK_CONDITION)
+    )
 
 
 def apply_stock_status(queryset: QuerySet[StockItem], value: str) -> QuerySet[StockItem]:
@@ -67,7 +72,10 @@ def apply_stock_search(queryset: QuerySet[StockItem], value: str) -> QuerySet[St
     """Apply AND-between-terms, OR-between-columns search."""
     for query in _search_terms(value):
         condition = (
-            Q(project__code__icontains=query)
+            Q(location__code__icontains=query)
+            | Q(location__name__icontains=query)
+            | Q(condition__icontains=query)
+            | Q(project__code__icontains=query)
             | Q(project__name__icontains=query)
             | Q(project__client_name__icontains=query)
             | Q(project__location__icontains=query)
@@ -106,6 +114,9 @@ def apply_movement_search(queryset: QuerySet[StockMovement], value: str) -> Quer
     for query in _search_terms(value):
         condition = (
             Q(project_code_snapshot__icontains=query)
+            | Q(location_code_snapshot__icontains=query)
+            | Q(location_name_snapshot__icontains=query)
+            | Q(condition_snapshot__icontains=query)
             | Q(project_name_snapshot__icontains=query)
             | Q(material_name_snapshot__icontains=query)
             | Q(supplier_name_snapshot__icontains=query)
@@ -148,6 +159,10 @@ def filter_stock_items(queryset: QuerySet[StockItem], data: dict) -> QuerySet[St
     project_ids = _ids(data.get("project"))
     if project_ids:
         queryset = queryset.filter(project_id__in=project_ids)
+    if data.get("location"):
+        queryset = queryset.filter(location=data["location"])
+    if data.get("condition"):
+        queryset = queryset.filter(condition__in=data["condition"])
     if data.get("project_status"):
         queryset = queryset.filter(project__status=data["project_status"])
     if data.get("material"):
@@ -215,6 +230,11 @@ def filter_stock_movements(
     project_ids = _ids(data.get("project"))
     if project_ids:
         queryset = queryset.filter(stock_item__project_id__in=project_ids)
+    location_ids = _ids(data.get("location"))
+    if location_ids:
+        queryset = queryset.filter(stock_item__location_id__in=location_ids)
+    if data.get("condition"):
+        queryset = queryset.filter(condition_snapshot__in=data["condition"])
     if data.get("project_status"):
         queryset = queryset.filter(stock_item__project__status=data["project_status"])
     if data.get("material"):
