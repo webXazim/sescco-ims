@@ -207,7 +207,7 @@ def add_stock(
             )
 
             exact = (
-                StockItem.objects.select_for_update()
+                StockItem.objects.select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .filter(
                     project=locked_project,
@@ -318,7 +318,7 @@ def add_opening_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update()
+                StockItem.objects.select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -383,7 +383,7 @@ def use_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update()
+                StockItem.objects.select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -443,7 +443,7 @@ def adjust_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update()
+                StockItem.objects.select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -524,7 +524,7 @@ def reverse_movement(
     try:
         with transaction.atomic():
             original = (
-                StockMovement.objects.select_for_update()
+                StockMovement.objects.select_for_update(of=("self",))
                 .select_related(
                     "stock_item",
                     "stock_item__location",
@@ -547,7 +547,7 @@ def reverse_movement(
                 raise MovementAlreadyReversedError("This movement has already been reversed.")
 
             stock_item = (
-                StockItem.objects.select_for_update()
+                StockItem.objects.select_for_update(of=("self",))
                 .select_related("location", "project", "unit")
                 .get(pk=original.stock_item_id)
             )
@@ -605,7 +605,7 @@ def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockI
         raise InventoryOperationError("Choose a valid stock-record status.")
     with transaction.atomic():
         locked = (
-            StockItem.objects.select_for_update()
+            StockItem.objects.select_for_update(of=("self",))
             .select_related("location", "location__project", "project", "unit")
             .get(pk=stock_item.pk)
         )

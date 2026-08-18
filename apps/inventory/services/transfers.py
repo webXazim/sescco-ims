@@ -57,7 +57,7 @@ def _destination_item(
     *, source: StockItem, destination: InventoryLocation, condition: str, user
 ) -> StockItem:
     exact = (
-        StockItem.objects.select_for_update()
+        StockItem.objects.select_for_update(of=("self",))
         .filter(
             location=destination,
             normalized_material_name=source.normalized_material_name,
@@ -134,7 +134,7 @@ def transfer_stock(
     with transaction.atomic():
         locations = {
             location.pk: location
-            for location in InventoryLocation.objects.select_for_update()
+            for location in InventoryLocation.objects.select_for_update(of=("self",))
             .select_related("project")
             .filter(pk__in=(source_location.pk, destination_location.pk))
             .order_by("pk")
@@ -146,7 +146,7 @@ def transfer_stock(
 
         source_items = {
             item.pk: item
-            for item in StockItem.objects.select_for_update()
+            for item in StockItem.objects.select_for_update(of=("self",))
             .select_related("location", "location__project", "project", "unit")
             .filter(pk__in=totals)
             .order_by("pk")
@@ -276,7 +276,7 @@ def reverse_transfer(
 
     with transaction.atomic():
         transfer = (
-            StockTransfer.objects.select_for_update()
+            StockTransfer.objects.select_for_update(of=("self",))
             .select_related("source_location__project", "destination_location__project")
             .get(pk=transfer.pk)
         )
@@ -296,7 +296,7 @@ def reverse_transfer(
         }
         locked_items = {
             item.pk: item
-            for item in StockItem.objects.select_for_update()
+            for item in StockItem.objects.select_for_update(of=("self",))
             .select_related("location", "project", "unit")
             .filter(pk__in=item_ids)
             .order_by("pk")
