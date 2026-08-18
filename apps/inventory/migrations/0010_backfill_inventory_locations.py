@@ -49,6 +49,12 @@ def backfill_locations(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # PostgreSQL cannot alter the StockItem location foreign key in the same
+    # transaction that populated it because the backfill leaves deferred
+    # foreign-key trigger events pending until commit. Keeping this migration
+    # non-atomic commits the RunPython operation before AlterField executes.
+    atomic = False
+
     dependencies = [("inventory", "0009_inventorylocation_stocktransfer_stocktransferline_and_more")]
 
     operations = [

@@ -29,7 +29,7 @@ info "Verifying backup checksums"
 
 if [[ "${IMS_SKIP_SAFETY_BACKUP:-0}" != "1" ]]; then
   info "Creating safety backup of the current IMS data"
-  IMS_BACKUP_RETENTION_DAYS=0 "${PROJECT_ROOT}/scripts/backup.sh" >/dev/null
+  IMS_BACKUP_RETENTION_DAYS=0 bash "${PROJECT_ROOT}/scripts/backup.sh" >/dev/null
 fi
 
 info "Stopping only IMS application services"

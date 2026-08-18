@@ -8,7 +8,7 @@ lock_dir="${PROJECT_ROOT}/.deploy-lock"
 mkdir "${lock_dir}" 2>/dev/null || fatal "Another IMS deployment appears to be running."
 trap 'rmdir "${lock_dir}" 2>/dev/null || true' EXIT
 
-"${PROJECT_ROOT}/scripts/preflight.sh"
+bash "${PROJECT_ROOT}/scripts/preflight.sh"
 
 info "Building the IMS image without touching other Docker projects"
 compose build --pull ims_web
@@ -19,7 +19,7 @@ wait_for_service_health ims_db 120
 
 if [[ "${IMS_SKIP_DEPLOY_BACKUP:-0}" != "1" ]]; then
   info "Creating a pre-deployment backup"
-  "${PROJECT_ROOT}/scripts/backup.sh" >/dev/null
+  bash "${PROJECT_ROOT}/scripts/backup.sh" >/dev/null
 fi
 
 info "Starting or updating the IMS web service"
