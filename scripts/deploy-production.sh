@@ -22,9 +22,12 @@ if [[ "${IMS_SKIP_DEPLOY_BACKUP:-0}" != "1" ]]; then
   "${PROJECT_ROOT}/scripts/backup.sh" >/dev/null
 fi
 
-info "Starting or updating IMS services"
-compose up -d --remove-orphans ims_db ims_web ims_gateway
+info "Starting or updating the IMS web service"
+compose up -d --remove-orphans ims_db ims_web
 wait_for_service_health ims_web 300
+
+info "Starting or updating the IMS gateway"
+compose up -d --remove-orphans ims_gateway
 wait_for_service_health ims_gateway 120
 
 info "Running final Django deployment checks"
