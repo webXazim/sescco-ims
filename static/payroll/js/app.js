@@ -672,7 +672,14 @@
   const storedManagementWorkspacePeriod = localStorage.getItem('payroll-ui-management-period') || defaultInternalPeriod;
   const accessRoles = serverAccess.role_matrix;
   const serverWorkspaces = Array.isArray(serverAccess.workspaces) ? serverAccess.workspaces : [];
-  const initialWorkspace = serverWorkspaces.includes(storedWorkspace) ? storedWorkspace : (serverWorkspaces.includes('internal') ? 'internal' : (serverWorkspaces[0] || 'management'));
+  const urlWorkspace = new URLSearchParams(location.search).get('workspace');
+  const serverInitialWorkspace = typeof serverAccess.initial_workspace === 'string' ? serverAccess.initial_workspace : '';
+  const requestedWorkspace = serverWorkspaces.includes(serverInitialWorkspace)
+    ? serverInitialWorkspace
+    : (serverWorkspaces.includes(urlWorkspace) ? urlWorkspace : '');
+  const initialWorkspace = requestedWorkspace
+    || (serverWorkspaces.includes(storedWorkspace) ? storedWorkspace : '')
+    || (serverWorkspaces.includes('internal') ? 'internal' : (serverWorkspaces[0] || 'management'));
   const initialPeriod = initialWorkspace === 'rental' ? storedRentalWorkspacePeriod : initialWorkspace === 'management' ? storedManagementWorkspacePeriod : storedInternalWorkspacePeriod;
 
 
@@ -921,7 +928,10 @@
   }
 
   function roleCanWorkspace(workspace) {
-    return roleDefinition().workspaces.includes(workspace);
+    // The request-specific workspace list is authoritative.  The role matrix is useful
+    // for labels/capabilities, but it must not be able to disagree with the membership
+    // context that the server authorized for this request.
+    return serverWorkspaces.includes(workspace);
   }
 
   function roleCanEdit(workspace = state.workspace) {
@@ -1002,17 +1012,19 @@
     if (workspaceTriggerTitle) workspaceTriggerTitle.textContent = workspaceMeta.title;
     if (workspaceTriggerSubtitle) workspaceTriggerSubtitle.textContent = workspaceMeta.subtitle;
 
-    document.querySelectorAll('[data-workspace-switch]').forEach(btn => {
-      const target = btn.dataset.workspaceSwitch;
+    document.querySelectorAll('[data-workspace-switch]').forEach(control => {
+      const target = control.dataset.workspaceSwitch;
       const active = target === state.workspace;
       const allowed = roleCanWorkspace(target);
-      btn.classList.toggle('is-active', active);
-      btn.classList.toggle('is-disabled', !allowed);
-      btn.dataset.active = String(active);
-      btn.disabled = !allowed;
-      btn.setAttribute('aria-current', active ? 'page' : 'false');
-      btn.setAttribute('aria-pressed', String(active));
-      btn.title = allowed ? `Open ${target === 'internal' ? 'Internal Company' : target === 'rental' ? 'Rental Manpower' : 'Management'}` : `${roleDefinition().label} does not have access to this workspace`;
+      control.classList.toggle('is-active', active);
+      control.classList.toggle('is-disabled', !allowed);
+      control.dataset.active = String(active);
+      control.setAttribute('aria-current', active ? 'page' : 'false');
+      control.setAttribute('aria-disabled', String(!allowed));
+      if ('disabled' in control) control.disabled = !allowed;
+      if (!allowed) control.tabIndex = -1;
+      else control.removeAttribute('tabindex');
+      control.title = allowed ? `Open ${target === 'internal' ? 'Internal Company' : target === 'rental' ? 'Rental Manpower' : 'Management'}` : `${roleDefinition().label} does not have access to this workspace`;
     });
     const accountLabel = document.getElementById('workspaceAccountLabel');
     if (accountLabel) accountLabel.textContent = workspaceLabel();
@@ -1054,16 +1066,23 @@
       : 'Search employees, branches, departments, payroll…';
   }
 
+  function syncWorkspaceUrl(workspace) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('workspace', workspace);
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
   function switchWorkspace(nextWorkspace) {
     const next = ['internal','rental','management'].includes(nextWorkspace) ? nextWorkspace : 'internal';
     if (!roleCanWorkspace(next)) { showToast('Workspace access restricted', `${roleDefinition().label} cannot open ${next === 'internal' ? 'Internal Company' : next === 'rental' ? 'Rental Manpower' : 'Management'}.`); return; }
-    if (next === state.workspace) return;
+    if (next === state.workspace) { syncWorkspaceUrl(next); navigate('overview'); return; }
     if (state.workspace === 'internal') localStorage.setItem('payroll-ui-internal-period', state.period);
     else if (state.workspace === 'rental') localStorage.setItem('payroll-ui-rental-period', state.period);
     else localStorage.setItem('payroll-ui-management-period', state.period);
 
     state.workspace = next;
     localStorage.setItem('payroll-ui-workspace', next);
+    syncWorkspaceUrl(next);
     state.period = next === 'rental'
       ? (localStorage.getItem('payroll-ui-rental-period') || defaultInternalPeriod)
       : next === 'management'
@@ -5793,7 +5812,12 @@
   }
 
   function navigate(route) {
-    location.hash = `#/${route}`;
+    const target = `#/${route}`;
+    if (location.hash === target) {
+      renderRoute();
+      return;
+    }
+    location.hash = target;
   }
 
   function applyTimesheetFullscreenState() {
@@ -5951,7 +5975,12 @@
         else localStorage.setItem('payroll-ui-management-period', state.period);
         state.workspace = workspace;
         localStorage.setItem('payroll-ui-workspace', workspace);
-        state.period = workspace === 'rental' ? (localStorage.getItem('payroll-ui-rental-period') || defaultInternalPeriod) : (localStorage.getItem('payroll-ui-internal-period') || defaultInternalPeriod);
+        syncWorkspaceUrl(workspace);
+        state.period = workspace === 'rental'
+          ? (localStorage.getItem('payroll-ui-rental-period') || defaultInternalPeriod)
+          : workspace === 'management'
+          ? (localStorage.getItem('payroll-ui-management-period') || defaultInternalPeriod)
+          : (localStorage.getItem('payroll-ui-internal-period') || defaultInternalPeriod);
         localStorage.setItem('payroll-ui-period', state.period); periodLabel.textContent = state.period;
         document.querySelectorAll('[data-period]').forEach(x => x.classList.toggle('is-selected', x.dataset.period === state.period));
         renderWorkspaceShell();
@@ -6931,6 +6960,27 @@
     });
   }
 
+  function initWorkspaceSwitcher() {
+    document.querySelectorAll('[data-workspace-switch]').forEach(control => {
+      control.addEventListener('click', event => {
+        const target = control.dataset.workspaceSwitch;
+        if (!roleCanWorkspace(target)) {
+          event.preventDefault();
+          showToast('Workspace access restricted', `${roleDefinition().label} cannot open this workspace.`);
+          return;
+        }
+        // Keep the anchor as a real fallback if JavaScript never initializes, but once
+        // initialized switch in-place and make the resulting URL reload/copy safe.
+        event.preventDefault();
+        const dropdown = control.closest('[data-dropdown]');
+        switchWorkspace(target);
+        dropdown?.classList.remove('is-open');
+        dropdown?.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
+        closeMobileNav();
+      });
+    });
+  }
+
   function initPeriod() {
     periodLabel.textContent = state.period;
     document.querySelectorAll('[data-period]').forEach(btn => {
@@ -7033,12 +7083,6 @@
       });
     }
 
-    document.querySelectorAll('[data-workspace-switch]').forEach(btn => btn.addEventListener('click', () => {
-      const dropdown = btn.closest('[data-dropdown]');
-      switchWorkspace(btn.dataset.workspaceSwitch);
-      dropdown?.classList.remove('is-open');
-      dropdown?.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
-    }));
     document.querySelectorAll('[data-account-settings]').forEach(link => link.addEventListener('click', () => {
       const dropdown = link.closest('[data-dropdown]');
       dropdown?.classList.remove('is-open');
@@ -7102,7 +7146,7 @@
     if (!rows.length) { commandResults.innerHTML = `<div class="ui-v2-command__empty">${icon('search')}<strong>No matching destination</strong><span>No matching records in ${escapeHtml(workspaceLabel())}.</span></div>`; return; }
     const groups = rows.reduce((acc,item)=>{(acc[item.type] ||= []).push(item);return acc;},{});
     commandResults.innerHTML = Object.entries(groups).map(([type,items]) => `<div class="ui-v2-prs-command-group">${type}${items.length>1?'s':''}</div>${items.map(item=>`<button data-search-route="${item.route}" data-search-workspace="${escapeHtml(item.workspace||state.workspace)}"><span class="ui-v2-command__icon">${item.code}</span><span class="ui-v2-command__copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.meta)}</small></span>${icon('arrow')}</button>`).join('')}`).join('');
-    commandResults.querySelectorAll('[data-search-route]').forEach(btn=>btn.addEventListener('click',()=>{closeSearch(); const targetWorkspace=btn.dataset.searchWorkspace||state.workspace; if(targetWorkspace!==state.workspace){ if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${roleDefinition().label} cannot open this result.`);return;} state.workspace=targetWorkspace; localStorage.setItem('payroll-ui-workspace',targetWorkspace); state.period=targetWorkspace==='rental'?(localStorage.getItem('payroll-ui-rental-period')||defaultInternalPeriod):(localStorage.getItem('payroll-ui-internal-period')||defaultInternalPeriod); localStorage.setItem('payroll-ui-period',state.period); periodLabel.textContent=state.period; renderWorkspaceShell(); } navigate(btn.dataset.searchRoute);}));
+    commandResults.querySelectorAll('[data-search-route]').forEach(btn=>btn.addEventListener('click',()=>{closeSearch(); const targetWorkspace=btn.dataset.searchWorkspace||state.workspace; if(targetWorkspace!==state.workspace){ if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${roleDefinition().label} cannot open this result.`);return;} state.workspace=targetWorkspace; localStorage.setItem('payroll-ui-workspace',targetWorkspace); syncWorkspaceUrl(targetWorkspace); state.period=targetWorkspace==='rental'?(localStorage.getItem('payroll-ui-rental-period')||defaultInternalPeriod):targetWorkspace==='management'?(localStorage.getItem('payroll-ui-management-period')||defaultInternalPeriod):(localStorage.getItem('payroll-ui-internal-period')||defaultInternalPeriod); localStorage.setItem('payroll-ui-period',state.period); periodLabel.textContent=state.period; renderWorkspaceShell(); } navigate(btn.dataset.searchRoute);}));
   }
 
   function initSearch() {
@@ -8426,8 +8470,10 @@
     }
   });
 
+  syncWorkspaceUrl(state.workspace);
   renderWorkspaceShell();
   initDropdowns();
+  initWorkspaceSwitcher();
   initPeriod();
   initSidebar();
   initSearch();

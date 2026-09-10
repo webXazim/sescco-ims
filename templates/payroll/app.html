@@ -49,21 +49,21 @@
           </button>
           <div class="ui-v2-switcher-menu ui-v2-switcher-menu--area ui-v2-prs-dropdown-menu" data-dropdown-menu role="menu" aria-label="Switch payroll workspace">
             <div class="ui-v2-switcher-menu__label">Payroll workspaces</div>
-            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="internal" role="menuitem">
+            <a class="ui-v2-switcher-menu__item" href="{% url 'core:payroll' %}?workspace=internal#/overview" data-workspace-switch="internal" role="menuitem">
               <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">IC</span>
               <span class="ui-v2-switcher-menu__copy"><strong>Internal Company</strong><small>Own employees · branches · payroll</small></span>
               <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
-            </button>
-            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="rental" role="menuitem">
+            </a>
+            <a class="ui-v2-switcher-menu__item" href="{% url 'core:payroll' %}?workspace=rental#/overview" data-workspace-switch="rental" role="menuitem">
               <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">RM</span>
               <span class="ui-v2-switcher-menu__copy"><strong>Rental Manpower</strong><small>Suppliers · projects · settlements</small></span>
               <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
-            </button>
-            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="management" role="menuitem">
+            </a>
+            <a class="ui-v2-switcher-menu__item" href="{% url 'core:payroll' %}?workspace=management#/overview" data-workspace-switch="management" role="menuitem">
               <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">MG</span>
               <span class="ui-v2-switcher-menu__copy"><strong>Management</strong><small>Company control · approvals · audit</small></span>
               <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
-            </button>
+            </a>
           </div>
         </div>
       </div>

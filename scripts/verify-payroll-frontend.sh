@@ -26,6 +26,22 @@ if grep -Eq "static ['\"](css|js)/" templates/payroll/app.html; then
   fail "Payroll template references an un-namespaced root CSS/JS asset."
 fi
 
+printf 'Checking Payroll workspace navigation contract...\n'
+grep -Fq "?workspace=internal#/overview" templates/payroll/app.html \
+  || fail "Internal Payroll workspace is missing its reload-safe URL."
+grep -Fq "?workspace=rental#/overview" templates/payroll/app.html \
+  || fail "Rental Manpower workspace is missing its reload-safe URL."
+grep -Fq "?workspace=management#/overview" templates/payroll/app.html \
+  || fail "Management workspace is missing its reload-safe URL."
+grep -Fq 'access_context["initial_workspace"] = initial_workspace' apps/core/payroll_views.py \
+  || fail "Payroll server does not validate/publish the requested initial workspace."
+grep -Fq 'function initWorkspaceSwitcher()' static/payroll/js/app.js \
+  || fail "Payroll workspace switcher is not initialized independently of sidebar behavior."
+grep -Fq 'return serverWorkspaces.includes(workspace);' static/payroll/js/app.js \
+  || fail "Payroll workspace authorization is not using the request-specific server workspace list."
+grep -Fq "if (location.hash === target)" static/payroll/js/app.js \
+  || fail "Payroll same-hash workspace navigation cannot force an immediate redraw."
+
 printf 'Checking imported Payroll frontend asset hashes...\n'
 sha256sum -c merge/payroll-frontend-assets.sha256 >/dev/null \
   || fail "A frozen Payroll frontend asset changed. Update only in an explicit frontend upgrade."

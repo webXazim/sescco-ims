@@ -218,6 +218,7 @@ body.ui-v2-sidebar-resizing .ui-v2-app-shell__workspace {
   }
 .ui-v2-switcher-menu__item {
     width: 100%;
+    text-decoration: none;
     min-height: 48px;
     display: grid;
     grid-template-columns: 30px minmax(0, 1fr) 18px;

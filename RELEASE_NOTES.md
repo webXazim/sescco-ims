@@ -1,3 +1,13 @@
+## 1.0.6 — Payroll workspace navigation hotfix
+
+- Replaced the Internal / Rental / Management workspace menu's JavaScript-only buttons with real reload-safe Payroll URLs.
+- Added server-side validation of the requested Payroll workspace against the active company membership before publishing it to the browser bootstrap.
+- Made the request-specific authorized workspace list authoritative in the browser instead of re-deriving permission from the generic role matrix.
+- Persisted the active workspace in the URL and retained localStorage only as a convenience fallback.
+- Made same-hash workspace switches redraw immediately, so switching to another workspace while already on `#/overview` cannot appear to do nothing.
+- Decoupled workspace-switch event binding from sidebar resize/collapse initialization and aligned Management drill-down/global-search transitions with the same URL state.
+- No schema migration or production-data rewrite is required. Deploy through the existing `./scripts/deploy-production.sh` pipeline.
+
 # SESCCO IMS 1.0.5
 
 ## Static manifest bootstrap ordering hotfix

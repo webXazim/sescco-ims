@@ -70,6 +70,23 @@ def payroll_app(request):
     can_rental = membership_can_workspace(membership, Workspace.RENTAL)
     can_management = membership_can_workspace(membership, Workspace.MANAGEMENT)
 
+    # Keep the active Payroll workspace addressable in the URL.  The browser app still
+    # switches workspaces without a full reload, but a real query parameter gives each
+    # switcher item a reload-safe/no-JavaScript fallback and lets the server reject a
+    # workspace that the current membership cannot open.
+    requested_workspace = request.GET.get("workspace", "").strip().lower()
+    allowed_workspace_keys = [
+        key
+        for key, allowed in (
+            (Workspace.INTERNAL.value, can_internal),
+            (Workspace.RENTAL.value, can_rental),
+            (Workspace.MANAGEMENT.value, can_management),
+        )
+        if allowed
+    ]
+    initial_workspace = requested_workspace if requested_workspace in allowed_workspace_keys else None
+    access_context["initial_workspace"] = initial_workspace
+
     internal_context = (
         internal_master_context(company=request.company)
         if can_internal

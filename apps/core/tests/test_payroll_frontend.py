@@ -32,6 +32,41 @@ class MergedPayrollFrontendTests(TestCase):
         self.assertContains(response, "/static/payroll/js/app.js")
         self.assertNotContains(response, 'src="/static/js/app.js"')
 
+
+    def test_owner_payroll_workspaces_are_server_authorized(self):
+        self.make_user("owner-workspaces", AccessRole.OWNER)
+        response = self.client.get(reverse("core:payroll"))
+
+        self.assertEqual(response.status_code, 200)
+        access = response.context["access_context"]
+        self.assertIn("internal", access["workspaces"])
+        self.assertIn("rental", access["workspaces"])
+        self.assertIn("management", access["workspaces"])
+
+    def test_owner_can_deep_link_to_rental_workspace(self):
+        self.make_user("owner-rental-link", AccessRole.OWNER)
+        response = self.client.get(reverse("core:payroll"), {"workspace": "rental"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["access_context"]["initial_workspace"], "rental")
+        self.assertContains(response, '?workspace=rental#/overview')
+
+    def test_owner_can_deep_link_to_management_workspace(self):
+        self.make_user("owner-management-link", AccessRole.OWNER)
+        response = self.client.get(reverse("core:payroll"), {"workspace": "management"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["access_context"]["initial_workspace"], "management")
+        self.assertContains(response, '?workspace=management#/overview')
+
+    def test_disallowed_workspace_query_is_not_honored(self):
+        self.make_user("internal-workspace-guard", AccessRole.INTERNAL_PAYROLL_OFFICER)
+        response = self.client.get(reverse("core:payroll"), {"workspace": "rental"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["access_context"]["initial_workspace"])
+        self.assertNotIn("rental", response.context["access_context"]["workspaces"])
+
     def test_internal_officer_can_open_payroll_frontend(self):
         self.make_user("internal-ui", AccessRole.INTERNAL_PAYROLL_OFFICER)
         response = self.client.get(reverse("core:payroll"))
