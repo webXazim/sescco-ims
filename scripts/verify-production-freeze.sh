@@ -35,12 +35,14 @@ require_text scripts/rehearse-production-freeze.sh 'merge_shared_projects_report
 require_text scripts/rehearse-production-freeze.sh 'merge_internal_payroll_report --fail-on-errors' 'Rehearsal must validate Internal Payroll.'
 require_text scripts/rehearse-production-freeze.sh 'merge_rental_manpower_report --fail-on-errors' 'Rehearsal must validate Rental Manpower.'
 require_text scripts/rehearse-production-freeze.sh 'merge_documents_management_report --fail-on-errors' 'Rehearsal must validate Documents/Management.'
+require_text scripts/rehearse-production-freeze.sh 'payroll_bootstrap_report --fail-on-errors' 'Rehearsal must render the production Payroll bootstrap.'
 require_text scripts/rehearse-production-freeze.sh 'test --noinput' 'Rehearsal must run the full Django regression suite.'
 require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-baselines.py' 'Rehearsal must enforce pre/post legacy IMS row-count preservation.'
 require_text scripts/rehearse-production-freeze.sh 'rehearsal-data-fingerprint.py' 'Rehearsal must capture protected legacy IMS field fingerprints.'
 require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-fingerprints.py' 'Rehearsal must reject legacy IMS field-data drift.'
-require_text scripts/deploy-production-freeze.sh 'scripts/verify-production-freeze.sh' 'Final deploy wrapper must verify the Upgrade 12 freeze.'
-require_text scripts/deploy-production-freeze.sh 'scripts/deploy-production.sh' 'Final deploy wrapper must hand off to the frozen Upgrade 11 deployment pipeline.'
+require_text scripts/deploy-production.sh 'scripts/verify-production-freeze.sh' 'Canonical production deployment must verify the packaged source freeze.'
+require_text scripts/deploy-production-freeze.sh 'scripts/verify-production-freeze.sh' 'Compatibility deploy wrapper must verify the production freeze.'
+require_text scripts/deploy-production-freeze.sh 'scripts/deploy-production.sh' 'Compatibility deploy wrapper must hand off to the canonical deployment pipeline.'
 
 python3 - <<'PY'
 import json

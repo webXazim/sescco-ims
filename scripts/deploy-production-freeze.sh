@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 printf '\n==> Verifying Upgrade 12 production freeze\n'
 bash "${ROOT}/scripts/verify-production-freeze.sh"
 
-# Hand off to the unchanged Upgrade 11 production deployment authority. That
-# script runs the historical preflight, backup, release tasks and live smoke
-# checks. Keeping it unchanged preserves its frozen infrastructure checksum.
+# Compatibility wrapper retained for operators that already use the Upgrade 12
+# command. The canonical deployment script now performs the same freeze check
+# itself before preflight, backup, release tasks and live smoke checks.
 exec bash "${ROOT}/scripts/deploy-production.sh"

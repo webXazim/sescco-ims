@@ -28,6 +28,7 @@ if grep -Eq '(^|[^0-9])5432:5432([^0-9]|$)' docker-compose.yml; then
 fi
 
 require_text scripts/deploy-production.sh 'scripts/release-tasks.sh' 'Deployment must run explicit release tasks.'
+require_text scripts/deploy-production.sh 'scripts/verify-production-freeze.sh' 'Canonical deployment must verify the packaged production freeze.'
 require_text scripts/create-production-env.sh 'secrets.token_urlsafe(64)' 'Production environment generator must create a strong Django secret.'
 require_text scripts/create-production-env.sh 'secrets.token_bytes(32)' 'Production environment generator must create a valid Fernet key.'
 require_text scripts/restore.sh 'scripts/release-tasks.sh' 'Restore must run current release tasks before web startup.'
@@ -36,6 +37,8 @@ require_text scripts/restore.sh 'PAYROLL_FIELD_ENCRYPTION_KEY does not match' 'R
 require_text scripts/restore.sh 'pg_restore --single-transaction' 'Database restore must be transactional.'
 require_text scripts/release-tasks.sh 'merge_access_report --fail-on-errors' 'Release verification must check company access integrity.'
 require_text scripts/release-tasks.sh 'merge_documents_management_report --fail-on-errors' 'Release verification must cover merged Payroll documents/management.'
+require_text scripts/release-tasks.sh 'payroll_bootstrap_report --fail-on-errors' 'Release verification must render the Payroll bootstrap before cutover.'
+[[ -f apps/core/management/commands/payroll_bootstrap_report.py ]] || fail 'Payroll bootstrap deployment verifier is missing.'
 require_text scripts/release-tasks.sh 'migrate --check' 'Release verification must finish with zero pending migrations.'
 require_text scripts/release-tasks.sh 'collectstatic --noinput' 'Release tasks must collect static assets.'
 if grep -Fq -- 'collectstatic --noinput --clear' scripts/release-tasks.sh scripts/deploy-production.sh scripts/entrypoint.sh; then

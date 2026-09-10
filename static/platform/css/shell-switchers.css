@@ -1,9 +1,434 @@
-.platform-switchers{display:grid;gap:8px;padding:10px 11px 4px}.platform-switcher{position:relative}.platform-switcher>summary{list-style:none}.platform-switcher>summary::-webkit-details-marker{display:none}.platform-switcher__trigger{min-height:48px;display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:9px;width:100%;padding:7px 8px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(255,255,255,.035);color:inherit;cursor:pointer;user-select:none}.platform-switcher__trigger:hover,.platform-switcher[open]>.platform-switcher__trigger{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.2)}.platform-switcher__trigger:focus-visible{outline:2px solid currentColor;outline-offset:2px}.platform-switcher__code,.platform-switcher__item-code{display:grid;place-items:center;width:30px;height:30px;border:1px solid rgba(255,255,255,.16);border-radius:7px;font-size:10px;font-weight:750;letter-spacing:.02em;background:rgba(255,255,255,.055)}.platform-switcher__copy,.platform-switcher__item-copy{display:grid;min-width:0;gap:1px;text-align:left}.platform-switcher__copy small,.platform-switcher__item-copy small{font-size:10px;line-height:1.25;color:#9ba2aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.platform-switcher__copy strong,.platform-switcher__item-copy strong{font-size:12px;line-height:1.3;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.platform-switcher__chevron{font-size:14px;color:#939aa2;transition:transform .16s ease}.platform-switcher[open] .platform-switcher__chevron{transform:rotate(180deg)}.platform-switcher__menu{position:absolute;z-index:90;top:calc(100% + 6px);left:0;width:min(310px,calc(100vw - 28px));padding:6px;border:1px solid #d9dcdf;border-radius:10px;background:#fff;color:#1d2125;box-shadow:0 16px 40px rgba(18,20,22,.18)}.platform-switcher__label{padding:7px 9px 5px;color:#737a82;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.platform-switcher__form{margin:0}.platform-switcher__item{display:grid;grid-template-columns:30px minmax(0,1fr) 18px;align-items:center;gap:9px;width:100%;min-height:46px;padding:7px 8px;border:0;border-radius:7px;background:transparent;color:inherit;text-decoration:none;font:inherit;cursor:pointer}.platform-switcher__item:hover,.platform-switcher__item:focus-visible{background:#f2f4f5;outline:0}.platform-switcher__item.is-active{background:#eef1f2}.platform-switcher__item-code{border-color:#d8dcdf;background:#f7f8f8;color:#343a40}.platform-switcher__item-copy small{color:#737a82}.platform-switcher__check{font-size:12px;font-weight:800}.platform-switcher__empty{padding:12px 9px;color:#737a82;font-size:11px}
+/* Shared company / business-area controls used by Inventory and Payroll.
+   These controls intentionally read as part of the navigation rail, not as cards. */
+.platform-switchers {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 7px;
+}
+.platform-switcher,
+.platform-account {
+  position: relative;
+  min-width: 0;
+}
+.platform-switcher > summary,
+.platform-account > summary {
+  list-style: none;
+}
+.platform-switcher > summary::-webkit-details-marker,
+.platform-account > summary::-webkit-details-marker {
+  display: none;
+}
+.platform-switcher__trigger {
+  width: 100%;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.platform-switcher__trigger:hover,
+.platform-switcher[open] > .platform-switcher__trigger {
+  background: rgba(255,255,255,.055);
+  border-color: rgba(255,255,255,.055);
+}
+.platform-switcher__trigger:focus-visible,
+.platform-account__trigger:focus-visible {
+  outline: 2px solid rgba(255,255,255,.72);
+  outline-offset: 2px;
+}
+.platform-switcher__code,
+.platform-switcher__item-code {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 6px;
+  background: rgba(255,255,255,.035);
+  color: #dce0e4;
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: .025em;
+}
+.platform-switcher__copy,
+.platform-switcher__item-copy,
+.platform-account__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+}
+.platform-switcher__copy strong,
+.platform-switcher__item-copy strong,
+.platform-account__copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 1.25;
+  font-weight: 650;
+}
+.platform-switcher__copy small,
+.platform-switcher__item-copy small,
+.platform-account__copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #858e97;
+  font-size: 9.5px;
+  line-height: 1.25;
+  font-weight: 500;
+}
+.platform-switcher__chevron,
+.platform-account__chevron {
+  width: 14px;
+  height: 14px;
+  color: #818a93;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease, color 140ms ease;
+}
+.platform-switcher[open] .platform-switcher__chevron {
+  transform: rotate(180deg);
+  color: #c9ced3;
+}
+.platform-switcher__menu,
+.platform-account__menu {
+  position: absolute;
+  z-index: 100;
+  left: 0;
+  width: min(300px, calc(100vw - 28px));
+  padding: 6px;
+  border: 1px solid #dfe2e5;
+  border-radius: 9px;
+  background: #fff;
+  color: #1d2125;
+  box-shadow: 0 16px 42px rgba(15,18,21,.16), 0 3px 10px rgba(15,18,21,.07);
+}
+.platform-switcher__menu {
+  top: calc(100% + 6px);
+}
+.platform-switcher__label {
+  padding: 6px 8px 5px;
+  color: #777f87;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.platform-switcher__form,
+.platform-account__form {
+  margin: 0;
+}
+.platform-switcher__item {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.platform-switcher__item:hover,
+.platform-switcher__item:focus-visible {
+  background: #f4f5f6;
+  outline: 0;
+}
+.platform-switcher__item.is-active {
+  background: #eff1f2;
+}
+.platform-switcher__item-code {
+  width: 28px;
+  height: 28px;
+  border-color: #dce0e3;
+  background: #fafafa;
+  color: #343a40;
+}
+.platform-switcher__item-copy small {
+  color: #777f87;
+}
+.platform-switcher__check {
+  display: grid;
+  place-items: center;
+  color: #2f353a;
+  font-size: 11px;
+  font-weight: 800;
+}
+.platform-switcher__empty {
+  padding: 12px 8px;
+  color: #777f87;
+  font-size: 10.5px;
+}
 
-/* Payroll V2 sidebar uses a lighter shell; keep the exact same platform contract but adapt its surface. */
-.ui-v2-root .platform-switchers{padding:8px 10px 2px}.ui-v2-root .platform-switcher__trigger{border-color:var(--ui-v2-border,#dde1e3);background:var(--ui-v2-surface,#fff);color:var(--ui-v2-text,#1e2328)}.ui-v2-root .platform-switcher__trigger:hover,.ui-v2-root .platform-switcher[open]>.platform-switcher__trigger{background:var(--ui-v2-surface-muted,#f6f7f7);border-color:var(--ui-v2-border-strong,#cbd0d4)}.ui-v2-root .platform-switcher__code{border-color:var(--ui-v2-border,#dde1e3);background:var(--ui-v2-surface-muted,#f6f7f7);color:inherit}.ui-v2-root .platform-switcher__copy small{color:var(--ui-v2-text-muted,#727a82)}.ui-v2-root .platform-switcher__menu{border-color:var(--ui-v2-border,#dde1e3);box-shadow:0 16px 40px rgba(18,20,22,.14)}
+/* Inventory account: compact identity trigger with a proper drop-up. */
+.sidebar-foot {
+  padding: 8px 10px 10px;
+}
+.platform-account__trigger {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.platform-account__trigger:hover,
+.platform-account[open] > .platform-account__trigger {
+  background: rgba(255,255,255,.055);
+  border-color: rgba(255,255,255,.055);
+}
+.platform-account__trigger .avatar {
+  width: 30px;
+  height: 30px;
+  background: #eceff1;
+  color: #202428;
+  font-size: 9.5px;
+}
+.platform-account__copy strong {
+  color: #f0f2f3;
+  font-size: 11.5px;
+}
+.platform-account__copy small {
+  color: #858e97;
+}
+.platform-account[open] .platform-account__chevron {
+  transform: rotate(180deg);
+  color: #c9ced3;
+}
+.platform-account__menu {
+  bottom: calc(100% + 7px);
+  top: auto;
+  width: min(250px, calc(100vw - 28px));
+}
+.platform-account__identity {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px 8px;
+}
+.platform-account__identity .avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 9.5px;
+}
+.platform-account__identity > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.platform-account__identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #202428;
+  font-size: 11.5px;
+  font-weight: 660;
+}
+.platform-account__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #777f87;
+  font-size: 9.5px;
+}
+.platform-account__separator {
+  height: 1px;
+  margin: 2px 2px 5px;
+  background: #e4e6e8;
+}
+.platform-account__item {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #33393f;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.platform-account__item:hover,
+.platform-account__item:focus-visible {
+  background: #f4f5f6;
+  outline: 0;
+}
+.platform-account__item > svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: #626a72;
+}
+.platform-account__item > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.platform-account__item strong {
+  font-size: 11px;
+  font-weight: 650;
+}
+.platform-account__item small {
+  color: #7a828a;
+  font-size: 9px;
+}
 
-@media(max-width:920px){.platform-switcher__menu{position:fixed;left:14px;right:14px;top:auto;width:auto;max-height:min(440px,70vh);overflow:auto}.platform-switchers{padding-bottom:8px}}
-@media(prefers-reduced-motion:reduce){.platform-switcher__chevron{transition:none}}
+/* Payroll uses the light V2 shell. Keep the shared controls visually native to it. */
+.ui-v2-root .platform-switchers {
+  padding: 8px 10px 5px;
+}
+.ui-v2-root .platform-switcher__trigger {
+  color: var(--ui-v2-text, #1e2328);
+  background: transparent;
+  border-color: transparent;
+}
+.ui-v2-root .platform-switcher__trigger:hover,
+.ui-v2-root .platform-switcher[open] > .platform-switcher__trigger {
+  background: var(--ui-v2-surface-hover, #f5f5f4);
+  border-color: transparent;
+}
+.ui-v2-root .platform-switcher__trigger:focus-visible {
+  outline-color: var(--ui-v2-border-focus, #989d98);
+}
+.ui-v2-root .platform-switcher__code {
+  border-color: var(--ui-v2-border, #dde1e3);
+  background: var(--ui-v2-surface-subtle, #fafafa);
+  color: var(--ui-v2-text-secondary, #5f625f);
+}
+.ui-v2-root .platform-switcher__copy small {
+  color: var(--ui-v2-text-muted, #8a8e8a);
+}
+.ui-v2-root .platform-switcher__chevron {
+  color: var(--ui-v2-text-muted, #8a8e8a);
+}
+.ui-v2-root .platform-switcher__menu {
+  border-color: var(--ui-v2-border, #dde1e3);
+  border-radius: var(--ui-v2-radius-lg, 10px);
+  box-shadow: var(--ui-v2-shadow-float, 0 12px 32px rgba(20,24,20,.08));
+}
 
-.ui-v2-app-shell[data-collapsed="true"] .platform-switchers{padding-inline:0}.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__trigger{display:flex;justify-content:center;padding:6px;min-height:44px}.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__copy,.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__chevron{display:none}.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__menu{left:calc(100% + 8px);top:0}.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__code{flex:0 0 30px}
+/* Align the Payroll account drop-up with the same compact shell language. */
+.ui-v2-root .ui-v2-sidebar__footer {
+  padding: 8px 10px 10px;
+}
+.ui-v2-root .ui-v2-account {
+  min-height: 44px;
+  grid-template-columns: 30px minmax(0, 1fr) 14px;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+.ui-v2-root .ui-v2-account:hover,
+.ui-v2-root .ui-v2-account[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--ui-v2-surface-hover, #f5f5f4);
+}
+.ui-v2-root .ui-v2-account__avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 9.5px;
+}
+.ui-v2-root .ui-v2-account__copy strong {
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.ui-v2-root .ui-v2-account__copy small {
+  font-size: 9.5px;
+}
+.ui-v2-root .ui-v2-account__chevron {
+  width: 14px;
+  height: 14px;
+}
+.ui-v2-root .ui-v2-account-menu {
+  width: min(250px, calc(100vw - 24px));
+  border-radius: 9px;
+}
+
+@media (max-width: 920px) {
+  .platform-switcher__menu,
+  .platform-account__menu {
+    position: fixed;
+    left: 14px;
+    right: 14px;
+    width: auto;
+    max-height: min(440px, 70vh);
+    overflow: auto;
+  }
+  .platform-switcher__menu {
+    top: 74px;
+  }
+  .platform-account__menu {
+    top: auto;
+    bottom: 74px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-switcher__trigger,
+  .platform-account__trigger,
+  .platform-switcher__chevron,
+  .platform-account__chevron {
+    transition: none;
+  }
+}
+
+/* Compact collapsed Payroll rail. */
+.ui-v2-app-shell[data-collapsed="true"] .platform-switchers {
+  padding-inline: 8px;
+}
+.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__trigger {
+  display: flex;
+  justify-content: center;
+  min-height: 42px;
+  padding: 6px;
+}
+.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__copy,
+.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__chevron {
+  display: none;
+}
+.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__menu {
+  left: calc(100% + 8px);
+  top: 0;
+}
+.ui-v2-app-shell[data-collapsed="true"] .platform-switcher__code {
+  flex: 0 0 26px;
+}

@@ -59,7 +59,7 @@ RUN_STARTUP_TASKS=0
 ## 3. First deployment
 
 ```bash
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ./scripts/create-admin.sh
 ```
 
@@ -126,7 +126,7 @@ IMS_PROXY_NETWORK=the_existing_proxy_network
 Then deploy normally:
 
 ```bash
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ```
 
 The proxy can reach the upstream at:
@@ -143,7 +143,7 @@ and pass `X-Forwarded-Proto: https`.
 Replace the source with the new release and run:
 
 ```bash
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ```
 
 Never use `docker compose down -v`; that removes persistent data. Do not run

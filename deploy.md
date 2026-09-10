@@ -175,7 +175,7 @@ Preflight passed
 ## 8. Deploy IMS
 
 ```sh
-sudo ./scripts/deploy-production-freeze.sh
+sudo ./scripts/deploy-production.sh
 ```
 
 This will:
@@ -426,7 +426,7 @@ Then run:
 
 ```sh
 cd /opt/sites/ims
-sudo ./scripts/deploy-production-freeze.sh
+sudo ./scripts/deploy-production.sh
 ```
 
 ## 20. Useful IMS commands

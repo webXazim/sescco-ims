@@ -8,6 +8,9 @@ lock_dir="${PROJECT_ROOT}/.deploy-lock"
 mkdir "${lock_dir}" 2>/dev/null || fatal "Another IMS deployment appears to be running."
 trap 'rmdir "${lock_dir}" 2>/dev/null || true' EXIT
 
+info "Verifying the packaged production source freeze"
+bash "${PROJECT_ROOT}/scripts/verify-production-freeze.sh"
+
 bash "${PROJECT_ROOT}/scripts/preflight.sh"
 
 info "Building the merged IMS + Payroll release image"

@@ -38,7 +38,7 @@ docker compose --env-file .env.production restart ims_web ims_gateway
 
 ```bash
 ./scripts/preflight.sh
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ```
 
 Normal container restarts do not run migrations. Production migrations, merge reconciliation commands, and `collectstatic` run explicitly through `scripts/release-tasks.sh` during deploy/restore.
@@ -52,7 +52,7 @@ whole shared volume so directories retained from older releases are readable
 by the separate Nginx container:
 
 ```bash
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 curl -I https://ims.sescco.com/static/css/styles.css
 ```
 
