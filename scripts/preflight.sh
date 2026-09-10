@@ -5,6 +5,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 require_environment
 require_command sha256sum
 require_command git
+require_command python3
 
 info "Verifying deployment repository state"
 git -C "${PROJECT_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \

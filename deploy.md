@@ -232,7 +232,7 @@ curl -i \
 Expected:
 
 ```json
-{"status":"ok","service":"ims-platform","version":"1.0.0","database":"ready","migrations":"ready"}
+{"status":"ok","service":"ims-platform","version":"1.0.1","database":"ready","migrations":"ready"}
 ```
 
 Confirm the port is loopback-only:
@@ -328,7 +328,7 @@ curl -fsS https://ims.a2tdev.com/app/health/ready/
 Expected health result:
 
 ```json
-{"status":"ok","service":"ims-platform","version":"1.0.0","database":"ready","migrations":"ready"}
+{"status":"ok","service":"ims-platform","version":"1.0.1","database":"ready","migrations":"ready"}
 ```
 
 Open:

@@ -493,9 +493,9 @@ def _calculate_supplier_snapshot(*, settlement: SupplierSettlement) -> None:
         total_days += work_days
 
     settlement.worker_count = len(by_worker)
-    settlement.total_regular_hours = totals["regular_hours"]
+    settlement.total_regular_hours = totals["regular_hours"].quantize(CENT)
     settlement.total_work_days = total_days
-    settlement.total_overtime_hours = totals["overtime_hours"]
+    settlement.total_overtime_hours = totals["overtime_hours"].quantize(CENT)
     settlement.total_base = _money(totals["base"])
     settlement.total_overtime = _money(totals["overtime"])
     settlement.total_gross = _money(totals["gross"])

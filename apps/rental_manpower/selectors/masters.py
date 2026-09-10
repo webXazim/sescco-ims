@@ -24,9 +24,11 @@ def _date_label(value) -> str:
 
 
 def _current_assignment_filter(today):
-    return Q(workers__assignments__cancelled_at__isnull=True) & Q(workers__assignments__effective_from__lte=today) & (
-        Q(workers__assignments__effective_to__isnull=True)
-        | Q(workers__assignments__effective_to__gte=today)
+    return Q(workers__rental_assignments__cancelled_at__isnull=True) & Q(
+        workers__rental_assignments__effective_from__lte=today
+    ) & (
+        Q(workers__rental_assignments__effective_to__isnull=True)
+        | Q(workers__rental_assignments__effective_to__gte=today)
     )
 
 
@@ -50,7 +52,7 @@ def suppliers_for_company(*, company, query: str = "", status: str = ""):
                 distinct=True,
             ),
             active_project_count=Count(
-                "workers__assignments__project",
+                "workers__rental_assignments__project",
                 filter=Q(workers__status=RentalWorkerStatus.ACTIVE) & current_filter,
                 distinct=True,
             ),
@@ -85,7 +87,7 @@ def projects_for_company(*, company, query: str = "", status: str = ""):
 def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None):
     assignment_qs = WorkerAssignment.objects.for_company(company).select_related("project", "company__settings").order_by("effective_from", "created_at")
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
-        Prefetch("assignments", queryset=assignment_qs)
+        Prefetch("rental_assignments", queryset=assignment_qs)
     )
     if query.strip():
         q = query.strip()
@@ -155,7 +157,7 @@ def serialize_project(project: Project) -> dict[str, object]:
 
 def _worker_assignment_snapshot(worker: RentalWorker):
     today = timezone.localdate()
-    rows = [row for row in worker.assignments.all() if row.cancelled_at is None]
+    rows = [row for row in worker.rental_assignments.all() if row.cancelled_at is None]
     current = next(
         (
             row for row in rows

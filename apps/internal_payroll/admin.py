@@ -49,21 +49,21 @@ class ReadOnlyDomainAdmin(ActiveCompanyAdminMixin, admin.ModelAdmin):
 @admin.register(Branch)
 class BranchAdmin(ReadOnlyDomainAdmin):
     list_display = ("code", "name", "company", "location", "is_active", "updated_at")
-    list_filter = ("is_active")
+    list_filter = ("is_active",)
     search_fields = ("code", "name", "location", "manager_name")
 
 
 @admin.register(Department)
 class DepartmentAdmin(ReadOnlyDomainAdmin):
     list_display = ("code", "name", "company", "is_active", "updated_at")
-    list_filter = ("is_active")
+    list_filter = ("is_active",)
     search_fields = ("code", "name", "notes")
 
 
 @admin.register(InternalEmployee)
 class InternalEmployeeAdmin(ReadOnlyDomainAdmin):
     list_display = ("employee_number", "full_name", "company", "status", "joining_date", "employment_end_date", "updated_at")
-    list_filter = ("status")
+    list_filter = ("status",)
     search_fields = ("employee_number", "full_name", "national_id", "phone")
 
 
@@ -85,7 +85,7 @@ class SalaryComponentAdmin(ReadOnlyDomainAdmin):
 @admin.register(OvertimePolicy)
 class OvertimePolicyAdmin(ReadOnlyDomainAdmin):
     list_display = ("code", "name", "company", "base_component", "divisor", "multiplier", "is_active", "updated_at")
-    list_filter = ("is_active")
+    list_filter = ("is_active",)
     search_fields = ("code", "name", "base_component__code", "base_component__name")
     list_select_related = ("company", "base_component")
 
@@ -93,7 +93,7 @@ class OvertimePolicyAdmin(ReadOnlyDomainAdmin):
 @admin.register(SalaryStructure)
 class SalaryStructureAdmin(ReadOnlyDomainAdmin):
     list_display = ("employee", "company", "effective_from", "effective_to", "overtime_policy_name", "updated_at")
-    list_filter = ("effective_from")
+    list_filter = ("effective_from",)
     search_fields = ("employee__employee_number", "employee__full_name", "overtime_policy_name", "notes")
     list_select_related = ("company", "employee", "overtime_policy")
 
@@ -224,7 +224,7 @@ class SalaryPaymentRowAdmin(ReadOnlyDomainAdmin):
 @admin.register(SalaryPaymentAttempt)
 class SalaryPaymentAttemptAdmin(ReadOnlyDomainAdmin):
     list_display = ("row", "attempt_number", "status", "started_at", "finished_at", "transaction_reference")
-    list_filter = ("status")
+    list_filter = ("status",)
     search_fields = ("row__employee_number", "row__employee_name", "transaction_reference", "failure_reason")
     list_select_related = ("company", "row", "started_by")
 
@@ -232,6 +232,6 @@ class SalaryPaymentAttemptAdmin(ReadOnlyDomainAdmin):
 @admin.register(SalaryPaymentResultImport)
 class SalaryPaymentResultImportAdmin(ReadOnlyDomainAdmin):
     list_display = ("batch", "file_name", "updated_rows", "error_count", "imported_at", "imported_by")
-    list_filter = ("imported_at")
+    list_filter = ("imported_at",)
     search_fields = ("batch__reference", "file_name", "content_sha256")
     list_select_related = ("company", "batch", "imported_by")

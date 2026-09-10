@@ -51,9 +51,9 @@ grep -Fq 'name: ims_static_data' docker-compose.yml \
 grep -Fq 'name: ims_media_data' docker-compose.yml \
   || fail "IMS media volume identity changed."
 
-if command -v python >/dev/null 2>&1; then
+if command -v python3 >/dev/null 2>&1; then
   printf 'Checking Python source syntax...\n'
-  python -m compileall -q apps config manage.py
+  python3 -m compileall -q apps config manage.py
 fi
 
 if command -v node >/dev/null 2>&1; then

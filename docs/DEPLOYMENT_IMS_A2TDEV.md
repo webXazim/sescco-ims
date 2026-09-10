@@ -14,6 +14,10 @@ after the origin certificate is installed.
 
 ## 2. Prepare the project
 
+The host must provide Docker with the Compose plugin, Git, curl, sha256sum,
+and Python 3 exposed as `python3`. The deployment does not require a legacy
+`python` command alias.
+
 ```bash
 cd /opt
 sudo mkdir -p /opt/sites/ims

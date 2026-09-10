@@ -1,4 +1,12 @@
-# Project Inventory 1.0.0
+# Project Inventory 1.0.1
+
+## Production-readiness hotfix
+
+- Standardized host deployment verification on the documented `python3` command.
+- Fixed invalid Internal Payroll admin filters that blocked Django deployment checks.
+- Added missing model-state migrations required by the release migration-drift gate.
+- Fixed Rental Manpower assignment queries and stable settlement snapshot fingerprints.
+- Allowed system-finalized immutable documents to retain a null finalizing user.
 
 ## Stock transfer upgrade
 

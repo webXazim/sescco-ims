@@ -31,7 +31,7 @@ sha256sum -c merge/payroll-frontend-assets.sha256 >/dev/null \
   || fail "A frozen Payroll frontend asset changed. Update only in an explicit frontend upgrade."
 
 printf 'Checking Payroll CSS import graph...\n'
-python - <<'PY'
+python3 - <<'PY'
 import re
 from pathlib import Path
 
@@ -59,6 +59,6 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 printf 'Checking Payroll browser/API URL contract...\n'
-python scripts/verify_payroll_frontend_contract.py
+python3 scripts/verify_payroll_frontend_contract.py
 
 printf 'Payroll frontend integration verified.\n'
