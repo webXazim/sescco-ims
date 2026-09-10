@@ -41,6 +41,10 @@ grep -Fq 'return serverWorkspaces.includes(workspace);' static/payroll/js/app.js
   || fail "Payroll workspace authorization is not using the request-specific server workspace list."
 grep -Fq "if (location.hash === target)" static/payroll/js/app.js \
   || fail "Payroll same-hash workspace navigation cannot force an immediate redraw."
+grep -Fq '.ui-v2-root [data-dropdown].is-open > [data-dropdown-menu]' static/platform/css/payroll-shell-fixes.css \
+  || fail "Open Payroll dropdown menus do not restore pointer interaction."
+grep -Fq 'pointer-events: auto !important;' static/platform/css/payroll-shell-fixes.css \
+  || fail "Open Payroll dropdown menus can still pass clicks through to page content."
 
 printf 'Checking imported Payroll frontend asset hashes...\n'
 sha256sum -c merge/payroll-frontend-assets.sha256 >/dev/null \

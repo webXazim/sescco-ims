@@ -56,3 +56,24 @@ body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
   margin: 0 !important;
   border-radius: 0 !important;
 }
+
+/*
+ * Dropdown interaction hardening.
+ * The V2 dropdown controller stores the open state on the parent [data-dropdown]
+ * element. A legacy final-hardening selector checked .is-open on the menu itself,
+ * leaving a visually open menu with pointer-events:none and allowing clicks to
+ * pass through to page controls underneath. Keep interaction state aligned with
+ * the controller's parent-state contract.
+ */
+.ui-v2-root [data-dropdown]:not(.is-open) > [data-dropdown-menu] {
+  pointer-events: none !important;
+}
+
+.ui-v2-root [data-dropdown].is-open {
+  position: relative;
+  z-index: 120;
+}
+
+.ui-v2-root [data-dropdown].is-open > [data-dropdown-menu] {
+  pointer-events: auto !important;
+}
