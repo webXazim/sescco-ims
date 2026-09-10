@@ -13,6 +13,20 @@ require_text() {
 sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
+[[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
+sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \
+  || fail 'Unified Inventory/Payroll shell assets changed.'
+
+require_text templates/base.html 'class="inventory-shell-v2"' 'Inventory is not using the converged Payroll-style shell.'
+require_text templates/base.html 'platform/css/inventory-shell.css' 'Inventory shell stylesheet is not loaded.'
+require_text templates/base.html 'platform/js/inventory-shell.js' 'Inventory shell behavior is not loaded.'
+require_text templates/partials/sidebar.html 'data-inventory-sidebar-collapse' 'Inventory shell is missing collapse behavior.'
+require_text templates/partials/sidebar.html 'data-inventory-sidebar-resize' 'Inventory shell is missing resize behavior.'
+require_text templates/payroll/app.html 'platform/css/payroll-shell-fixes.css' 'Payroll shell focus-mode fix is not loaded.'
+require_text static/platform/css/payroll-shell-fixes.css 'body.timesheet-focus-mode .ui-v2-app-shell > .ui-v2-sidebar' 'Payroll focus mode does not hide the V2 sidebar.'
+require_text static/platform/css/payroll-shell-fixes.css 'body.timesheet-focus-mode .ui-v2-topbar' 'Payroll focus mode does not hide the V2 topbar.'
+require_text static/platform/css/payroll-shell-fixes.css 'margin-left: 0 !important;' 'Payroll focus mode does not remove the sidebar offset.'
+
 require_text merge/source-manifest.json '"completed_upgrade": 12' 'Merge progress is not frozen at Upgrade 12.'
 require_text merge/source-manifest.json '"total_upgrades": 12' 'Merge upgrade total changed.'
 require_text merge/source-manifest.json '"merge_complete": true' 'Merge is not marked complete.'

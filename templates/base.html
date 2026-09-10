@@ -7,10 +7,11 @@
   <title>{% block title %}{{ page_title|default:APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
-<body data-page="{{ page_key }}">
-<div class="app-shell">
+<body class="inventory-shell-v2" data-page="{{ page_key }}">
+<div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
   {% include "partials/sidebar.html" %}
   <main class="main">
     {% include "partials/topbar.html" %}
@@ -20,10 +21,14 @@
     </div>
   </main>
   {% include "partials/mobile_nav.html" %}
+  <button class="inventory-collapsed-rail-toggle" type="button" data-inventory-sidebar-rail-toggle aria-label="Expand navigation" title="Expand navigation">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
 </div>
 <div class="toast-stack" id="toastStack"></div>
 <script src="{% static 'js/app.js' %}"></script>
 <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
+<script src="{% static 'platform/js/inventory-shell.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

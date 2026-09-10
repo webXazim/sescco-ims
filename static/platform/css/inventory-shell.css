@@ -1,0 +1,508 @@
+/*
+ * Inventory shell convergence.
+ * Mirrors the Payroll V2 navigation rail without changing Inventory page/content
+ * contracts.  Scoped to the Django Inventory shell only.
+ */
+.inventory-shell-v2 {
+  --inventory-sidebar-default: 236px;
+  --inventory-sidebar-collapsed: 64px;
+  --inventory-shell-bg: #f6f7f7;
+  --inventory-shell-surface: #fff;
+  --inventory-shell-subtle: #fafafa;
+  --inventory-shell-hover: #f5f5f4;
+  --inventory-shell-active: #efefed;
+  --inventory-shell-text: #171817;
+  --inventory-shell-secondary: #5f625f;
+  --inventory-shell-muted: #8a8e8a;
+  --inventory-shell-border: #e4e5e3;
+  --inventory-shell-border-strong: #d4d6d3;
+  --inventory-shell-focus: #989d98;
+}
+
+.inventory-shell-v2 .app-shell {
+  min-height: 100svh;
+  background: var(--inventory-shell-bg);
+}
+.inventory-shell-v2 .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  width: var(--inventory-sidebar-runtime, var(--inventory-sidebar-default));
+  height: 100svh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border-right: 1px solid var(--inventory-shell-border);
+  background: var(--inventory-shell-surface);
+  color: var(--inventory-shell-text);
+  box-shadow: none;
+  transition: width 160ms ease, transform 180ms ease;
+}
+.inventory-shell-v2 .main {
+  width: calc(100% - var(--inventory-sidebar-runtime, var(--inventory-sidebar-default)));
+  max-width: calc(100% - var(--inventory-sidebar-runtime, var(--inventory-sidebar-default)));
+  min-width: 0;
+  min-height: 100svh;
+  margin-left: var(--inventory-sidebar-runtime, var(--inventory-sidebar-default));
+  transition: width 160ms ease, max-width 160ms ease, margin-left 160ms ease;
+}
+.inventory-shell-v2 .brand {
+  height: auto;
+  min-height: 62px;
+  flex: 0 0 62px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px 11px 15px;
+  border-bottom: 1px solid var(--inventory-shell-border);
+}
+.inventory-shell-v2 .brand-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #181918;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: .04em;
+}
+.inventory-shell-v2 .brand-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  line-height: 1.2;
+}
+.inventory-shell-v2 .brand-name {
+  overflow: hidden;
+  color: var(--inventory-shell-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+.inventory-shell-v2 .brand-sub {
+  overflow: hidden;
+  margin: 0;
+  color: var(--inventory-shell-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+}
+.inventory-shell-v2 .inventory-sidebar__collapse {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  margin-left: auto;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--inventory-shell-muted);
+  cursor: pointer;
+}
+.inventory-shell-v2 .inventory-sidebar__collapse:hover,
+.inventory-shell-v2 .inventory-sidebar__collapse:focus-visible {
+  background: var(--inventory-shell-hover);
+  color: var(--inventory-shell-text);
+  outline: 0;
+}
+.inventory-shell-v2 .inventory-sidebar__collapse:focus-visible {
+  box-shadow: 0 0 0 2px var(--inventory-shell-focus);
+}
+.inventory-shell-v2 .inventory-sidebar__collapse svg,
+.inventory-shell-v2 .inventory-collapsed-rail-toggle svg,
+.inventory-shell-v2 .nav-glyph {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.inventory-shell-v2 .inventory-sidebar__switchers {
+  flex: 0 0 auto;
+}
+.inventory-shell-v2 .platform-switchers {
+  gap: 6px;
+  padding: 12px 10px 10px;
+}
+.inventory-shell-v2 .platform-switcher__trigger {
+  min-height: 48px;
+  grid-template-columns: 30px minmax(0,1fr) 18px;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .platform-switcher--module .platform-switcher__trigger {
+  border-color: var(--inventory-shell-border);
+  background: var(--inventory-shell-subtle);
+}
+.inventory-shell-v2 .platform-switcher__trigger:hover,
+.inventory-shell-v2 .platform-switcher[open] > .platform-switcher__trigger {
+  border-color: var(--inventory-shell-border);
+  background: var(--inventory-shell-hover);
+}
+.inventory-shell-v2 .platform-switcher--company .platform-switcher__trigger:hover,
+.inventory-shell-v2 .platform-switcher--company[open] > .platform-switcher__trigger {
+  border-color: transparent;
+}
+.inventory-shell-v2 .platform-switcher__trigger:focus-visible,
+.inventory-shell-v2 .platform-account__trigger:focus-visible {
+  outline: 2px solid var(--inventory-shell-focus);
+  outline-offset: 1px;
+}
+.inventory-shell-v2 .platform-switcher__code,
+.inventory-shell-v2 .platform-switcher__item-code {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--inventory-shell-border);
+  border-radius: 7px;
+  background: var(--inventory-shell-surface);
+  color: var(--inventory-shell-secondary);
+  font-size: 9px;
+}
+.inventory-shell-v2 .platform-switcher__copy strong,
+.inventory-shell-v2 .platform-switcher__item-copy strong {
+  color: var(--inventory-shell-text);
+  font-size: 12.5px;
+  font-weight: 690;
+}
+.inventory-shell-v2 .platform-switcher__copy small,
+.inventory-shell-v2 .platform-switcher__item-copy small {
+  color: var(--inventory-shell-muted);
+  font-size: 10.5px;
+}
+.inventory-shell-v2 .platform-switcher__chevron,
+.inventory-shell-v2 .platform-account__chevron {
+  color: var(--inventory-shell-muted);
+}
+.inventory-shell-v2 .platform-switcher__menu,
+.inventory-shell-v2 .platform-account__menu {
+  border-color: var(--inventory-shell-border);
+  border-radius: 10px;
+  color: var(--inventory-shell-text);
+  box-shadow: 0 12px 32px rgba(20,24,20,.08), 0 2px 8px rgba(20,24,20,.04);
+}
+.inventory-shell-v2 .platform-switcher__item:hover,
+.inventory-shell-v2 .platform-switcher__item:focus-visible {
+  background: var(--inventory-shell-hover);
+}
+.inventory-shell-v2 .platform-switcher__item.is-active {
+  background: var(--inventory-shell-active);
+}
+
+.inventory-shell-v2 .nav {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  padding: 4px 10px 14px;
+}
+.inventory-shell-v2 .inventory-nav-group + .inventory-nav-group {
+  margin-top: 20px;
+}
+.inventory-shell-v2 .nav-label {
+  min-height: 20px;
+  padding: 0 9px 6px;
+  color: var(--inventory-shell-muted);
+  font-size: 9.5px;
+  font-weight: 730;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+}
+.inventory-shell-v2 .nav-link {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--inventory-shell-secondary);
+  font-size: 12.5px;
+  font-weight: 560;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.inventory-shell-v2 .nav-link .nav-glyph {
+  flex: 0 0 16px;
+  color: var(--inventory-shell-muted);
+}
+.inventory-shell-v2 .nav-link:hover {
+  background: var(--inventory-shell-hover);
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .nav-link.active {
+  background: var(--inventory-shell-active);
+  color: var(--inventory-shell-text);
+  font-weight: 680;
+}
+.inventory-shell-v2 .nav-link.active .nav-glyph {
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .nav-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: auto;
+  border-radius: 99px;
+  background: var(--inventory-shell-active);
+  color: var(--inventory-shell-secondary);
+  font-size: 9px;
+}
+.inventory-shell-v2 .nav-link.active .nav-count {
+  background: #dedfdd;
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .sidebar-foot {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--inventory-shell-border);
+  background: var(--inventory-shell-surface);
+}
+.inventory-shell-v2 .platform-account__trigger {
+  min-height: 44px;
+  grid-template-columns: 30px minmax(0,1fr) 14px;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .platform-account__trigger:hover,
+.inventory-shell-v2 .platform-account[open] > .platform-account__trigger {
+  border-color: transparent;
+  background: var(--inventory-shell-hover);
+}
+.inventory-shell-v2 .platform-account__trigger .avatar {
+  background: #e9eae8;
+  color: var(--inventory-shell-secondary);
+}
+.inventory-shell-v2 .platform-account__copy strong {
+  color: var(--inventory-shell-text);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.inventory-shell-v2 .platform-account__copy small {
+  color: var(--inventory-shell-muted);
+  font-size: 9.5px;
+}
+.inventory-shell-v2 .platform-account[open] .platform-account__chevron {
+  color: var(--inventory-shell-secondary);
+}
+
+.inventory-shell-v2 .inventory-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 75;
+  width: 8px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.inventory-shell-v2 .inventory-sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.inventory-shell-v2 .inventory-sidebar-resize-handle:hover::after,
+.inventory-shell-v2.is-inventory-sidebar-resizing .inventory-sidebar-resize-handle::after {
+  background: var(--inventory-shell-focus);
+}
+.inventory-shell-v2.is-inventory-sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.inventory-shell-v2.is-inventory-sidebar-resizing .main {
+  transition: none;
+}
+.inventory-shell-v2 .inventory-collapsed-rail-toggle {
+  position: fixed;
+  left: calc(var(--inventory-sidebar-collapsed) - 10px);
+  top: 74px;
+  z-index: 60;
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  display: none;
+  place-items: center;
+  border: 1px solid var(--inventory-shell-border);
+  border-radius: 6px;
+  background: var(--inventory-shell-surface);
+  color: var(--inventory-shell-muted);
+  box-shadow: 0 1px 3px rgba(20,24,20,.05);
+  cursor: pointer;
+}
+.inventory-shell-v2 .inventory-collapsed-rail-toggle:hover,
+.inventory-shell-v2 .inventory-collapsed-rail-toggle:focus-visible {
+  color: var(--inventory-shell-text);
+  background: var(--inventory-shell-hover);
+  outline: 0;
+}
+
+/* Match Payroll's compact top rail while preserving Inventory actions/search. */
+.inventory-shell-v2 .topbar {
+  height: 56px;
+  padding: 0 32px;
+  gap: 18px;
+  border-color: var(--inventory-shell-border);
+  background: rgba(255,255,255,.95);
+}
+.inventory-shell-v2 .top-search input {
+  height: 32px;
+  border-color: var(--inventory-shell-border);
+  border-radius: 7px;
+  background: var(--inventory-shell-surface);
+  font-size: 11.5px;
+}
+.inventory-shell-v2 .top-actions {
+  gap: 8px;
+}
+.inventory-shell-v2 .topbar .btn-sm {
+  height: 32px;
+  border-radius: 7px;
+}
+
+/* Desktop collapsed state follows Payroll's 64px rail. */
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .sidebar {
+  width: var(--inventory-sidebar-collapsed);
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .main {
+  width: calc(100% - var(--inventory-sidebar-collapsed));
+  max-width: calc(100% - var(--inventory-sidebar-collapsed));
+  margin-left: var(--inventory-sidebar-collapsed);
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .brand {
+  justify-content: center;
+  padding-inline: 10px;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .brand-copy,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .inventory-sidebar__collapse,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__copy,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__chevron,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-label,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-link > span:not(.nav-count),
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__copy,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__chevron {
+  display: none;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switchers,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .sidebar-foot {
+  padding-inline: 8px;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__trigger,
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__trigger {
+  display: flex;
+  justify-content: center;
+  padding-inline: 0;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__trigger {
+  min-height: 42px;
+  border-color: transparent;
+  background: transparent;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-link {
+  justify-content: center;
+  padding-inline: 0;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-count {
+  position: absolute;
+  transform: translate(12px,-11px);
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 7px;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-link {
+  position: relative;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .inventory-sidebar-resize-handle {
+  display: none;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .inventory-collapsed-rail-toggle {
+  display: grid;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__menu {
+  left: calc(100% + 8px);
+  top: 0;
+}
+.inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__menu {
+  left: calc(100% + 8px);
+  bottom: 0;
+}
+
+@media (max-width: 1120px) {
+  .inventory-shell-v2 .inventory-sidebar-resize-handle { display: none; }
+}
+@media (max-width: 920px) {
+  .inventory-shell-v2 .sidebar,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .sidebar {
+    width: min(280px,88vw);
+    transform: translateX(-102%);
+    box-shadow: 15px 0 35px rgba(0,0,0,.14);
+  }
+  .inventory-shell-v2.sidebar-open .sidebar { transform: translateX(0); }
+  .inventory-shell-v2 .main,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .main {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+  }
+  .inventory-shell-v2 .inventory-sidebar__collapse,
+  .inventory-shell-v2 .inventory-collapsed-rail-toggle { display: none !important; }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .brand-copy,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__copy,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__chevron,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-label,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-link > span,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__copy,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__chevron {
+    display: initial;
+  }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .brand { justify-content: flex-start; padding: 12px 13px 11px 15px; }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switchers,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .sidebar-foot { padding-inline: 10px; }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-switcher__trigger,
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .platform-account__trigger { display: grid; justify-content: initial; padding: 7px 8px; }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-link { justify-content: flex-start; padding-inline: 9px; }
+  .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .nav-count { position: static; transform: none; min-width: 18px; height: 18px; padding: 0 5px; font-size: 9px; }
+  .inventory-shell-v2 .topbar { padding: 0 16px; }
+}
+@media (max-width: 680px) {
+  .inventory-shell-v2 .topbar { height: 57px; padding: 0 12px; gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inventory-shell-v2 .sidebar,
+  .inventory-shell-v2 .main,
+  .inventory-shell-v2 .inventory-sidebar-resize-handle::after { transition: none; }
+}
+.inventory-shell-v2 .menu-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
