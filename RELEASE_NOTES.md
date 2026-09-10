@@ -1,4 +1,14 @@
-# Project Inventory 1.0.2
+# Project Inventory 1.0.3
+
+## PostgreSQL Payroll row-lock hotfix
+
+- Fixed the production Payroll bootstrap failure caused by applying unrestricted `SELECT ... FOR UPDATE` to nullable `select_related()` joins on attendance workflow users.
+- Scoped the attendance-period row lock to `AttendancePeriod` itself, preserving the workflow-user joins without asking PostgreSQL to lock the nullable side of the outer join.
+- Applied the same lock scoping to the Payroll Run workflow because its nullable `attendance_period` relation had the same latent PostgreSQL failure mode during review/approval transitions.
+- No schema migration or production data rewrite is required; this is a query/locking correction only.
+- The existing `./scripts/deploy-production.sh` deployment workflow remains canonical.
+
+## Project Inventory 1.0.2
 
 ## Platform shell and Payroll production hotfix
 
