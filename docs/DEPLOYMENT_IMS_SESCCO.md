@@ -37,7 +37,6 @@ import secrets
 database_password = secrets.token_urlsafe(48)
 print("DJANGO_SECRET_KEY=" + secrets.token_urlsafe(64))
 print("POSTGRES_PASSWORD=" + database_password)
-print("DB_PASSWORD=" + database_password)
 print(
     "PAYROLL_FIELD_ENCRYPTION_KEY="
     + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()

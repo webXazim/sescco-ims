@@ -116,7 +116,6 @@ PAYROLL_KEY=$(openssl rand -base64 32 | tr "+/" "-_" | tr -d "\n")
 
 sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${DJANGO_SECRET}|" .env.production
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${DATABASE_PASSWORD}|" .env.production
-sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DATABASE_PASSWORD}|" .env.production
 sed -i "s|^PAYROLL_FIELD_ENCRYPTION_KEY=.*|PAYROLL_FIELD_ENCRYPTION_KEY=${PAYROLL_KEY}|" .env.production
 
 unset DJANGO_SECRET

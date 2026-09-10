@@ -16,6 +16,7 @@ require_text docker-compose.yml 'name: ims_media_data' 'Media volume identity ch
 require_text docker-compose.yml '127.0.0.1:${IMS_HTTP_PORT:-8087}:8080' 'Gateway must remain bound to loopback.'
 require_text docker-compose.yml 'internal: true' 'Database network must remain internal.'
 require_text docker-compose.yml 'RUN_STARTUP_TASKS: ${RUN_STARTUP_TASKS:-0}' 'Web startup must not auto-run migrations by default.'
+require_text docker-compose.yml 'DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}' 'Django database password must derive from the canonical PostgreSQL password.'
 require_text docker-compose.yml 'read_only: true' 'Web container root filesystem hardening is missing.'
 require_text docker-compose.yml 'cap_drop:' 'Web capability drop is missing.'
 require_text Dockerfile 'FROM python:3.13.15-slim-bookworm AS builder' 'Builder Python image is not pinned to the Upgrade 11 release base.'

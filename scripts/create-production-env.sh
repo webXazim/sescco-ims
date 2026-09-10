@@ -29,7 +29,6 @@ sed \
   -e "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${generated[0]}|" \
   -e "s|^PAYROLL_FIELD_ENCRYPTION_KEY=.*|PAYROLL_FIELD_ENCRYPTION_KEY=${generated[1]}|" \
   -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated[2]}|" \
-  -e "s|^DB_PASSWORD=.*|DB_PASSWORD=${generated[2]}|" \
   "${TEMPLATE}" > "${TARGET}"
 chmod 600 "${TARGET}"
 
