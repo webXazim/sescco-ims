@@ -527,7 +527,11 @@ def _adjustment_effect(adjustment_type: str) -> str | None:
 def _build_calculation_locked(*, company, period_start: date) -> dict[str, Any]:
     start, end = month_bounds(period_start)
     attendance = (
-        AttendancePeriod.objects.select_for_update().for_company(company)
+        # Lock only the attendance-period row. The workflow user relations are
+        # nullable, so PostgreSQL renders them as LEFT OUTER JOINs; an
+        # unrestricted FOR UPDATE would incorrectly try to lock the nullable
+        # side of those joins and raise NotSupportedError.
+        AttendancePeriod.objects.select_for_update(of=("self",)).for_company(company)
         .filter(period_start=start)
         .select_related("submitted_by", "approved_by", "locked_by")
         .first()
@@ -1124,7 +1128,10 @@ def transition_payroll_run(
     else:
         _require_internal_approval(actor_membership)
     run = (
-        PayrollRun.objects.select_for_update().for_company(company)
+        # attendance_period is nullable; scope the row lock to PayrollRun so
+        # PostgreSQL does not attempt FOR UPDATE on the nullable outer-joined
+        # attendance row.
+        PayrollRun.objects.select_for_update(of=("self",)).for_company(company)
         .filter(period_start=start)
         .select_related("attendance_period")
         .first()
