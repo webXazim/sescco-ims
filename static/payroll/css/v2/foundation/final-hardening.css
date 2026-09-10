@@ -1,0 +1,102 @@
+@layer ui-v2-utilities {
+  /* Final production contract: mouse focus stays quiet; keyboard focus remains explicit. */
+  .ui-v2-root :where(button, a[href], input, select, textarea, [tabindex]):focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  .ui-v2-root :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible {
+    outline: none;
+    border-color: var(--ui-v2-border-focus, var(--ui-v2-text-secondary));
+    box-shadow: 0 0 0 3px rgba(22, 24, 29, .08);
+  }
+
+  .ui-v2-root :where(input[type="checkbox"], input[type="radio"]):focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .ui-v2-root :where(input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--ui-v2-text-secondary);
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  /* Scrollable business surfaces must not trap normal page scrolling. */
+  .ui-v2-root :where(.ui-v2-table-wrap, .ui-v2-register-table-wrap, .ui-v2-line-items__scroll, [class*="timesheet"][class*="scroll"], [class*="table-wrap"]) {
+    overscroll-behavior: auto;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ui-v2-root :where(table) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-v2-root :where(button, [role="button"]) {
+    touch-action: manipulation;
+  }
+
+  /* Command palette: visually track the keyboard-selected result. */
+  .ui-v2-command__results > button[data-active="true"] {
+    background: var(--ui-v2-surface-subtle, #f6f7f6);
+    color: var(--ui-v2-text);
+  }
+
+  .ui-v2-command__results > button[data-active="true"] .ui-v2-command__icon {
+    border-color: var(--ui-v2-border-strong);
+  }
+
+  /* Keep search affordances consistently inset from their field edge. */
+  .ui-v2-business-admin-search > svg,
+  .ui-v2-command__search > svg,
+  .ui-v2-filter-bar__search > svg {
+    flex: 0 0 auto;
+    pointer-events: none;
+  }
+
+  /* Dense layouts may shrink; their direct children must be allowed to shrink too. */
+  .ui-v2-app-content,
+  .ui-v2-app-content > *,
+  .ui-v2-root :where(.ui-v2-form-grid, .ui-v2-management-layout, .ui-v2-business-admin-layout) > * {
+    min-width: 0;
+  }
+
+  .ui-v2-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @media (max-width: 760px) {
+    .ui-v2-command {
+      width: min(100% - 20px, 620px);
+      max-height: calc(100dvh - 24px);
+    }
+
+    .ui-v2-command__results {
+      max-height: min(56dvh, 420px);
+      overflow: auto;
+    }
+
+    .ui-v2-inventory-pagination {
+      align-items: stretch;
+    }
+
+    .ui-v2-inventory-pagination > div {
+      justify-content: space-between;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-v2-root :where(button, input, select, textarea, a[href]):focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+    }
+  }
+}

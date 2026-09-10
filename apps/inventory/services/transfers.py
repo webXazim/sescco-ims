@@ -9,6 +9,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.permissions import user_has_capability_for_company
+from apps.accounts.roles import Capability
+
 from ..models import (
     InventoryLocation,
     StockItem,
@@ -21,6 +24,7 @@ from .stock import (
     InsufficientStockError,
     InventoryOperationError,
     _create_movement,
+    _require_inventory_edit,
     _save_balance,
     _validate_operation_date,
     _validate_positive_quantity,
@@ -57,7 +61,7 @@ def _destination_item(
     *, source: StockItem, destination: InventoryLocation, condition: str, user
 ) -> StockItem:
     exact = (
-        StockItem.objects.select_for_update(of=("self",))
+        StockItem.objects.for_company(destination.company).select_for_update(of=("self",))
         .filter(
             location=destination,
             normalized_material_name=source.normalized_material_name,
@@ -82,6 +86,7 @@ def _destination_item(
         return exact
 
     item = StockItem(
+        company=destination.company,
         project=destination.project,
         location=destination,
         condition=condition,
@@ -112,7 +117,11 @@ def transfer_stock(
     notes: str = "",
     attachment=None,
 ) -> TransferResult:
-    existing = StockTransfer.objects.filter(idempotency_key=idempotency_key).first()
+    if source_location.company_id != destination_location.company_id:
+        raise InventoryOperationError("Source and destination must belong to the same company.")
+    company = source_location.company
+    _require_inventory_edit(user, company)
+    existing = StockTransfer.objects.for_company(company).filter(idempotency_key=idempotency_key).first()
     if existing:
         return TransferResult(existing, duplicate_submission=True)
     _validate_operation_date(transfer_date)
@@ -134,7 +143,7 @@ def transfer_stock(
     with transaction.atomic():
         locations = {
             location.pk: location
-            for location in InventoryLocation.objects.select_for_update(of=("self",))
+            for location in InventoryLocation.objects.for_company(company).select_for_update(of=("self",))
             .select_related("project")
             .filter(pk__in=(source_location.pk, destination_location.pk))
             .order_by("pk")
@@ -146,7 +155,7 @@ def transfer_stock(
 
         source_items = {
             item.pk: item
-            for item in StockItem.objects.select_for_update(of=("self",))
+            for item in StockItem.objects.for_company(company).select_for_update(of=("self",))
             .select_related("location", "location__project", "project", "unit")
             .filter(pk__in=totals)
             .order_by("pk")
@@ -167,6 +176,7 @@ def transfer_stock(
                 )
 
         transfer = StockTransfer(
+            company=company,
             idempotency_key=idempotency_key,
             source_location=source_location,
             destination_location=destination_location,
@@ -266,17 +276,17 @@ def transfer_stock(
 def reverse_transfer(
     *, transfer: StockTransfer, user, idempotency_key: UUID, reason: str
 ) -> TransferResult:
-    if not getattr(user, "is_inventory_admin", False):
-        raise InventoryOperationError("Only an inventory administrator can reverse transfers.")
+    if not user_has_capability_for_company(user, transfer.company, Capability.MANAGE_INVENTORY):
+        raise InventoryOperationError("Only an inventory manager can reverse transfers.")
     if not reason.strip():
         raise InventoryOperationError("A reversal reason is required.")
-    duplicate = StockTransfer.objects.filter(reversal_idempotency_key=idempotency_key).first()
+    duplicate = StockTransfer.objects.for_company(transfer.company).filter(reversal_idempotency_key=idempotency_key).first()
     if duplicate:
         return TransferResult(duplicate, duplicate_submission=True)
 
     with transaction.atomic():
         transfer = (
-            StockTransfer.objects.select_for_update(of=("self",))
+            StockTransfer.objects.for_company(transfer.company).select_for_update(of=("self",))
             .select_related("source_location__project", "destination_location__project")
             .get(pk=transfer.pk)
         )
@@ -296,7 +306,7 @@ def reverse_transfer(
         }
         locked_items = {
             item.pk: item
-            for item in StockItem.objects.select_for_update(of=("self",))
+            for item in StockItem.objects.for_company(transfer.company).select_for_update(of=("self",))
             .select_related("location", "project", "unit")
             .filter(pk__in=item_ids)
             .order_by("pk")

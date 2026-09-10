@@ -1,0 +1,143 @@
+/*
+ * PRS Upgrade 9 — Rental financial lifecycle cutover
+ * Settlement snapshots, supplier payables, payment outcomes and receipts use
+ * the DocGen/Notes Payroll V2 contracts. Django remains authoritative.
+ */
+
+.ui-v2-root .ui-v2-prs-rental-finance-page { min-width:0; gap:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .period-note { display:inline-flex; margin-top:3px; color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-panel-kicker { display:block; margin-bottom:2px; color:var(--ui-v2-text-muted); font-size:12px; text-transform:uppercase; letter-spacing:.035em; }
+
+/* Settlement shell */
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-control-grid { margin:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-lifecycle-card > .panel__head,
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register > .panel__head {
+  min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:9px 11px; border-bottom:1px solid var(--ui-v2-border);
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-lifecycle-card > .panel__head > div,
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register > .panel__head > div { min-width:0; display:grid; gap:2px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page :where(.panel__head,.section-headline) h2 { margin:0; font-size:13px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page :where(.panel__head,.section-headline) p { margin:0; color:var(--ui-v2-text-muted); font-size:12px; line-height:1.4; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-workflow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:0; border-bottom:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-workflow__step { min-width:0; display:flex; align-items:center; gap:6px; padding:9px 8px; border-right:1px solid var(--ui-v2-border); color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-workflow__step:last-child { border-right:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-workflow__step > span { width:20px; height:20px; flex:0 0 20px; display:grid; place-items:center; border:1px solid var(--ui-v2-border-strong); border-radius:50%; background:var(--ui-v2-surface); font-size:12px; font-weight:800; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-workflow__step.is-complete { color:var(--ui-v2-text); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-workflow__step.is-complete > span { border-color:var(--ui-v2-text); background:var(--ui-v2-text); color:var(--ui-v2-surface); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness { display:grid; grid-template-columns:20px minmax(0,1fr) auto; align-items:center; gap:8px; margin:9px; padding:8px 9px; border:1px solid var(--ui-v2-border); border-radius:7px; background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness > div { min-width:0; display:grid; gap:2px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness strong { font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness span { color:var(--ui-v2-text-muted); font-size:12px; line-height:1.35; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border:1px solid var(--ui-v2-border); border-radius:10px; background:var(--ui-v2-surface); overflow:hidden; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid > div { min-width:0; min-height:100px; display:grid; align-content:center; gap:4px; padding:12px; border-right:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid > div:last-child { border-right:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid span { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid strong { overflow:hidden; font-size:12.5px; line-height:1.12; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid small { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid .is-total { background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid .is-total strong { font-size:13px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-table { min-width:1260px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-table th,
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-table td { font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-table tfoot td { background:var(--ui-v2-surface-subtle); border-top:1px solid var(--ui-v2-border-strong); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .table-money { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-supplier-cards { display:grid; gap:8px; margin:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .section-headline { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; padding:0; border:1px solid var(--ui-v2-border); border-radius:9px; background:var(--ui-v2-surface); overflow:hidden; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > header { grid-column:1/-1; min-height:54px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 11px; border-bottom:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > div { display:grid; gap:2px; padding:9px 10px; border-right:1px solid var(--ui-v2-border); border-bottom:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > div:nth-of-type(2n) { border-right:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > div span { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > div strong { font-size:12px; font-variant-numeric:tabular-nums; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > footer { grid-column:1/-1; padding:8px 10px; border-top:1px solid var(--ui-v2-border); background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-supplier-card > footer button { font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero { min-height:112px; display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin:0; padding:14px 16px; border:1px solid var(--ui-v2-border); border-radius:10px; background:var(--ui-v2-surface); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero > div:first-child { min-width:0; display:grid; gap:5px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero > div:first-child > span { color:var(--ui-v2-text-muted); font-size:12px; font-weight:700; text-transform:uppercase; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero > div:last-child { flex:0 0 auto; display:grid; justify-items:end; gap:2px; text-align:right; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero > div:last-child :where(span,small) { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-supplier-settlement-hero > div:last-child strong { font-size:18px; font-variant-numeric:tabular-nums; }
+
+/* Register toolbars: horizontal only, no nested vertical scroll traps. */
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar {
+  display:flex; align-items:center; gap:7px; min-height:48px; padding:8px 9px;
+  border-bottom:1px solid var(--ui-v2-border); background:var(--ui-v2-surface-subtle); flex-wrap:wrap;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search { min-width:240px; flex:1 1 280px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter { min-width:150px; display:grid; gap:3px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter > span { color:var(--ui-v2-text-muted); font-size:11px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page :where(.table-scroll,.table-wrap,.ui-v2-payroll-table-wrap) { max-height:none; overflow-x:auto; overflow-y:visible; overscroll-behavior:auto; }
+
+/* Supplier payments */
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin:0; border:1px solid var(--ui-v2-border); border-radius:10px; background:var(--ui-v2-surface); overflow:hidden; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary > article { min-width:0; min-height:88px; display:grid; align-content:center; gap:3px; padding:11px 12px; border-right:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary > article:last-child { border-right:0; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary > article.is-emphasis { background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary span { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary strong { overflow:hidden; font-size:12.5px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary small { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary > article.is-attention { background:#fff8f7; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs { margin:0; border-bottom:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs > button { min-width:180px; padding:9px 12px 10px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs .payment-switch-icon { width:28px; height:28px; display:grid; place-items:center; border:1px solid var(--ui-v2-border); border-radius:6px; background:var(--ui-v2-surface); font-size:10px; font-weight:800; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs button > span:last-child { display:grid; gap:1px; text-align:left; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs strong { font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs small { color:var(--ui-v2-text-muted); font-size:11px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-table { min-width:1180px; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-table :where(th,td) { font-size:12px; vertical-align:middle; }
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-row-actions .ui-v2-button { min-height:26px; }
+.ui-v2-root .ui-v2-prs-rental-payment-boundary { margin:0; }
+
+/* Existing PRS payment drawer, adapted to the canonical V2 financial language. */
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer,
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-settlement-drawer { width:min(620px,96vw); }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-settlement-drawer .ui-v2-payroll-rental-settlement-drawer-summary { margin:0; }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary { display:grid; margin:0; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid var(--ui-v2-border); border-radius:8px; overflow:hidden; }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary > div { display:grid; gap:2px; padding:8px 9px; border-right:1px solid var(--ui-v2-border); }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary span { color:var(--ui-v2-text-muted); font-size:12px; }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary strong { font-size:12px; font-variant-numeric:tabular-nums; }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary > div { min-width:0; }
+.ui-v2-root #quickDrawer.ui-v2-prs-rental-payment-drawer .ui-v2-payroll-rental-payment-mini-summary > div:last-child { border-right:0; }
+.ui-v2-root .ui-v2-prs-settlement-segment-list { display:grid; border:1px solid var(--ui-v2-border); border-radius:8px; overflow:hidden; }
+.ui-v2-root .ui-v2-prs-settlement-segment { grid-template-columns:minmax(0,1fr) auto; gap:12px; padding:9px 10px; border-bottom:1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-settlement-segment:last-child { border-bottom:0; }
+.ui-v2-root .ui-v2-prs-settlement-segment strong { font-size:12px; }
+.ui-v2-root .ui-v2-prs-settlement-segment span { color:var(--ui-v2-text-muted); font-size:12px; line-height:1.4; }
+
+/* Receipt browser keeps the Django immutable document as the source. */
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace { grid-template-columns:minmax(260px,330px) minmax(0,1fr); gap:10px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace :where(.receipt-list-panel,.receipt-preview-panel) { overflow:hidden; border:1px solid var(--ui-v2-border); border-radius:10px; box-shadow:none; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-head,
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-preview-toolbar { min-height:54px; padding:8px 10px; border-bottom:1px solid var(--ui-v2-border); background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-head h2 { margin:1px 0; font-size:13px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-head p,
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-preview-toolbar span { margin:0; color:var(--ui-v2-text-muted); font-size:11px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-item { min-height:58px; padding:8px 9px; border-bottom:1px solid var(--ui-v2-border); font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-item strong { font-size:12px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-item small,
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-item > span:last-child { color:var(--ui-v2-text-muted); font-size:11px; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list-item.is-active { background:var(--ui-v2-surface-subtle); box-shadow:inset 2px 0 0 var(--ui-v2-text); }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-list { max-height:680px; overflow:auto; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .receipt-preview-panel { min-width:0; }
+.ui-v2-root .ui-v2-prs-rental-receipt-workspace .document-paper { margin:14px auto 26px; }
+
+@media (max-width:1100px) {
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width:820px) {
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid,
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .ui-v2-root .ui-v2-prs-rental-receipt-workspace { grid-template-columns:1fr; }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness { grid-template-columns:20px minmax(0,1fr); }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-readiness .ui-v2-button { grid-column:1/-1; }
+}
+@media (max-width:560px) {
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-summary-grid,
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-summary { grid-template-columns:1fr; }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar { align-items:stretch; flex-direction:column; }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar > * { width:100%; max-width:none; }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs > button { min-width:150px; }
+  .ui-v2-root .ui-v2-prs-settlement-segment { grid-template-columns:1fr; }
+}

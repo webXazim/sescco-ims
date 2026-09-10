@@ -17,8 +17,7 @@ curl -H 'Host: ims.a2tdev.com' -H 'X-Forwarded-Proto: https' \
   http://127.0.0.1:8087/app/health/ready/
 ```
 
-Liveness confirms that Django is running. Readiness also confirms PostgreSQL
-connectivity.
+Liveness confirms that Django is running. Readiness confirms PostgreSQL connectivity **and** that the running release has no unapplied Django migrations.
 
 ## Django commands
 
@@ -38,19 +37,22 @@ docker compose --env-file .env.production restart ims_web ims_gateway
 ## Update
 
 ```bash
-./scripts/deploy-production.sh
+./scripts/preflight.sh
+./scripts/deploy-production-freeze.sh
 ```
+
+Normal container restarts do not run migrations. Production migrations, merge reconciliation commands, and `collectstatic` run explicitly through `scripts/release-tasks.sh` during deploy/restore.
 
 ## Static files return 403
 
-Static files are served by `ims_gateway` from the `ims_static_data` volume. If
+Static files are served by `ims_gateway` from the `ims_static_data` volume. Deployments retain previous hashed assets during the cutover so old and new web responses can coexist safely for the short promotion window. If
 the page renders as unstyled HTML and browser requests below `/static/` return
 403, deploy the current release. Startup runs `collectstatic` and repairs the
 whole shared volume so directories retained from older releases are readable
 by the separate Nginx container:
 
 ```bash
-./scripts/deploy-production.sh
+./scripts/deploy-production-freeze.sh
 curl -I https://ims.a2tdev.com/static/css/styles.css
 ```
 

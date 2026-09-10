@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 from ..models import InventoryLocation, StockItem, StockMovement, StockTransfer
 from ..services.stock import InsufficientStockError, add_stock
@@ -25,8 +26,11 @@ class StockTransferServiceTests(TestCase):
         self.admin = user_model.objects.create_superuser(
             username="admin", email="admin@example.com", password="password"
         )
-        self.project = Project.objects.create(code="SITE-01", name="Finished Site")
-        self.other_project = Project.objects.create(code="SITE-02", name="Next Site")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        grant_company_access(self.admin, company=self.company)
+        self.project = Project.objects.create(company=self.company, code="SITE-01", name="Finished Site")
+        self.other_project = Project.objects.create(company=self.company, code="SITE-02", name="Next Site")
         self.office = InventoryLocation.objects.get(location_type=InventoryLocation.Type.OFFICE)
         self.unit = self._unit()
         self.item = add_stock(
@@ -208,6 +212,7 @@ class StockTransferViewTests(StockTransferServiceTests):
         )
         self.project.refresh_from_db()
         self.assertEqual(self.project.status, Project.Status.COMPLETED)
+        self.assertEqual(self.project.end_date, timezone.localdate())
         receipt = self.client.get(response.url)
         self.assertContains(receipt, "CLOSE-100")
         self.assertContains(receipt, "Lost")

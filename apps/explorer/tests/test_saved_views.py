@@ -10,6 +10,7 @@ from apps.explorer.models import SavedView
 from apps.inventory.models import Unit
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 User = get_user_model()
 
@@ -18,8 +19,11 @@ class SavedViewTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper", password="safe-password")
         self.other = User.objects.create_user(username="other", password="safe-password")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        grant_company_access(self.other, company=self.company)
         self.client.force_login(self.user)
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
         self.unit = Unit.objects.get(normalized_name="bag")
         add_stock(
             user=self.user,
@@ -52,6 +56,7 @@ class SavedViewTests(TestCase):
 
     def test_open_saved_view_replays_filters(self):
         saved = SavedView.objects.create(
+            company=self.company,
             owner=self.user,
             name="Today additions",
             view_type=SavedView.ViewType.ACTIVITY,
@@ -64,6 +69,7 @@ class SavedViewTests(TestCase):
 
     def test_saved_views_are_private_to_owner(self):
         saved = SavedView.objects.create(
+            company=self.company,
             owner=self.other,
             name="Private",
             view_type=SavedView.ViewType.INVENTORY,
@@ -76,6 +82,7 @@ class SavedViewTests(TestCase):
 
     def test_rename_and_delete(self):
         saved = SavedView.objects.create(
+            company=self.company,
             owner=self.user,
             name="Old name",
             view_type=SavedView.ViewType.LOW_STOCK,
@@ -92,12 +99,14 @@ class SavedViewTests(TestCase):
 
     def test_saved_view_management_search_is_live(self):
         SavedView.objects.create(
+            company=self.company,
             owner=self.user,
             name="Daily additions",
             view_type=SavedView.ViewType.ACTIVITY,
             query_params={"date_preset": "today"},
         )
         SavedView.objects.create(
+            company=self.company,
             owner=self.user,
             name="Low cement",
             view_type=SavedView.ViewType.LOW_STOCK,

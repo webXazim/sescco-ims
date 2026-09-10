@@ -1,12 +1,12 @@
-# Project Inventory
+# IMS + Payroll Operations Platform
 
-Private Django inventory management system for a contracting company. The
+Private Django operations platform combining Inventory Management and Payroll Management for a contracting company. The
 custom responsive workspace is the main product for storekeepers; Django admin
 is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-This package completes **all 7 planned upgrades** and is release `1.0.0`.
+This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
 Core capabilities:
 
@@ -24,7 +24,7 @@ Core capabilities:
 - legacy workbook preview/import and atomic opening-stock import;
 - protected XLSX/XLSM parsing with archive expansion and path safety limits;
 - private authenticated attachments;
-- isolated production deployment at `ims.a2tdev.com` beside other Docker projects;
+- unified Inventory + Payroll production deployment at `ims.a2tdev.com` beside other Docker projects;
 - health checks, JSON logs, backups, restore controls and operator documentation.
 
 ## Local development
@@ -43,6 +43,7 @@ Open:
 
 - Storekeeper workspace: `http://127.0.0.1:8000/app/`
 - Inventory Explorer: `http://127.0.0.1:8000/app/inventory/`
+- Payroll workspace: `http://127.0.0.1:8000/app/payroll/`
 - Stock activity: `http://127.0.0.1:8000/app/activity/`
 - Stock transfers: `http://127.0.0.1:8000/app/transfers/`
 - Office inventory: `http://127.0.0.1:8000/app/office/`
@@ -58,7 +59,9 @@ status remains disabled automatically.
 cp .env.production.example .env.production
 chmod 600 .env.production
 # Replace every placeholder secret and password.
-./scripts/deploy-production.sh
+# Before the first merged cutover, rehearse against a current backup:
+./scripts/rehearse-production-freeze.sh /absolute/path/to/current-production-backup
+./scripts/deploy-production-freeze.sh
 ./scripts/create-admin.sh
 ```
 
@@ -79,6 +82,7 @@ See:
 - `docs/STOREKEEPER_GUIDE.md`
 - `docs/ADMIN_GUIDE.md`
 - `docs/RELEASE_CHECKLIST.md`
+- `docs/MERGE_UPGRADE_12.md`
 
 ## Backups
 
@@ -87,8 +91,7 @@ See:
 ./scripts/restore.sh backups/<UTC-timestamp> --confirm
 ```
 
-A complete backup contains the PostgreSQL custom-format dump, private media,
-manifest and SHA-256 checksums. The restore script affects only IMS services and
+A complete backup contains the PostgreSQL custom-format dump, private media, manifest and SHA-256 checksums. The manifest binds the backup to the Payroll field-encryption-key fingerprint; keep the actual encryption key separately in protected disaster-recovery storage. The restore script affects only IMS services and
 volumes.
 
 ## Quality checks
@@ -104,7 +107,7 @@ coverage report
 ```
 
 Static validation commands and the runtime limitation of this build environment
-are recorded in `docs/VALIDATION.md`.
+are recorded in `docs/VALIDATION.md`. The final `scripts/deploy-production-freeze.sh` entrypoint verifies `merge/production-freeze.sha256` before handing off to the unchanged Upgrade 11 production preflight/deploy pipeline; source/configuration drift from the frozen Upgrade 12 artifact blocks deployment.
 
 ## Inventory integrity rules
 
@@ -123,3 +126,7 @@ are recorded in `docs/VALIDATION.md`.
 - Private uploads are served only through authenticated Django routes.
 
 Never use `docker compose down -v` in production.
+
+## Merged Payroll platform
+
+The merged platform now includes the production Internal and Rental Payroll backends plus the DocGen V2 Payroll frontend. Inventory and Payroll share the authenticated Company context and the Upgrade 10 Business/Area switcher. Production deployments must configure a stable `PAYROLL_FIELD_ENCRYPTION_KEY`; see `docs/MERGE_UPGRADE_6.md` and `merge/platform-shell-map.md`.

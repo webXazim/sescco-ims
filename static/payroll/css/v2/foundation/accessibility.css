@@ -1,0 +1,45 @@
+@layer ui-v2-base {
+  .ui-v2-root :where(button, input, select, textarea, a[href], [tabindex]):focus-visible {
+    outline: 2px solid var(--ui-v2-text-secondary);
+    outline-offset: 2px;
+  }
+
+  .ui-v2-root :where(input, select, textarea):focus-visible {
+    outline: none;
+  }
+
+  .ui-v2-root :where(button, a[href])[aria-disabled="true"] {
+    pointer-events: none;
+    opacity: .46;
+  }
+
+  .ui-v2-skip-link {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 300;
+    padding: 8px 11px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: var(--ui-v2-radius-md);
+    background: var(--ui-v2-surface);
+    color: var(--ui-v2-text);
+    box-shadow: var(--ui-v2-shadow-float);
+    font-size: 12px;
+    font-weight: 650;
+    transform: translateY(-160%);
+    transition: transform 120ms ease;
+  }
+
+  .ui-v2-skip-link:focus { transform: translateY(0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-v2-root *,
+    .ui-v2-root *::before,
+    .ui-v2-root *::after {
+      scroll-behavior: auto !important;
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+  }
+}

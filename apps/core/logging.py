@@ -4,12 +4,13 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from .request_context import request_id_var
+from .request_context import company_id_var, request_id_var
 
 
 class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_var.get()
+        record.company_id = company_id_var.get()
         return True
 
 
@@ -23,6 +24,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "-"),
+            "company_id": getattr(record, "company_id", "-"),
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

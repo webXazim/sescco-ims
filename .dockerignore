@@ -19,3 +19,5 @@ db.sqlite3
 *.zip
 *.sha256
 docs/private
+
+rehearsal-evidence

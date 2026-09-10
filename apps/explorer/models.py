@@ -4,6 +4,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.models import CompanyScopedManager
+
 
 class SavedView(models.Model):
     class ViewType(models.TextChoices):
@@ -11,6 +13,7 @@ class SavedView(models.Model):
         ACTIVITY = "activity", "Stock activity"
         LOW_STOCK = "low_stock", "Low stock"
 
+    company = models.ForeignKey("core.Company", on_delete=models.CASCADE, related_name="saved_inventory_views")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -22,16 +25,19 @@ class SavedView(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("view_type", "name")
         constraints = [
             models.UniqueConstraint(
-                fields=("owner", "view_type", "name"),
-                name="uniq_saved_view_name_per_owner_type",
+                fields=("company", "owner", "view_type", "name"),
+                name="saved_view_company_owner_name_uniq",
             )
         ]
         indexes = [
-            models.Index(fields=("owner", "view_type"), name="saved_view_owner_type_idx")
+            models.Index(fields=("company", "owner", "view_type"), name="saved_view_company_idx"),
+            models.Index(fields=("owner", "view_type"), name="saved_view_owner_type_idx"),
         ]
 
     def __str__(self) -> str:
@@ -52,6 +58,7 @@ class SavedView(models.Model):
 
 
 class TablePreference(models.Model):
+    company = models.ForeignKey("core.Company", on_delete=models.CASCADE, related_name="inventory_table_preferences")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -61,13 +68,18 @@ class TablePreference(models.Model):
     columns = models.JSONField(default=list)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("owner", "view_type")
         constraints = [
             models.UniqueConstraint(
-                fields=("owner", "view_type"),
-                name="uniq_table_preference_owner_view",
+                fields=("company", "owner", "view_type"),
+                name="table_pref_company_owner_view_uniq",
             )
+        ]
+        indexes = [
+            models.Index(fields=("company", "owner", "view_type"), name="table_pref_company_idx"),
         ]
 
     def __str__(self) -> str:

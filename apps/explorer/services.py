@@ -37,11 +37,12 @@ def clean_saved_params(view_type: str, query: QueryDict) -> dict[str, str | list
     return querydict_to_plain(query, allowed)
 
 
-def create_saved_view(*, owner, name: str, view_type: str, query: QueryDict) -> SavedView:
+def create_saved_view(*, company, owner, name: str, view_type: str, query: QueryDict) -> SavedView:
     params = clean_saved_params(view_type, query)
     try:
         with transaction.atomic():
             return SavedView.objects.create(
+                company=company,
                 owner=owner,
                 name=name,
                 view_type=view_type,

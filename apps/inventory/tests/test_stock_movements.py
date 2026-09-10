@@ -21,6 +21,7 @@ from apps.inventory.services.stock import (
     use_stock,
 )
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 User = get_user_model()
 
@@ -33,8 +34,11 @@ class StockMovementServiceTests(TestCase):
             email="admin@example.com",
             password="safe-password",
         )
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
-        self.other_project = Project.objects.create(code="NEOM-02", name="NEOM Works")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        grant_company_access(self.admin, company=self.company)
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
+        self.other_project = Project.objects.create(company=self.company, code="NEOM-02", name="NEOM Works")
         self.bag = Unit.objects.get(normalized_name="bag")
         self.piece = Unit.objects.get(normalized_name="piece")
         self.today = timezone.localdate()
@@ -323,6 +327,7 @@ class StockMovementServiceTests(TestCase):
             purpose="Use all stock",
         ).movement
         self.project.status = Project.Status.COMPLETED
+        self.project.end_date = self.today
         self.project.save()
 
         with self.assertRaises(InactiveStockError):
@@ -349,6 +354,7 @@ class StockMovementServiceTests(TestCase):
         with self.assertRaises(InventoryOperationError):
             self.add(movement_date=self.today + timedelta(days=1))
         self.project.status = Project.Status.COMPLETED
+        self.project.end_date = self.today
         self.project.save()
         with self.assertRaises(InactiveStockError):
             self.add(idempotency_key=uuid.uuid4())

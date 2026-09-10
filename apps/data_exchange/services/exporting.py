@@ -327,7 +327,7 @@ def _visible_columns(
     return tuple(mapping[key] for key in selected if key in mapping)
 
 
-def inventory_dataset(query: QueryDict, *, low_stock: bool = False) -> ExportDataset:
+def inventory_dataset(query: QueryDict, *, company, low_stock: bool = False) -> ExportDataset:
     data = _with_defaults(
         query,
         {
@@ -337,11 +337,11 @@ def inventory_dataset(query: QueryDict, *, low_stock: bool = False) -> ExportDat
             "columns": DEFAULT_STOCK_COLUMNS,
         },
     )
-    form = StockItemFilterForm(data)
+    form = StockItemFilterForm(data, company=company)
     if not form.is_valid():
         raise ValueError("The current inventory filters are invalid.")
     cleaned = form.cleaned_data
-    queryset = low_stock_items() if low_stock else stock_items()
+    queryset = low_stock_items(company) if low_stock else stock_items(company)
     if low_stock:
         scoped = dict(cleaned)
         scoped["status"] = StockItem.Status.ACTIVE
@@ -371,13 +371,13 @@ def inventory_dataset(query: QueryDict, *, low_stock: bool = False) -> ExportDat
     )
 
 
-def activity_dataset(query: QueryDict) -> ExportDataset:
+def activity_dataset(query: QueryDict, *, company) -> ExportDataset:
     data = _with_defaults(query, {"sort": "-date", "columns": DEFAULT_MOVEMENT_COLUMNS})
-    form = MovementFilterForm(data)
+    form = MovementFilterForm(data, company=company)
     if not form.is_valid():
         raise ValueError("The current activity filters are invalid.")
     cleaned = form.cleaned_data
-    queryset = filter_stock_movements(stock_movements(), cleaned)
+    queryset = filter_stock_movements(stock_movements(company), cleaned)
     sort = cleaned.get("sort") or "-date"
     queryset = queryset.order_by(*MOVEMENT_SORTS.get(sort, MOVEMENT_SORTS["-date"]))
     columns = _visible_columns(
@@ -398,11 +398,11 @@ def activity_dataset(query: QueryDict) -> ExportDataset:
 
 def stock_history_dataset(stock_item: StockItem, query: QueryDict) -> ExportDataset:
     data = _with_defaults(query, {"sort": "-date"})
-    form = StockHistoryFilterForm(data)
+    form = StockHistoryFilterForm(data, company=stock_item.company)
     if not form.is_valid():
         raise ValueError("The current stock-history filters are invalid.")
     cleaned = form.cleaned_data
-    queryset = stock_movements().filter(stock_item=stock_item)
+    queryset = stock_movements(stock_item.company).filter(stock_item=stock_item)
     queryset = apply_movement_search(queryset, cleaned.get("q") or "")
     if cleaned.get("movement_type"):
         queryset = queryset.filter(movement_type__in=cleaned["movement_type"])
@@ -433,7 +433,7 @@ def stock_history_dataset(stock_item: StockItem, query: QueryDict) -> ExportData
 
 
 def project_inventory_dataset(project: Project, query: QueryDict) -> ExportDataset:
-    queryset = stock_items().filter(project=project)
+    queryset = stock_items(project.company).filter(project=project)
     search = query.get("q", "").strip()
     stock_status = query.get("stock_status", "").strip()
     record_status = query.get("record_status", StockItem.Status.ACTIVE).strip()
@@ -579,6 +579,7 @@ def export_response(
     *,
     dataset: ExportDataset,
     user,
+    company,
     file_format: str,
 ) -> HttpResponse:
     if file_format not in ExportAudit.Format.values:
@@ -591,6 +592,7 @@ def export_response(
         payload = _csv_payload(dataset)
         content_type = "text/csv; charset=utf-8"
     ExportAudit.objects.create(
+        company=company,
         dataset=dataset.audit_dataset,
         file_format=file_format,
         filters=dataset.filters,
@@ -607,13 +609,13 @@ def export_response(
     return response
 
 
-def opening_stock_template_response(*, user) -> HttpResponse:
+def opening_stock_template_response(*, user, company) -> HttpResponse:
     projects = list(
-        Project.objects.filter(status=Project.Status.ACTIVE, deleted_at__isnull=True).order_by(
+        Project.objects.for_company(company).filter(status=Project.Status.ACTIVE, deleted_at__isnull=True).order_by(
             "code"
         )
     )
-    units = list(Unit.objects.filter(is_active=True, deleted_at__isnull=True).order_by("name"))
+    units = list(Unit.objects.for_company(company).filter(is_active=True, deleted_at__isnull=True).order_by("name"))
     workbook = Workbook()
     instructions = workbook.active
     instructions.title = "Instructions"
@@ -695,6 +697,7 @@ def opening_stock_template_response(*, user) -> HttpResponse:
     output = BytesIO()
     workbook.save(output)
     ExportAudit.objects.create(
+        company=company,
         dataset=ExportAudit.Dataset.OPENING_TEMPLATE,
         file_format=ExportAudit.Format.XLSX,
         filters={},

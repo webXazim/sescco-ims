@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 
 from apps.inventory.models import StockItem, StockMovement, Unit
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 from ..models import ImportJob, ImportRow
 from ..services.importing import (
@@ -53,7 +54,10 @@ class ImportWorkflowTests(TestCase):
             password="safe-password",
         )
         self.keeper = User.objects.create_user(username="keeper", password="safe-password")
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Project")
+        self.company = primary_company()
+        grant_company_access(self.admin, company=self.company)
+        grant_company_access(self.keeper, company=self.company)
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Project")
         self.unit = Unit.objects.get(normalized_name="bag")
 
     def legacy_job(self, rows, *, update_existing=True):
@@ -72,6 +76,7 @@ class ImportWorkflowTests(TestCase):
             rows,
         )
         return ImportJob.objects.create(
+            company=self.company,
             import_type=ImportJob.Type.LEGACY_CATALOG,
             source_file=file,
             original_filename=file.name,
@@ -103,6 +108,7 @@ class ImportWorkflowTests(TestCase):
             rows,
         )
         return ImportJob.objects.create(
+            company=self.company,
             import_type=ImportJob.Type.OPENING_STOCK,
             source_file=file,
             original_filename=file.name,

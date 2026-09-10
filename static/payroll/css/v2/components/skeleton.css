@@ -1,0 +1,15 @@
+@layer ui-v2-components {
+  @keyframes ui-v2-skeleton-shift {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+
+  .ui-v2-skeleton {
+    display: block;
+    height: 12px;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #efefed 25%, #f7f7f5 45%, #efefed 65%);
+    background-size: 220% 100%;
+    animation: ui-v2-skeleton-shift 1.35s linear infinite;
+  }
+}

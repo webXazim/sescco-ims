@@ -1,0 +1,52 @@
+/*
+  PRS Payroll UI v2 rollout entrypoint.
+  Source of truth: DocGen/Notes UI v2 payroll design system.
+
+  Rollout contract:
+  - All imported design-system rules are scoped to .ui-v2-root and/or ui-v2-* classes.
+  - Existing PRS selectors remain loaded during the progressive migration.
+  - Backend/API behavior is intentionally untouched.
+*/
+@layer ui-v2-reset, ui-v2-tokens, ui-v2-base, ui-v2-layout, ui-v2-components, ui-v2-patterns, ui-v2-pages, ui-v2-utilities;
+
+@import "./foundation/tokens.css";
+@import "./foundation/reset.css";
+@import "./foundation/typography.css";
+@import "./foundation/accessibility.css";
+
+@import "./layout/page.css";
+@import "./layout/shell.css";
+@import "./layout/sidebar.css";
+@import "./layout/topbar.css";
+@import "./layout/responsive.css";
+@import "./layout/refinements.css";
+
+@import "./components/button.css";
+@import "./components/form.css";
+@import "./components/form-drawer.css";
+@import "./components/status.css";
+@import "./components/tabs.css";
+@import "./components/table.css";
+@import "./components/menu.css";
+@import "./components/command.css";
+@import "./components/empty-state.css";
+@import "./components/skeleton.css";
+
+@import "./patterns/metrics.css";
+@import "./patterns/filter-bar.css";
+@import "./patterns/register.css";
+@import "./patterns/management.css";
+@import "./patterns/administration.css";
+@import "./patterns/states.css";
+
+/* Canonical payroll visual contracts are staged now; pages opt in via ui-v2-* markup. */
+@import "./components/search-hardening.css";
+@import "./pages/payroll.css";
+@import "./pages/timesheet.css";
+
+/* Production hardening retained from the same DocGen UI v2 source. */
+@import "./foundation/final-hardening.css";
+@import "./foundation/application-consistency.css";
+@import "./foundation/scrolling-hardening.css";
+@import "./foundation/control-isolation.css";
+@import "./foundation/release-hardening.css";

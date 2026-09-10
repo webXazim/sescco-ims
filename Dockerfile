@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS builder
+FROM python:3.13.15-slim-bookworm AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -9,10 +9,9 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements/base.txt requirements/production.txt /build/requirements/
-RUN pip install --upgrade pip \
-    && pip install --requirement /build/requirements/production.txt
+RUN pip install --requirement /build/requirements/production.txt
 
-FROM python:3.13-slim AS runtime
+FROM python:3.13.15-slim-bookworm AS runtime
 
 ARG APP_UID=10001
 ARG APP_GID=10001

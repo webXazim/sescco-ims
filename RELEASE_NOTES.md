@@ -29,3 +29,54 @@ projects.
 Follow `docs/DEPLOYMENT_IMS_A2TDEV.md`. Before traffic is enabled, complete every
 item in `docs/RELEASE_CHECKLIST.md`, including the Docker/CI runtime test suite
 and an isolated restore test.
+
+## Payroll merge baseline
+
+The repository is now frozen as the authoritative IMS base for the production Payroll merge.
+Before applying company/tenant schema upgrades to a production copy, capture a read-only baseline:
+
+```bash
+python manage.py merge_baseline_report --output /tmp/ims-pre-merge-baseline.json
+bash scripts/verify-merge-baseline.sh
+```
+
+The existing IMS user table, migration history, Docker Compose identity and named PostgreSQL volume
+are intentionally preserved during the merge.
+
+## Payroll merge — Upgrade 2 platform core
+
+The merged platform now has additive company/tenant foundation models in `apps.core`: Company,
+CompanySettings, immutable AuditEvent, and transaction-safe NumberSequence. The existing IMS
+`accounts.User`, inventory/project tables, migration history, and Docker volume identities remain
+unchanged. Company assignment is intentionally deferred to Upgrade 3, where authenticated
+CompanyMembership records will be introduced and existing users will be backfilled safely.
+
+## Payroll merge — Upgrade 4 Inventory tenant boundary
+
+Existing IMS Inventory and Project records are now company-owned through additive migrations.
+Inventory request authorization, querysets, stock/transfer services, imports/exports, saved views
+and Django-admin visibility are scoped through the authenticated active `CompanyMembership`.
+Legacy stock balances and immutable movement history are preserved. Run
+`python manage.py merge_inventory_tenant_report --fail-on-errors` after migration to reconcile
+cross-company relationships before continuing to the shared Project merge.
+
+## Payroll merge — Upgrade 6 Internal Payroll backend
+
+The production Internal Payroll domain is now installed inside the merged IMS Django project and uses the existing IMS `accounts.User`, shared `core.Company`, and company-scoped membership/capability model. Branches, departments, employees, attendance/overtime, salary structures, payroll runs/adjustments, salary payments, bank exports and WPS are available through the preserved `/api/internal/...` backend contract. Sensitive payment fields use the required stable `PAYROLL_FIELD_ENCRYPTION_KEY`. Run `python manage.py merge_internal_payroll_report --fail-on-errors` after migrations.
+
+## Payroll merge — Upgrade 11 production infrastructure
+
+The merged Inventory + Payroll platform now has a single explicit release pipeline. Migrations and static
+collection no longer run on ordinary Gunicorn restarts; deploy/restore use `scripts/release-tasks.sh`
+before promoting the web container. Backups bind to the stable Payroll encryption-key fingerprint and
+restore refuses a mismatched key. Readiness now requires both PostgreSQL connectivity and zero unapplied
+Django migrations. The existing `ims` Compose project and `ims_*` persistent volume identities remain
+unchanged.
+
+## Payroll merge — Upgrade 12 production freeze
+
+The 12-step IMS + Payroll merge is complete. A rehearsal-only Compose boundary now restores production
+backups into `ims_merge_rehearsal_*` resources, applies the full migration chain, runs every merged-domain
+reconciliation command and the complete Django regression suite, and compares protected legacy IMS row counts plus SHA-256 fingerprints of every pre-existing protected
+field before/after migration. The deployable source/configuration tree is frozen by
+`merge/production-freeze.sha256`, and the final frozen deploy entrypoint rejects source drift before handing off to the unchanged production preflight/deploy pipeline.

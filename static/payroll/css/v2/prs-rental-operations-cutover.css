@@ -1,0 +1,678 @@
+/*
+ * PRS Upgrade 7 — Rental manpower operations cutover
+ *
+ * Presentation-only bridge from the production PRS rental workflows to the
+ * DocGen/Notes Payroll V2 visual contracts. Existing ids, data-* hooks,
+ * Django APIs, assignment history and company scoping remain authoritative.
+ */
+
+/* Shared rental page rhythm */
+.ui-v2-root .ui-v2-prs-rental-page {
+  min-width: 0;
+  gap: 16px;
+}
+.ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head {
+  align-items: stretch;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head .ui-v2-page-header__copy {
+  max-width: 850px;
+  gap: 5px;
+}
+.ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head h1 {
+  font-size: clamp(24px, 2.1vw, 30px);
+  line-height: 1.15;
+}
+.ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head p {
+  max-width: 850px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head .ui-v2-page-header__actions {
+  align-content: flex-start;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-panel {
+  border-color: var(--ui-v2-border);
+  border-radius: 10px;
+  box-shadow: none;
+}
+.ui-v2-root .ui-v2-prs-rental-page :where(.panel__head,.section-headline) h2 {
+  font-size: 13px;
+  line-height: 1.25;
+}
+.ui-v2-root .ui-v2-prs-rental-page :where(.panel__head,.section-headline) p {
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ui-v2-root .ui-v2-prs-rental-page .table-scroll,
+.ui-v2-root .ui-v2-prs-rental-page .table-wrap {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior: auto;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table {
+  font-size: 12px;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table th,
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table td {
+  height: auto;
+  padding: 8px 9px;
+  vertical-align: middle;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table th {
+  font-size: 12px;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table-entity,
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-rental-worker-link {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table-entity strong,
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table-entity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table-entity strong { color: var(--ui-v2-text); font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-page .ui-v2-payroll-table-entity span { color: var(--ui-v2-text-muted); font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-page button.ui-v2-payroll-table-entity:hover strong { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Rental control overview */
+.ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface-subtle);
+  color: var(--ui-v2-text-secondary);
+}
+.ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner__icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 7px;
+  background: var(--ui-v2-surface);
+  color: var(--ui-v2-text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental > div { min-width: 0; display: grid; gap: 2px; }
+.ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental strong { color: var(--ui-v2-text); font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental span { font-size: 12px; line-height: 1.4; }
+.ui-v2-root .ui-v2-prs-rental-flow {
+  display: grid;
+  grid-template-columns: repeat(7,minmax(0,1fr));
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 10px;
+  background: var(--ui-v2-surface);
+}
+.ui-v2-root .ui-v2-prs-rental-flow > button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0,1fr);
+  grid-template-rows: auto auto;
+  gap: 1px 7px;
+  align-items: center;
+  padding: 10px 9px;
+  border: 0;
+  border-right: 1px solid var(--ui-v2-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-flow > button:last-child { border-right: 0; }
+.ui-v2-root .ui-v2-prs-rental-flow > button:hover { background: var(--ui-v2-surface-hover); }
+.ui-v2-root .ui-v2-prs-rental-flow > button > span {
+  grid-row: 1 / 3;
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ui-v2-border-strong);
+  border-radius: 50%;
+  color: var(--ui-v2-text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+.ui-v2-root .ui-v2-prs-rental-flow strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-flow small { overflow: hidden; color: var(--ui-v2-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-overview .rental-control-summary { grid-template-columns: repeat(6,minmax(0,1fr)); }
+.ui-v2-root .ui-v2-prs-rental-overview .rental-control-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1.65fr) minmax(280px,.65fr);
+  gap: 14px;
+  align-items: start;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .rental-control-side { min-width: 0; display: grid; gap: 12px; }
+.ui-v2-root .ui-v2-prs-rental-overview .rental-supplier-control-list,
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events { display: grid; }
+.ui-v2-root .ui-v2-prs-rental-overview :where(.rental-supplier-control-list,.rental-recent-events) > button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr) auto 14px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v2-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-overview :where(.rental-supplier-control-list,.rental-recent-events) > button:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-overview :where(.rental-supplier-control-list,.rental-recent-events) > button:hover { background: var(--ui-v2-surface-hover); }
+.ui-v2-root .ui-v2-prs-rental-overview :where(.rental-supplier-control-list,.rental-recent-events) strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-overview :where(.rental-supplier-control-list,.rental-recent-events) small { display: block; overflow: hidden; margin-top: 2px; color: var(--ui-v2-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-overview .rental-supplier-control-list em { color: var(--ui-v2-text-secondary); font-size: 11px; font-style: normal; text-align: right; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-overview .rental-supplier-control-list__icon {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 7px; background: var(--ui-v2-surface-active); color: var(--ui-v2-text-secondary);
+  font-size: 10px; font-weight: 800;
+}
+
+/* Worker master */
+.ui-v2-root .ui-v2-payroll-assignment-summary,
+.ui-v2-root .ui-v2-prs-rental-summary {
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 10px;
+  background: var(--ui-v2-surface);
+}
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :where(button,div) {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 78px;
+  padding: 10px 12px;
+  border: 0;
+  border-right: 1px solid var(--ui-v2-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > button { cursor: pointer; }
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > button:hover,
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > button.is-selected { background: var(--ui-v2-surface-hover); }
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :last-child { border-right: 0; }
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) span { color: var(--ui-v2-text-muted); font-size: 12px; }
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) strong { color: var(--ui-v2-text); font-size: 17px; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) small { color: var(--ui-v2-text-muted); font-size: 11px; line-height: 1.35; }
+.ui-v2-root .ui-v2-prs-rental-directory > .panel__head {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--ui-v2-border);
+}
+.ui-v2-root .ui-v2-prs-rental-directory .rental-directory-meta,
+.ui-v2-root .ui-v2-prs-rental-directory .assignment-panel-count { display: grid; justify-items: end; gap: 1px; }
+.ui-v2-root .ui-v2-prs-rental-directory :where(.rental-directory-meta,.assignment-panel-count) strong { font-size: 13px; }
+.ui-v2-root .ui-v2-prs-rental-directory :where(.rental-directory-meta,.assignment-panel-count) span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-payroll-rental-filterbar {
+  display: grid;
+  grid-template-columns: minmax(220px,1.5fr) repeat(4,minmax(120px,.72fr)) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 9px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-payroll-rental-filterbar .ui-v2-filter-bar__search { min-width: 0; max-width: none; }
+.ui-v2-root .ui-v2-payroll-rental-filterbar .ui-v2-select { min-width: 0; width: 100%; }
+.ui-v2-root .ui-v2-prs-rental-status-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface);
+  overflow-x: auto;
+}
+.ui-v2-root .ui-v2-prs-rental-status-tabs button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-v2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-status-tabs button.is-active { border-color: var(--ui-v2-border); background: var(--ui-v2-surface-subtle); color: var(--ui-v2-text); }
+.ui-v2-root .ui-v2-prs-rental-status-tabs em { min-width: 17px; padding: 1px 5px; border-radius: 9px; background: var(--ui-v2-surface-active); font-size: 11px; font-style: normal; text-align: center; }
+.ui-v2-root .ui-v2-payroll-rental-worker-table { min-width: 1080px; }
+.ui-v2-root .ui-v2-prs-rental-page .rate-cell { display: grid; gap: 2px; }
+.ui-v2-root .ui-v2-prs-rental-page .rate-cell strong { color: var(--ui-v2-text); font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-page .rate-cell span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-footer-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 12px;
+}
+.ui-v2-root .ui-v2-prs-rental-footer-grid .detail-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface);
+  box-shadow: none;
+}
+.ui-v2-root .ui-v2-prs-rental-footer-grid .detail-card__head { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-footer-grid .detail-card__head h3 { margin: 0; font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-footer-grid .detail-card > p { margin: 0; padding: 10px 11px; color: var(--ui-v2-text-secondary); font-size: 12px; line-height: 1.5; }
+.ui-v2-root .ui-v2-payroll-rental-rules { display: grid; }
+.ui-v2-root .ui-v2-payroll-rental-rules > div { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-payroll-rental-rules > div:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-payroll-rental-rules strong { font-size: 12px; }
+.ui-v2-root .ui-v2-payroll-rental-rules span { color: var(--ui-v2-text-secondary); font-size: 12px; line-height: 1.4; }
+.ui-v2-root .ui-v2-prs-rental-page .rental-availability { display: grid; gap: 3px; padding: 11px; }
+.ui-v2-root .ui-v2-prs-rental-page .rental-availability strong { font-size: 22px; letter-spacing: -.04em; }
+.ui-v2-root .ui-v2-prs-rental-page .rental-availability span,
+.ui-v2-root .ui-v2-prs-rental-page .rental-availability small { color: var(--ui-v2-text-muted); font-size: 12px; }
+
+/* Assignment lifecycle */
+.ui-v2-root .ui-v2-payroll-assignment-tabs {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-payroll-assignment-tabs button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-v2-text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-payroll-assignment-tabs button.is-active { border-color: var(--ui-v2-border); background: var(--ui-v2-surface); color: var(--ui-v2-text); box-shadow: 0 1px 2px rgba(18,20,23,.04); }
+.ui-v2-root .ui-v2-payroll-assignment-tabs button span { font-size: 12px; font-weight: 700; }
+.ui-v2-root .ui-v2-payroll-assignment-tabs button small { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-assignment-filterbar {
+  display: grid;
+  grid-template-columns: minmax(240px,1.5fr) repeat(3,minmax(130px,.7fr)) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 9px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-prs-assignment-filterbar.is-compact { grid-template-columns: minmax(240px,1.5fr) minmax(140px,.75fr) minmax(140px,.75fr) auto; }
+.ui-v2-root .ui-v2-prs-assignment-filterbar .ui-v2-filter-bar__search { min-width: 0; max-width: none; }
+.ui-v2-root .ui-v2-prs-assignment-filterbar .ui-v2-select { width: 100%; min-width: 0; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-activity-table,
+.ui-v2-root .ui-v2-prs-rental-page .assignment-deployment-table { min-width: 1120px; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-change-cell { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 6px; font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-change-cell span { color: var(--ui-v2-text-muted); }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-change-cell b { color: var(--ui-v2-text-muted); font-weight: 500; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-change-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-inline-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-inline-actions button {
+  min-height: 26px;
+  padding: 3px 7px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 5px;
+  background: var(--ui-v2-surface);
+  color: var(--ui-v2-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-page .assignment-inline-actions button:hover { background: var(--ui-v2-surface-hover); color: var(--ui-v2-text); }
+.ui-v2-root .ui-v2-prs-rental-page .assignment-inline-actions button.is-danger { color: var(--ui-v2-danger); }
+.ui-v2-root .ui-v2-payroll-rental-integrity { display: grid; }
+.ui-v2-root .ui-v2-payroll-rental-integrity button { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.7fr) auto; align-items: center; gap: 8px; padding: 8px 11px; border: 0; border-bottom: 1px solid var(--ui-v2-border); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.ui-v2-root .ui-v2-payroll-rental-integrity button:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-payroll-rental-integrity button:hover { background: var(--ui-v2-surface-hover); }
+.ui-v2-root .ui-v2-payroll-rental-integrity strong { font-size: 12px; }
+.ui-v2-root .ui-v2-payroll-rental-integrity span { color: var(--ui-v2-text-muted); font-size: 12px; }
+
+/* Project + supplier directories */
+.ui-v2-root .ui-v2-prs-rental-directory-page .ui-v2-prs-rental-directory-register { overflow: hidden; }
+.ui-v2-root .ui-v2-prs-rental-directory-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-prs-rental-directory-toolbar .ui-v2-filter-bar__search { flex: 1 1 320px; max-width: 560px; }
+.ui-v2-root .ui-v2-prs-rental-directory-page .table-meta {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  color: var(--ui-v2-text-muted);
+  font-size: 11px;
+}
+.ui-v2-root .ui-v2-prs-rental-directory-table { min-width: 980px; }
+.ui-v2-root .ui-v2-prs-rental-directory-table .table-number,
+.ui-v2-root .ui-v2-prs-rental-directory-table .table-money { font-variant-numeric: tabular-nums; }
+
+/* Project, supplier and worker profiles */
+.ui-v2-root .ui-v2-prs-rental-profile .ui-v2-payroll-profile-crumb { margin: 0; font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-profile .ui-v2-payroll-entity-header {
+  min-height: 0;
+  margin: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 10px;
+  background: var(--ui-v2-surface);
+  box-shadow: none;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .ui-v2-payroll-profile-facts {
+  margin: 0;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--ui-v2-surface);
+}
+.ui-v2-root .ui-v2-prs-rental-profile .ui-v2-payroll-profile-tabs {
+  margin: 0;
+  border-bottom-color: var(--ui-v2-border);
+}
+.ui-v2-root .ui-v2-prs-rental-profile .ui-v2-payroll-profile-content { margin: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-profile-kpis,
+.ui-v2-root .ui-v2-prs-rental-profile .project-kpis {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface);
+}
+.ui-v2-root .ui-v2-prs-rental-profile :where(.rental-profile-kpis,.project-kpis) > div { min-width: 0; display: grid; gap: 3px; padding: 10px 11px; border-right: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-profile :where(.rental-profile-kpis,.project-kpis) > div:last-child { border-right: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile :where(.rental-profile-kpis,.project-kpis) span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile :where(.rental-profile-kpis,.project-kpis) strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-profile :where(.rental-profile-kpis,.project-kpis) small { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-profile-grid,
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1.65fr) minmax(260px,.55fr);
+  gap: 12px;
+  align-items: start;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .detail-card {
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface);
+  box-shadow: none;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .detail-card__head { min-height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-profile .detail-card__head h3 { margin: 0; font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-profile .detail-card > p { margin: 0; padding: 10px 11px; color: var(--ui-v2-text-secondary); font-size: 12px; line-height: 1.5; }
+.ui-v2-root .ui-v2-payroll-info-stack,
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid { display: grid; }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div { min-width: 0; display: grid; gap: 3px; padding: 9px 11px; border-right: 1px solid var(--ui-v2-border); border-bottom: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div:nth-child(3n) { border-right: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div:nth-last-child(-n+3) { border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid strong { overflow-wrap: anywhere; font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-profile .current-assignment-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 10px;
+  padding: 11px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 8px;
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-prs-rental-profile .current-assignment-card__icon { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--ui-v2-border); border-radius: 8px; background: var(--ui-v2-surface); font-size: 10px; font-weight: 800; }
+.ui-v2-root .ui-v2-prs-rental-profile .current-assignment-card h3 { margin: 2px 0 0; font-size: 13px; }
+.ui-v2-root .ui-v2-prs-rental-profile .assignment-preview__meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.ui-v2-root .ui-v2-prs-rental-profile .assignment-preview__meta span { padding: 3px 6px; border: 1px solid var(--ui-v2-border); border-radius: 5px; background: var(--ui-v2-surface); color: var(--ui-v2-text-secondary); font-size: 11px; }
+.ui-v2-root .ui-v2-payroll-rental-link-card,
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v2-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity:hover { background: var(--ui-v2-surface-hover); }
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity__icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--ui-v2-surface-active); font-size: 10px; font-weight: 800; }
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity strong,
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity strong { font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-profile .mini-entity small { margin-top: 2px; color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-worker-actions-list { display: grid; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-worker-actions-list button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: transparent;
+  color: var(--ui-v2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .rental-worker-actions-list button:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-worker-actions-list button:hover { background: var(--ui-v2-surface-hover); color: var(--ui-v2-text); }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-worker-actions-list button.is-danger { color: var(--ui-v2-danger); }
+
+/* Effective-dated assignment history — canonical V2 timeline */
+.ui-v2-root .ui-v2-payroll-rental-timeline { display: grid; padding: 4px 0; }
+.ui-v2-root .ui-v2-payroll-rental-timeline article { position: relative; display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 7px; padding: 10px 13px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline article + article { border-top: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-payroll-rental-timeline__rail { position: relative; width: 12px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline__rail::before { content: ""; position: absolute; left: 5px; top: 1px; bottom: -20px; width: 1px; background: var(--ui-v2-border-strong); }
+.ui-v2-root .ui-v2-payroll-rental-timeline__rail::after { content: ""; position: absolute; left: 2px; top: 5px; width: 7px; height: 7px; border: 2px solid var(--ui-v2-surface); border-radius: 50%; background: var(--ui-v2-text-muted); box-shadow: 0 0 0 1px var(--ui-v2-border-strong); }
+.ui-v2-root .ui-v2-payroll-rental-timeline article:last-child .ui-v2-payroll-rental-timeline__rail::before { bottom: 8px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline article.is-current .ui-v2-payroll-rental-timeline__rail::after { background: var(--ui-v2-success); }
+.ui-v2-root .ui-v2-payroll-rental-timeline article > div { min-width: 0; display: grid; gap: 3px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline article h3 { margin: 0; font-size: 12px; }
+.ui-v2-root .ui-v2-payroll-rental-timeline article p { margin: 2px 0 0; color: var(--ui-v2-text-secondary); font-size: 12px; line-height: 1.45; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-assignment-event__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-assignment-event__chips span { padding: 3px 6px; border: 1px solid var(--ui-v2-border); border-radius: 5px; color: var(--ui-v2-text-secondary); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile .rental-assignment-event__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--ui-v2-text-muted); font-size: 11px; }
+
+/* Supplier/project cards inside profiles */
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-project-list { display: grid; }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr) auto 14px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row:last-child { border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row:hover { background: var(--ui-v2-surface-hover); }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row__icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: var(--ui-v2-surface-active); }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row strong,
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row strong { font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row small { margin-top: 2px; color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-profile .supplier-deployment-row__amount { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Rental bulk onboarding is included because it is part of the worker-master lifecycle. */
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 9px;
+  background: var(--ui-v2-surface);
+}
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card.is-active { background: var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card__icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; background: var(--ui-v2-surface-active); font-size: 11px; font-weight: 800; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card strong { font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card p { margin: 2px 0 0; color: var(--ui-v2-text-muted); font-size: 11px; line-height: 1.4; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-defaults-grid { padding: 11px 12px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-source-grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(240px,.5fr); gap: 0; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-paste { min-width: 0; padding: 11px 12px; border-right: 1px solid var(--ui-v2-border); }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-paste textarea { min-height: 190px; resize: vertical; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .paste-help { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .paste-help span { color: var(--ui-v2-text-muted); font-size: 11px; line-height: 1.4; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-format { padding: 12px; color: var(--ui-v2-text-secondary); }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-format strong { font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-format ol { margin: 8px 0; padding-left: 20px; font-size: 11px; line-height: 1.55; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-format p { margin: 0; font-size: 11px; line-height: 1.45; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-validation-summary { display: flex; gap: 5px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-validation-summary > span { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--ui-v2-border); border-radius: 6px; font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-stage-toolbar,
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--ui-v2-border); background: var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar { border-top: 1px solid var(--ui-v2-border); border-bottom: 0; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar > div { display: grid; gap: 2px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar strong { font-size: 12px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar span,
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-stage-toolbar > span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-table { min-width: 1120px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding :where(.table-input,.table-select) { min-height: 29px; height: 29px; width: 100%; padding: 4px 6px; border: 1px solid var(--ui-v2-border); border-radius: 5px; background: var(--ui-v2-surface); color: var(--ui-v2-text); font: inherit; font-size: 11px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .validation-cell { display: grid; gap: 3px; min-width: 180px; }
+.ui-v2-root .ui-v2-prs-rental-onboarding .validation-cell small { color: var(--ui-v2-text-muted); font-size: 10.5px; line-height: 1.35; }
+
+/* Rental assignment/action drawers keep PRS form behavior but adopt V2 density. */
+.ui-v2-root .ui-v2-prs-rental-assignment-editor { overflow: hidden; border-color: var(--ui-v2-border-strong); box-shadow: 0 10px 30px rgba(18,20,23,.06); }
+.ui-v2-root .ui-v2-prs-rental-assignment-editor :where(.drawer-form,.assignment-form,.form-grid) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.ui-v2-root .ui-v2-prs-rental-assignment-editor .form-field { min-width: 0; }
+.ui-v2-root .ui-v2-prs-rental-assignment-editor .form-field > label { color: var(--ui-v2-text-muted); font-size: 11px; font-weight: 700; letter-spacing: .035em; }
+.ui-v2-root .ui-v2-prs-rental-assignment-editor .assignment-preview { margin-top: 10px; border: 1px solid var(--ui-v2-border); border-radius: 8px; background: var(--ui-v2-surface-subtle); }
+
+@media (max-width: 1180px) {
+  .ui-v2-root .ui-v2-prs-rental-flow { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .ui-v2-root .ui-v2-prs-rental-flow > button:nth-child(4) { border-right: 0; }
+  .ui-v2-root .ui-v2-prs-rental-flow > button:nth-child(-n+4) { border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-root .ui-v2-prs-rental-overview .rental-control-summary { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .ui-v2-root .ui-v2-payroll-rental-filterbar { grid-template-columns: minmax(220px,1.5fr) repeat(2,minmax(130px,1fr)); }
+  .ui-v2-root .ui-v2-prs-assignment-filterbar { grid-template-columns: minmax(220px,1.5fr) repeat(2,minmax(130px,1fr)); }
+  .ui-v2-root .ui-v2-prs-assignment-filterbar > :nth-child(n+4) { min-width: 0; }
+}
+@media (max-width: 980px) {
+  .ui-v2-root .ui-v2-prs-rental-overview .rental-control-grid,
+  .ui-v2-root .ui-v2-prs-rental-profile .rental-profile-grid,
+  .ui-v2-root .ui-v2-prs-rental-profile .supplier-overview-grid { grid-template-columns: 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-footer-grid { grid-template-columns: 1fr 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-source-grid { grid-template-columns: 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-paste { border-right: 0; border-bottom: 1px solid var(--ui-v2-border); }
+}
+@media (max-width: 760px) {
+  .ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head { gap: 12px; }
+  .ui-v2-root .ui-v2-prs-rental-page > .ui-v2-payroll-page-head .ui-v2-page-header__actions { width: 100%; }
+  .ui-v2-root .ui-v2-prs-rental-flow { grid-template-columns: 1fr 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-flow > button { border-right: 1px solid var(--ui-v2-border); border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-root .ui-v2-prs-rental-flow > button:nth-child(2n) { border-right: 0; }
+  .ui-v2-root .ui-v2-prs-rental-flow > button:last-child { border-bottom: 0; }
+  .ui-v2-root .ui-v2-prs-rental-overview .rental-control-summary,
+  .ui-v2-root .ui-v2-payroll-assignment-summary,
+  .ui-v2-root .ui-v2-prs-rental-summary { grid-template-columns: 1fr 1fr; }
+  .ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :where(button,div) { border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :nth-child(2n) { border-right: 0; }
+  .ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :last-child { grid-column: 1 / -1; border-right: 0; border-bottom: 0; }
+  .ui-v2-root .ui-v2-payroll-rental-filterbar,
+  .ui-v2-root .ui-v2-prs-assignment-filterbar,
+  .ui-v2-root .ui-v2-prs-assignment-filterbar.is-compact { grid-template-columns: 1fr 1fr; }
+  .ui-v2-root :where(.ui-v2-payroll-rental-filterbar,.ui-v2-prs-assignment-filterbar) .ui-v2-filter-bar__search { grid-column: 1 / -1; }
+  .ui-v2-root .ui-v2-payroll-assignment-tabs { grid-template-columns: 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid { grid-template-columns: 1fr 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div { border-right: 1px solid var(--ui-v2-border); border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div:nth-child(2n) { border-right: 0; }
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 540px) {
+  .ui-v2-root .ui-v2-prs-rental-flow,
+  .ui-v2-root .ui-v2-prs-rental-overview .rental-control-summary,
+  .ui-v2-root .ui-v2-payroll-assignment-summary,
+  .ui-v2-root .ui-v2-prs-rental-summary,
+  .ui-v2-root .ui-v2-payroll-rental-filterbar,
+  .ui-v2-root .ui-v2-prs-assignment-filterbar,
+  .ui-v2-root .ui-v2-prs-assignment-filterbar.is-compact,
+  .ui-v2-root .ui-v2-prs-rental-footer-grid,
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid { grid-template-columns: 1fr; }
+  .ui-v2-root .ui-v2-prs-rental-flow > button,
+  .ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :where(button,div),
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div { border-right: 0; border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-root .ui-v2-prs-rental-flow > button:last-child,
+  .ui-v2-root :where(.ui-v2-payroll-assignment-summary,.ui-v2-prs-rental-summary) > :last-child,
+  .ui-v2-root .ui-v2-prs-rental-profile .worker-overview-grid > div:last-child { grid-column: auto; border-bottom: 0; }
+  .ui-v2-root :where(.ui-v2-payroll-rental-filterbar,.ui-v2-prs-assignment-filterbar) .ui-v2-filter-bar__search { grid-column: auto; }
+  .ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental { grid-template-columns: 34px minmax(0,1fr); }
+  .ui-v2-root .ui-v2-prs-rental-overview .workspace-context-banner--rental > button { grid-column: 2; justify-self: start; }
+  .ui-v2-root .ui-v2-prs-rental-profile .current-assignment-card { grid-template-columns: 34px minmax(0,1fr); }
+  .ui-v2-root .ui-v2-prs-rental-profile .current-assignment-card__action { grid-column: 2; justify-self: start; }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card { grid-template-columns: 32px minmax(0,1fr); }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-mode-card > :last-child { grid-column: 2; justify-self: start; }
+  .ui-v2-root .ui-v2-prs-rental-onboarding .paste-help,
+  .ui-v2-root .ui-v2-prs-rental-onboarding .onboarding-importbar { align-items: stretch; flex-direction: column; }
+}

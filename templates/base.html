@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ page_title|default:APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
 <body data-page="{{ page_key }}">
@@ -22,6 +23,7 @@
 </div>
 <div class="toast-stack" id="toastStack"></div>
 <script src="{% static 'js/app.js' %}"></script>
+<script src="{% static 'platform/js/shell-switchers.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

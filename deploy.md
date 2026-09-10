@@ -1,4 +1,4 @@
-The IMS release is production-ready and isolated from SESCCO:
+The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 
 - SESCCO: `127.0.0.1:8081`
 - IMS: `127.0.0.1:8087`
@@ -111,12 +111,15 @@ Generate secure secrets:
 ```sh
 DJANGO_SECRET=$(openssl rand -hex 64)
 DATABASE_PASSWORD=$(openssl rand -hex 48)
+PAYROLL_KEY=$(openssl rand -base64 32 | tr "+/" "-_" | tr -d "\n")
 
 sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${DJANGO_SECRET}|" .env.production
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${DATABASE_PASSWORD}|" .env.production
+sed -i "s|^PAYROLL_FIELD_ENCRYPTION_KEY=.*|PAYROLL_FIELD_ENCRYPTION_KEY=${PAYROLL_KEY}|" .env.production
 
 unset DJANGO_SECRET
 unset DATABASE_PASSWORD
+unset PAYROLL_KEY
 ```
 
 Confirm no placeholders remain:
@@ -143,6 +146,7 @@ IMS_HTTP_PORT=8087
 IMS_USE_SHARED_PROXY=0
 DJANGO_ALLOWED_HOSTS=ims.a2tdev.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.a2tdev.com
+DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
 POSTGRES_DB=ims_inventory
 POSTGRES_USER=ims_inventory
 ```
@@ -169,16 +173,17 @@ Preflight passed
 ## 8. Deploy IMS
 
 ```sh
-sudo ./scripts/deploy-production.sh
+sudo ./scripts/deploy-production-freeze.sh
 ```
 
 This will:
 
 - Build the IMS image
 - Start its isolated PostgreSQL
-- Apply migrations
-- Seed common inventory units
-- Collect static files
+- Create a pre-deployment database/media backup
+- Run Django deployment/schema checks against the new image
+- Apply migrations and all merge reconciliation commands
+- Collect static files without clearing previous release assets
 - Start Gunicorn and the IMS gateway
 - Run production checks
 - Test the local health endpoint
@@ -227,7 +232,7 @@ curl -i \
 Expected:
 
 ```json
-{"status":"ok","service":"inventory","version":"1.0.0","database":"ready"}
+{"status":"ok","service":"ims-platform","version":"1.0.0","database":"ready","migrations":"ready"}
 ```
 
 Confirm the port is loopback-only:
@@ -323,7 +328,7 @@ curl -fsS https://ims.a2tdev.com/app/health/ready/
 Expected health result:
 
 ```json
-{"status":"ok","service":"inventory","version":"1.0.0","database":"ready"}
+{"status":"ok","service":"ims-platform","version":"1.0.0","database":"ready","migrations":"ready"}
 ```
 
 Open:
@@ -419,7 +424,7 @@ Then run:
 
 ```sh
 cd /opt/sites/ims
-sudo ./scripts/deploy-production.sh
+sudo ./scripts/deploy-production-freeze.sh
 ```
 
 ## 20. Useful IMS commands

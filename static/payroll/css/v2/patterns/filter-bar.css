@@ -1,0 +1,43 @@
+@layer ui-v2-patterns {
+  .ui-v2-filter-bar {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ui-v2-filter-bar__search {
+    position: relative;
+    min-width: 0;
+    flex: 1 1 280px;
+    max-width: 460px;
+  }
+
+  .ui-v2-filter-bar__search > svg {
+    position: absolute;
+    top: 50%;
+    left: 11px;
+    width: 15px;
+    height: 15px;
+    color: var(--ui-v2-text-muted);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .ui-v2-filter-bar__search > :where(input, .ui-v2-input) {
+    padding-left: 34px;
+  }
+
+  .ui-v2-filter-bar > :where(.ui-v2-select, .ui-v2-input, .ui-v2-button) {
+    max-width: 100%;
+  }
+
+  @media (max-width: 620px) {
+    .ui-v2-filter-bar__search {
+      flex-basis: 100%;
+      max-width: none;
+    }
+  }
+}

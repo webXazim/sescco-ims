@@ -9,6 +9,7 @@ from django.urls import reverse
 from apps.inventory.models import StockItem, StockMovement, Unit
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 
 User = get_user_model()
@@ -26,7 +27,10 @@ class AdministrationExperienceTests(TestCase):
             email="keeper@example.com",
             password="safe-password",
         )
-        self.project = Project.objects.create(code="ADMIN-01", name="Admin Project")
+        self.company = primary_company()
+        grant_company_access(self.admin, company=self.company)
+        grant_company_access(self.keeper, company=self.company)
+        self.project = Project.objects.create(company=self.company, code="ADMIN-01", name="Admin Project")
         self.unit = Unit.objects.get(normalized_name="bag")
         result = add_stock(
             user=self.admin,
@@ -93,7 +97,7 @@ class AdministrationExperienceTests(TestCase):
         self.assertNotContains(response, 'name="_save"')
 
     def test_admin_can_delete_unused_configuration_but_not_audited_stock(self):
-        unused_project = Project.objects.create(code="DELETE-01", name="Unused Project")
+        unused_project = Project.objects.create(company=self.company, code="DELETE-01", name="Unused Project")
         delete_url = reverse("admin:projects_project_delete", args=[unused_project.pk])
         self.assertEqual(self.client.get(delete_url).status_code, 200)
         response = self.client.post(delete_url, {"post": "yes"})

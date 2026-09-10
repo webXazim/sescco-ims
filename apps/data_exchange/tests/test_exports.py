@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 from apps.inventory.models import Unit
 from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 from ..models import ExportAudit
 
@@ -21,9 +22,11 @@ User = get_user_model()
 class FilteredExportTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper", password="safe-password")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
         self.client.force_login(self.user)
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Project")
-        self.other_project = Project.objects.create(code="NEOM-02", name="NEOM Project")
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Project")
+        self.other_project = Project.objects.create(company=self.company, code="NEOM-02", name="NEOM Project")
         self.unit = Unit.objects.get(normalized_name="bag")
         self.today = timezone.localdate()
 

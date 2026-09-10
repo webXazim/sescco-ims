@@ -41,16 +41,17 @@ class FilteredExportView(InventoryWorkspaceMixin, View):
     def get(self, request, file_format):
         try:
             if self.dataset_name == "inventory":
-                dataset = inventory_dataset(request.GET)
+                dataset = inventory_dataset(request.GET, company=request.company)
             elif self.dataset_name == "low-stock":
-                dataset = inventory_dataset(request.GET, low_stock=True)
+                dataset = inventory_dataset(request.GET, company=request.company, low_stock=True)
             elif self.dataset_name == "activity":
-                dataset = activity_dataset(request.GET)
+                dataset = activity_dataset(request.GET, company=request.company)
             else:
                 raise Http404("Unsupported export dataset.")
             return export_response(
                 dataset=dataset,
                 user=request.user,
+                company=request.company,
                 file_format=file_format,
             )
         except ValueError as exc:
@@ -77,12 +78,13 @@ class ActivityExportView(FilteredExportView):
 
 class StockHistoryExportView(InventoryWorkspaceMixin, View):
     def get(self, request, reference, file_format):
-        stock_item = get_object_or_404(stock_items(), reference=reference)
+        stock_item = get_object_or_404(stock_items(request.company), reference=reference)
         try:
             dataset = stock_history_dataset(stock_item, request.GET)
             return export_response(
                 dataset=dataset,
                 user=request.user,
+                company=request.company,
                 file_format=file_format,
             )
         except ValueError as exc:
@@ -92,12 +94,13 @@ class StockHistoryExportView(InventoryWorkspaceMixin, View):
 
 class ProjectInventoryExportView(InventoryWorkspaceMixin, View):
     def get(self, request, code, file_format):
-        project = get_object_or_404(Project, code=code)
+        project = get_object_or_404(Project.objects.for_company(request.company), code=code)
         try:
             dataset = project_inventory_dataset(project, request.GET)
             return export_response(
                 dataset=dataset,
                 user=request.user,
+                company=request.company,
                 file_format=file_format,
             )
         except ValueError as exc:
@@ -112,7 +115,7 @@ class ImportJobListView(InventoryAdminRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = ImportJob.objects.select_related(
+        queryset = ImportJob.objects.for_company(self.request.company).select_related(
             "project",
             "default_unit",
             "created_by",
@@ -146,13 +149,14 @@ class LegacyImportCreateView(InventoryAdminRequiredMixin, View):
     template_name = "data_exchange/import_upload.html"
 
     def get(self, request):
-        return render(request, self.template_name, self._context(LegacyImportUploadForm()))
+        return render(request, self.template_name, self._context(LegacyImportUploadForm(company=request.company)))
 
     def post(self, request):
-        form = LegacyImportUploadForm(request.POST, request.FILES)
+        form = LegacyImportUploadForm(request.POST, request.FILES, company=request.company)
         if form.is_valid():
             file = form.cleaned_data["source_file"]
             job = ImportJob.objects.create(
+                company=request.company,
                 import_type=ImportJob.Type.LEGACY_CATALOG,
                 source_file=file,
                 original_filename=file.name,
@@ -202,6 +206,7 @@ class OpeningImportCreateView(InventoryAdminRequiredMixin, View):
         if form.is_valid():
             file = form.cleaned_data["source_file"]
             job = ImportJob.objects.create(
+                company=request.company,
                 import_type=ImportJob.Type.OPENING_STOCK,
                 source_file=file,
                 original_filename=file.name,
@@ -234,9 +239,9 @@ class OpeningImportCreateView(InventoryAdminRequiredMixin, View):
 class ImportJobDetailView(InventoryAdminRequiredMixin, View):
     template_name = "data_exchange/import_job_detail.html"
 
-    def get_job(self, reference):
+    def get_job(self, request, reference):
         return get_object_or_404(
-            ImportJob.objects.select_related(
+            ImportJob.objects.for_company(request.company).select_related(
                 "project",
                 "default_unit",
                 "created_by",
@@ -245,7 +250,7 @@ class ImportJobDetailView(InventoryAdminRequiredMixin, View):
         )
 
     def get(self, request, reference):
-        job = self.get_job(reference)
+        job = self.get_job(request, reference)
         rows = job.rows.select_related(
             "exact_match",
             "imported_stock_item",
@@ -272,7 +277,7 @@ class ImportJobDetailView(InventoryAdminRequiredMixin, View):
 
 class ImportJobConfirmView(InventoryAdminRequiredMixin, View):
     def post(self, request, reference):
-        job = get_object_or_404(ImportJob, reference=reference)
+        job = get_object_or_404(ImportJob.objects.for_company(request.company), reference=reference)
         form = ImportConfirmForm(request.POST)
         if not form.is_valid():
             messages.error(request, "Confirm that you reviewed the import preview.")
@@ -296,12 +301,12 @@ class ImportJobConfirmView(InventoryAdminRequiredMixin, View):
 
 class OpeningTemplateView(InventoryAdminRequiredMixin, View):
     def get(self, request):
-        return opening_stock_template_response(user=request.user)
+        return opening_stock_template_response(user=request.user, company=request.company)
 
 
 class ImportSourceFileView(InventoryAdminRequiredMixin, View):
     def get(self, request, reference):
-        job = get_object_or_404(ImportJob, reference=reference)
+        job = get_object_or_404(ImportJob.objects.for_company(request.company), reference=reference)
         if not job.source_file:
             raise Http404("Import source file not found.")
         try:

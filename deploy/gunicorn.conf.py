@@ -1,4 +1,4 @@
-"""Gunicorn runtime configuration for the inventory service."""
+"""Gunicorn runtime configuration for the merged IMS + Payroll platform."""
 
 from __future__ import annotations
 

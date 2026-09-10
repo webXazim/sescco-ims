@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -7,6 +8,7 @@ from django.test import TestCase
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.services.matching import find_stock_matches
 from apps.projects.models import Project
+from apps.core.tests.tenant import primary_company
 
 User = get_user_model()
 
@@ -14,8 +16,9 @@ User = get_user_model()
 class StockItemModelTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper")
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
-        self.other_project = Project.objects.create(code="SABIC-02", name="SABIC Extension")
+        self.company = primary_company()
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
+        self.other_project = Project.objects.create(company=self.company, code="SABIC-02", name="SABIC Extension")
         self.unit = Unit.objects.get(normalized_name="bag")
 
     def create_item(self, **overrides):
@@ -72,6 +75,7 @@ class StockItemModelTests(TestCase):
 
     def test_completed_project_rejects_new_stock_record(self):
         self.project.status = Project.Status.COMPLETED
+        self.project.end_date = date(2026, 8, 31)
         self.project.save()
         with self.assertRaises(ValidationError):
             self.create_item()
@@ -93,6 +97,7 @@ class StockItemModelTests(TestCase):
     def test_existing_record_can_keep_completed_project_during_metadata_edit(self):
         item = self.create_item()
         self.project.status = Project.Status.COMPLETED
+        self.project.end_date = date(2026, 8, 31)
         self.project.save()
         item.description = "Updated specification"
         item.save()
@@ -101,6 +106,7 @@ class StockItemModelTests(TestCase):
     def test_existing_record_cannot_move_to_completed_project(self):
         item = self.create_item()
         self.other_project.status = Project.Status.COMPLETED
+        self.other_project.end_date = date(2026, 8, 31)
         self.other_project.save()
         item.project = self.other_project
         with self.assertRaises(ValidationError):
@@ -114,7 +120,7 @@ class StockItemModelTests(TestCase):
 
     def test_existing_record_cannot_switch_to_inactive_unit(self):
         item = self.create_item()
-        inactive = Unit.objects.create(name="Pallet", symbol="plt", is_active=False)
+        inactive = Unit.objects.create(company=self.company, name="Pallet", symbol="plt", is_active=False)
         item.unit = inactive
         with self.assertRaises(ValidationError):
             item.save()

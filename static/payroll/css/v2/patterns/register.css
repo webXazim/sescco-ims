@@ -1,0 +1,25 @@
+@layer ui-v2-patterns {
+  .ui-v2-register {
+    display: grid;
+    gap: 12px;
+  }
+
+  .ui-v2-register__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .ui-v2-register__meta {
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+  }
+
+  @media (max-width: 760px) {
+    .ui-v2-register__toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  }
+}

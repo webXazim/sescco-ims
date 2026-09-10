@@ -45,12 +45,13 @@ class LegacyImportUploadForm(StyledForm):
         ),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(
+        self.company = company
+        self.fields["project"].queryset = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
-        self.fields["default_unit"].queryset = Unit.objects.filter(
+        self.fields["default_unit"].queryset = Unit.objects.for_company(company).filter(
             is_active=True, deleted_at__isnull=True
         ).order_by("name")
 

@@ -13,6 +13,7 @@ from apps.inventory.models import StockDocument, StockItem, StockMovement, Suppl
 from apps.inventory.selectors import stock_items
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 User = get_user_model()
 
@@ -25,10 +26,14 @@ class InventoryWorkspaceTests(TestCase):
             email="admin@example.com",
             password="safe-password",
         )
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        grant_company_access(self.admin, company=self.company)
         self.client.force_login(self.user)
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
         self.unit = Unit.objects.get(normalized_name="bag")
         self.supplier = Supplier.objects.create(
+            company=self.company,
             name="Gulf Cement",
             phone="+966 57 368 6575",
             location="Dammam",
@@ -379,7 +384,7 @@ class InventoryWorkspaceTests(TestCase):
 
     def test_inventory_list_filters_by_project_and_search(self):
         self.create_item()
-        other = Project.objects.create(code="NEOM-04", name="NEOM Site Works")
+        other = Project.objects.create(company=self.company, code="NEOM-04", name="NEOM Site Works")
         StockItem.objects.create(
             project=other,
             material_name="Steel Bar",
@@ -446,7 +451,7 @@ class InventoryWorkspaceTests(TestCase):
 
     def test_stock_picker_filters_by_project_and_search(self):
         item = self.add_item_stock("10").movement.stock_item
-        other_project = Project.objects.create(code="NEOM-04", name="NEOM Site Works")
+        other_project = Project.objects.create(company=self.company, code="NEOM-04", name="NEOM Site Works")
         add_stock(
             user=self.user,
             idempotency_key=uuid.uuid4(),
@@ -574,12 +579,14 @@ class InventoryWorkspaceTests(TestCase):
             {"action": "archive"},
         )
         archived_project = Project.objects.create(
+            company=self.company,
             code="ARCHIVE-01",
             name="Archived project",
             status=Project.Status.ARCHIVED,
         )
-        archived_unit = Unit.objects.create(name="Archived crate", symbol="acr", is_active=False)
+        archived_unit = Unit.objects.create(company=self.company, name="Archived crate", symbol="acr", is_active=False)
         archived_supplier = Supplier.objects.create(
+            company=self.company,
             name="Archived supplier", phone="0500000999", is_active=False
         )
 
@@ -608,8 +615,8 @@ class InventoryWorkspaceTests(TestCase):
         self.assertEqual(stock_item.status, StockItem.Status.ACTIVE)
 
     def test_unit_and_supplier_lifecycle_permissions(self):
-        unit = Unit.objects.create(name="Pallet", symbol="plt")
-        supplier = Supplier.objects.create(name="Unused Vendor", phone="0500000111")
+        unit = Unit.objects.create(company=self.company, name="Pallet", symbol="plt")
+        supplier = Supplier.objects.create(company=self.company, name="Unused Vendor", phone="0500000111")
 
         self.client.post(
             reverse("inventory:unit_status", kwargs={"pk": unit.pk}),
@@ -724,7 +731,7 @@ class InventoryWorkspaceTests(TestCase):
         )
         item.refresh_from_db()
         self.assertEqual((item.purge_after - item.deleted_at).days, 30)
-        self.assertFalse(stock_items().filter(pk=item.pk).exists())
+        self.assertFalse(stock_items(self.company).filter(pk=item.pk).exists())
         trash = self.client.get(reverse("inventory:trash"))
         self.assertContains(trash, item.material_name)
         self.assertContains(trash, "Duplicate purchase entry")
@@ -735,7 +742,30 @@ class InventoryWorkspaceTests(TestCase):
         self.assertRedirects(response, reverse("inventory:trash"))
         item.refresh_from_db()
         self.assertIsNone(item.deleted_at)
-        self.assertTrue(stock_items().filter(pk=item.pk).exists())
+        self.assertTrue(stock_items(self.company).filter(pk=item.pk).exists())
+
+    def test_trash_restore_cannot_cross_active_company_boundary(self):
+        from apps.core.models import Company
+
+        other_company = Company.objects.create(
+            name="Other Company", legal_name="Other Company", slug="other-company-trash"
+        )
+        other_project = Project.objects.create(
+            company=other_company,
+            code=self.project.code,
+            name="Other Tenant Project",
+        )
+        other_project.deleted_at = timezone.now()
+        other_project.purge_after = timezone.now() + timedelta(days=30)
+        other_project.save(update_fields=("deleted_at", "purge_after", "updated_at"))
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("inventory:trash_restore", args=["project", other_project.code])
+        )
+        self.assertEqual(response.status_code, 404)
+        other_project.refresh_from_db()
+        self.assertIsNotNone(other_project.deleted_at)
 
     def test_expired_trash_is_not_listed_or_restorable(self):
         item = self.create_item()
@@ -755,7 +785,9 @@ class PrivateMovementAttachmentTests(TestCase):
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = User.objects.create_user(username="keeper", password="safe-password")
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
         self.unit = Unit.objects.get(normalized_name="bag")
         self.movement = add_stock(
             user=self.user,

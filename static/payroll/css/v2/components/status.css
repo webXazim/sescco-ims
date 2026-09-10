@@ -1,0 +1,57 @@
+@layer ui-v2-components {
+  .ui-v2-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 999px;
+    background: var(--ui-v2-surface-subtle);
+    color: var(--ui-v2-text-secondary);
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 650;
+    max-width: 100%;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .ui-v2-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.72;
+  }
+
+  .ui-v2-status--success {
+    color: var(--ui-v2-success);
+    background: var(--ui-v2-success-bg);
+    border-color: var(--ui-v2-success-border);
+  }
+
+  .ui-v2-status--warning {
+    color: var(--ui-v2-warning);
+    background: var(--ui-v2-warning-bg);
+    border-color: var(--ui-v2-warning-border);
+  }
+
+  .ui-v2-status--danger {
+    color: var(--ui-v2-danger);
+    background: var(--ui-v2-danger-bg);
+    border-color: var(--ui-v2-danger-border);
+  }
+
+  .ui-v2-status--info {
+    color: var(--ui-v2-info);
+    background: var(--ui-v2-info-bg);
+    border-color: var(--ui-v2-info-border);
+  }
+
+  .ui-v2-status--neutral::before {
+    opacity: 0.4;
+  }
+}

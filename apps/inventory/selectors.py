@@ -18,14 +18,14 @@ LOW_STOCK_CONDITION = Q(current_quantity=0) | Q(
 )
 
 
-def stock_items() -> QuerySet[StockItem]:
-    return StockItem.objects.filter(deleted_at__isnull=True).filter(
+def stock_items(company) -> QuerySet[StockItem]:
+    return StockItem.objects.for_company(company).filter(deleted_at__isnull=True).filter(
         Q(project__isnull=True) | Q(project__deleted_at__isnull=True)
     ).select_related("location", "location__project", "project", "unit", "created_by", "updated_by")
 
 
-def stock_movements() -> QuerySet[StockMovement]:
-    return StockMovement.objects.filter(stock_item__deleted_at__isnull=True).filter(
+def stock_movements(company) -> QuerySet[StockMovement]:
+    return StockMovement.objects.for_company(company).filter(stock_item__deleted_at__isnull=True).filter(
         Q(stock_item__project__isnull=True) | Q(stock_item__project__deleted_at__isnull=True)
     ).select_related(
         "stock_item",
@@ -38,9 +38,9 @@ def stock_movements() -> QuerySet[StockMovement]:
     )
 
 
-def low_stock_items() -> QuerySet[StockItem]:
+def low_stock_items(company) -> QuerySet[StockItem]:
     return (
-        stock_items()
+        stock_items(company)
         .filter(status=StockItem.Status.ACTIVE)
         .exclude(condition=StockItem.Condition.NO_VALUE)
         .filter(LOW_STOCK_CONDITION)

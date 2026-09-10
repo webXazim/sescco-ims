@@ -1,0 +1,157 @@
+/*
+  UI v2 structural control guarantees.
+
+  These rules are now self-contained inside the production design system. They
+  preserve the frozen single-chevron/select-shell/search geometry contracts and
+  no longer defend against a legacy global stylesheet.
+*/
+
+/* Shared controls must never overflow their flex/grid slot. */
+.ui-v2-root :where(
+  .ui-v2-input,
+  .ui-v2-select,
+  .ui-v2-textarea,
+  .ui-v2-button,
+  .ui-v2-select-wrap,
+  .ui-v2-compact-select,
+  .ui-v2-report-select
+) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/*
+  A launcher that already renders a Lucide chevron must not also render the
+  browser select arrow. The supplied icon keeps its existing design/position.
+*/
+.ui-v2-root .ui-v2-select-wrap:has(> svg) {
+  position: relative;
+}
+
+.ui-v2-root .ui-v2-select-wrap:has(> svg) > .ui-v2-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
+  padding-right: 34px;
+}
+
+.ui-v2-root .ui-v2-select-wrap:has(> svg) > svg {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 10px;
+  margin: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/*
+  These controls deliberately draw the visible launcher on the wrapper. Keep
+  the native select itself transparent/borderless so it can never form the
+  "second layer" previously seen beneath a dropdown launcher.
+*/
+.ui-v2-root .ui-v2-compact-select > select,
+.ui-v2-root .ui-v2-report-select > select {
+  min-height: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.ui-v2-root .ui-v2-compact-select > select {
+  height: 100% !important;
+  border-radius: 0 !important;
+}
+
+.ui-v2-root .ui-v2-report-select > select {
+  width: 100%;
+  height: 100% !important;
+}
+
+/* Search controls reserve one stable icon lane; text cannot sit under the icon. */
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-doc-search,
+  .ui-v2-management-search,
+  .ui-v2-report-search,
+  .ui-v2-workflow-search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-doc-search,
+  .ui-v2-management-search,
+  .ui-v2-report-search,
+  .ui-v2-workflow-search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) > :where(input, .ui-v2-input) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Canonical register/search width: useful space for filters without swallowing the toolbar. */
+@media (min-width: 821px) {
+  .ui-v2-root :where(
+    .ui-v2-filter-bar__search,
+    .ui-v2-doc-search,
+    .ui-v2-management-search,
+    .ui-v2-report-search,
+    .ui-v2-workflow-search
+  ) {
+    max-width: 460px;
+  }
+}
+
+/* Toolbar controls may wrap, but they must never overlap or clip a launcher. */
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-doc-toolbar,
+  .ui-v2-doc-toolbar__filters,
+  .ui-v2-management-toolbar,
+  .ui-v2-management-toolbar__actions,
+  .ui-v2-business-admin-toolbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-payroll-document-toolbar,
+  .ui-v2-payroll-report-filterbar,
+  .ui-v2-payroll-management-audit-toolbar
+) {
+  min-width: 0;
+  overflow: visible;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-doc-toolbar,
+  .ui-v2-doc-toolbar__filters,
+  .ui-v2-management-toolbar,
+  .ui-v2-management-toolbar__actions,
+  .ui-v2-business-admin-toolbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-payroll-document-toolbar,
+  .ui-v2-payroll-report-filterbar,
+  .ui-v2-payroll-management-audit-toolbar
+) > * {
+  min-width: 0;
+  box-sizing: border-box;
+}

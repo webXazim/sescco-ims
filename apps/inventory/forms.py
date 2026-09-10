@@ -13,6 +13,8 @@ from apps.core.forms import StyledForm, StyledModelForm
 from apps.explorer.filtering import DATE_PRESETS
 from apps.projects.models import Project
 
+from .normalization import normalize_phone, normalize_text
+
 from .models import (
     InventoryLocation,
     StockItem,
@@ -36,17 +38,65 @@ def validate_uploaded_attachment(file):
     return file
 
 
+def _company_users(company):
+    if company is None:
+        return get_user_model().objects.none()
+    return (
+        get_user_model().objects.filter(
+            is_active=True,
+            company_memberships__company=company,
+            company_memberships__is_active=True,
+        ).distinct()
+    )
+
+
 class UnitForm(StyledModelForm):
+    def __init__(self, *args, company=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.company = company or getattr(self.instance, "company", None)
+
     class Meta:
         model = Unit
         fields = ("name", "symbol", "is_active")
 
+    def clean(self):
+        cleaned = super().clean()
+        if self.company is None:
+            return cleaned
+        queryset = Unit.objects.for_company(self.company)
+        if self.instance.pk:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        name = normalize_text(cleaned.get("name"))
+        symbol = normalize_text(cleaned.get("symbol"))
+        if name and queryset.filter(normalized_name=name).exists():
+            self.add_error("name", "A unit with this name already exists in this company.")
+        if symbol and queryset.filter(normalized_symbol=symbol).exists():
+            self.add_error("symbol", "A unit with this symbol already exists in this company.")
+        return cleaned
+
 
 class SupplierForm(StyledModelForm):
+    def __init__(self, *args, company=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.company = company or getattr(self.instance, "company", None)
+
     class Meta:
         model = Supplier
         fields = ("name", "phone", "location", "notes", "is_active")
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.company is None:
+            return cleaned
+        queryset = Supplier.objects.for_company(self.company)
+        if self.instance.pk:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        name = normalize_text(cleaned.get("name"))
+        phone = normalize_phone(cleaned.get("phone"))
+        if name and phone and queryset.filter(normalized_name=name, normalized_phone=phone).exists():
+            raise ValidationError("A supplier with this name and phone already exists in this company.")
+        return cleaned
 
 
 class SupplierSelect(forms.Select):
@@ -99,17 +149,18 @@ class StockItemForm(StyledModelForm):
         }
         labels = {"description": "Description / specification"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        active_projects = Project.objects.filter(
+        company = company or getattr(self.instance, "company", None)
+        active_projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         )
-        active_units = Unit.objects.filter(is_active=True, deleted_at__isnull=True)
+        active_units = Unit.objects.for_company(company).filter(is_active=True, deleted_at__isnull=True)
         if self.instance.pk:
-            active_projects = Project.objects.filter(deleted_at__isnull=True).filter(
+            active_projects = Project.objects.for_company(company).filter(deleted_at__isnull=True).filter(
                 models.Q(status=Project.Status.ACTIVE) | models.Q(pk=self.instance.project_id)
             )
-            active_units = Unit.objects.filter(deleted_at__isnull=True).filter(
+            active_units = Unit.objects.for_company(company).filter(deleted_at__isnull=True).filter(
                 models.Q(is_active=True) | models.Q(pk=self.instance.unit_id)
             )
         self.fields["project"].queryset = active_projects.order_by("code")
@@ -230,15 +281,16 @@ class StockAdditionForm(IdempotentMovementForm):
         label="I reviewed the similar record and this is intentionally separate",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(
+        self.company = company
+        self.fields["project"].queryset = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
-        self.fields["unit"].queryset = Unit.objects.filter(
+        self.fields["unit"].queryset = Unit.objects.for_company(company).filter(
             is_active=True, deleted_at__isnull=True
         ).order_by("name")
-        self.fields["supplier"].queryset = Supplier.objects.filter(
+        self.fields["supplier"].queryset = Supplier.objects.for_company(company).filter(
             is_active=True, deleted_at__isnull=True
         ).order_by("name", "phone")
         self.exact_match = None
@@ -332,9 +384,10 @@ class StockUsageForm(IdempotentMovementForm):
         help_text="Optional PDF, JPG or PNG, maximum 10 MB.",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(
+        self.company = company
+        self.fields["project"].queryset = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
 
@@ -355,7 +408,7 @@ class StockUsageForm(IdempotentMovementForm):
             if initial_project:
                 selected_project_id = getattr(initial_project, "pk", initial_project)
 
-        queryset = StockItem.objects.select_related("project", "unit").filter(
+        queryset = StockItem.objects.for_company(company).select_related("project", "unit").filter(
             status=StockItem.Status.ACTIVE,
             project__status=Project.Status.ACTIVE,
             deleted_at__isnull=True,
@@ -366,7 +419,7 @@ class StockUsageForm(IdempotentMovementForm):
             queryset = queryset.filter(project_id=int(selected_project_id))
         elif selected_item_id and str(selected_item_id).isdigit():
             item_project = (
-                StockItem.objects.filter(pk=int(selected_item_id))
+                StockItem.objects.for_company(company).filter(pk=int(selected_item_id))
                 .values_list("project_id", flat=True)
                 .first()
             )
@@ -473,6 +526,7 @@ class StockTransferForm(StyledForm):
         source_location=None,
         require_full_transfer=False,
         lock_source=False,
+        company=None,
         **kwargs,
     ):
         initial = kwargs.setdefault("initial", {})
@@ -482,8 +536,10 @@ class StockTransferForm(StyledForm):
             initial.setdefault("source_location", source_location)
         self.require_full_transfer = require_full_transfer
         self.lock_source = lock_source
+        company = company or getattr(source_location, "company", None)
+        self.company = company
         super().__init__(*args, **kwargs)
-        locations = InventoryLocation.objects.select_related("project").filter(is_active=True)
+        locations = InventoryLocation.objects.for_company(company).select_related("project").filter(is_active=True)
         self.fields["source_location"].queryset = locations.order_by("location_type", "code")
         self.fields["destination_location"].queryset = locations.order_by(
             "location_type", "code"
@@ -502,7 +558,7 @@ class StockTransferForm(StyledForm):
         self.allocation_rows = []
         if source_location:
             self.source_items = list(
-                StockItem.objects.select_related("unit", "location")
+                StockItem.objects.for_company(company).select_related("unit", "location")
                 .filter(
                     location=source_location,
                     status=StockItem.Status.ACTIVE,
@@ -746,15 +802,16 @@ class StockItemFilterForm(DateRangeFilterForm):
         label="Visible columns",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
+        self.company = company
+        self.fields["project"].queryset = Project.objects.for_company(company).filter(deleted_at__isnull=True).order_by(
             "code"
         )
-        self.fields["location"].queryset = InventoryLocation.objects.filter(
+        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).filter(
             is_active=True
         ).order_by("location_type", "code")
-        self.fields["unit"].queryset = Unit.objects.filter(deleted_at__isnull=True).order_by("name")
+        self.fields["unit"].queryset = Unit.objects.for_company(company).filter(deleted_at__isnull=True).order_by("name")
         self.fields["q"].widget.attrs.update(
             {
                 "placeholder": (
@@ -766,8 +823,7 @@ class StockItemFilterForm(DateRangeFilterForm):
             }
         )
         users = (
-            get_user_model()
-            .objects.filter(is_active=True)
+            _company_users(company)
             .order_by(
                 "first_name",
                 "username",
@@ -871,12 +927,13 @@ class MovementFilterForm(DateRangeFilterForm):
         label="Visible columns",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["project"].queryset = Project.objects.filter(deleted_at__isnull=True).order_by(
+        self.company = company
+        self.fields["project"].queryset = Project.objects.for_company(company).filter(deleted_at__isnull=True).order_by(
             "code"
         )
-        self.fields["location"].queryset = InventoryLocation.objects.order_by(
+        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).order_by(
             "location_type", "code"
         )
         self.fields["q"].widget.attrs.update(
@@ -887,8 +944,8 @@ class MovementFilterForm(DateRangeFilterForm):
                 "data-live-filter-search": "",
             }
         )
-        self.fields["created_by"].queryset = (
-            get_user_model().objects.filter(is_active=True).order_by("first_name", "username")
+        self.fields["created_by"].queryset = _company_users(company).order_by(
+            "first_name", "username"
         )
         self.fields["sort"].initial = "-date"
 
@@ -920,15 +977,16 @@ class StockHistoryFilterForm(DateRangeFilterForm):
         choices=(("-date", "Newest first"), ("date", "Oldest first")),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.company = company
         self.fields["q"].widget.attrs.update(
             {
                 "placeholder": "Search reference, purpose, recipient, reason, or notes…",
                 "autocomplete": "off",
             }
         )
-        self.fields["created_by"].queryset = (
-            get_user_model().objects.filter(is_active=True).order_by("first_name", "username")
+        self.fields["created_by"].queryset = _company_users(company).order_by(
+            "first_name", "username"
         )
         self.fields["sort"].initial = "-date"

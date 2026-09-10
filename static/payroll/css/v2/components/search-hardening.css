@@ -1,0 +1,172 @@
+/*
+  Canonical UI v2 search affordance. Search controls reserve a stable leading-icon
+  lane and bounded desktop width. Payroll intentionally overrides the filter-bar
+  search with its spreadsheet-style grid after this file is imported.
+*/
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) {
+  position: relative;
+  min-width: 0;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) > svg,
+.ui-v2-root .ui-v2-inventory-project-inventory-toolbar > label > svg,
+.ui-v2-root .ui-v2-inventory-management-search > label > svg,
+.ui-v2-root .ui-v2-inventory-admin-search > label > svg {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 12px;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  color: var(--ui-v2-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-business-admin-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search
+) > :where(input, .ui-v2-input),
+.ui-v2-root .ui-v2-inventory-project-inventory-toolbar > label > :where(input, .ui-v2-input),
+.ui-v2-root .ui-v2-inventory-management-search > label > :where(input, .ui-v2-input),
+.ui-v2-root .ui-v2-inventory-admin-search > label > :where(input, .ui-v2-input) {
+  padding-left: 38px !important;
+  padding-right: 12px !important;
+  text-indent: 0 !important;
+}
+
+.ui-v2-root .ui-v2-document-picker-search input {
+  padding-left: 42px !important;
+  padding-right: 68px !important;
+  text-indent: 0 !important;
+}
+
+.ui-v2-root .ui-v2-search > input {
+  width: 100%;
+  height: var(--ui-v2-control-md) !important;
+  min-height: var(--ui-v2-control-md) !important;
+  padding: 0 12px 0 38px !important;
+  border: 1px solid var(--ui-v2-border-strong) !important;
+  border-radius: var(--ui-v2-radius-md) !important;
+  outline: none !important;
+  background: var(--ui-v2-surface) !important;
+  color: var(--ui-v2-text) !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  text-indent: 0 !important;
+  box-shadow: none !important;
+}
+
+.ui-v2-root .ui-v2-search > input:focus-visible {
+  border-color: var(--ui-v2-border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(120, 126, 120, 0.12) !important;
+}
+
+/* Command palette is intentionally a borderless row, not a normal search input. */
+.ui-v2-root .ui-v2-command__search > input {
+  width: 100% !important;
+  min-height: 54px !important;
+  height: 54px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  color: var(--ui-v2-text) !important;
+  font: inherit !important;
+  font-size: 14px !important;
+  box-shadow: none !important;
+}
+
+/* Upgrade 86 — keep search/filter controls inside their toolbar across the app. */
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-doc-search,
+  .ui-v2-management-search,
+  .ui-v2-report-search,
+  .ui-v2-workflow-search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar__search,
+  .ui-v2-doc-search,
+  .ui-v2-management-search,
+  .ui-v2-report-search,
+  .ui-v2-workflow-search,
+  .ui-v2-business-admin-search,
+  .ui-v2-document-picker-search,
+  .ui-v2-inventory-history-search,
+  .ui-v2-inventory-explorer-search,
+  .ui-v2-inventory-picker-search,
+  .ui-v2-inventory-project-search,
+  .ui-v2-search
+) > :where(input, .ui-v2-input) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-doc-toolbar,
+  .ui-v2-doc-toolbar__filters,
+  .ui-v2-management-toolbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-payroll-document-toolbar,
+  .ui-v2-payroll-report-filterbar,
+  .ui-v2-payroll-management-audit-toolbar
+) > * {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-doc-toolbar,
+  .ui-v2-doc-toolbar__filters,
+  .ui-v2-management-toolbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-payroll-document-toolbar,
+  .ui-v2-payroll-report-filterbar,
+  .ui-v2-payroll-management-audit-toolbar
+) :where(.ui-v2-input, .ui-v2-select, select, input) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}

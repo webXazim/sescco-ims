@@ -1,0 +1,253 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>{{ current_company.name }} · Payroll</title>
+  <link rel="stylesheet" href="{% static 'payroll/css/tokens.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/base.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/layout.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/components.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/responsive.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/production-polish.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/v2/index.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/v2/prs-final.css' %}" />
+  <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}" />
+</head>
+<body class="ui-v2-root" data-area="payroll" data-ui-v2-rollout="production-freeze" data-ui-v2-version="merge-10">
+  <div class="ui-v2-app-shell" id="app" data-collapsed="false" data-mobile-open="false" style="--ui-v2-sidebar-runtime: 236px;">
+    <a class="ui-v2-skip-link" href="#pageRoot">Skip to content</a>
+
+    <aside class="ui-v2-sidebar" id="sidebar" aria-label="Payroll navigation">
+      <div class="ui-v2-sidebar__brand">
+        <a class="ui-v2-brand-mark" href="#/overview" aria-label="Payroll home">{{ current_company.name|slice:":1"|upper }}</a>
+        <a class="ui-v2-sidebar__brand-copy ui-v2-prs-brand-copy" href="#/overview">
+          <strong>{{ current_company.name }}</strong>
+          <span>Payroll Management</span>
+        </a>
+        <button class="ui-v2-sidebar__collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse navigation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="ui-v2-sidebar__mobile-close" id="sidebarMobileClose" type="button" aria-label="Close navigation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="ui-v2-sidebar__switchers">
+        {% include "partials/platform_switchers.html" %}
+        <div class="ui-v2-switcher-wrap ui-v2-prs-dropdown" id="workspaceSwitcher" data-dropdown aria-label="Payroll workspace">
+          <button class="ui-v2-area-switcher" type="button" data-dropdown-trigger aria-haspopup="menu" aria-expanded="false">
+            <span class="ui-v2-switcher-icon ui-v2-prs-switcher-code" id="workspaceTriggerIcon">IC</span>
+            <span class="ui-v2-switcher-copy">
+              <small id="workspaceTriggerSubtitle">Own employees</small>
+              <strong id="workspaceTriggerTitle">Internal Company</strong>
+            </span>
+            <svg class="ui-v2-switcher-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="ui-v2-switcher-menu ui-v2-switcher-menu--area ui-v2-prs-dropdown-menu" data-dropdown-menu role="menu" aria-label="Switch payroll workspace">
+            <div class="ui-v2-switcher-menu__label">Payroll workspaces</div>
+            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="internal" role="menuitem">
+              <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">IC</span>
+              <span class="ui-v2-switcher-menu__copy"><strong>Internal Company</strong><small>Own employees · branches · payroll</small></span>
+              <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
+            </button>
+            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="rental" role="menuitem">
+              <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">RM</span>
+              <span class="ui-v2-switcher-menu__copy"><strong>Rental Manpower</strong><small>Suppliers · projects · settlements</small></span>
+              <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
+            </button>
+            <button class="ui-v2-switcher-menu__item" type="button" data-workspace-switch="management" role="menuitem">
+              <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">MG</span>
+              <span class="ui-v2-switcher-menu__copy"><strong>Management</strong><small>Company control · approvals · audit</small></span>
+              <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <nav class="ui-v2-sidebar__nav" id="primaryNav" aria-label="Payroll sections">
+        <div class="ui-v2-nav-group">
+          <div class="ui-v2-nav-group__label">Workspace</div>
+          <div class="ui-v2-nav-group__items">
+            <a class="ui-v2-nav-item" href="#/overview" data-route="overview" data-active="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9zm0 7h6v-4H4v4zm10 0h6v-9h-6v9zm0-16v4h6V4h-6z"/></svg>
+              <span>Overview</span>
+            </a>
+          </div>
+        </div>
+        <div class="ui-v2-nav-group">
+          <div class="ui-v2-nav-group__label">Organization</div>
+          <div class="ui-v2-nav-group__items">
+            <a class="ui-v2-nav-item" href="#/internal-employees" data-route="internal-employees" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg><span>Employees</span></a>
+            <a class="ui-v2-nav-item" href="#/branches" data-route="branches" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"/></svg><span>Branches & Offices</span></a>
+            <a class="ui-v2-nav-item" href="#/departments" data-route="departments" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg><span>Departments</span></a>
+          </div>
+        </div>
+        <div class="ui-v2-nav-group">
+          <div class="ui-v2-nav-group__label">Time</div>
+          <div class="ui-v2-nav-group__items">
+            <a class="ui-v2-nav-item" href="#/timesheets" data-route="timesheets" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v15H3V6a2 2 0 0 1 2-2z"/></svg><span>Attendance & Overtime</span></a>
+          </div>
+        </div>
+        <div class="ui-v2-nav-group">
+          <div class="ui-v2-nav-group__label">Payroll</div>
+          <div class="ui-v2-nav-group__items">
+            <a class="ui-v2-nav-item" href="#/salary-setup" data-route="salary-setup" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8m-8 4h5m5 0h.01M8 17h3"/></svg><span>Salary Setup</span></a>
+            <a class="ui-v2-nav-item" href="#/payroll-runs" data-route="payroll-runs" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/></svg><span>Payroll Runs</span></a>
+            <a class="ui-v2-nav-item" href="#/adjustments" data-route="adjustments" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg><span>Advances & Adjustments</span></a>
+            <a class="ui-v2-nav-item" href="#/payments" data-route="payments" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v12H3zM3 10h18m-5 4h2"/></svg><span>Salary Payments</span></a>
+            <a class="ui-v2-nav-item" href="#/bank-export" data-route="bank-export" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM8 3h8v4M8 11h8m-8 4h5"/></svg><span>Bank & WPS Export</span></a>
+          </div>
+        </div>
+        <div class="ui-v2-nav-group">
+          <div class="ui-v2-nav-group__label">Records</div>
+          <div class="ui-v2-nav-group__items">
+            <a class="ui-v2-nav-item" href="#/documents" data-route="documents" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l4 4v16H6zM14 2v5h5M9 12h6m-6 4h6"/></svg><span>Salary Slips & Documents</span></a>
+            <a class="ui-v2-nav-item" href="#/reports" data-route="reports" data-active="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg><span>Reports</span></a>
+          </div>
+        </div>
+      </nav>
+
+      <div class="ui-v2-sidebar__footer">
+        <div class="ui-v2-account-wrap ui-v2-prs-dropdown" data-dropdown>
+          <button class="ui-v2-account" type="button" id="accountMenuButton" data-dropdown-trigger aria-haspopup="menu" aria-expanded="false" title="Account">
+            <span class="ui-v2-account__avatar">{{ account_initials }}</span>
+            <span class="ui-v2-account__copy"><strong>{{ account_display_name }}</strong><small><span id="accountRoleLabel">{{ current_membership.get_role_display }}</span> · <span id="workspaceAccountLabel">Internal Company</span></small></span>
+            <svg class="ui-v2-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="ui-v2-account-menu ui-v2-prs-dropdown-menu" data-dropdown-menu role="menu" aria-label="Account menu">
+            <span class="ui-v2-account-menu__section-label">Personal account</span>
+            <div class="ui-v2-prs-account-identity">
+              <span class="ui-v2-account__avatar">{{ account_initials }}</span>
+              <span><strong>{{ account_display_name }}</strong><small id="accountMenuRoleLabel">{{ current_membership.get_role_display }} · {{ current_company.name }}</small></span>
+            </div>
+            <a class="ui-v2-prs-account-menu-item" href="#/settings" data-account-settings role="menuitem">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5zM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.97a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.03 4.2l.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15z"/></svg>
+              <span><strong>Settings</strong><small>Workspace & payroll configuration</small></span>
+            </a>
+            <div></div>
+            <form method="post" action="{% url 'accounts:logout' %}" class="ui-v2-prs-account-form">
+              {% csrf_token %}
+              <button class="ui-v2-prs-account-menu-item" type="submit" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9"/></svg>
+                <span><strong>Sign out</strong><small>End this authenticated session</small></span>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <button class="ui-v2-sidebar-resize-handle" id="sidebarResizeHandle" type="button" aria-label="Resize navigation sidebar" aria-valuemin="210" aria-valuemax="360" aria-valuenow="236" title="Drag to resize · Arrow keys adjust · Home resets"></button>
+    </aside>
+
+    <button class="ui-v2-mobile-scrim" id="mobileScrim" type="button" hidden aria-label="Close navigation"></button>
+
+    <div class="ui-v2-app-shell__workspace">
+      <header class="ui-v2-topbar">
+        <div class="ui-v2-topbar__left">
+          <button class="ui-v2-topbar__menu" id="mobileNavToggle" type="button" aria-label="Open navigation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav class="ui-v2-topbar__breadcrumb" id="breadcrumbs" aria-label="Breadcrumb">
+            <span class="ui-v2-topbar__breadcrumb-item"><strong>Internal Company</strong></span>
+            <span class="ui-v2-topbar__breadcrumb-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><strong aria-current="page">Overview</strong></span>
+          </nav>
+        </div>
+
+        <div class="ui-v2-topbar__actions">
+          <button class="ui-v2-topbar__search" id="globalSearchButton" type="button" aria-label="Search workspace, Ctrl K" aria-keyshortcuts="Control+K Meta+K">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span>Search</span><kbd>Ctrl K</kbd>
+          </button>
+
+          <div class="ui-v2-prs-dropdown" data-dropdown>
+            <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-prs-period-trigger" type="button" data-dropdown-trigger aria-haspopup="listbox" aria-expanded="false" title="Payroll period">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v15H3V6a2 2 0 0 1 2-2z"/></svg>
+              <span id="periodLabel">{{ period_options.0.label }}</span>
+              <svg class="ui-v2-prs-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="ui-v2-menu ui-v2-prs-dropdown-menu ui-v2-prs-period-menu" data-dropdown-menu role="listbox">
+              {% for period in period_options %}
+              <button class="ui-v2-menu__item" data-period="{{ period.label }}" data-period-key="{{ period.key }}" role="option">{{ period.label }}</button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="ui-v2-prs-dropdown" data-dropdown>
+            <button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm ui-v2-icon-button ui-v2-prs-notification-btn" type="button" data-dropdown-trigger aria-label="Notifications" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+              <span class="ui-v2-prs-notification-dot" aria-hidden="true"></span>
+            </button>
+            <div class="ui-v2-menu ui-v2-prs-dropdown-menu ui-v2-prs-notification-menu" id="notificationMenu" data-dropdown-menu>
+              <div class="ui-v2-prs-menu-header"><strong>Payroll controls</strong><span>Loading…</span></div>
+            </div>
+          </div>
+
+          <div class="ui-v2-prs-dropdown" data-dropdown>
+            <button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm ui-v2-prs-quick-add" type="button" data-dropdown-trigger aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <span>Add</span>
+              <svg class="ui-v2-prs-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="ui-v2-menu ui-v2-prs-dropdown-menu ui-v2-prs-quick-add-menu" id="quickAddMenu" data-dropdown-menu>
+              <button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="internal-employee"><span class="ui-v2-command__icon">IE</span><span><strong>Internal Employee</strong><small>Add company employee</small></span></button>
+              <button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="advance"><span class="ui-v2-command__icon">AD</span><span><strong>Employee Adjustment</strong><small>Advance / deduction / earning</small></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="ui-v2-app-content" id="pageRoot" tabindex="-1"></main>
+    </div>
+
+    <button class="ui-v2-collapsed-rail-toggle" id="sidebarRailToggle" type="button" aria-label="Collapse navigation">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+
+  <div class="ui-v2-command-overlay" id="searchDialog" aria-hidden="true" hidden>
+    <section class="ui-v2-command" role="dialog" aria-modal="true" aria-label="Search payroll workspace">
+      <div class="ui-v2-command__search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="globalSearchInput" type="search" placeholder="Search employees, workers, projects, suppliers…" autocomplete="off" aria-label="Search payroll workspace" />
+        <kbd>Esc</kbd>
+      </div>
+      <div class="ui-v2-command__results" id="commandResults" aria-live="polite"></div>
+      <footer class="ui-v2-command__footer"><span>Search payroll workspace</span><span>Ctrl K to open · Esc to close</span></footer>
+    </section>
+  </div>
+
+  <div class="drawer-scrim ui-v2-prs-form-drawer-scrim" id="drawerScrim"></div>
+  <aside class="drawer ui-v2-form-drawer ui-v2-form-drawer--standard" id="quickDrawer" aria-hidden="true" aria-label="Quick add">
+    <div class="drawer__header ui-v2-form-drawer__header">
+      <div><span class="eyebrow">Quick add</span><h2 id="drawerTitle">New record</h2></div>
+      <button class="icon-btn" id="drawerClose" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="drawer__body ui-v2-form-drawer__body" id="drawerBody"></div>
+    <div class="drawer__footer ui-v2-form-drawer__footer">
+      <button class="btn btn--ghost ui-v2-button ui-v2-button--secondary" type="button" id="drawerCancel">Cancel</button>
+      <button class="btn btn--primary ui-v2-button ui-v2-button--primary" type="button" id="drawerSave">Save draft</button>
+    </div>
+  </aside>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  {{ access_context|json_script:"payroll-access-context" }}
+  {{ internal_master_context|json_script:"payroll-internal-master-context" }}
+  {{ rental_master_context|json_script:"payroll-rental-master-context" }}
+  {{ salary_setup_context|json_script:"payroll-salary-setup-context" }}
+  {{ attendance_context|json_script:"payroll-attendance-context" }}
+  {{ payroll_context|json_script:"payroll-run-context" }}
+  {{ payment_context|json_script:"payroll-payment-context" }}
+  {{ documents_context|json_script:"payroll-documents-context" }}
+  {{ management_context|json_script:"payroll-management-context" }}
+  {{ system_settings_context|json_script:"payroll-settings-context" }}
+  <meta id="payroll-csrf-token" data-token="{{ csrf_token }}">
+  <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
+  <script src="{% static 'payroll/js/app.js' %}"></script>
+</body>
+</html>

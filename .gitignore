@@ -15,3 +15,5 @@ staticfiles/
 backups/
 .deploy-lock/
 .DS_Store
+
+rehearsal-evidence/

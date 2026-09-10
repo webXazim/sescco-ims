@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import re
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .request_context import request_id_var
+from django.core.exceptions import ObjectDoesNotExist
+from django.utils import timezone
+
+from .request_context import company_id_var, request_id_var
 
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
@@ -25,3 +29,38 @@ class RequestIdMiddleware:
             return response
         finally:
             request_id_var.reset(token)
+
+
+class CompanyTimezoneMiddleware:
+    """Activate the authenticated company timezone when company context is available.
+
+    ``CompanyContextMiddleware`` resolves ``request.company`` first. Requests without an active
+    company membership safely fall back to Django's configured TIME_ZONE.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        company = getattr(request, "company", None)
+        company_token = company_id_var.set(str(getattr(company, "pk", "-") or "-"))
+        timezone_name = None
+        if company is not None:
+            try:
+                timezone_name = company.settings.timezone
+            except (AttributeError, ObjectDoesNotExist):
+                timezone_name = None
+
+        if timezone_name:
+            try:
+                timezone.activate(ZoneInfo(timezone_name))
+            except ZoneInfoNotFoundError:
+                timezone.deactivate()
+        else:
+            timezone.deactivate()
+
+        try:
+            return self.get_response(request)
+        finally:
+            timezone.deactivate()
+            company_id_var.reset(company_token)

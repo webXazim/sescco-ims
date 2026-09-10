@@ -1,0 +1,119 @@
+/* PRS Upgrade 5 — Internal Attendance / Timesheet exact V2 cutover.
+   This file only bridges PRS-specific shell/page details. The sheet geometry,
+   state colors, sticky behavior, fullscreen layout and control density come
+   from the canonical DocGen V2 payroll.css + timesheet.css files. */
+
+.ui-v2-root .ui-v2-prs-internal-page.timesheets-page {
+  max-width: var(--ui-v2-page-max, 1480px);
+}
+
+.ui-v2-root .ui-v2-prs-period-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-timesheet-tabs {
+  margin-bottom: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-tab-count {
+  min-width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: 4px;
+  padding: 0 5px;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 999px;
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-v2-root .ui-v2-prs-timesheet-day-select {
+  min-width: 108px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ui-v2-root .ui-v2-prs-timesheet-day-select > span {
+  font-weight: 650;
+}
+
+.ui-v2-root .ui-v2-prs-timesheet-day-select .ui-v2-select {
+  min-width: 72px;
+  width: 92px;
+}
+
+.ui-v2-root .ui-v2-payroll-attendance-control-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ui-v2-root .ui-v2-payroll-timesheet-workspace .ui-v2-filter-bar__search svg,
+.ui-v2-root .ui-v2-payroll-timesheet-workspace .ui-v2-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* The production PRS shell still carries a legacy focus-mode rule. The V2
+   workspace is the sole fullscreen canvas for Internal Attendance. */
+body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+
+/* Keep normal document scrolling outside focused-sheet mode. The dedicated
+   sheet scroller appears only because the month grid actually exceeds the
+   available vertical/horizontal area. */
+.ui-v2-root:not(.timesheet-focus-mode) .ui-v2-payroll-timesheet-workspace:not(.is-fullscreen) {
+  overflow: visible;
+}
+
+.ui-v2-root .ui-v2-payroll-timesheet-grid td.is-employee button:focus-visible {
+  outline: 2px solid rgba(32,35,41,.14);
+  outline-offset: -2px;
+}
+
+.ui-v2-root .ui-v2-payroll-timesheet-grid .is-disabled-day {
+  color: var(--ui-v2-text-muted);
+}
+
+.ui-v2-root .ui-v2-payroll-timesheet-file-actions {
+  margin-left: auto;
+}
+
+.ui-v2-root .ui-v2-payroll-timesheet-file-actions + .ui-v2-payroll-timesheet-fullscreen {
+  margin-left: 0;
+}
+
+@media (max-width: 980px) {
+  .ui-v2-root .ui-v2-payroll-timesheet-file-actions {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .ui-v2-root .ui-v2-prs-internal-page.timesheets-page {
+    width: 100%;
+  }
+  .ui-v2-root .ui-v2-payroll-timesheet-workspace {
+    border-radius: 8px;
+  }
+  .ui-v2-root .ui-v2-payroll-timesheet-scroll {
+    max-height: min(64vh, 620px);
+  }
+  .ui-v2-root .ui-v2-payroll-timesheet-bulkbar {
+    grid-template-columns: 34px minmax(150px, 210px) minmax(0, 1fr);
+  }
+}

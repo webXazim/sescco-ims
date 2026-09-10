@@ -51,7 +51,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_HOST: ims_db
       DB_PORT: "5432"
-      RUN_STARTUP_TASKS: ${RUN_STARTUP_TASKS:-1}
+      RUN_STARTUP_TASKS: ${RUN_STARTUP_TASKS:-0}
     command:
       [
         "gunicorn",
@@ -70,6 +70,10 @@ services:
     networks:
       - ims_edge
       - ims_database
+    read_only: true
+    cap_drop:
+      - ALL
+    pids_limit: ${IMS_WEB_PIDS_LIMIT:-256}
     tmpfs:
       - /tmp:size=64m,mode=1777
     healthcheck:
@@ -90,7 +94,7 @@ services:
     logging: *default_logging
 
   ims_gateway:
-    image: nginx:1.30.4-alpine
+    image: nginx:1.30.4-alpine3.24
     restart: unless-stopped
     depends_on:
       ims_web:

@@ -10,6 +10,7 @@ from apps.core.views import _compact_value
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 User = get_user_model()
 
@@ -17,8 +18,10 @@ User = get_user_model()
 class WorkspaceRouteTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper", password="safe-password")
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
         self.client.force_login(self.user)
-        self.project = Project.objects.create(code="ARAMCO-01", name="Aramco Construction")
+        self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Construction")
         self.unit = Unit.objects.get(normalized_name="bag")
         self.item = StockItem.objects.create(
             project=self.project,
@@ -91,6 +94,7 @@ class WorkspaceRouteTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["database"], "ready")
+        self.assertEqual(payload["migrations"], "ready")
 
     def test_dashboard_calculates_basic_inventory_values(self):
         add_stock(

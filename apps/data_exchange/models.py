@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 
+from apps.core.models import CompanyScopedManager
 from apps.inventory.models import StockItem, StockMovement, Unit
 from apps.projects.models import Project
 
@@ -31,6 +32,7 @@ class ImportJob(models.Model):
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="inventory_import_jobs")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     import_type = models.CharField(max_length=32, choices=Type.choices)
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.PREVIEW)
@@ -72,15 +74,32 @@ class ImportJob(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     confirmed_at = models.DateTimeField(blank=True, null=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("-created_at", "-pk")
         indexes = [
+            models.Index(fields=("company", "status", "-created_at"), name="import_company_status_idx"),
             models.Index(fields=("status", "-created_at"), name="import_status_date_idx"),
             models.Index(fields=("import_type", "-created_at"), name="import_type_date_idx"),
         ]
 
     def __str__(self) -> str:
         return f"{self.get_import_type_display()} · {self.original_filename}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        if self.project_id and self.company_id and self.project.company_id != self.company_id:
+            errors["project"] = "Import project must belong to the import company."
+        if self.default_unit_id and self.company_id and self.default_unit.company_id != self.company_id:
+            errors["default_unit"] = "Import unit must belong to the import company."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     @property
     def can_confirm(self) -> bool:
@@ -168,6 +187,7 @@ class ExportAudit(models.Model):
         XLSX = "xlsx", "Excel"
         CSV = "csv", "CSV"
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="inventory_export_audits")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     dataset = models.CharField(max_length=32, choices=Dataset.choices)
     file_format = models.CharField(max_length=8, choices=Format.choices)
@@ -184,9 +204,12 @@ class ExportAudit(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("-created_at", "-pk")
         indexes = [
+            models.Index(fields=("company", "dataset", "-created_at"), name="export_company_dataset_idx"),
             models.Index(fields=("dataset", "-created_at"), name="export_dataset_date_idx"),
             models.Index(fields=("created_by", "-created_at"), name="export_user_date_idx"),
         ]

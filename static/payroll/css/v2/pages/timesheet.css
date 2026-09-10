@@ -1,0 +1,899 @@
+/* Canonical Payroll timesheet UI.
+   Visual contract: Upgrade 20 Internal Company Attendance.
+   Internal and Rental share this geometry; Rental only adds business-state tones. */
+@layer ui-v2-pages {
+  .ui-v2-payroll-timesheet-workspace {
+    --attendance-weekend-fg: #586774;
+    position: relative;
+    overflow: visible;
+  }
+
+  /* Upgrade 20 lifecycle uses the normal Payroll panel header unchanged. */
+  .ui-v2-payroll-workflow-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 11px 13px;
+  }
+  .ui-v2-payroll-workflow-steps > div {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: var(--ui-v2-text-muted);
+  }
+  .ui-v2-payroll-workflow-steps > div:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 28px;
+    right: 6px;
+    top: 12px;
+    height: 1px;
+    background: var(--ui-v2-border);
+  }
+  .ui-v2-payroll-workflow-steps > div > span {
+    position: relative;
+    z-index: 1;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 50%;
+    background: var(--ui-v2-surface);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .ui-v2-payroll-workflow-steps > div strong {
+    position: relative;
+    z-index: 1;
+    padding-right: 5px;
+    background: var(--ui-v2-surface);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .ui-v2-payroll-workflow-steps > div.is-done,
+  .ui-v2-payroll-workflow-steps > div.is-current { color: var(--ui-v2-text); }
+  .ui-v2-payroll-workflow-steps > div.is-done > span {
+    border-color: var(--ui-v2-success);
+    background: var(--ui-v2-success-bg);
+    color: var(--ui-v2-success);
+  }
+  .ui-v2-payroll-workflow-steps > div.is-current > span {
+    border-color: var(--ui-v2-text);
+    background: var(--ui-v2-text);
+    color: var(--ui-v2-text-inverse);
+  }
+
+  /* Toolbar inherits the original Payroll register layout. */
+  .ui-v2-payroll-timesheet-toolbar { border-radius: 10px 10px 0 0; }
+  .ui-v2-payroll-timesheet-fullscreen { margin-left: auto; white-space: nowrap; }
+  .ui-v2-payroll-timesheet-fullscreen > span { display: inline-flex; align-items: center; }
+
+  .ui-v2-payroll-timesheet-subtoolbar {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ui-v2-border);
+    background: var(--ui-v2-surface-subtle);
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+  }
+  .ui-v2-payroll-timesheet-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .ui-v2-payroll-timesheet-legend span { display: inline-flex; align-items: center; gap: 5px; font-weight: 560; white-space: nowrap; }
+  .ui-v2-payroll-timesheet-legend i {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 2px;
+    background: #fff;
+  }
+  .ui-v2-payroll-timesheet-legend i.is-worked { border-color: #79a989; }
+  .ui-v2-payroll-timesheet-legend i.is-overtime { border-color: #8f7acb; }
+  .ui-v2-payroll-timesheet-legend i.is-weekend { border-color: #93a3b1; }
+  .ui-v2-payroll-timesheet-legend i.is-absent,
+  .ui-v2-payroll-timesheet-legend i.is-zero { border-color: #d67870; }
+  .ui-v2-payroll-timesheet-legend i.is-leave { border-color: #c79b31; }
+  .ui-v2-payroll-timesheet-legend i.is-sick { border-color: #d17d3a; }
+  .ui-v2-payroll-timesheet-legend i.is-holiday { border-color: #6fa2d2; }
+  .ui-v2-payroll-timesheet-legend i.is-off { border-color: #98a1aa; }
+  .ui-v2-payroll-timesheet-legend i.is-noscope { border-color: #91abc1; }
+  .ui-v2-payroll-timesheet-legend i.is-missing { border-color: #d9a09a; }
+  .ui-v2-payroll-timesheet-legend i.is-disabled { border-color: #d6dbe0; }
+
+  /* Exact Upgrade 20 management-row alignment: checkbox | employee | commands. */
+  .ui-v2-payroll-timesheet-bulkbar {
+    display: grid;
+    grid-template-columns: 34px 210px minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0;
+    min-height: 46px;
+    padding: 0;
+    overflow: visible;
+    border-bottom: 1px solid var(--ui-v2-border);
+    background: #fff;
+  }
+  .ui-v2-payroll-timesheet-bulkbar.is-idle,
+  .ui-v2-payroll-timesheet-bulkbar.is-active { background: #fff; }
+  .ui-v2-payroll-timesheet-master-select {
+    min-width: 34px;
+    display: grid;
+    place-items: center;
+    border-right: 1px solid var(--ui-v2-border);
+    background: #fff;
+  }
+  .ui-v2-payroll-timesheet-selection-summary {
+    min-width: 0;
+    width: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+    padding: 0 11px;
+    border-right: 1px solid var(--ui-v2-border);
+    background: #fff;
+  }
+  .ui-v2-payroll-timesheet-selection-summary strong {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--ui-v2-text);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ui-v2-payroll-timesheet-selection-summary small {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ui-v2-payroll-timesheet-selection-meta {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .ui-v2-payroll-timesheet-selection-meta > small { min-width: 0; flex: 1 1 auto; }
+  .ui-v2-payroll-timesheet-selection-actions {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 1 auto;
+    overflow: hidden;
+  }
+  .ui-v2-payroll-timesheet-selection-actions button {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ui-v2-text-secondary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-align: left;
+    text-decoration: underline;
+    text-decoration-color: #c8cdd2;
+    text-underline-offset: 2px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-timesheet-selection-actions button:hover { color: var(--ui-v2-text); text-decoration-color: #8c949c; }
+  .ui-v2-payroll-timesheet-selection-actions button:focus-visible { border-radius: 3px; box-shadow: 0 0 0 2px rgba(32,35,41,.08); }
+
+  .ui-v2-payroll-timesheet-command-strip {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    background: #fff;
+  }
+  .ui-v2-payroll-timesheet-command-strip > .ui-v2-button,
+  .ui-v2-payroll-timesheet-command-strip .ui-v2-button {
+    flex: 0 0 auto;
+    min-height: 32px;
+    height: 32px;
+    white-space: nowrap;
+  }
+  .ui-v2-payroll-timesheet-command-strip .ui-v2-button:disabled {
+    opacity: .42;
+    background: #fff;
+    color: var(--ui-v2-text-muted);
+  }
+
+  /* Day picker — exact final Upgrade 20 sizing. */
+  .ui-v2-payroll-day-picker { position: relative; flex: 0 0 auto; }
+  .ui-v2-payroll-day-picker__trigger {
+    height: 32px;
+    min-width: 88px;
+    display: grid;
+    grid-template-columns: 14px minmax(0,1fr) 13px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 9px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ui-v2-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-day-picker__trigger:hover { border-color: #b9c0c8; }
+  .ui-v2-payroll-day-picker__trigger.is-open,
+  .ui-v2-payroll-day-picker__trigger:focus-visible {
+    border-color: #8b96a3;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(22,24,29,.05);
+  }
+  .ui-v2-payroll-day-picker__trigger > span { min-width: 0; display: grid; justify-items: start; line-height: 1.05; }
+  .ui-v2-payroll-day-picker__trigger small {
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .ui-v2-payroll-day-picker__trigger strong { font-size: 12px; font-weight: 700; }
+  .ui-v2-payroll-day-picker__trigger > svg:last-child { transition: transform .14s ease; }
+  .ui-v2-payroll-day-picker__trigger.is-open > svg:last-child { transform: rotate(180deg); }
+  .ui-v2-payroll-day-picker__menu {
+    position: absolute;
+    z-index: 80;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 258px;
+    padding: 10px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 16px 38px rgba(16,24,40,.14), 0 2px 7px rgba(16,24,40,.06);
+  }
+  .ui-v2-payroll-day-picker__menu header { min-height: 0; padding: 0 2px 9px; border: 0; }
+  .ui-v2-payroll-day-picker__menu header > span { display: grid; gap: 2px; }
+  .ui-v2-payroll-day-picker__menu header strong { font-size: 12px; }
+  .ui-v2-payroll-day-picker__menu header small { font-size: 12px; color: var(--ui-v2-text-muted); }
+  .ui-v2-payroll-day-picker__weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .ui-v2-payroll-day-picker__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .ui-v2-payroll-day-picker__weekdays span { text-align: center; font-size: 12px; font-weight: 700; color: var(--ui-v2-text-muted); }
+  .ui-v2-payroll-day-picker__grid > .is-blank { min-height: 31px; }
+  .ui-v2-payroll-day-picker__grid button {
+    min-width: 0;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ui-v2-text-secondary);
+    cursor: pointer;
+  }
+  .ui-v2-payroll-day-picker__grid button strong { font-size: 12px; line-height: 1; }
+  .ui-v2-payroll-day-picker__grid button small { margin-top: 2px; font-size: 12px; line-height: 1; color: var(--ui-v2-text-muted); }
+  .ui-v2-payroll-day-picker__grid button.is-weekend { border-color: #d6dde3; }
+  .ui-v2-payroll-day-picker__grid button:hover { border-color: #aeb7c0; background: #f9fafb; }
+  .ui-v2-payroll-day-picker__grid button.is-selected { border-color: #16181d; background: #16181d; color: #fff; }
+  .ui-v2-payroll-day-picker__grid button.is-selected small { color: rgba(255,255,255,.72); }
+
+  /* Hours picker — exact final Upgrade 20 sizing. */
+  .ui-v2-payroll-hours-picker { position: relative; flex: 0 0 auto; }
+  .ui-v2-payroll-hours-picker__trigger {
+    height: 32px;
+    min-width: 92px;
+    display: grid;
+    grid-template-columns: 14px minmax(0,1fr) 13px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 9px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ui-v2-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-hours-picker__trigger > span { min-width: 0; display: grid; justify-items: start; line-height: 1.05; }
+  .ui-v2-payroll-hours-picker__trigger small {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--ui-v2-text-muted);
+  }
+  .ui-v2-payroll-hours-picker__trigger strong { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ui-v2-payroll-hours-picker__trigger:hover:not(:disabled) { border-color: #b9c0c8; }
+  .ui-v2-payroll-hours-picker__trigger.is-open,
+  .ui-v2-payroll-hours-picker__trigger:focus-visible { border-color: #8b96a3; outline: 0; box-shadow: 0 0 0 3px rgba(22,24,29,.05); }
+  .ui-v2-payroll-hours-picker__trigger:disabled { opacity: .42; color: var(--ui-v2-text-muted); cursor: not-allowed; }
+  .ui-v2-payroll-hours-picker__trigger > svg:last-child { transition: transform .14s ease; }
+  .ui-v2-payroll-hours-picker__trigger.is-open > svg:last-child { transform: rotate(180deg); }
+  .ui-v2-payroll-hours-picker__menu {
+    position: absolute;
+    z-index: 82;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 224px;
+    padding: 9px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 14px 34px rgba(16,24,40,.13), 0 2px 6px rgba(16,24,40,.05);
+  }
+  .ui-v2-payroll-hours-picker__menu header { min-height: 0; padding: 0 1px 8px; border: 0; }
+  .ui-v2-payroll-hours-picker__menu header > span { display: grid; gap: 2px; }
+  .ui-v2-payroll-hours-picker__menu header strong { font-size: 12px; }
+  .ui-v2-payroll-hours-picker__menu header small { font-size: 12px; color: var(--ui-v2-text-muted); }
+  .ui-v2-payroll-hours-picker__presets { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; margin-bottom: 8px; }
+  .ui-v2-payroll-hours-picker__presets button {
+    height: 31px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ui-v2-text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-hours-picker__presets button:hover { border-color: #aeb7c0; background: #fafbfc; }
+  .ui-v2-payroll-hours-picker__presets button.is-selected { border-color: #5e6670; }
+  .ui-v2-payroll-hours-picker__custom {
+    min-height: 34px;
+    display: grid;
+    grid-template-columns: auto 54px minmax(0,1fr);
+    align-items: center;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--ui-v2-border);
+  }
+  .ui-v2-payroll-hours-picker__custom label { font-size: 12px; font-weight: 650; color: var(--ui-v2-text-secondary); }
+  .ui-v2-payroll-hours-picker__custom input {
+    width: 54px;
+    height: 30px;
+    padding: 0 7px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--ui-v2-text);
+    font: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    outline: 0;
+  }
+  .ui-v2-payroll-hours-picker__custom input:focus { border-color: #8b96a3; box-shadow: 0 0 0 3px rgba(22,24,29,.04); }
+  .ui-v2-payroll-hours-picker__custom button {
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid #202329;
+    border-radius: 7px;
+    background: #202329;
+    color: #fff;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-hours-picker__custom button:hover { background: #101216; }
+  .ui-v2-payroll-hours-picker__hint { display: block; margin-top: 7px; color: var(--ui-v2-text-muted); font-size: 12px; line-height: 1.35; }
+
+  /* Status picker — Upgrade 20 keeps a simple inline-flex control. */
+  .ui-v2-payroll-status-picker { position: relative; flex: 0 0 auto; }
+  .ui-v2-payroll-status-picker__trigger {
+    min-width: 98px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 9px;
+    padding: 0 10px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ui-v2-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-status-picker__trigger:hover:not(:disabled) { border-color: #b9c0c8; }
+  .ui-v2-payroll-status-picker__trigger.is-open,
+  .ui-v2-payroll-status-picker__trigger:focus-visible { border-color: #8b96a3; outline: 0; box-shadow: 0 0 0 3px rgba(22,24,29,.05); }
+  .ui-v2-payroll-status-picker__trigger:disabled { opacity: .42; color: var(--ui-v2-text-muted); cursor: not-allowed; }
+  .ui-v2-payroll-status-picker__trigger > svg { transition: transform .14s ease; }
+  .ui-v2-payroll-status-picker__trigger.is-open > svg { transform: rotate(180deg); }
+  .ui-v2-payroll-status-picker__menu {
+    position: absolute;
+    z-index: 82;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 188px;
+    padding: 5px;
+    border: 1px solid var(--ui-v2-border-strong);
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 14px 34px rgba(16,24,40,.13), 0 2px 6px rgba(16,24,40,.05);
+  }
+  .ui-v2-payroll-status-picker__menu > button {
+    width: 100%;
+    min-height: 36px;
+    display: grid;
+    grid-template-columns: 12px minmax(0,1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ui-v2-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-status-picker__menu > button:hover,
+  .ui-v2-payroll-status-picker__menu > button:focus-visible { outline: 0; background: #f6f7f8; }
+  .ui-v2-payroll-status-picker__menu i {
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--ui-v2-border-strong);
+    border-radius: 3px;
+    background: #fff;
+  }
+  .ui-v2-payroll-status-picker__menu i.is-absent,
+  .ui-v2-payroll-status-picker__menu i.is-zero { border-color: #ef8177; }
+  .ui-v2-payroll-status-picker__menu i.is-leave { border-color: #d9a238; }
+  .ui-v2-payroll-status-picker__menu i.is-sick { border-color: #df8a4d; }
+  .ui-v2-payroll-status-picker__menu i.is-holiday { border-color: #78a8d8; }
+  .ui-v2-payroll-status-picker__menu i.is-off { border-color: #aeb8c2; }
+  .ui-v2-payroll-status-picker__menu i.is-noscope { border-color: #91abc1; }
+  .ui-v2-payroll-status-picker__menu span { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ui-v2-payroll-status-picker__menu strong { font-size: 12px; font-weight: 650; }
+  .ui-v2-payroll-status-picker__menu small { color: var(--ui-v2-text-muted); font-size: 12px; font-weight: 700; }
+
+  /* Spreadsheet geometry copied from the effective Upgrade 20 Internal sheet. */
+  .ui-v2-payroll-timesheet-scroll {
+    max-height: min(62vh,660px);
+    overflow: auto;
+    overscroll-behavior: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #cfd3d8 transparent;
+    scrollbar-gutter: stable;
+    background: var(--ui-v2-surface);
+  }
+  .ui-v2-payroll-timesheet-scroll:focus-visible { outline: 1px solid rgba(32,35,41,.12); outline-offset: -1px; }
+  .ui-v2-payroll-timesheet-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .ui-v2-payroll-timesheet-scroll::-webkit-scrollbar-track { background: transparent; }
+  .ui-v2-payroll-timesheet-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #cfd3d8; background-clip: padding-box; }
+  .ui-v2-payroll-timesheet-scroll::-webkit-scrollbar-thumb:hover { background: #b8bec6; background-clip: padding-box; }
+  .ui-v2-payroll-timesheet-grid {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+  }
+  .ui-v2-payroll-timesheet-grid th,
+  .ui-v2-payroll-timesheet-grid td {
+    height: 31px;
+    padding: 0;
+    border-right: 1px solid var(--ui-v2-border);
+    border-bottom: 1px solid var(--ui-v2-border);
+    background: var(--ui-v2-surface);
+    text-align: center;
+  }
+  .ui-v2-payroll-timesheet-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    min-width: 35px;
+    height: 38px;
+    background: var(--ui-v2-surface-subtle);
+    color: var(--ui-v2-text-muted);
+    font-weight: 600;
+  }
+  .ui-v2-payroll-timesheet-grid thead th span { display: block; font-size: 12px; line-height: 1.2; }
+  .ui-v2-payroll-timesheet-grid thead th strong { display: block; margin-top: 2px; color: var(--ui-v2-text-secondary); font-size: 12px; line-height: 1.2; }
+  .ui-v2-payroll-timesheet-grid .is-select { position: sticky; left: 0; z-index: 7; min-width: 34px; width: 34px; }
+  .ui-v2-payroll-timesheet-grid .is-employee {
+    position: sticky;
+    left: 34px;
+    z-index: 6;
+    min-width: 210px;
+    width: 210px;
+    text-align: left;
+    box-shadow: 1px 0 0 var(--ui-v2-border);
+  }
+  .ui-v2-payroll-timesheet-grid thead .is-select,
+  .ui-v2-payroll-timesheet-grid thead .is-employee { z-index: 9; background: var(--ui-v2-surface-subtle); }
+  .ui-v2-payroll-timesheet-grid tbody .is-select,
+  .ui-v2-payroll-timesheet-grid tbody .is-employee { background: var(--ui-v2-surface); }
+  .ui-v2-payroll-timesheet-grid td.is-employee button {
+    width: 100%;
+    display: grid;
+    gap: 2px;
+    padding: 0 9px;
+    border: 0;
+    background: transparent;
+    color: var(--ui-v2-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ui-v2-payroll-timesheet-grid td.is-employee strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .ui-v2-payroll-timesheet-grid td.is-employee span { overflow: hidden; color: var(--ui-v2-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Day context is structural, not a background wash. */
+  .ui-v2-payroll-timesheet-grid tbody td.is-weekend,
+  .ui-v2-payroll-timesheet-grid tbody td.has-overtime,
+  .ui-v2-payroll-timesheet-grid tbody td.is-today:not(.is-weekend) { background: var(--ui-v2-surface); }
+  .ui-v2-payroll-timesheet-grid thead th.is-weekend { background: var(--ui-v2-surface); color: var(--attendance-weekend-fg); box-shadow: inset 0 2px 0 #a4b1bc; }
+  .ui-v2-payroll-timesheet-grid th.is-week-boundary,
+  .ui-v2-payroll-timesheet-grid td.is-week-boundary { border-right: 2px solid #cbd2d9; }
+  .ui-v2-payroll-timesheet-grid thead th.is-today { color: var(--ui-v2-text); box-shadow: inset 0 3px 0 var(--ui-v2-text); }
+
+  /*
+     IMPORTANT: global.css contains a legacy unscoped `input { ... !important; }` rule.
+     Upgrade 20 Attendance deliberately overrode it inside the timesheet. Keep these
+     declarations important so the canonical sheet cannot fall back to the global
+     34px-min-height / 12px-font / gray-border form styling.
+  */
+  .ui-v2-payroll-ts-input {
+    box-sizing: border-box !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    margin: 0 !important;
+    padding: 0 2px !important;
+    border: 1px solid #d4d8dc !important;
+    border-radius: 6px !important;
+    outline: 0 !important;
+    background: #fff !important;
+    color: var(--ui-v2-text) !important;
+    font-family: inherit !important;
+    font-size: 12px !important;
+    font-weight: 650 !important;
+    line-height: 1 !important;
+    text-align: center !important;
+    box-shadow: none !important;
+    transition: box-shadow .08s ease !important;
+  }
+  .ui-v2-payroll-ts-input.is-multi-digit {
+    padding-inline: 0 !important;
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.2px;
+  }
+  /*
+     Shared Upgrade 20 state contract for BOTH Internal and Rental sheets.
+     Every attendance state stays on a neutral white surface; state is carried by
+     border/text only. The stronger workspace scope also defeats legacy global
+     `input` / `input:focus` !important rules without creating separate Rental CSS.
+  */
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-empty,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-worked,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-overtime,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-absent,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-zero,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-leave,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-sick,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-holiday,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-off,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-noscope,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-missing {
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-worked { border-color: #8eb79b !important; color: var(--ui-v2-text) !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-overtime { border-color: #9d8ad4 !important; color: #5f4d93 !important; font-weight: 760 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-absent,
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-zero { border-color: #dc877f !important; color: #a83e35 !important; font-weight: 760 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-leave { border-color: #cfaa4c !important; color: #80620f !important; font-weight: 740 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-sick { border-color: #d98b4e !important; color: #95501b !important; font-weight: 740 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-holiday { border-color: #7eadd9 !important; color: #3e6f9d !important; font-weight: 740 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-off { border-color: #a7afb7 !important; color: #646d76 !important; font-weight: 720 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-noscope { border-color: #84a2bb !important; color: #526f86 !important; font-weight: 740 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-missing { border-color: #d9a09a !important; color: #9c4b44 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-missing::placeholder { color: #b96b64; opacity: .72; }
+
+  /* Focus/active remain border-only: never replace the semantic status border. */
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-worked:where(:focus, :focus-visible, :active) { border-color: #8eb79b !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-overtime:where(:focus, :focus-visible, :active) { border-color: #9d8ad4 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-absent:where(:focus, :focus-visible, :active),
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-zero:where(:focus, :focus-visible, :active) { border-color: #dc877f !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-leave:where(:focus, :focus-visible, :active) { border-color: #cfaa4c !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-sick:where(:focus, :focus-visible, :active) { border-color: #d98b4e !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-holiday:where(:focus, :focus-visible, :active) { border-color: #7eadd9 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-off:where(:focus, :focus-visible, :active) { border-color: #a7afb7 !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-noscope:where(:focus, :focus-visible, :active) { border-color: #84a2bb !important; }
+  .ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-missing:where(:focus, :focus-visible, :active) { border-color: #d9a09a !important; }
+
+  .ui-v2-payroll-timesheet-grid td.is-weekend .ui-v2-payroll-ts-input.is-empty { border-color: #b7c1ca !important; color: #667582 !important; }
+  .ui-v2-payroll-ts-input:hover:not(:disabled) {
+    background: #fff !important;
+    filter: none !important;
+    transform: none !important;
+    box-shadow: 0 1px 2px rgba(16,24,40,.06) !important;
+  }
+  .ui-v2-payroll-ts-input:focus,
+  .ui-v2-payroll-timesheet-grid td.is-weekend .ui-v2-payroll-ts-input.is-empty:focus {
+    position: relative;
+    z-index: 2;
+    background: #fff !important;
+    outline: 2px solid rgba(22,24,29,.14) !important;
+    outline-offset: 1px !important;
+    box-shadow: none !important;
+  }
+  .ui-v2-payroll-ts-input:disabled { color: var(--ui-v2-text-muted); cursor: not-allowed; }
+
+  /* Hover tracks rows with lines only; status colors never flash. */
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-weekend,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.has-overtime,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-today:not(.is-weekend),
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-select,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-employee { background: var(--ui-v2-surface); border-bottom-color: #d9dee3; }
+
+  .ui-v2-payroll-timesheet-grid td.is-disabled-day,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-disabled-day { background: #fafbfc; }
+  .ui-v2-payroll-timesheet-not-assigned {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 30px;
+    margin: 0 auto;
+    color: #aab0b6;
+    background: transparent;
+    font-size: 12px;
+  }
+
+  /* Sticky totals exactly match the Internal Upgrade 20 sheet. */
+  .ui-v2-payroll-timesheet-grid .is-total {
+    position: sticky;
+    z-index: 6;
+    min-width: 54px;
+    padding: 0 7px;
+    background: #fbfcfd;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-v2-payroll-timesheet-grid thead .is-total { z-index: 9; background: #f4f6f8; }
+  .ui-v2-payroll-timesheet-grid .is-hours { right: 126px; min-width: 62px; width: 62px; box-shadow: -1px 0 0 var(--ui-v2-border-strong); }
+  .ui-v2-payroll-timesheet-grid .is-days { right: 70px; min-width: 56px; width: 56px; }
+  .ui-v2-payroll-timesheet-grid .is-exceptions { right: 0; min-width: 70px; width: 70px; }
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-total { background: #fbfcfd; }
+  .ui-v2-payroll-timesheet-grid tbody td.is-exceptions.has-exceptions,
+  .ui-v2-payroll-timesheet-grid tbody tr:hover td.is-exceptions.has-exceptions { background: #fbfcfd; }
+  .ui-v2-payroll-timesheet-grid tbody td.is-exceptions.has-exceptions strong,
+  .ui-v2-payroll-timesheet-grid tbody td.is-days.has-missing strong { color: #9f3f36; font-weight: 760; }
+
+  /* Final Upgrade 20 checkbox behavior: compact native checkbox, no post-click ring. */
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"],
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"] {
+    appearance: auto !important;
+    -webkit-appearance: checkbox !important;
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    min-height: 14px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: none !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+    accent-color: #202329;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: none !important;
+  }
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:hover,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:hover,
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:focus,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:focus,
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:focus-visible,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:focus-visible,
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:active,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:active,
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:checked,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:checked,
+  .ui-v2-payroll-timesheet-grid input[type="checkbox"]:indeterminate,
+  .ui-v2-payroll-timesheet-master-select input[type="checkbox"]:indeterminate {
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none !important;
+    filter: none !important;
+  }
+
+  /* Original two-sided footer. Pagination appears progressively only when needed. */
+  .ui-v2-payroll-timesheet-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 9px 11px;
+    border-top: 1px solid var(--ui-v2-border);
+    background: var(--ui-v2-surface-subtle);
+  }
+  .ui-v2-payroll-timesheet-footer-status {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+  }
+  .ui-v2-payroll-timesheet-footer-status strong { color: var(--ui-v2-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ui-v2-payroll-timesheet-footer-status i { width: 3px; height: 3px; flex: 0 0 3px; border-radius: 50%; background: var(--ui-v2-border-strong); }
+  .ui-v2-payroll-timesheet-footer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+
+  /* Production pagination is visually subordinate to the Upgrade 20 footer. */
+  .ui-v2-payroll-timesheet-pagination { display: inline-flex; align-items: center; justify-content: center; gap: 7px; margin-left: auto; white-space: nowrap; }
+  .ui-v2-payroll-timesheet-pagination__pages { display: inline-flex; align-items: center; gap: 3px; }
+  .ui-v2-payroll-timesheet-pagination__pages > button {
+    width: 25px;
+    height: 25px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ui-v2-text-secondary);
+    cursor: pointer;
+  }
+  .ui-v2-payroll-timesheet-pagination__pages > button:hover:not(:disabled) { border-color: var(--ui-v2-border-strong); background: #f7f8fa; color: var(--ui-v2-text); }
+  .ui-v2-payroll-timesheet-pagination__pages > button:focus-visible { outline: 2px solid rgba(32,35,41,.12); outline-offset: 1px; }
+  .ui-v2-payroll-timesheet-pagination__pages > button:disabled { opacity: .38; cursor: default; }
+  .ui-v2-payroll-timesheet-pagination__pages > span { min-width: 76px; color: var(--ui-v2-text-muted); font-size: 12px; text-align: center; }
+  .ui-v2-payroll-timesheet-pagination__pages > span strong { color: var(--ui-v2-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ui-v2-payroll-timesheet-pagination__status { min-width: 0; color: #9aa2ab; font-size: 12px; text-align: center; }
+  .ui-v2-payroll-timesheet-pagination__status:empty { display: none; }
+  .ui-v2-payroll-timesheet-pagination__status.is-active { color: var(--ui-v2-text-secondary); }
+  .ui-v2-payroll-timesheet-pagination__size { display: inline-flex; align-items: center; gap: 4px; color: var(--ui-v2-text-muted); font-size: 12px; }
+  .ui-v2-payroll-timesheet-pagination__size select {
+    height: 25px;
+    min-width: 50px;
+    padding: 0 18px 0 6px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 6px;
+    outline: 0;
+    background: #fff;
+    color: var(--ui-v2-text-secondary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+
+  /* Query state never changes sheet geometry. */
+  .ui-v2-payroll-timesheet-query-state {
+    position: absolute;
+    z-index: 60;
+    top: 92px;
+    right: 12px;
+    min-height: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 7px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 7px;
+    background: rgba(255,255,255,.96);
+    color: var(--ui-v2-text-muted);
+    font-size: 12px;
+    box-shadow: 0 3px 10px rgba(16,24,40,.06);
+  }
+  .ui-v2-payroll-timesheet-query-state.is-error { color: var(--ui-v2-danger); }
+  .ui-v2-payroll-timesheet-query-state .is-spinning { animation: ui-v2-timesheet-spin .8s linear infinite; }
+  @keyframes ui-v2-timesheet-spin { to { transform: rotate(360deg); } }
+
+  /* Full Screen is the exact Upgrade 20 focused-sheet composition. */
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen,
+  .ui-v2-payroll-timesheet-workspace:fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: var(--ui-v2-bg);
+    box-shadow: none;
+  }
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen .ui-v2-payroll-timesheet-toolbar,
+  .ui-v2-payroll-timesheet-workspace:fullscreen .ui-v2-payroll-timesheet-toolbar { flex: 0 0 auto; border-radius: 0; background: var(--ui-v2-surface); }
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen .ui-v2-payroll-timesheet-subtoolbar,
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen .ui-v2-payroll-timesheet-bulkbar,
+  .ui-v2-payroll-timesheet-workspace:fullscreen .ui-v2-payroll-timesheet-subtoolbar,
+  .ui-v2-payroll-timesheet-workspace:fullscreen .ui-v2-payroll-timesheet-bulkbar { flex: 0 0 auto; }
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen .ui-v2-payroll-timesheet-scroll,
+  .ui-v2-payroll-timesheet-workspace:fullscreen .ui-v2-payroll-timesheet-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: auto;
+    background: var(--ui-v2-surface);
+  }
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen .ui-v2-payroll-timesheet-footer,
+  .ui-v2-payroll-timesheet-workspace:fullscreen .ui-v2-payroll-timesheet-footer { flex: 0 0 auto; border-radius: 0; box-shadow: 0 -8px 22px rgba(16,24,40,.04); }
+
+  @media (max-width: 1220px) {
+    .ui-v2-payroll-timesheet-bulkbar { grid-template-columns: 34px 210px minmax(0,1fr); }
+    .ui-v2-payroll-timesheet-command-strip { flex-wrap: wrap; }
+  }
+  @media (max-width: 1080px) {
+    .ui-v2-payroll-timesheet-subtoolbar { align-items: flex-start; flex-direction: column; }
+  }
+  @media (max-width: 760px) {
+    .ui-v2-payroll-timesheet-bulkbar { grid-template-columns: 34px minmax(150px,210px) minmax(0,1fr); }
+    .ui-v2-payroll-timesheet-command-strip { grid-column: 1 / -1; border-top: 1px solid var(--ui-v2-border); }
+    .ui-v2-payroll-timesheet-footer { align-items: flex-start; flex-direction: column; }
+    .ui-v2-payroll-timesheet-pagination { width: 100%; margin-left: 0; justify-content: space-between; }
+    .ui-v2-payroll-timesheet-footer-actions { margin-left: 0; justify-content: flex-start; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-v2-payroll-timesheet-query-state .is-spinning { animation: none; }
+    .ui-v2-payroll-day-picker__trigger > svg:last-child,
+    .ui-v2-payroll-hours-picker__trigger > svg:last-child,
+    .ui-v2-payroll-status-picker__trigger > svg { transition: none; }
+  }
+}
+
+/* Configurable attendance status fallback tone */
+.ui-v2-payroll-timesheet-legend i.is-neutral,
+.ui-v2-payroll-status-picker__menu i.is-neutral { border-color: var(--ui-v2-border-strong); }
+.ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-neutral { border-color: var(--ui-v2-border-strong) !important; color: var(--ui-v2-text-secondary) !important; font-weight: 720 !important; }
+.ui-v2-payroll-timesheet-workspace .ui-v2-payroll-ts-input.is-neutral:where(:focus, :focus-visible, :active) { border-color: var(--ui-v2-border-strong) !important; }
+
+/* Corrective 02 — targeted timesheet readability.
+   Keep the canonical dense sheet geometry; only lift the few labels that were
+   visually undersized. Column widths and input density remain unchanged. */
+@layer ui-v2-pages {
+  .ui-v2-payroll-timesheet-selection-actions button { font-size: 12px; }
+  .ui-v2-payroll-day-picker__grid button small { font-size: 12px; }
+  .ui-v2-payroll-timesheet-grid thead th span { font-size: 12px; }
+  .ui-v2-payroll-timesheet-grid thead th strong { font-size: 12px; }
+  .ui-v2-payroll-timesheet-grid td.is-employee span { font-size: 12px; }
+  .ui-v2-payroll-timesheet-pagination__status,
+  .ui-v2-payroll-timesheet-pagination__pages > span,
+  .ui-v2-payroll-timesheet-pagination__size,
+  .ui-v2-payroll-timesheet-query-state { font-size: 12px; }
+  .ui-v2-payroll-timesheet-pagination__size select { font-size: 12px; }
+}
+
+@layer ui-v2-pages {
+  .ui-v2-payroll-timesheet-selection-summary small,
+  .ui-v2-payroll-hours-picker__hint,
+  .ui-v2-payroll-status-picker__menu small { font-size: 12px; }
+  .ui-v2-payroll-day-picker__weekdays span { font-size: 12px; }
+  .ui-v2-payroll-ts-input { font-size: 12px !important; }
+  .ui-v2-payroll-ts-input.is-multi-digit { font-size: 12px !important; }
+}
+
+@layer ui-v2-pages {
+  .ui-v2-payroll-timesheet-lifecycle .ui-v2-payroll-workflow-steps{grid-template-columns:repeat(auto-fit,minmax(112px,1fr));row-gap:10px}
+}

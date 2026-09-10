@@ -3,6 +3,9 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${IMS_ENV_FILE:-${PROJECT_ROOT}/.env.production}"
+if [[ "${ENV_FILE}" != /* ]]; then
+  ENV_FILE="${PROJECT_ROOT}/${ENV_FILE#./}"
+fi
 COMPOSE_FILES=(--file "${PROJECT_ROOT}/docker-compose.yml")
 
 read_env_file_value() {
@@ -52,6 +55,13 @@ require_environment() {
 
 read_env_value() {
   read_env_file_value "${ENV_FILE}" "$1"
+}
+
+payroll_key_fingerprint() {
+  local key
+  key="$(read_env_value PAYROLL_FIELD_ENCRYPTION_KEY)"
+  [[ -n "${key}" ]] || fatal "PAYROLL_FIELD_ENCRYPTION_KEY is missing from ${ENV_FILE}."
+  printf '%s' "${key}" | sha256sum | awk '{print $1}'
 }
 
 wait_for_service_health() {

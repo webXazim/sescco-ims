@@ -1,0 +1,60 @@
+@layer ui-v2-layout {
+  .ui-v2-app-shell {
+    width: 100%;
+    max-width: 100vw;
+    min-height: 100svh;
+    background: var(--ui-v2-bg);
+    overflow-x: clip;
+  }
+
+  .ui-v2-app-shell > .ui-v2-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--ui-v2-sidebar-runtime, var(--ui-v2-sidebar));
+    height: 100svh;
+    z-index: 40;
+  }
+
+  .ui-v2-app-shell[data-collapsed="true"] > .ui-v2-sidebar {
+    width: var(--ui-v2-sidebar-collapsed);
+  }
+
+  .ui-v2-app-shell__workspace {
+    width: calc(100% - var(--ui-v2-sidebar-runtime, var(--ui-v2-sidebar)));
+    max-width: calc(100% - var(--ui-v2-sidebar-runtime, var(--ui-v2-sidebar)));
+    min-width: 0;
+    min-height: 100svh;
+    margin-left: var(--ui-v2-sidebar-runtime, var(--ui-v2-sidebar));
+    overflow-x: clip;
+    transition: width 160ms ease, max-width 160ms ease, margin-left 160ms ease;
+  }
+
+  .ui-v2-app-shell[data-collapsed="true"] .ui-v2-app-shell__workspace {
+    width: calc(100% - var(--ui-v2-sidebar-collapsed));
+    max-width: calc(100% - var(--ui-v2-sidebar-collapsed));
+    margin-left: var(--ui-v2-sidebar-collapsed);
+  }
+
+  .ui-v2-app-content {
+    width: 100%;
+    max-width: calc(var(--ui-v2-page-max) + 64px);
+    min-width: 0;
+    margin: 0 auto;
+    padding: 30px 32px 56px;
+    overflow-x: clip;
+  }
+
+  .ui-v2-app-content > * {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  body.ui-v2-sidebar-resizing .ui-v2-app-shell__workspace {
+    transition: none;
+  }
+
+  .ui-v2-mobile-scrim,
+  .ui-v2-collapsed-rail-toggle {
+    display: none;
+  }
+}

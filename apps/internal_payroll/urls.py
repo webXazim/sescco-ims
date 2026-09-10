@@ -1,0 +1,41 @@
+from django.urls import path
+
+from . import api, attendance_api, payment_api, payroll_api, salary_api
+
+app_name = "internal_payroll"
+
+urlpatterns = [
+    path("api/internal/salary-payments/", payment_api.salary_payments_api, name="salary-payments-api"),
+    path("api/internal/salary-payments/settings/", payment_api.salary_payment_settings_api, name="salary-payment-settings-api"),
+    path("api/internal/salary-payments/profiles/<uuid:employee_id>/", payment_api.employee_payment_profile_api, name="employee-payment-profile-api"),
+    path("api/internal/salary-payments/templates/", payment_api.bank_export_templates_api, name="bank-export-templates-api"),
+    path("api/internal/salary-payments/templates/<uuid:template_id>/", payment_api.bank_export_template_detail_api, name="bank-export-template-detail-api"),
+    path("api/internal/salary-payments/batches/", payment_api.prepare_salary_payment_batch_api, name="salary-payment-batches-api"),
+    path("api/internal/salary-payments/batches/<uuid:batch_id>/export/", payment_api.salary_payment_batch_export_api, name="salary-payment-batch-export-api"),
+    path("api/internal/salary-payments/batches/<uuid:batch_id>/workflow/", payment_api.salary_payment_batch_workflow_api, name="salary-payment-batch-workflow-api"),
+    path("api/internal/salary-payments/batches/<uuid:batch_id>/results/", payment_api.salary_payment_results_api, name="salary-payment-results-api"),
+    path("api/internal/salary-payments/rows/<uuid:row_id>/retry/", payment_api.salary_payment_row_retry_api, name="salary-payment-row-retry-api"),
+    path("api/internal/payroll/", payroll_api.payroll_api, name="payroll-api"),
+    path("api/internal/payroll/policy/", payroll_api.payroll_policy_api, name="payroll-policy-api"),
+    path("api/internal/payroll/calculate/", payroll_api.payroll_calculate_api, name="payroll-calculate-api"),
+    path("api/internal/payroll/workflow/", payroll_api.payroll_workflow_api, name="payroll-workflow-api"),
+    path("api/internal/adjustments/", payroll_api.payroll_adjustments_api, name="payroll-adjustments-api"),
+    path("api/internal/adjustments/<uuid:adjustment_id>/", payroll_api.payroll_adjustment_detail_api, name="payroll-adjustment-detail-api"),
+    path("api/internal/adjustments/<uuid:adjustment_id>/workflow/", payroll_api.payroll_adjustment_workflow_api, name="payroll-adjustment-workflow-api"),
+    path("api/internal/attendance/", attendance_api.attendance_api, name="attendance-api"),
+    path("api/internal/attendance/overtime/", attendance_api.overtime_api, name="attendance-overtime-api"),
+    path("api/internal/attendance/workflow/", attendance_api.attendance_workflow_api, name="attendance-workflow-api"),
+    path("api/internal/attendance/import/", attendance_api.attendance_import_api, name="attendance-import-api"),
+    path("api/internal/branches/", api.branches_api, name="branches-api"),
+    path("api/internal/branches/<uuid:branch_id>/", api.branch_detail_api, name="branch-detail-api"),
+    path("api/internal/departments/", api.departments_api, name="departments-api"),
+    path("api/internal/departments/<uuid:department_id>/", api.department_detail_api, name="department-detail-api"),
+    path("api/internal/employees/", api.employees_api, name="employees-api"),
+    path("api/internal/employees/<uuid:employee_id>/", api.employee_detail_api, name="employee-detail-api"),
+    path("api/internal/employees/<uuid:employee_id>/organization/", api.employee_organization_api, name="employee-organization-api"),
+    path("api/internal/salary/components/", salary_api.salary_components_api, name="salary-components-api"),
+    path("api/internal/salary/components/<uuid:component_id>/", salary_api.salary_component_detail_api, name="salary-component-detail-api"),
+    path("api/internal/salary/overtime-policies/", salary_api.overtime_policies_api, name="overtime-policies-api"),
+    path("api/internal/salary/overtime-policies/<uuid:policy_id>/", salary_api.overtime_policy_detail_api, name="overtime-policy-detail-api"),
+    path("api/internal/salary/structures/", salary_api.salary_structures_api, name="salary-structures-api"),
+]

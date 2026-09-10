@@ -65,4 +65,52 @@ def inventory_deployment_checks(app_configs, **kwargs):
             )
         )
 
+    payroll_assets = (
+        settings.BASE_DIR / "static" / "payroll" / "js" / "app.js",
+        settings.BASE_DIR / "static" / "payroll" / "css" / "v2" / "index.css",
+        settings.BASE_DIR / "static" / "payroll" / "css" / "v2" / "prs-final.css",
+        settings.BASE_DIR / "templates" / "payroll" / "app.html",
+    )
+    missing_payroll_assets = [str(path.relative_to(settings.BASE_DIR)) for path in payroll_assets if not path.is_file()]
+    if missing_payroll_assets:
+        issues.append(
+            Error(
+                "The merged Payroll frontend bundle is incomplete.",
+                hint=f"Missing: {', '.join(missing_payroll_assets)}",
+                id="platform.E201",
+            )
+        )
+
+    return issues
+
+
+@register(Tags.models, deploy=True)
+def shared_project_authority_checks(app_configs, **kwargs):
+    """Protect the merged platform from re-introducing Payroll's old duplicate project master."""
+
+    from django.apps import apps as django_apps
+
+    issues = []
+    Project = django_apps.get_model("projects", "Project")
+    required_fields = {"company", "reference", "code", "start_date", "end_date", "manager_name", "status"}
+    actual_fields = {field.name for field in Project._meta.get_fields()}
+    missing = sorted(required_fields - actual_fields)
+    if missing:
+        issues.append(
+            Error(
+                "The canonical shared Project contract is incomplete.",
+                hint=f"Missing fields: {', '.join(missing)}",
+                id="platform.E101",
+            )
+        )
+
+    duplicate_model = django_apps.all_models.get("rental_manpower", {}).get("rentalproject")
+    if duplicate_model is not None:
+        issues.append(
+            Error(
+                "Rental Manpower must use projects.Project; a second RentalProject model is not allowed.",
+                hint="Adapt Payroll foreign keys and services to apps.projects.Project instead of importing its standalone RentalProject.",
+                id="platform.E102",
+            )
+        )
     return issues

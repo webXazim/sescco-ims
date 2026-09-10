@@ -1,0 +1,41 @@
+@layer ui-v2-reset {
+  .ui-v2-root,
+  .ui-v2-root *,
+  .ui-v2-root *::before,
+  .ui-v2-root *::after {
+    box-sizing: border-box;
+  }
+
+  .ui-v2-root {
+    min-height: 100svh;
+    margin: 0;
+    background: var(--ui-v2-bg);
+    color: var(--ui-v2-text);
+    font-family: var(--ui-v2-font);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .ui-v2-root button,
+  .ui-v2-root input,
+  .ui-v2-root select,
+  .ui-v2-root textarea {
+    font: inherit;
+  }
+
+  .ui-v2-root button,
+  .ui-v2-root [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ui-v2-root a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .ui-v2-root button {
+    margin: 0;
+  }
+}

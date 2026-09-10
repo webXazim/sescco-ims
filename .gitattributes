@@ -1,0 +1,27 @@
+# Keep production source deterministic across Windows/Linux developer machines.
+* text=auto eol=lf
+
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.conf text eol=lf
+*.txt text eol=lf
+
+# Binary/application artifacts must never be newline-normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.xlsx binary
+*.xls binary
+*.zip binary
+*.sqlite3 binary

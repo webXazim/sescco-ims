@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.http import HttpResponse
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
@@ -17,6 +19,20 @@ class HealthEndpointTests(TestCase):
         response = self.client.get(reverse("core:health_ready"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["database"], "ready")
+        self.assertEqual(response.json()["migrations"], "ready")
+
+    @override_settings(SECURE_SSL_REDIRECT=False)
+    @patch("apps.core.views.MigrationExecutor")
+    def test_readiness_rejects_pending_migrations(self, executor_class):
+        executor_class.return_value.loader.graph.leaf_nodes.return_value = [("core", "9999_future")]
+        executor_class.return_value.migration_plan.return_value = [object()]
+
+        response = self.client.get(reverse("core:health_ready"))
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["database"], "ready")
+        self.assertEqual(response.json()["migrations"], "pending")
+        self.assertEqual(response.json()["pending_migration_count"], 1)
 
 
 class RequestIdMiddlewareTests(TestCase):

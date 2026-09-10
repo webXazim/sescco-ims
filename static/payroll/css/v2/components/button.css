@@ -1,0 +1,96 @@
+@layer ui-v2-components {
+  .ui-v2-button {
+    min-height: var(--ui-v2-control-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 13px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-v2-radius-md);
+    background: transparent;
+    color: var(--ui-v2-text);
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 620;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+
+  .ui-v2-button:focus-visible {
+    outline: 2px solid var(--ui-v2-border-focus);
+    outline-offset: 2px;
+  }
+
+  .ui-v2-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .ui-v2-button--primary {
+    background: var(--ui-v2-accent);
+    color: var(--ui-v2-text-inverse);
+    border-color: var(--ui-v2-accent);
+  }
+
+  .ui-v2-button--primary:hover:not(:disabled) {
+    background: var(--ui-v2-accent-hover);
+    border-color: var(--ui-v2-accent-hover);
+  }
+
+  .ui-v2-button--secondary {
+    background: var(--ui-v2-surface);
+    border-color: var(--ui-v2-border-strong);
+  }
+
+  .ui-v2-button--secondary:hover:not(:disabled),
+  .ui-v2-button--quiet:hover:not(:disabled) {
+    background: var(--ui-v2-surface-hover);
+  }
+
+  .ui-v2-button--quiet {
+    border-color: transparent;
+    color: var(--ui-v2-text-secondary);
+  }
+
+  .ui-v2-button--danger {
+    background: var(--ui-v2-danger-bg);
+    border-color: var(--ui-v2-danger-border);
+    color: var(--ui-v2-danger);
+  }
+
+  .ui-v2-button--sm {
+    min-height: var(--ui-v2-control-sm);
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+
+  .ui-v2-button--lg {
+    min-height: var(--ui-v2-control-lg);
+    padding-inline: 16px;
+  }
+
+  .ui-v2-icon-button {
+    width: var(--ui-v2-control-md);
+    min-width: var(--ui-v2-control-md);
+    padding: 0;
+  }
+}
+
+@layer ui-v2-components {
+  .ui-v2-button[data-busy="true"] {
+    cursor: progress;
+    opacity: .72;
+  }
+
+  .ui-v2-button__spinner {
+    flex: 0 0 auto;
+  }
+}
+
+@layer ui-v2-components {
+  .ui-v2-button[data-busy="true"] > svg:not(.ui-v2-button__spinner) {
+    display: none;
+  }
+}

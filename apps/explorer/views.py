@@ -34,7 +34,7 @@ class SavedViewListView(InventoryWorkspaceMixin, View):
     template_name = "explorer/saved_view_list.html"
 
     def get(self, request):
-        views = SavedView.objects.filter(owner=request.user)
+        views = SavedView.objects.for_company(request.company).filter(owner=request.user)
         query = request.GET.get("q", "").strip()
         if query:
             views = views.filter(
@@ -69,6 +69,7 @@ class SavedViewCreateView(InventoryWorkspaceMixin, View):
         if form.is_valid():
             try:
                 saved = create_saved_view(
+                    company=request.company,
                     owner=request.user,
                     name=form.cleaned_data["name"],
                     view_type=view_type,
@@ -87,13 +88,13 @@ class SavedViewCreateView(InventoryWorkspaceMixin, View):
 
 class SavedViewOpenView(InventoryWorkspaceMixin, View):
     def get(self, request, pk):
-        saved = get_object_or_404(SavedView, pk=pk, owner=request.user)
+        saved = get_object_or_404(SavedView.objects.for_company(request.company), pk=pk, owner=request.user)
         return redirect(saved_view_target(saved))
 
 
 class SavedViewRenameView(InventoryWorkspaceMixin, View):
     def post(self, request, pk):
-        saved = get_object_or_404(SavedView, pk=pk, owner=request.user)
+        saved = get_object_or_404(SavedView.objects.for_company(request.company), pk=pk, owner=request.user)
         form = SavedViewRenameForm(request.POST, instance=saved)
         if form.is_valid():
             try:
@@ -110,7 +111,7 @@ class SavedViewRenameView(InventoryWorkspaceMixin, View):
 
 class SavedViewDeleteView(InventoryWorkspaceMixin, View):
     def post(self, request, pk):
-        saved = get_object_or_404(SavedView, pk=pk, owner=request.user)
+        saved = get_object_or_404(SavedView.objects.for_company(request.company), pk=pk, owner=request.user)
         name = saved.name
         saved.delete()
         messages.success(request, f'View “{name}” was deleted.')

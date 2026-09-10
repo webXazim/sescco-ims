@@ -2,6 +2,16 @@
 
 - [ ] `.env.production` contains no placeholders and is mode 600.
 - [ ] `./scripts/preflight.sh` passes.
+- [ ] `PAYROLL_FIELD_ENCRYPTION_KEY` is stored in an independent protected disaster-recovery secret store.
+- [ ] `DJANGO_TRUSTED_PROXY_IPS` matches the actual Docker gateway/proxy subnet visible to Django.
+- [ ] `./scripts/verify-production-infrastructure.sh` passes.
+- [ ] `./scripts/verify-production-freeze.sh` passes.
+- [ ] Production cutover uses `./scripts/deploy-production-freeze.sh`, not the lower-level deploy entrypoint directly.
+- [ ] A current production backup has passed `./scripts/rehearse-production-freeze.sh`.
+- [ ] Rehearsal evidence contains successful row-count preservation, legacy field-data fingerprint preservation, and SHA-256 checksums.
+- [ ] `/app/health/ready/` reports both `database=ready` and `migrations=ready`.
+- [ ] Backup manifest contains `payroll_field_key_fingerprint_sha256` and a restore with the wrong key is rejected.
+- [ ] Inventory, shared-shell, and Payroll static smoke-test URLs return 200 after deploy.
 - [ ] Python compilation and static validation pass.
 - [ ] `python manage.py test` passes in Docker or CI.
 - [ ] `python manage.py check --deploy` passes.

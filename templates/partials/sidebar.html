@@ -1,5 +1,6 @@
 <aside class="sidebar">
-  <div class="brand"><div class="brand-mark">IM</div><div class="brand-copy"><div class="brand-name">{{ APP_NAME }}</div><div class="brand-sub">{{ APP_SUBTITLE }}</div></div></div>
+  <div class="brand"><div class="brand-mark">{{ ACTIVE_COMPANY.name|default:APP_NAME|slice:':1'|upper }}</div><div class="brand-copy"><div class="brand-name">{{ ACTIVE_COMPANY.name|default:APP_NAME }}</div><div class="brand-sub">Inventory Management</div></div></div>
+  {% include "partials/platform_switchers.html" %}
   <nav class="nav">
     <div class="nav-label">Workspace</div>
     <a class="nav-link {% if page_key == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}"><span class="nav-glyph">⌂</span><span>Overview</span></a>
@@ -14,10 +15,10 @@
     <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}"><span class="nav-glyph">U</span><span>Units</span></a>
     <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}"><span class="nav-glyph">S</span><span>Suppliers</span></a>
     <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}"><span class="nav-glyph">□</span><span>Archive</span><span class="nav-count">{{ NAV_ARCHIVE_COUNT }}</span></a>
-    {% if request.user.is_inventory_admin %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}"><span class="nav-glyph">♲</span><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span></a>{% endif %}
+    {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}"><span class="nav-glyph">♲</span><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span></a>{% endif %}
     <a class="nav-link {% if page_key == 'low-stock' %}active{% endif %}" href="{% url 'inventory:low_stock' %}"><span class="nav-glyph">!</span><span>Low stock</span><span class="nav-count">{{ NAV_LOW_STOCK_COUNT }}</span></a>
     <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}"><span class="nav-glyph">▮</span><span>Saved views</span></a>
-    {% if request.user.is_inventory_admin %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}"><span class="nav-glyph">⇧</span><span>Excel imports</span></a>{% endif %}
+    {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}"><span class="nav-glyph">⇧</span><span>Excel imports</span></a>{% endif %}
   </nav>
-  <div class="sidebar-foot"><div class="user-tile"><div class="avatar">{{ request.user.display_name|slice:':2'|upper }}</div><div class="user-tile-copy"><div class="user-name">{{ request.user.display_name }}</div><div class="user-meta">{{ request.user.get_role_display }}</div></div><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></div></div>
+  <div class="sidebar-foot"><div class="user-tile"><div class="avatar">{{ request.user.display_name|slice:':2'|upper }}</div><div class="user-tile-copy"><div class="user-name">{{ request.user.display_name }}</div><div class="user-meta">{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }} · {{ ACTIVE_COMPANY.name }}</div></div><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></div></div>
 </aside>

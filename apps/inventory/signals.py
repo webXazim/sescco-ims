@@ -11,17 +11,18 @@ def ensure_project_inventory_location(sender, instance, **kwargs):
     if kwargs.get("raw"):
         return
     code = instance.code
-    conflict = InventoryLocation.objects.filter(code=code).exclude(project=instance).exists()
+    conflict = InventoryLocation.objects.for_company(instance.company).filter(code=code).exclude(project=instance).exists()
     if conflict:
         base = f"PROJECT-{instance.code}"[:30]
         code = base
         suffix = 1
-        while InventoryLocation.objects.filter(code=code).exclude(project=instance).exists():
+        while InventoryLocation.objects.for_company(instance.company).filter(code=code).exclude(project=instance).exists():
             suffix += 1
             code = f"{base[: 29 - len(str(suffix))]}-{suffix}"
-    InventoryLocation.objects.update_or_create(
+    InventoryLocation.objects.for_company(instance.company).update_or_create(
         project=instance,
         defaults={
+            "company": instance.company,
             "code": code,
             "name": instance.name,
             "location_type": InventoryLocation.Type.PROJECT,

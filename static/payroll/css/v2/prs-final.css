@@ -1,0 +1,264 @@
+/*
+ * PRS / DocGen Payroll V2 — Production UI freeze (Upgrade 11)
+ *
+ * Single PRS-side entrypoint. Canonical DocGen V2 sources remain in index.css;
+ * these imports are only the Django/PRS structural bridges accumulated during
+ * the controlled migration. Keep this file loaded after css/v2/index.css.
+ */
+@import "./prs-shell-cutover.css";
+@import "./prs-primitives-cutover.css";
+@import "./prs-internal-pages-cutover.css";
+@import "./prs-internal-timesheet-cutover.css";
+@import "./prs-internal-execution-cutover.css";
+@import "./prs-rental-operations-cutover.css";
+@import "./prs-rental-timesheet-cutover.css";
+@import "./prs-rental-financial-cutover.css";
+@import "./prs-records-management-cutover.css";
+
+/* ---------- Production floor: geometry ---------- */
+.ui-v2-root,
+.ui-v2-root * { box-sizing:border-box; }
+
+.ui-v2-root .ui-v2-app-shell__workspace,
+.ui-v2-root .ui-v2-main,
+.ui-v2-root .ui-v2-app-content,
+.ui-v2-root #pageRoot,
+.ui-v2-root .page,
+.ui-v2-root .panel,
+.ui-v2-root .data-panel { min-width:0; }
+
+.ui-v2-root .page {
+  width:100%;
+  max-width:var(--ui-v2-page-max);
+  margin-inline:auto;
+}
+
+.ui-v2-root .page-head { min-width:0; }
+.ui-v2-root .page-head__copy,
+.ui-v2-root .page-head__actions { min-width:0; }
+
+/* No accidental page-width growth from long IDs, references or entity names. */
+.ui-v2-root .page :where(
+  .table-secondary,
+  .entity-subline,
+  .field-hint,
+  .source-note,
+  .settings-summary-row,
+  .management-audit-row__copy,
+  .document-list-item__body,
+  .report-catalog__item,
+  .profile-facts,
+  .detail-card
+) { overflow-wrap:anywhere; }
+
+/* ---------- Production floor: readable operational typography ---------- */
+.ui-v2-root .page :where(
+  .table-secondary,
+  .field-hint,
+  .inline-stat,
+  .period-note,
+  .empty-inline,
+  .panel__head p,
+  .section-headline p,
+  .source-note,
+  .source-banner,
+  .workspace-context-banner,
+  .settings-policy-note,
+  .management-not-comparable
+) { font-size:12px; line-height:1.45; }
+
+.ui-v2-root .page :where(.status,.readiness,.placeholder__stage) {
+  min-height:24px;
+  font-size:11.5px;
+  line-height:1;
+  white-space:nowrap;
+}
+
+.ui-v2-root .page :where(.btn,.select-btn) { font-size:13px; }
+.ui-v2-root .page .btn--sm { font-size:12px !important; }
+.ui-v2-root .page :where(.input,.select,.compact-select,.textarea) { font-size:13px; }
+.ui-v2-root .page :where(.segmented button,.compact-segmented button,.profile-tabs button,.tabs > button) { font-size:12px; }
+
+/* Registers should not fall back to the original 7–10px operational scale. */
+.ui-v2-root .page table:not(.document-paper table):not(.receipt-paper table):not(.letterhead-paper table) :where(th,td) {
+  font-size:12px;
+}
+.ui-v2-root .page table:not(.document-paper table):not(.receipt-paper table):not(.letterhead-paper table) th {
+  line-height:1.25;
+}
+
+/* Preserve intentionally compact finalized paper typography. */
+.ui-v2-root :where(.document-paper,.receipt-paper,.letterhead-paper,.document-source-paper) {
+  font-size:initial;
+}
+
+/* Shell microcopy remains compact, but must stay readable on ordinary desktop DPI. */
+.ui-v2-root .ui-v2-app-shell :where(
+  .ui-v2-nav-group__label,
+  .ui-v2-account__copy small,
+  .ui-v2-account-menu__section-label,
+  .ui-v2-command__copy small,
+  .ui-v2-prs-menu-header span,
+  .ui-v2-prs-menu-note,
+  .ui-v2-prs-menu-rich small,
+  .ui-v2-prs-notification-menu .notice-row small,
+  .ui-v2-prs-account-identity small,
+  .ui-v2-account-menu .ui-v2-prs-account-menu-item small,
+  .ui-v2-prs-command-group
+) { font-size:11px; line-height:1.4; }
+
+/* ---------- Search / controls ---------- */
+.ui-v2-root :where(.search-field,.table-toolbar__search) {
+  min-height:var(--ui-v2-control-md);
+}
+.ui-v2-root :where(.search-field,.table-toolbar__search) > svg {
+  left:11px;
+  width:15px;
+  height:15px;
+  pointer-events:none;
+}
+.ui-v2-root :where(.search-field,.table-toolbar__search) > input {
+  min-width:0;
+  padding-left:34px !important;
+  font-size:13px !important;
+}
+
+/* Custom controls get one accessible focus treatment without browser-blue remnants. */
+.ui-v2-root :where(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline:2px solid var(--ui-v2-border-focus);
+  outline-offset:2px;
+}
+.ui-v2-root :where(input[type="checkbox"],input[type="radio"]):focus-visible {
+  outline:2px solid var(--ui-v2-border-focus);
+  outline-offset:2px;
+  box-shadow:none;
+}
+
+/* ---------- Table / scroll hardening ---------- */
+.ui-v2-root .page :where(.table-scroll,.table-wrap,.payroll-table-scroll,.rental-table-wrap) {
+  max-width:100%;
+  scrollbar-width:thin;
+}
+
+/* Ordinary registers follow the page vertically; horizontal overflow stays local. */
+.ui-v2-root .page :where(.data-panel,.panel) > :where(.table-scroll,.table-wrap) {
+  max-height:none;
+  overflow-x:auto;
+  overflow-y:visible;
+  overscroll-behavior:auto;
+}
+
+/* Explicit workspaces own their vertical scrolling and are excluded above by structure. */
+.ui-v2-root :where(
+  .ui-v2-payroll-timesheet-workspace,
+  .ui-v2-payroll-document-list,
+  .ui-v2-payroll-document-preview-stage,
+  .ui-v2-payroll-report-table-wrap
+) { scrollbar-width:thin; }
+
+.ui-v2-root .page table tbody tr { transition:background-color 120ms ease; }
+.ui-v2-root .page table tbody tr:hover > td { background:var(--ui-v2-surface-hover); }
+
+/* Timesheets use status borders; do not flash/repaint cell backgrounds on hover. */
+.ui-v2-root .ui-v2-payroll-timesheet-workspace table tbody tr:hover > td,
+.ui-v2-root .ui-v2-payroll-timesheet-workspace table td:hover {
+  background-color:inherit;
+}
+
+/* ---------- Menus / tags ---------- */
+.ui-v2-root :where(.status,.readiness,.management-role-chip,.mapping-chip,.tab-count) {
+  display:inline-flex;
+  align-items:center;
+  vertical-align:middle;
+}
+.ui-v2-root :where(.status,.readiness) { max-width:100%; }
+.ui-v2-root :where(.status,.readiness) > span { flex:0 0 auto; }
+
+.ui-v2-root [data-dropdown-menu]:not(.is-open),
+.ui-v2-root .menu:not(.is-open)[aria-hidden="true"] { pointer-events:none; }
+
+/* ---------- Drawer / modal hardening ---------- */
+.ui-v2-root .drawer,
+.ui-v2-root .drawer,
+.ui-v2-root .drawer__body,
+.ui-v2-root .drawer-body { min-width:0; }
+.ui-v2-root .drawer-body { overflow-x:hidden; overflow-y:auto; }
+.ui-v2-root .drawer .form-grid { min-width:0; }
+.ui-v2-root .drawer :where(input,select,textarea) { min-width:0; }
+
+/* ---------- Empty/loading states ---------- */
+.ui-v2-root .page :where(.table-empty,.placeholder) strong { font-size:13px; }
+.ui-v2-root .page :where(.table-empty,.placeholder) span,
+.ui-v2-root .page :where(.table-empty,.placeholder) p { font-size:12px; line-height:1.5; }
+
+/* ---------- Responsive production pass ---------- */
+@media (max-width:900px) {
+  .ui-v2-root .page-head { gap:16px; }
+  .ui-v2-root .page-head__copy { max-width:none; }
+}
+
+@media (max-width:760px) {
+  .ui-v2-root .page { gap:12px; }
+  .ui-v2-root .page-head {
+    align-items:stretch;
+    flex-direction:column;
+    gap:14px;
+    padding-bottom:18px;
+  }
+  .ui-v2-root .page-head__actions {
+    width:100%;
+    justify-content:flex-start;
+  }
+  .ui-v2-root .page-head__actions > :where(.select,.compact-select) { width:auto; min-width:150px; }
+  .ui-v2-root .toolbar,
+  .ui-v2-root .table-toolbar { max-width:100%; }
+  .ui-v2-root .drawer { width:min(100vw,560px); max-width:100vw; }
+}
+
+@media (max-width:560px) {
+  .ui-v2-root .page-head__copy h1,
+  .ui-v2-root .entity-title-row h1 { font-size:24px; }
+  .ui-v2-root .page-head__copy p { font-size:13px; }
+  .ui-v2-root .page-head__actions { display:grid; grid-template-columns:1fr 1fr; }
+  .ui-v2-root .page-head__actions > :where(.btn,.select-btn,.select,.compact-select) { width:100%; min-width:0; }
+  .ui-v2-root :where(.toolbar,.table-toolbar) > :where(.search-field,.table-toolbar__search) { flex-basis:100%; max-width:none; width:100%; }
+  .ui-v2-root .drawer { width:100vw; max-width:100vw; border-radius:0; }
+}
+
+@media (max-width:420px) {
+  .ui-v2-root .page-head__actions { grid-template-columns:1fr; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .ui-v2-root *,
+  .ui-v2-root *::before,
+  .ui-v2-root *::after {
+    scroll-behavior:auto !important;
+    transition-duration:.01ms !important;
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+  }
+}
+
+/* ---------- Print safety ---------- */
+@media print {
+  .ui-v2-root .ui-v2-sidebar,
+  .ui-v2-root .ui-v2-topbar,
+  .ui-v2-root .page-head__actions,
+  .ui-v2-root .toast-stack,
+  .ui-v2-root .drawer,
+  .ui-v2-root .drawer-scrim { display:none !important; }
+  .ui-v2-root .ui-v2-app-shell,
+  .ui-v2-root .ui-v2-app-shell__workspace,
+  .ui-v2-root .ui-v2-main,
+  .ui-v2-root .ui-v2-app-content { display:block !important; margin:0 !important; padding:0 !important; }
+  .ui-v2-root .page { max-width:none; }
+}

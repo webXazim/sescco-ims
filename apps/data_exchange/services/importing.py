@@ -13,6 +13,8 @@ from django.utils import timezone
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
+from apps.accounts.permissions import user_has_capability_for_company
+from apps.accounts.roles import Capability
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.normalization import clean_display_text, normalize_phone, normalize_text
 from apps.inventory.services.matching import find_stock_matches
@@ -393,7 +395,7 @@ def _preview_opening(job: ImportJob, workbook) -> None:
             project_code = _display(raw.get("project_code")).upper()
             unit_value = _display(raw.get("unit"))
             project = (
-                Project.objects.filter(deleted_at__isnull=True)
+                Project.objects.for_company(job.company).filter(deleted_at__isnull=True)
                 .filter(
                     code=project_code,
                     status=Project.Status.ACTIVE,
@@ -404,7 +406,7 @@ def _preview_opening(job: ImportJob, workbook) -> None:
                 raise ValueError(f"Active project {project_code or '—'} was not found.")
             normalized_unit = normalize_text(unit_value)
             unit = (
-                Unit.objects.filter(is_active=True, deleted_at__isnull=True)
+                Unit.objects.for_company(job.company).filter(is_active=True, deleted_at__isnull=True)
                 .filter(Q(normalized_name=normalized_unit) | Q(normalized_symbol=normalized_unit))
                 .first()
             )
@@ -581,6 +583,7 @@ def preview_import(job: ImportJob) -> ImportJob:
 def _legacy_create(row: ImportRow, job: ImportJob, user) -> StockItem:
     data = row.cleaned_data
     item = StockItem(
+        company=job.company,
         project=job.project,
         material_name=data["material_name"],
         description=data.get("description", ""),
@@ -601,7 +604,7 @@ def _legacy_create(row: ImportRow, job: ImportJob, user) -> StockItem:
 
 
 def _legacy_update(row: ImportRow, job: ImportJob, user) -> StockItem:
-    item = StockItem.objects.select_for_update().get(pk=row.exact_match_id)
+    item = StockItem.objects.for_company(job.company).select_for_update().get(pk=row.exact_match_id)
     if not job.options.get("update_existing_records", True):
         raise ImportProcessingError("Matching-row updates were disabled for this job.")
     data = row.cleaned_data
@@ -633,7 +636,7 @@ def _legacy_update(row: ImportRow, job: ImportJob, user) -> StockItem:
 def _opening_item(row: ImportRow, user) -> StockItem:
     data = row.cleaned_data
     if row.exact_match_id:
-        item = StockItem.objects.select_for_update().get(pk=row.exact_match_id)
+        item = StockItem.objects.for_company(row.job.company).select_for_update().get(pk=row.exact_match_id)
         update_fields = ["updated_by", "updated_at"]
         if data.get("description"):
             item.description = data["description"]
@@ -648,6 +651,7 @@ def _opening_item(row: ImportRow, user) -> StockItem:
         item.save(update_fields=tuple(dict.fromkeys(update_fields)))
         return item
     item = StockItem(
+        company=row.job.company,
         project_id=data["project_id"],
         material_name=data["material_name"],
         description=data.get("description", ""),
@@ -669,11 +673,11 @@ def confirm_import(
     user,
     include_similar_rows: bool = False,
 ) -> ImportJob:
-    if not getattr(user, "is_inventory_admin", False):
-        raise ImportProcessingError("Only an administrator can confirm imports.")
+    if not user_has_capability_for_company(user, job.company, Capability.MANAGE_INVENTORY):
+        raise ImportProcessingError("Only an inventory manager can confirm imports.")
     try:
         with transaction.atomic():
-            locked_job = ImportJob.objects.select_for_update().get(pk=job.pk)
+            locked_job = ImportJob.objects.for_company(job.company).select_for_update().get(pk=job.pk)
             if locked_job.status == ImportJob.Status.COMPLETED:
                 return locked_job
             if locked_job.status != ImportJob.Status.PREVIEW:
@@ -778,7 +782,7 @@ def confirm_import(
             )
             return locked_job
     except Exception as exc:
-        ImportJob.objects.filter(pk=job.pk).update(
+        ImportJob.objects.for_company(job.company).filter(pk=job.pk).update(
             status=ImportJob.Status.FAILED,
             error_message=str(exc),
         )

@@ -1,0 +1,40 @@
+@layer ui-v2-components {
+  .ui-v2-tabs {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    min-width: 0;
+    border-bottom: 1px solid var(--ui-v2-border);
+  }
+
+  .ui-v2-tab {
+    position: relative;
+    min-height: 40px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ui-v2-text-muted);
+    font-size: 13px;
+    font-weight: 610;
+    cursor: pointer;
+  }
+
+  .ui-v2-tab:hover {
+    color: var(--ui-v2-text-secondary);
+  }
+
+  .ui-v2-tab[aria-selected="true"] {
+    color: var(--ui-v2-text);
+  }
+
+  .ui-v2-tab[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 0;
+    background: var(--ui-v2-accent);
+  }
+}

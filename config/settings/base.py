@@ -9,6 +9,8 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+TRUSTED_PROXY_IPS = env_list("DJANGO_TRUSTED_PROXY_IPS", ["127.0.0.1", "::1"])
+PAYROLL_FIELD_ENCRYPTION_KEY = env("PAYROLL_FIELD_ENCRYPTION_KEY", "")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -18,11 +20,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "apps.accounts",
-    "apps.core",
+    "apps.core.apps.CoreConfig",
     "apps.projects",
     "apps.inventory",
     "apps.explorer",
     "apps.data_exchange",
+    "apps.internal_payroll.apps.InternalPayrollConfig",
+    "apps.rental_manpower.apps.RentalManpowerConfig",
+    "apps.documents.apps.DocumentsConfig",
 ]
 
 MIDDLEWARE = [
@@ -32,6 +37,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.CompanyContextMiddleware",
+    "apps.core.middleware.CompanyTimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

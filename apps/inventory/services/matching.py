@@ -25,7 +25,7 @@ def find_stock_matches(
     condition: str = StockItem.Condition.NEW,
     exclude_pk: int | None = None,
 ) -> StockMatchResult:
-    base = StockItem.objects.select_related("project", "unit").filter(
+    base = StockItem.objects.for_company(project.company).select_related("project", "unit").filter(
         project=project,
         condition=condition,
         deleted_at__isnull=True,

@@ -9,6 +9,7 @@ from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 
+from apps.core.models import CompanyScopedManager
 from apps.projects.models import Project
 
 from .normalization import clean_display_text, normalize_phone, normalize_text
@@ -22,10 +23,11 @@ def validate_attachment_size(file) -> None:
 
 
 class Unit(models.Model):
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="inventory_units")
     name = models.CharField(max_length=80)
-    normalized_name = models.CharField(max_length=80, unique=True, editable=False)
+    normalized_name = models.CharField(max_length=80, editable=False)
     symbol = models.CharField(max_length=20)
-    normalized_symbol = models.CharField(max_length=20, unique=True, editable=False)
+    normalized_symbol = models.CharField(max_length=20, editable=False)
     is_active = models.BooleanField(default=True)
     deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
     purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
@@ -40,8 +42,17 @@ class Unit(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(fields=("company", "normalized_name"), name="unit_company_name_uniq"),
+            models.UniqueConstraint(fields=("company", "normalized_symbol"), name="unit_company_symbol_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=("company", "is_active", "name"), name="unit_company_active_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.symbol})"
@@ -72,6 +83,7 @@ class Unit(models.Model):
 
 
 class Supplier(models.Model):
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="material_suppliers")
     name = models.CharField(max_length=180)
     normalized_name = models.CharField(max_length=180, editable=False)
     phone = models.CharField(max_length=40)
@@ -92,15 +104,18 @@ class Supplier(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("name", "phone")
         constraints = [
             models.UniqueConstraint(
-                fields=("normalized_name", "normalized_phone"),
-                name="uniq_supplier_identity",
+                fields=("company", "normalized_name", "normalized_phone"),
+                name="supplier_company_identity_uniq",
             )
         ]
         indexes = [
+            models.Index(fields=("company", "is_active", "normalized_name"), name="supplier_company_active_idx"),
             models.Index(fields=("normalized_name",), name="supplier_name_norm_idx"),
             models.Index(fields=("normalized_phone",), name="supplier_phone_norm_idx"),
         ]
@@ -134,8 +149,9 @@ class InventoryLocation(models.Model):
         OFFICE = "office", "Office"
         PROJECT = "project", "Project"
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="inventory_locations")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    code = models.CharField(max_length=30, unique=True)
+    code = models.CharField(max_length=30)
     name = models.CharField(max_length=180)
     location_type = models.CharField(max_length=20, choices=Type.choices)
     project = models.OneToOneField(
@@ -149,9 +165,12 @@ class InventoryLocation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("location_type", "code")
         constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="location_company_code_uniq"),
             models.CheckConstraint(
                 condition=(
                     Q(location_type="project", project__isnull=False)
@@ -159,6 +178,9 @@ class InventoryLocation(models.Model):
                 ),
                 name="location_type_project_consistent",
             )
+        ]
+        indexes = [
+            models.Index(fields=("company", "is_active", "code"), name="location_company_active_idx"),
         ]
 
     def __str__(self) -> str:
@@ -171,10 +193,14 @@ class InventoryLocation(models.Model):
             errors["project"] = "A project location must reference a project."
         if self.location_type == self.Type.OFFICE and self.project_id:
             errors["project"] = "An office location cannot reference a project."
+        if self.project_id and self.company_id and self.project.company_id != self.company_id:
+            errors["project"] = "Project and inventory location must belong to the same company."
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        if self.project_id and not self.company_id:
+            self.company_id = self.project.company_id
         self.code = clean_display_text(self.code).upper()
         self.name = clean_display_text(self.name)
         self.full_clean()
@@ -189,16 +215,32 @@ class InventoryLocation(models.Model):
         return True
 
 
-class StockItemManager(models.Manager):
+class StockItemManager(CompanyScopedManager):
     def bulk_create(self, objs, *args, **kwargs):
-        project_ids = {obj.project_id for obj in objs if obj.project_id and not obj.location_id}
+        project_ids = {obj.project_id for obj in objs if obj.project_id}
+        projects = {project.pk: project for project in Project.objects.filter(pk__in=project_ids)}
         locations = {
             location.project_id: location
             for location in InventoryLocation.objects.filter(project_id__in=project_ids)
         }
         for obj in objs:
+            if obj.project_id:
+                project = projects.get(obj.project_id)
+                if project is None:
+                    raise ValidationError("Stock project no longer exists.")
+                if not obj.company_id:
+                    obj.company_id = project.company_id
+                elif obj.company_id != project.company_id:
+                    raise ValidationError("Stock record and project must belong to the same company.")
             if obj.project_id and not obj.location_id:
-                obj.location = locations[obj.project_id]
+                location = locations.get(obj.project_id)
+                if location is None:
+                    raise ValidationError("Project inventory location no longer exists.")
+                obj.location = location
+            if obj.location_id and obj.company_id != obj.location.company_id:
+                raise ValidationError("Stock record and inventory location must belong to the same company.")
+            if obj.unit_id and obj.company_id != obj.unit.company_id:
+                raise ValidationError("Stock record and unit must belong to the same company.")
         return super().bulk_create(objs, *args, **kwargs)
 
 
@@ -212,6 +254,7 @@ class StockItem(models.Model):
         USED = "used", "Used"
         NO_VALUE = "no_value", "No value"
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_items")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     project = models.ForeignKey(
         Project,
@@ -289,13 +332,14 @@ class StockItem(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=(
+                    "company",
                     "location",
                     "normalized_material_name",
                     "normalized_supplier_name",
                     "normalized_supplier_phone",
                     "condition",
                 ),
-                name="uniq_stock_identity_per_location_condition",
+                name="stock_company_location_identity_uniq",
             ),
             models.CheckConstraint(
                 condition=Q(current_quantity__gte=0),
@@ -307,6 +351,7 @@ class StockItem(models.Model):
             ),
         ]
         indexes = [
+            models.Index(fields=("company", "status", "updated_at"), name="stock_company_status_idx"),
             models.Index(
                 fields=("location", "status", "material_name"),
                 name="stock_project_status_name_idx",
@@ -340,7 +385,7 @@ class StockItem(models.Model):
         if self.pk:
             original = (
                 type(self)
-                .objects.filter(pk=self.pk)
+                .objects.for_company(self.company).filter(pk=self.pk)
                 .values(
                     "project_id",
                     "location_id",
@@ -371,7 +416,7 @@ class StockItem(models.Model):
         if self.status == self.Status.ACTIVE and original_status == self.Status.ARCHIVED:
             if (
                 self.location_id
-                and not Project.objects.filter(
+                and not Project.objects.for_company(self.company).filter(
                     pk=self.project_id, status=Project.Status.ACTIVE, deleted_at__isnull=True
                 ).exists()
                 and self.location.location_type == InventoryLocation.Type.PROJECT
@@ -379,7 +424,7 @@ class StockItem(models.Model):
                 errors["status"] = "Reactivate the project before this stock record."
             if (
                 self.unit_id
-                and not Unit.objects.filter(
+                and not Unit.objects.for_company(self.company).filter(
                     pk=self.unit_id, is_active=True, deleted_at__isnull=True
                 ).exists()
             ):
@@ -397,10 +442,16 @@ class StockItem(models.Model):
             expected_project_id = self.location.project_id
             if self.project_id != expected_project_id:
                 errors["project"] = "The project must match the selected inventory location."
+            if self.company_id and self.location.company_id != self.company_id:
+                errors["location"] = "Stock record and inventory location must belong to the same company."
+        if self.project_id and self.company_id and self.project.company_id != self.company_id:
+            errors["project"] = "Stock record and project must belong to the same company."
+        if self.unit_id and self.company_id and self.unit.company_id != self.company_id:
+            errors["unit"] = "Stock record and unit must belong to the same company."
 
         unit_is_active = (
             self.unit_id
-            and Unit.objects.filter(
+            and Unit.objects.for_company(self.company).filter(
                 pk=self.unit_id, is_active=True, deleted_at__isnull=True
             ).exists()
         )
@@ -415,10 +466,16 @@ class StockItem(models.Model):
 
     def save(self, *args, **kwargs):
         inventory_service = kwargs.pop("_inventory_service", False)
+        if not self.company_id:
+            if self.project_id:
+                self.company_id = self.project.company_id
+            elif self.location_id:
+                self.company_id = self.location.company_id
         if self.project_id and not self.location_id:
-            self.location, _ = InventoryLocation.objects.get_or_create(
+            self.location, _ = InventoryLocation.objects.for_company(self.company).get_or_create(
                 project_id=self.project_id,
                 defaults={
+                    "company_id": self.company_id or self.project.company_id,
                     "code": self.project.code,
                     "name": self.project.name,
                     "location_type": InventoryLocation.Type.PROJECT,
@@ -492,6 +549,7 @@ class StockItem(models.Model):
 class StockDocument(models.Model):
     """An immutable supporting document attached to a stock record."""
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_documents")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     stock_item = models.ForeignKey(
         StockItem,
@@ -515,6 +573,8 @@ class StockDocument(models.Model):
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("-uploaded_at",)
 
@@ -524,7 +584,11 @@ class StockDocument(models.Model):
     def save(self, *args, **kwargs):
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValidationError("Stock documents are immutable and cannot be edited.")
+        if self.stock_item_id and not self.company_id:
+            self.company_id = self.stock_item.company_id
         self.original_name = self.original_name.strip()
+        if self.stock_item_id and self.company_id != self.stock_item.company_id:
+            raise ValidationError({"stock_item": "Stock document and stock record must belong to the same company."})
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -547,8 +611,9 @@ class StockMovement(models.Model):
     INBOUND_TYPES = {Type.OPENING, Type.ADDITION, Type.ADJUSTMENT_IN, Type.TRANSFER_IN}
     OUTBOUND_TYPES = {Type.USAGE, Type.ADJUSTMENT_OUT, Type.TRANSFER_OUT, Type.LOSS}
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_movements")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    idempotency_key = models.UUIDField(unique=True, editable=False)
+    idempotency_key = models.UUIDField(editable=False)
     stock_item = models.ForeignKey(
         StockItem,
         on_delete=models.PROTECT,
@@ -620,9 +685,15 @@ class StockMovement(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("-movement_date", "-created_at", "-pk")
         constraints = [
+            models.UniqueConstraint(
+                fields=("company", "idempotency_key"),
+                name="movement_company_idempotency_uniq",
+            ),
             models.CheckConstraint(condition=Q(quantity__gt=0), name="movement_quantity_positive"),
             models.CheckConstraint(
                 condition=Q(previous_balance__gte=0),
@@ -638,6 +709,7 @@ class StockMovement(models.Model):
             ),
         ]
         indexes = [
+            models.Index(fields=("company", "-movement_date", "-created_at"), name="move_company_date_idx"),
             models.Index(
                 fields=("stock_item", "-movement_date", "-created_at"),
                 name="movement_item_date_idx",
@@ -673,6 +745,12 @@ class StockMovement(models.Model):
             errors["reversal_of"] = "Only reversal movements can reference another movement."
         if self.reversal_of_id and self.reversal_of_id == self.pk:
             errors["reversal_of"] = "A movement cannot reverse itself."
+        if self.stock_item_id and self.company_id != self.stock_item.company_id:
+            errors["stock_item"] = "Movement and stock record must belong to the same company."
+        if self.reversal_of_id and self.company_id != self.reversal_of.company_id:
+            errors["reversal_of"] = "A reversal must stay inside the same company."
+        if self.transfer_line_id and self.company_id != self.transfer_line.transfer.company_id:
+            errors["transfer_line"] = "Transfer movement and transfer line must belong to the same company."
 
         if (
             self.quantity is not None
@@ -703,6 +781,8 @@ class StockMovement(models.Model):
     def save(self, *args, **kwargs):
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValidationError("Stock movements are immutable and cannot be edited.")
+        if self.stock_item_id and not self.company_id:
+            self.company_id = self.stock_item.company_id
         if self.stock_item_id:
             if self.reversal_of_id:
                 source = self.reversal_of
@@ -800,8 +880,9 @@ class StockTransfer(models.Model):
         COMPLETED = "completed", "Completed"
         REVERSED = "reversed", "Reversed"
 
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_transfers")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    idempotency_key = models.UUIDField(unique=True, editable=False)
+    idempotency_key = models.UUIDField(editable=False)
     source_location = models.ForeignKey(
         InventoryLocation,
         on_delete=models.PROTECT,
@@ -833,7 +914,6 @@ class StockTransfer(models.Model):
     reversal_idempotency_key = models.UUIDField(
         blank=True,
         null=True,
-        unique=True,
         editable=False,
     )
     reversed_at = models.DateTimeField(blank=True, null=True, editable=False)
@@ -853,15 +933,26 @@ class StockTransfer(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = CompanyScopedManager()
+
     class Meta:
         ordering = ("-transfer_date", "-created_at", "-pk")
         constraints = [
+            models.UniqueConstraint(
+                fields=("company", "idempotency_key"),
+                name="transfer_company_idempotency_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("company", "reversal_idempotency_key"),
+                name="transfer_company_reversal_idem_uniq",
+            ),
             models.CheckConstraint(
                 condition=~Q(source_location=models.F("destination_location")),
                 name="transfer_locations_different",
             )
         ]
         indexes = [
+            models.Index(fields=("company", "-transfer_date", "-created_at"), name="transfer_company_date_idx"),
             models.Index(fields=("source_location", "-transfer_date"), name="transfer_source_idx"),
             models.Index(
                 fields=("destination_location", "-transfer_date"),
@@ -882,8 +973,19 @@ class StockTransfer(models.Model):
             raise ValidationError(
                 {"destination_location": "Source and destination must be different."}
             )
+        errors = {}
+        if self.source_location_id and self.company_id != self.source_location.company_id:
+            errors["source_location"] = "Source location must belong to the transfer company."
+        if self.destination_location_id and self.company_id != self.destination_location.company_id:
+            errors["destination_location"] = "Destination location must belong to the transfer company."
+        if self.source_location_id and self.destination_location_id and self.source_location.company_id != self.destination_location.company_id:
+            errors["destination_location"] = "Cross-company stock transfers are not allowed."
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        if not self.company_id and self.source_location_id:
+            self.company_id = self.source_location.company_id
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             allowed = kwargs.pop("_inventory_service", False)
             if not allowed:
@@ -964,6 +1066,30 @@ class StockTransferLine(models.Model):
             self.source_condition_snapshot,
             self.source_condition_snapshot.replace("_", " ").title(),
         )
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        transfer_company_id = self.transfer.company_id if self.transfer_id else None
+        if self.source_stock_item_id and transfer_company_id != self.source_stock_item.company_id:
+            errors["source_stock_item"] = "Source stock record must belong to the transfer company."
+        if (
+            self.destination_stock_item_id
+            and transfer_company_id != self.destination_stock_item.company_id
+        ):
+            errors["destination_stock_item"] = (
+                "Destination stock record must belong to the transfer company."
+            )
+        if self.source_stock_item_id and self.transfer_id:
+            if self.source_stock_item.location_id != self.transfer.source_location_id:
+                errors["source_stock_item"] = "Source stock record must be in the transfer source location."
+        if self.destination_stock_item_id and self.transfer_id:
+            if self.destination_stock_item.location_id != self.transfer.destination_location_id:
+                errors["destination_stock_item"] = (
+                    "Destination stock record must be in the transfer destination location."
+                )
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         if self.pk and type(self).objects.filter(pk=self.pk).exists():

@@ -1,0 +1,18 @@
+# Isolated Upgrade 12 migration/regression rehearsal.
+# This override MUST never resolve to the production ims_* volumes or networks.
+name: ims_merge_rehearsal
+
+volumes:
+  ims_postgres_data:
+    name: ims_merge_rehearsal_postgres_data
+  ims_static_data:
+    name: ims_merge_rehearsal_static_data
+  ims_media_data:
+    name: ims_merge_rehearsal_media_data
+
+networks:
+  ims_edge:
+    name: ims_merge_rehearsal_edge
+  ims_database:
+    name: ims_merge_rehearsal_database
+    internal: true

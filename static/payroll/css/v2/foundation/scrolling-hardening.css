@@ -1,0 +1,98 @@
+/*
+  U50 · Prototype-wide scrolling / overflow contract
+
+  Ordinary business pages use the document/page as their vertical scroller.
+  Tables may own horizontal overflow, but they must not become accidental
+  vertical scroll containers that swallow the mouse wheel. Deliberate bounded
+  workspaces (timesheets, dialogs, drawers, pickers, menus and document editors)
+  keep their own scrolling behavior.
+*/
+
+@layer ui-v2-utilities {
+  /* Every normal table/register wrapper is horizontal-only. This selector
+     intentionally covers module-specific *table-wrap classes as well as the
+     shared wrapper, so old page CSS cannot silently re-introduce vertical
+     scrolling with overflow:auto or a max-height. */
+  .ui-v2-root :where(
+    .ui-v2-table-wrap,
+    .ui-v2-register-table-wrap,
+    .ui-v2-management-table-wrap,
+    [class*="table-wrap"]
+  ) {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    overscroll-behavior-x: auto !important;
+    overscroll-behavior-y: auto !important;
+    scrollbar-gutter: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Horizontal navigation/filter strips should never consume vertical wheel
+     input. They can still pan horizontally when content really exceeds width. */
+  .ui-v2-root :where(
+    .ui-v2-register-tabs,
+    .ui-v2-tabs,
+    .ui-v2-doc-toolbar__filters,
+    .ui-v2-payroll-review-filters,
+    .ui-v2-payroll-document-tabs,
+    .ui-v2-inventory-filter-chips__list
+  ) {
+    overscroll-behavior-y: auto !important;
+  }
+
+  /* Page and primary workspace remain the vertical scroll owner. */
+  .ui-v2-app-shell,
+  .ui-v2-app-shell__workspace,
+  .ui-v2-app-content {
+    overflow-y: visible;
+    overscroll-behavior-y: auto;
+  }
+
+  /* These are intentionally bounded interaction surfaces. Do not flatten
+     them into page flow: the user needs local scrolling inside them. */
+  .ui-v2-root :where(
+    .ui-v2-payroll-timesheet-scroll,
+    .ui-v2-sidebar__nav,
+    .ui-v2-switcher-menu,
+    .ui-v2-command__results,
+    .ui-v2-menu,
+    .ui-v2-payroll-editor-drawer,
+    .ui-v2-payroll-run-drawer-body,
+    .ui-v2-company-control-review,
+    .ui-v2-inventory-picker-list,
+    .ui-v2-inventory-popover,
+    .ui-v2-inventory-save-view-popover,
+    .ui-v2-word-workspace,
+    .ui-v2-word-editor,
+    .ui-v2-word-paper-stage,
+    [role="dialog"]
+  ) {
+    overscroll-behavior-y: contain;
+  }
+
+  /* Spreadsheet/timesheet remains the one major business grid that can own
+     both axes. The explicit rule also protects it from broad legacy selectors. */
+  .ui-v2-root .ui-v2-payroll-timesheet-scroll {
+    max-height: min(62vh, 660px) !important;
+    overflow: auto !important;
+    scrollbar-gutter: stable !important;
+    overscroll-behavior: auto !important;
+  }
+
+  /* Avoid scroll-chain dead zones on cards/split panes whose only purpose is
+     clipping borders/backgrounds. */
+  .ui-v2-root :where(
+    .ui-v2-section,
+    .ui-v2-surface,
+    .ui-v2-register,
+    .ui-v2-page-stack,
+    .ui-v2-management-layout
+  ) {
+    overscroll-behavior-y: auto;
+  }
+}

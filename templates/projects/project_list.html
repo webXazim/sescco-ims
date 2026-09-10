@@ -6,7 +6,7 @@
 </div>
 <section class="card">
   <form class="explorer-toolbar" method="get" data-live-filter-form>
-    <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input name="q" value="{{ search_query }}" placeholder="Search project code, name, client or location…" autocomplete="off" data-live-filter-search></div>
+    <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input name="q" value="{{ search_query }}" placeholder="Search project code, name, client, manager or location…" autocomplete="off" data-live-filter-search></div>
     <div class="quick-filters">
       <select class="filter-select" name="status">
         <option value="">All status</option>
@@ -24,7 +24,7 @@
   <a class="card project-card" href="{% url 'projects:detail' project.code %}">
     <div class="project-card-top"><span class="tag">{{ project.code }}</span><span class="status {% if project.status == 'active' %}status-good{% else %}status-neutral{% endif %}">{{ project.get_status_display }}</span></div>
     <div class="project-name">{{ project.name }}</div>
-    <div class="project-client">{% if project.client_name %}{{ project.client_name }}{% else %}No client set{% endif %}{% if project.location %} · {{ project.location }}{% endif %}</div>
+    <div class="project-client">{% if project.client_name %}{{ project.client_name }}{% else %}No client set{% endif %}{% if project.location %} · {{ project.location }}{% endif %}{% if project.manager_name %} · {{ project.manager_name }}{% endif %}</div>
     <div class="project-stats">
       <div class="project-stat"><strong>{{ project.stock_record_count }}</strong><span>Stock records</span></div>
       <div class="project-stat"><strong>{{ project.low_stock_count }}</strong><span>Needs attention</span></div>

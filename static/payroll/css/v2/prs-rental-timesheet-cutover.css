@@ -1,0 +1,242 @@
+/* PRS Upgrade 8 — Rental Project Timesheet V2 cutover.
+   The canonical DocGen timesheet.css owns sheet geometry, lifecycle, status
+   tones, sticky columns, checkbox behavior, pagination and fullscreen mode.
+   This file contains only PRS rental-specific adaptations. */
+
+.ui-v2-root .ui-v2-prs-rental-timesheets-page {
+  max-width: var(--ui-v2-page-max, 1480px);
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-workspace {
+  overflow: visible;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-workspace .ui-v2-filter-bar__search {
+  min-width: min(330px, 100%);
+  flex: 1 1 300px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-workspace .ui-v2-payroll-compact-select {
+  max-width: 220px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-employee {
+  min-width: 250px;
+  width: 250px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-employee span {
+  max-width: 230px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-employee button:focus-visible,
+.ui-v2-root .ui-v2-prs-rental-ot-worker:focus-visible {
+  outline: 2px solid rgba(32,35,41,.14);
+  outline-offset: -2px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-disabled-day {
+  color: var(--ui-v2-text-muted);
+}
+
+.ui-v2-root .ui-v2-prs-rental-control-strip .ui-v2-payroll-attendance-control-strip__actions {
+  flex-wrap: wrap;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-panel {
+  overflow: hidden;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-toolbar {
+  justify-content: space-between;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-toolbar > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-toolbar > div > strong {
+  color: var(--ui-v2-text);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-toolbar > div > span,
+.ui-v2-root .ui-v2-prs-rental-ot-rate-label,
+.ui-v2-root .ui-v2-muted {
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-worker {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-v2-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-worker strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-worker span {
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-table th,
+.ui-v2-root .ui-v2-prs-rental-ot-table td {
+  vertical-align: middle;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-table .is-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-v2-root .ui-v2-prs-rental-ot-input {
+  width: 92px;
+  min-width: 92px;
+}
+
+.ui-v2-root .ui-v2-prs-money-input {
+  width: 150px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--ui-v2-border);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.ui-v2-root .ui-v2-prs-money-input > span {
+  padding: 0 7px;
+  color: var(--ui-v2-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ui-v2-root .ui-v2-prs-money-input .ui-v2-input {
+  min-width: 0;
+  border: 0;
+  border-left: 1px solid var(--ui-v2-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.ui-v2-root .ui-v2-prs-rental-settlement-boundary {
+  margin-top: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-boundary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--ui-v2-border);
+}
+
+.ui-v2-root .ui-v2-prs-rental-boundary-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px 13px;
+  border-right: 1px solid var(--ui-v2-border);
+}
+
+.ui-v2-root .ui-v2-prs-rental-boundary-grid > div:last-child {
+  border-right: 0;
+}
+
+.ui-v2-root .ui-v2-prs-rental-boundary-grid strong {
+  color: var(--ui-v2-text);
+  font-size: 12px;
+}
+
+.ui-v2-root .ui-v2-prs-rental-boundary-grid span {
+  color: var(--ui-v2-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The shared focus-mode class is used by both Internal and Rental sheets. */
+body.timesheet-focus-mode .ui-v2-prs-rental-timesheet-workspace.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+
+.ui-v2-root:not(.timesheet-focus-mode) .ui-v2-prs-rental-timesheet-workspace:not(.is-fullscreen) {
+  overflow: visible;
+}
+
+@media (max-width: 1120px) {
+  .ui-v2-root .ui-v2-prs-rental-timesheet-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid > div:nth-child(-n+2) {
+    border-bottom: 1px solid var(--ui-v2-border);
+  }
+}
+
+@media (max-width: 760px) {
+  .ui-v2-root .ui-v2-prs-rental-timesheets-page {
+    width: 100%;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-timesheet-summary,
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid > div,
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--ui-v2-border);
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-boundary-grid > div:last-child {
+    border-bottom: 0;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-timesheet-workspace {
+    border-radius: 8px;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-timesheet-scroll {
+    max-height: min(64vh, 620px);
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-employee {
+    min-width: 210px;
+    width: 210px;
+  }
+
+  .ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-employee span {
+    max-width: 190px;
+  }
+
+  .ui-v2-root .ui-v2-prs-money-input {
+    width: 132px;
+  }
+}

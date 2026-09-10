@@ -5,6 +5,10 @@ from django.db.models import Count, F, Q
 from django.urls import reverse
 from django.utils.html import format_html
 
+from apps.accounts.permissions import membership_can_workspace, membership_has_capability
+from apps.accounts.roles import Capability, Workspace
+
+from .forms import SupplierForm, UnitForm
 from .models import (
     InventoryLocation,
     StockDocument,
@@ -17,6 +21,54 @@ from .models import (
 )
 
 
+class CompanyInventoryAdminMixin:
+    """Tenant-scope Inventory Django admin to the active company membership."""
+
+    company_form = False
+
+    def _membership(self, request):
+        return getattr(request, "company_membership", None)
+
+    def has_module_permission(self, request):
+        return membership_can_workspace(self._membership(request), Workspace.INVENTORY)
+
+    def has_view_permission(self, request, obj=None):
+        return membership_can_workspace(self._membership(request), Workspace.INVENTORY)
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        company = getattr(request, "company", None)
+        if company is None:
+            return queryset.none()
+        field_names = {field.name for field in self.model._meta.fields}
+        if "company" in field_names:
+            return queryset.filter(company=company)
+        if self.model is StockTransferLine:
+            return queryset.filter(transfer__company=company)
+        return queryset.none()
+
+    def get_form(self, request, obj=None, **kwargs):
+        base_form = super().get_form(request, obj, **kwargs)
+        if not self.company_form:
+            return base_form
+        company = getattr(request, "company", None)
+
+        class CompanyBoundAdminForm(base_form):
+            def __init__(self, *args, **form_kwargs):
+                form_kwargs.setdefault("company", company)
+                super().__init__(*args, **form_kwargs)
+
+        return CompanyBoundAdminForm
+
+    def save_model(self, request, obj, form, change):
+        if hasattr(obj, "company_id") and not obj.company_id:
+            obj.company = request.company
+        super().save_model(request, obj, form, change)
+
+    def inventory_manage_allowed(self, request) -> bool:
+        return membership_has_capability(self._membership(request), Capability.MANAGE_INVENTORY)
+
+
 class GuardedDeleteAdminMixin:
     """Allow per-record admin deletion without exposing unsafe bulk deletion."""
 
@@ -27,7 +79,7 @@ class GuardedDeleteAdminMixin:
 
 
 @admin.register(StockDocument)
-class StockDocumentAdmin(admin.ModelAdmin):
+class StockDocumentAdmin(CompanyInventoryAdminMixin, admin.ModelAdmin):
     list_display = ("original_name", "stock_item", "uploaded_by", "uploaded_at")
     search_fields = (
         "original_name",
@@ -84,7 +136,9 @@ class StockStatusAdminFilter(admin.SimpleListFilter):
 
 
 @admin.register(Unit)
-class UnitAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
+class UnitAdmin(CompanyInventoryAdminMixin, GuardedDeleteAdminMixin, admin.ModelAdmin):
+    form = UnitForm
+    company_form = True
     list_display = ("name", "symbol", "is_active", "active_stock_count", "inventory_link")
     list_filter = ("is_active",)
     search_fields = ("name", "symbol", "normalized_name", "normalized_symbol")
@@ -141,13 +195,15 @@ class UnitAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
         return format_html('<a href="{}">Open inventory</a>', url)
 
     def has_delete_permission(self, request, obj=None):
-        if not request.user.is_inventory_admin:
+        if not self.inventory_manage_allowed(request):
             return False
         return obj is None or not (obj.stock_items.exists() or obj.import_jobs.exists())
 
 
 @admin.register(Supplier)
-class SupplierAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
+class SupplierAdmin(CompanyInventoryAdminMixin, GuardedDeleteAdminMixin, admin.ModelAdmin):
+    form = SupplierForm
+    company_form = True
     list_display = ("name", "phone", "location", "is_active", "updated_at")
     list_filter = ("is_active", "location")
     search_fields = ("name", "phone", "normalized_name", "normalized_phone", "location")
@@ -160,18 +216,18 @@ class SupplierAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
     )
 
     def has_delete_permission(self, request, obj=None):
-        if not request.user.is_inventory_admin:
+        if not self.inventory_manage_allowed(request):
             return False
         if obj is None:
             return True
-        return not StockItem.objects.filter(
+        return not StockItem.objects.for_company(request.company).filter(
             normalized_supplier_name=obj.normalized_name,
             normalized_supplier_phone=obj.normalized_phone,
         ).exists()
 
 
 @admin.register(StockItem)
-class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
+class StockItemAdmin(CompanyInventoryAdminMixin, GuardedDeleteAdminMixin, admin.ModelAdmin):
     list_display = (
         "material_name",
         "location",
@@ -360,7 +416,7 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        if not request.user.is_inventory_admin:
+        if not self.inventory_manage_allowed(request):
             return False
         if obj is None:
             return True
@@ -374,7 +430,7 @@ class StockItemAdmin(GuardedDeleteAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(StockMovement)
-class StockMovementAdmin(admin.ModelAdmin):
+class StockMovementAdmin(CompanyInventoryAdminMixin, admin.ModelAdmin):
     list_display = (
         "movement_date",
         "project_snapshot_admin",
@@ -537,7 +593,7 @@ class StockMovementAdmin(admin.ModelAdmin):
 
 
 @admin.register(InventoryLocation)
-class InventoryLocationAdmin(admin.ModelAdmin):
+class InventoryLocationAdmin(CompanyInventoryAdminMixin, admin.ModelAdmin):
     list_display = ("code", "name", "location_type", "project", "is_active", "updated_at")
     list_filter = ("location_type", "is_active")
     search_fields = ("code", "name", "project__code", "project__name")
@@ -548,7 +604,7 @@ class InventoryLocationAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        if not request.user.is_inventory_admin:
+        if not self.inventory_manage_allowed(request):
             return False
         if obj is None:
             return True
@@ -566,7 +622,7 @@ class InventoryLocationAdmin(admin.ModelAdmin):
 
 
 @admin.register(StockTransfer)
-class StockTransferAdmin(admin.ModelAdmin):
+class StockTransferAdmin(CompanyInventoryAdminMixin, admin.ModelAdmin):
     list_display = (
         "short_reference",
         "transfer_date",
@@ -596,7 +652,7 @@ class StockTransferAdmin(admin.ModelAdmin):
 
 
 @admin.register(StockTransferLine)
-class StockTransferLineAdmin(admin.ModelAdmin):
+class StockTransferLineAdmin(CompanyInventoryAdminMixin, admin.ModelAdmin):
     list_display = ("transfer", "source_stock_item", "outcome", "quantity", "destination_stock_item")
     list_filter = ("outcome",)
     search_fields = (

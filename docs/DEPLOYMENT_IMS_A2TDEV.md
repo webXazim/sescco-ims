@@ -1,4 +1,4 @@
-# Deploying beside another Docker project
+# Deploying the merged IMS + Payroll platform beside another Docker project
 
 Target domain: `ims.a2tdev.com`
 
@@ -16,9 +16,9 @@ after the origin certificate is installed.
 
 ```bash
 cd /opt
-sudo mkdir -p inventory-management-system
-sudo chown "$USER":"$USER" inventory-management-system
-cd inventory-management-system
+sudo mkdir -p /opt/sites/ims
+sudo chown "$USER":"$USER" /opt/sites/ims
+cd /opt/sites/ims
 # Extract the release here.
 cp .env.production.example .env.production
 chmod 600 .env.production
@@ -28,37 +28,46 @@ Generate independent secrets instead of reusing values from the other project:
 
 ```bash
 python3 - <<'PY'
+import base64
 import secrets
 print("DJANGO_SECRET_KEY=" + secrets.token_urlsafe(64))
 print("POSTGRES_PASSWORD=" + secrets.token_urlsafe(48))
+print(
+    "PAYROLL_FIELD_ENCRYPTION_KEY="
+    + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+)
 PY
 ```
 
-Put those values in `.env.production`. The supplied defaults already include:
+Put those values in `.env.production`. **Store the Payroll field-encryption key separately in a protected password/secret manager as part of disaster recovery.** Database backups contain only its fingerprint. The supplied defaults already include:
 
 ```text
 DJANGO_ALLOWED_HOSTS=ims.a2tdev.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.a2tdev.com
+DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
 IMS_HTTP_PORT=8087
+RUN_STARTUP_TASKS=0
 ```
 
 ## 3. First deployment
 
 ```bash
-./scripts/deploy-production.sh
+./scripts/deploy-production-freeze.sh
 ./scripts/create-admin.sh
 ```
 
 The deployment script:
 
-1. validates the environment and Compose file;
-2. builds only the IMS image;
-3. starts only the isolated IMS database;
-4. creates a pre-deployment backup;
-5. starts or updates IMS services;
-6. waits for health checks;
-7. runs Django deployment and migration-drift checks;
-8. smoke-tests the local origin.
+1. validates the immutable merge/frontend/shell/infrastructure contract and environment;
+2. builds the merged web image;
+3. starts only the isolated IMS PostgreSQL service;
+4. creates a pre-deployment database/media backup;
+5. runs deployment checks, migration planning/apply, all merge reconciliation commands, and `collectstatic` against the new image;
+6. promotes the new web container and waits for readiness;
+7. validates/reloads the gateway configuration;
+8. smoke-tests readiness plus Inventory, platform-shell and Payroll static assets.
+
+Normal Gunicorn restarts do **not** run migrations because `RUN_STARTUP_TASKS=0` is the production default.
 
 It does not stop or rebuild another project.
 
@@ -110,7 +119,7 @@ IMS_PROXY_NETWORK=the_existing_proxy_network
 Then deploy normally:
 
 ```bash
-./scripts/deploy-production.sh
+./scripts/deploy-production-freeze.sh
 ```
 
 The proxy can reach the upstream at:
@@ -127,7 +136,7 @@ and pass `X-Forwarded-Proto: https`.
 Replace the source with the new release and run:
 
 ```bash
-./scripts/deploy-production.sh
+./scripts/deploy-production-freeze.sh
 ```
 
 Never use `docker compose down -v`; that removes persistent data. Do not run

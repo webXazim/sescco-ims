@@ -1,0 +1,65 @@
+@layer ui-v2-utilities {
+  /* Upgrade 107: whole-row actions retain dense table geometry but are keyboard reachable. */
+  .ui-v2-root tr[data-ui-v2-row-action="true"] {
+    cursor: pointer;
+  }
+
+  .ui-v2-root tr[data-ui-v2-row-action="true"]:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--ui-v2-border-focus, var(--ui-v2-text-secondary));
+    outline-offset: -2px;
+  }
+
+  /* Browser zoom narrows the effective CSS viewport. Keep action/filter children shrinkable
+     instead of forcing a second horizontal page scrollbar. Business tables still own their
+     intentional horizontal overflow through their table-wrap contracts. */
+  .ui-v2-root :where(
+    .ui-v2-page-header__actions,
+    .ui-v2-section__header,
+    .ui-v2-filter-bar,
+    .ui-v2-payroll-filter-bar,
+    .ui-v2-accounting-toolbar,
+    .ui-v2-inventory-toolbar
+  ) > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Preserve the desktop search cap from U102 while allowing the field to collapse cleanly
+     at 125/150% zoom and narrow laptop widths. */
+  .ui-v2-root :where(.ui-v2-filter-bar__search, .ui-v2-business-admin-search) {
+    min-width: 0;
+  }
+
+  /* Dynamic viewport height fixes full-screen timesheets on mobile browser chrome while
+     retaining the preceding 100vh declaration as the compatibility fallback. */
+  .ui-v2-payroll-timesheet-workspace.is-fullscreen,
+  .ui-v2-payroll-timesheet-workspace:fullscreen {
+    height: 100dvh;
+  }
+
+  @media (max-width: 1180px) {
+    .ui-v2-root .ui-v2-page-header__copy {
+      min-width: 0;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .ui-v2-root :where(.ui-v2-page-header__actions, .ui-v2-filter-bar) {
+      width: 100%;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    .ui-v2-root tr[data-ui-v2-row-action="true"]:focus-visible {
+      outline-width: 3px;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-v2-root tr[data-ui-v2-row-action="true"]:focus-visible {
+      outline: 2px solid Highlight;
+    }
+  }
+}

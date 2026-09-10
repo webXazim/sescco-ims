@@ -13,6 +13,15 @@ if not ALLOWED_HOSTS:
 if not CSRF_TRUSTED_ORIGINS:
     raise ImproperEnvironment("DJANGO_CSRF_TRUSTED_ORIGINS must be configured in production.")
 
+if not PAYROLL_FIELD_ENCRYPTION_KEY:  # noqa: F405
+    raise ImproperEnvironment("PAYROLL_FIELD_ENCRYPTION_KEY must be configured in production.")
+try:
+    from cryptography.fernet import Fernet
+
+    Fernet(PAYROLL_FIELD_ENCRYPTION_KEY.encode("ascii"))  # noqa: F405
+except (ValueError, TypeError, UnicodeEncodeError) as exc:
+    raise ImproperEnvironment("PAYROLL_FIELD_ENCRYPTION_KEY must be a valid Fernet key.") from exc
+
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", True)
 SESSION_COOKIE_SECURE = True

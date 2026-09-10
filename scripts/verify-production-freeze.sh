@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+require_text() {
+  local file="$1" pattern="$2" message="$3"
+  grep -Fq -- "${pattern}" "${file}" || fail "${message}"
+}
+
+[[ -f merge/production-freeze.sha256 ]] || fail 'Production-freeze manifest is missing.'
+sha256sum -c merge/production-freeze.sha256 >/dev/null \
+  || fail 'Frozen production source/configuration changed.'
+
+require_text merge/source-manifest.json '"completed_upgrade": 12' 'Merge progress is not frozen at Upgrade 12.'
+require_text merge/source-manifest.json '"total_upgrades": 12' 'Merge upgrade total changed.'
+require_text merge/source-manifest.json '"merge_complete": true' 'Merge is not marked complete.'
+require_text merge/source-manifest.json '"next_upgrade": null' 'Final merge state must not declare another merge upgrade.'
+require_text merge/source-manifest.json '"production_freeze_manifest": "merge/production-freeze.sha256"' 'Freeze manifest contract is missing.'
+
+require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_postgres_data' 'Rehearsal PostgreSQL volume is not isolated.'
+require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_static_data' 'Rehearsal static volume is not isolated.'
+require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_media_data' 'Rehearsal media volume is not isolated.'
+require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_edge' 'Rehearsal edge network is not isolated.'
+require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_database' 'Rehearsal database network is not isolated.'
+
+if grep -Eq '^[[:space:]]+name: ims_(postgres_data|static_data|media_data|edge|database)[[:space:]]*$' docker-compose.rehearsal.yml; then
+  fail 'Rehearsal override contains a production IMS resource identity.'
+fi
+
+require_text scripts/rehearse-production-freeze.sh 'merge_access_report --fail-on-errors' 'Rehearsal must validate company access.'
+require_text scripts/rehearse-production-freeze.sh 'merge_inventory_tenant_report --fail-on-errors' 'Rehearsal must validate Inventory tenant boundaries.'
+require_text scripts/rehearse-production-freeze.sh 'merge_shared_projects_report --fail-on-errors' 'Rehearsal must validate shared Projects.'
+require_text scripts/rehearse-production-freeze.sh 'merge_internal_payroll_report --fail-on-errors' 'Rehearsal must validate Internal Payroll.'
+require_text scripts/rehearse-production-freeze.sh 'merge_rental_manpower_report --fail-on-errors' 'Rehearsal must validate Rental Manpower.'
+require_text scripts/rehearse-production-freeze.sh 'merge_documents_management_report --fail-on-errors' 'Rehearsal must validate Documents/Management.'
+require_text scripts/rehearse-production-freeze.sh 'test --noinput' 'Rehearsal must run the full Django regression suite.'
+require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-baselines.py' 'Rehearsal must enforce pre/post legacy IMS row-count preservation.'
+require_text scripts/rehearse-production-freeze.sh 'rehearsal-data-fingerprint.py' 'Rehearsal must capture protected legacy IMS field fingerprints.'
+require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-fingerprints.py' 'Rehearsal must reject legacy IMS field-data drift.'
+require_text scripts/deploy-production-freeze.sh 'scripts/verify-production-freeze.sh' 'Final deploy wrapper must verify the Upgrade 12 freeze.'
+require_text scripts/deploy-production-freeze.sh 'scripts/deploy-production.sh' 'Final deploy wrapper must hand off to the frozen Upgrade 11 deployment pipeline.'
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path('merge/source-manifest.json')
+data = json.loads(p.read_text(encoding='utf-8'))
+progress = data['merge_progress']
+assert progress['completed_upgrade'] == 12
+assert progress['total_upgrades'] == 12
+assert progress['merge_complete'] is True
+assert progress['next_upgrade'] is None
+PY
+
+printf 'Upgrade 12 production-freeze contract verified.\n'

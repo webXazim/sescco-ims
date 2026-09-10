@@ -1,15 +1,16 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.views import redirect_to_login
 
+from apps.accounts.permissions import membership_can_workspace, membership_has_capability
+from apps.accounts.roles import Capability, Workspace
+
 
 class InventoryWorkspaceMixin(LoginRequiredMixin, UserPassesTestMixin):
-    """Restrict the operational workspace to active inventory users."""
+    """Require active company-scoped Inventory workspace access."""
 
     raise_exception = True
 
     def handle_no_permission(self):
-        # Anonymous visitors should follow the normal sign-in flow. Authenticated
-        # users who fail the workspace permission check still receive a hard 403.
         if not self.request.user.is_authenticated:
             return redirect_to_login(
                 self.request.get_full_path(),
@@ -19,16 +20,19 @@ class InventoryWorkspaceMixin(LoginRequiredMixin, UserPassesTestMixin):
         return super().handle_no_permission()
 
     def test_func(self) -> bool:
-        user = self.request.user
-        return bool(user.is_authenticated and user.is_active)
+        return membership_can_workspace(
+            getattr(self.request, "company_membership", None), Workspace.INVENTORY
+        )
 
 
 class InventoryAdminRequiredMixin(InventoryWorkspaceMixin):
-    """Restrict sensitive corrective operations to inventory administrators."""
+    """Require company-scoped Inventory management authority."""
 
     def test_func(self) -> bool:
-        user = self.request.user
         return bool(
             super().test_func()
-            and getattr(user, "is_inventory_admin", False)
+            and membership_has_capability(
+                getattr(self.request, "company_membership", None),
+                Capability.MANAGE_INVENTORY,
+            )
         )

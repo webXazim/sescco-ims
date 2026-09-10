@@ -9,6 +9,8 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.accounts.permissions import user_has_capability_for_company
+from apps.accounts.roles import Capability
 from apps.projects.models import Project
 
 from ..models import StockItem, StockMovement, StockTransferLine, Supplier, Unit
@@ -50,9 +52,14 @@ def _validate_positive_quantity(quantity: Decimal) -> Decimal:
     return value
 
 
-def _existing_idempotent_result(idempotency_key: UUID) -> MovementResult | None:
+def _require_inventory_edit(user, company) -> None:
+    if not user_has_capability_for_company(user, company, Capability.EDIT_INVENTORY):
+        raise InventoryOperationError("Active Inventory edit access is required for this company.")
+
+
+def _existing_idempotent_result(company, idempotency_key: UUID) -> MovementResult | None:
     movement = (
-        StockMovement.objects.select_related("stock_item", "stock_item__unit")
+        StockMovement.objects.for_company(company).select_related("stock_item", "stock_item__unit")
         .filter(idempotency_key=idempotency_key)
         .first()
     )
@@ -102,6 +109,7 @@ def _create_movement(
     transfer_line: StockTransferLine | None = None,
 ) -> StockMovement:
     movement = StockMovement(
+        company=stock_item.company,
         stock_item=stock_item,
         movement_type=movement_type,
         quantity=quantity,
@@ -164,9 +172,12 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
+    _require_inventory_edit(user, project.company)
     if project.deleted_at or unit.deleted_at:
         raise InactiveStockError("Deleted projects and units cannot receive new stock.")
-    duplicate = _existing_idempotent_result(idempotency_key)
+    if unit.company_id != project.company_id:
+        raise InventoryOperationError("Project and unit must belong to the same company.")
+    duplicate = _existing_idempotent_result(project.company, idempotency_key)
     if duplicate:
         return duplicate
 
@@ -190,13 +201,14 @@ def add_stock(
             # Lock the project before resolving a possibly-new identity. This serializes
             # concurrent first additions within one project, so two requests cannot both
             # conclude that the same stock identity is missing and race to create it.
-            locked_project = Project.objects.select_for_update().get(pk=project.pk)
+            locked_project = Project.objects.for_company(project.company).select_for_update().get(pk=project.pk)
             if locked_project.status != Project.Status.ACTIVE:
                 raise InactiveStockError("Only active projects can receive stock.")
 
             # Keep suppliers introduced through imports and integrations available in
             # the managed supplier picker without changing historical stock snapshots.
-            Supplier.objects.get_or_create(
+            Supplier.objects.for_company(locked_project.company).get_or_create(
+                company=locked_project.company,
                 normalized_name=normalized_supplier,
                 normalized_phone=normalized_phone,
                 defaults={
@@ -207,7 +219,7 @@ def add_stock(
             )
 
             exact = (
-                StockItem.objects.select_for_update(of=("self",))
+                StockItem.objects.for_company(locked_project.company).select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .filter(
                     project=locked_project,
@@ -228,7 +240,7 @@ def add_stock(
                         f"({stock_item.unit.symbol}), not {unit.name} ({unit.symbol})."
                     )
             else:
-                similar = StockItem.objects.filter(
+                similar = StockItem.objects.for_company(locked_project.company).filter(
                     project=locked_project,
                     condition=StockItem.Condition.NEW,
                     normalized_material_name=normalized_material,
@@ -240,6 +252,7 @@ def add_stock(
                         "but a different phone number. Review it before creating a separate record."
                     )
                 stock_item = StockItem(
+                    company=locked_project.company,
                     project=locked_project,
                     condition=StockItem.Condition.NEW,
                     material_name=material_name,
@@ -286,7 +299,7 @@ def add_stock(
                 stock_item_created=stock_item_created,
             )
     except IntegrityError:
-        duplicate = _existing_idempotent_result(idempotency_key)
+        duplicate = _existing_idempotent_result(project.company, idempotency_key)
         if duplicate:
             return duplicate
         raise
@@ -305,9 +318,10 @@ def add_opening_stock(
 ) -> MovementResult:
     """Create an opening movement for imports and administrator setup."""
 
-    if not getattr(user, "is_inventory_admin", False):
-        raise InventoryOperationError("Only an administrator can create opening stock.")
-    duplicate = _existing_idempotent_result(idempotency_key)
+    if not user_has_capability_for_company(user, stock_item.company, Capability.MANAGE_INVENTORY):
+        raise InventoryOperationError("Only an inventory manager can create opening stock.")
+    _require_inventory_edit(user, stock_item.company)
+    duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
     quantity = _validate_positive_quantity(quantity)
@@ -318,7 +332,7 @@ def add_opening_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update(of=("self",))
+                StockItem.objects.for_company(stock_item.company).select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -353,7 +367,7 @@ def add_opening_stock(
             )
             return MovementResult(movement=movement)
     except IntegrityError:
-        duplicate = _existing_idempotent_result(idempotency_key)
+        duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
         if duplicate:
             return duplicate
         raise
@@ -372,7 +386,8 @@ def use_stock(
     notes: str = "",
     attachment=None,
 ) -> MovementResult:
-    duplicate = _existing_idempotent_result(idempotency_key)
+    _require_inventory_edit(user, stock_item.company)
+    duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
     quantity = _validate_positive_quantity(quantity)
@@ -383,7 +398,7 @@ def use_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update(of=("self",))
+                StockItem.objects.for_company(stock_item.company).select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -411,7 +426,7 @@ def use_stock(
             )
             return MovementResult(movement=movement)
     except IntegrityError:
-        duplicate = _existing_idempotent_result(idempotency_key)
+        duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
         if duplicate:
             return duplicate
         raise
@@ -429,7 +444,8 @@ def adjust_stock(
     invoice_reference: str = "",
     notes: str = "",
 ) -> MovementResult:
-    duplicate = _existing_idempotent_result(idempotency_key)
+    _require_inventory_edit(user, stock_item.company)
+    duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
     quantity = _validate_positive_quantity(quantity)
@@ -443,7 +459,7 @@ def adjust_stock(
     try:
         with transaction.atomic():
             locked = (
-                StockItem.objects.select_for_update(of=("self",))
+                StockItem.objects.for_company(stock_item.company).select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .get(pk=stock_item.pk)
             )
@@ -474,14 +490,14 @@ def adjust_stock(
             )
             return MovementResult(movement=movement)
     except IntegrityError:
-        duplicate = _existing_idempotent_result(idempotency_key)
+        duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
         if duplicate:
             return duplicate
         raise
 
 
 def _unreversed_additions(stock_item: StockItem):
-    return StockMovement.objects.filter(
+    return StockMovement.objects.for_company(stock_item.company).filter(
         stock_item=stock_item,
         movement_type__in=(StockMovement.Type.OPENING, StockMovement.Type.ADDITION),
         reversal__isnull=True,
@@ -511,9 +527,9 @@ def reverse_movement(
     movement_date: date,
     reason: str,
 ) -> MovementResult:
-    if not getattr(user, "is_inventory_admin", False):
-        raise InventoryOperationError("Only an administrator can reverse stock movements.")
-    duplicate = _existing_idempotent_result(idempotency_key)
+    if not user_has_capability_for_company(user, movement.company, Capability.MANAGE_INVENTORY):
+        raise InventoryOperationError("Only an inventory manager can reverse stock movements.")
+    duplicate = _existing_idempotent_result(movement.company, idempotency_key)
     if duplicate:
         return duplicate
     _validate_operation_date(movement_date)
@@ -524,7 +540,7 @@ def reverse_movement(
     try:
         with transaction.atomic():
             original = (
-                StockMovement.objects.select_for_update(of=("self",))
+                StockMovement.objects.for_company(movement.company).select_for_update(of=("self",))
                 .select_related(
                     "stock_item",
                     "stock_item__location",
@@ -543,11 +559,11 @@ def reverse_movement(
                 raise InventoryOperationError(
                     "Reversal date cannot be earlier than the original movement date."
                 )
-            if StockMovement.objects.filter(reversal_of=original).exists():
+            if StockMovement.objects.for_company(original.company).filter(reversal_of=original).exists():
                 raise MovementAlreadyReversedError("This movement has already been reversed.")
 
             stock_item = (
-                StockItem.objects.select_for_update(of=("self",))
+                StockItem.objects.for_company(original.company).select_for_update(of=("self",))
                 .select_related("location", "project", "unit")
                 .get(pk=original.stock_item_id)
             )
@@ -593,7 +609,7 @@ def reverse_movement(
                 )
             return MovementResult(movement=reversal)
     except IntegrityError:
-        duplicate = _existing_idempotent_result(idempotency_key)
+        duplicate = _existing_idempotent_result(movement.company, idempotency_key)
         if duplicate:
             return duplicate
         raise
@@ -601,11 +617,12 @@ def reverse_movement(
 
 def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockItem:
     """Archive/reactivate a zero-balance stock identity without touching movement history."""
+    _require_inventory_edit(user, stock_item.company)
     if status not in StockItem.Status.values:
         raise InventoryOperationError("Choose a valid stock-record status.")
     with transaction.atomic():
         locked = (
-            StockItem.objects.select_for_update(of=("self",))
+            StockItem.objects.for_company(stock_item.company).select_for_update(of=("self",))
             .select_related("location", "location__project", "project", "unit")
             .get(pk=stock_item.pk)
         )

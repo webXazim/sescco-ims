@@ -4,11 +4,13 @@ from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
 
+from apps.core.admin_mixins import ActiveCompanyAdminMixin
+
 from .models import ExportAudit, ImportJob, ImportRow
 
 
 @admin.register(ImportJob)
-class ImportJobAdmin(admin.ModelAdmin):
+class ImportJobAdmin(ActiveCompanyAdminMixin, admin.ModelAdmin):
     list_display = (
         "original_filename",
         "import_type",
@@ -122,7 +124,8 @@ class ImportJobAdmin(admin.ModelAdmin):
 
 
 @admin.register(ImportRow)
-class ImportRowAdmin(admin.ModelAdmin):
+class ImportRowAdmin(ActiveCompanyAdminMixin, admin.ModelAdmin):
+    company_lookup = "job__company"
     list_display = (
         "job",
         "row_number",
@@ -179,7 +182,7 @@ class ImportRowAdmin(admin.ModelAdmin):
 
 
 @admin.register(ExportAudit)
-class ExportAuditAdmin(admin.ModelAdmin):
+class ExportAuditAdmin(ActiveCompanyAdminMixin, admin.ModelAdmin):
     list_display = (
         "dataset",
         "file_format",

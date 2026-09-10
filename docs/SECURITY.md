@@ -8,12 +8,13 @@
 - Docker publishes only a loopback origin port.
 - PostgreSQL is isolated on an internal Docker network.
 - Production requires explicit allowed hosts, CSRF origins and a strong secret.
+- Production requires a stable Fernet `PAYROLL_FIELD_ENCRYPTION_KEY`; salary-payment destination fields are encrypted at rest. Backups record only its fingerprint, and the actual key must be stored separately as part of disaster recovery.
 - Session and CSRF cookies are Secure, HttpOnly and SameSite=Lax.
 - HTTPS redirect and HSTS are enabled.
 - Static files use content-hashed names.
 - Upload sizes and file permissions are restricted.
 - Login requests are rate-limited in the supplied host Nginx configuration.
-- Services use `no-new-privileges`; the Django container runs as a non-root user.
+- Services use `no-new-privileges`; the Django container runs as a non-root user with a read-only root filesystem and all Linux capabilities dropped.
 - Request IDs and JSON logs support incident investigation.
 - Deployments create a backup before migrations and do not touch other projects.
 

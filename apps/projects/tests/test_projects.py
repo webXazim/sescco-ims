@@ -9,18 +9,23 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.projects.models import Project
+from apps.core.tests.tenant import grant_company_access, primary_company
 
 User = get_user_model()
 
 
 class ProjectModelTests(TestCase):
+    def setUp(self):
+        self.company = primary_company()
+
     def test_project_code_and_display_text_are_normalized(self):
-        project = Project.objects.create(code=" aramco-01 ", name="  Aramco   Utilities  ")
+        project = Project.objects.create(company=self.company, code=" aramco-01 ", name="  Aramco   Utilities  ")
         self.assertEqual(project.code, "ARAMCO-01")
         self.assertEqual(project.name, "Aramco Utilities")
 
     def test_completion_date_cannot_precede_start_date(self):
         project = Project(
+            company=self.company,
             code="DATE-01",
             name="Date Test",
             start_date=date(2026, 8, 10),
@@ -38,6 +43,9 @@ class ProjectWorkspaceTests(TestCase):
             email="admin@example.com",
             password="safe-password",
         )
+        self.company = primary_company()
+        grant_company_access(self.user, company=self.company)
+        grant_company_access(self.admin, company=self.company)
         self.client.force_login(self.user)
 
     def test_storekeeper_can_create_project(self):
@@ -59,7 +67,7 @@ class ProjectWorkspaceTests(TestCase):
     def test_project_detail_paginates_stock_records(self):
         from apps.inventory.models import StockItem, Unit
 
-        project = Project.objects.create(code="PAGE-01", name="Pagination Project")
+        project = Project.objects.create(company=self.company, code="PAGE-01", name="Pagination Project")
         unit = Unit.objects.get(normalized_name="piece")
         StockItem.objects.bulk_create(
             [
@@ -81,11 +89,12 @@ class ProjectWorkspaceTests(TestCase):
         self.assertTrue(response.context["is_paginated"])
 
     def test_project_list_supports_search_and_status_filter(self):
-        Project.objects.create(code="ACTIVE-01", name="Active Project")
-        Project.objects.create(
+        Project.objects.create(company=self.company, code="ACTIVE-01", name="Active Project")
+        Project.objects.create(company=self.company,
             code="DONE-01",
             name="Completed Project",
             status=Project.Status.COMPLETED,
+            end_date=date(2026, 8, 31),
         )
         response = self.client.get(
             reverse("projects:list"),
@@ -99,7 +108,7 @@ class ProjectWorkspaceTests(TestCase):
     def test_project_detail_defaults_to_active_records_and_can_show_archived(self):
         from apps.inventory.models import StockItem, Unit
 
-        project = Project.objects.create(code="LIFE-01", name="Lifecycle Project")
+        project = Project.objects.create(company=self.company, code="LIFE-01", name="Lifecycle Project")
         unit = Unit.objects.get(normalized_name="piece")
         active = StockItem.objects.create(
             project=project,
@@ -132,7 +141,7 @@ class ProjectWorkspaceTests(TestCase):
         from apps.inventory.models import Unit
         from apps.inventory.services.stock import add_stock
 
-        project = Project.objects.create(code="LIVE-01", name="Live Project")
+        project = Project.objects.create(company=self.company, code="LIVE-01", name="Live Project")
         unit = Unit.objects.get(normalized_name="bag")
         add_stock(
             user=self.user,
@@ -146,11 +155,12 @@ class ProjectWorkspaceTests(TestCase):
             unit=unit,
         )
         project.status = Project.Status.COMPLETED
+        project.end_date = date(2026, 8, 31)
         with self.assertRaises(ValidationError):
             project.save()
 
     def test_storekeeper_can_archive_project_but_only_admin_can_delete(self):
-        project = Project.objects.create(code="LIFE-02", name="Lifecycle Controls")
+        project = Project.objects.create(company=self.company, code="LIFE-02", name="Lifecycle Controls")
         status_url = reverse("projects:status", kwargs={"code": project.code})
         delete_url = reverse("projects:delete", kwargs={"code": project.code})
 
@@ -174,7 +184,7 @@ class ProjectWorkspaceTests(TestCase):
     def test_project_with_inventory_history_cannot_be_deleted(self):
         from apps.inventory.models import StockItem, Unit
 
-        project = Project.objects.create(code="LIFE-03", name="Protected Project")
+        project = Project.objects.create(company=self.company, code="LIFE-03", name="Protected Project")
         unit = Unit.objects.get(normalized_name="piece")
         StockItem.objects.create(
             project=project,

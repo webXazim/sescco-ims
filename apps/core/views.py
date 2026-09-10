@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import connection, models
+from django.db.migrations.executor import MigrationExecutor
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
@@ -61,9 +62,9 @@ class DashboardView(WorkspaceTemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         selected_project = self.request.GET.get("project", "").strip()
-        items = stock_items().filter(status=StockItem.Status.ACTIVE)
-        movements = stock_movements()
-        projects = Project.objects.filter(deleted_at__isnull=True).order_by("code")
+        items = stock_items(self.request.company).filter(status=StockItem.Status.ACTIVE)
+        movements = stock_movements(self.request.company)
+        projects = Project.objects.for_company(self.request.company).filter(deleted_at__isnull=True).order_by("code")
         selected_project_object = None
         if selected_project:
             selected_project_object = projects.filter(code=selected_project).first()
@@ -73,7 +74,7 @@ class DashboardView(WorkspaceTemplateView):
             else:
                 selected_project = ""
 
-        project_summaries = Project.objects.filter(
+        project_summaries = Project.objects.for_company(self.request.company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         )
         if selected_project_object:
@@ -118,7 +119,7 @@ class DashboardView(WorkspaceTemplateView):
             projects=projects,
             selected_project=selected_project,
             selected_project_object=selected_project_object,
-            active_project_count=Project.objects.filter(
+            active_project_count=Project.objects.for_company(self.request.company).filter(
                 status=Project.Status.ACTIVE, deleted_at__isnull=True
             ).count(),
             stock_record_count=items.count(),
@@ -128,7 +129,7 @@ class DashboardView(WorkspaceTemplateView):
             out_of_stock_count=items.filter(
                 status=StockItem.Status.ACTIVE, current_quantity=0
             ).count(),
-            unit_count=Unit.objects.filter(is_active=True, deleted_at__isnull=True).count(),
+            unit_count=Unit.objects.for_company(self.request.company).filter(is_active=True, deleted_at__isnull=True).count(),
             inventory_value=inventory_value,
             inventory_value_compact=_compact_value(inventory_value),
             unpriced_stock_count=items.filter(
@@ -159,7 +160,7 @@ def liveness_check(request):
     return JsonResponse(
         {
             "status": "ok",
-            "service": "inventory",
+            "service": "ims-platform",
             "version": settings.APP_VERSION,
         }
     )
@@ -176,18 +177,46 @@ def readiness_check(request):
         return JsonResponse(
             {
                 "status": "unhealthy",
-                "service": "inventory",
+                "service": "ims-platform",
                 "version": settings.APP_VERSION,
                 "database": "unavailable",
+                "migrations": "unknown",
+            },
+            status=503,
+        )
+    try:
+        executor = MigrationExecutor(connection)
+        pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    except Exception:
+        return JsonResponse(
+            {
+                "status": "unhealthy",
+                "service": "ims-platform",
+                "version": settings.APP_VERSION,
+                "database": "ready",
+                "migrations": "unavailable",
+            },
+            status=503,
+        )
+    if pending:
+        return JsonResponse(
+            {
+                "status": "unhealthy",
+                "service": "ims-platform",
+                "version": settings.APP_VERSION,
+                "database": "ready",
+                "migrations": "pending",
+                "pending_migration_count": len(pending),
             },
             status=503,
         )
     return JsonResponse(
         {
             "status": "ok",
-            "service": "inventory",
+            "service": "ims-platform",
             "version": settings.APP_VERSION,
             "database": "ready",
+            "migrations": "ready",
         }
     )
 
