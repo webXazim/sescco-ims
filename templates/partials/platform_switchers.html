@@ -1,10 +1,13 @@
 <div class="platform-switchers" data-platform-switchers>
   {% if ACTIVE_COMPANY %}
   <details class="platform-switcher platform-switcher--company" data-platform-switcher>
-    <summary class="platform-switcher__trigger" aria-label="Switch business">
-      <span class="platform-switcher__code">{{ ACTIVE_COMPANY.name|slice:':1'|upper }}</span>
-      <span class="platform-switcher__copy"><small>Business</small><strong>{{ ACTIVE_COMPANY.name }}</strong></span>
-      <span class="platform-switcher__chevron" aria-hidden="true">⌄</span>
+    <summary class="platform-switcher__trigger" aria-label="Switch business" title="Switch business">
+      <span class="platform-switcher__code" aria-hidden="true">{{ ACTIVE_COMPANY.name|slice:':1'|upper }}</span>
+      <span class="platform-switcher__copy">
+        <strong>{{ ACTIVE_COMPANY.name }}</strong>
+        <small>Business</small>
+      </span>
+      <svg class="platform-switcher__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
     </summary>
     <div class="platform-switcher__menu" role="menu" aria-label="Available businesses">
       <div class="platform-switcher__label">Businesses</div>
@@ -13,7 +16,7 @@
         {% csrf_token %}
         <input type="hidden" name="module" value="{{ PLATFORM_CONTEXT.current_module|default:'' }}">
         <button class="platform-switcher__item{% if membership.company_id == ACTIVE_COMPANY.id %} is-active{% endif %}" type="submit" role="menuitem"{% if membership.company_id == ACTIVE_COMPANY.id %} aria-current="true"{% endif %}>
-          <span class="platform-switcher__item-code">{{ membership.company.name|slice:':1'|upper }}</span>
+          <span class="platform-switcher__item-code" aria-hidden="true">{{ membership.company.name|slice:':1'|upper }}</span>
           <span class="platform-switcher__item-copy"><strong>{{ membership.company.name }}</strong><small>{{ membership.get_role_display }}</small></span>
           {% if membership.company_id == ACTIVE_COMPANY.id %}<span class="platform-switcher__check" aria-hidden="true">✓</span>{% endif %}
         </button>
@@ -26,21 +29,24 @@
   {% endif %}
 
   <details class="platform-switcher platform-switcher--module" data-platform-switcher>
-    <summary class="platform-switcher__trigger" aria-label="Switch module">
-      <span class="platform-switcher__code">{% if PLATFORM_CONTEXT.current_module == 'payroll' %}PM{% else %}IM{% endif %}</span>
-      <span class="platform-switcher__copy"><small>Area</small><strong>{% if PLATFORM_CONTEXT.current_module == 'payroll' %}Payroll Management{% else %}Inventory Management{% endif %}</strong></span>
-      <span class="platform-switcher__chevron" aria-hidden="true">⌄</span>
+    <summary class="platform-switcher__trigger" aria-label="Switch business area" title="Switch business area">
+      <span class="platform-switcher__code" aria-hidden="true">{% if PLATFORM_CONTEXT.current_module == 'payroll' %}PM{% else %}IM{% endif %}</span>
+      <span class="platform-switcher__copy">
+        <strong>{% if PLATFORM_CONTEXT.current_module == 'payroll' %}Payroll Management{% else %}Inventory Management{% endif %}</strong>
+        <small>Business area</small>
+      </span>
+      <svg class="platform-switcher__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
     </summary>
-    <div class="platform-switcher__menu" role="menu" aria-label="Available modules">
+    <div class="platform-switcher__menu" role="menu" aria-label="Available business areas">
       <div class="platform-switcher__label">Business areas</div>
       {% for module in PLATFORM_CONTEXT.modules %}
       <a class="platform-switcher__item{% if module.active %} is-active{% endif %}" href="{{ module.url }}" role="menuitem"{% if module.active %} aria-current="page"{% endif %}>
-        <span class="platform-switcher__item-code">{{ module.code }}</span>
+        <span class="platform-switcher__item-code" aria-hidden="true">{{ module.code }}</span>
         <span class="platform-switcher__item-copy"><strong>{{ module.label }}</strong><small>{{ module.description }}</small></span>
         {% if module.active %}<span class="platform-switcher__check" aria-hidden="true">✓</span>{% endif %}
       </a>
       {% empty %}
-      <div class="platform-switcher__empty">No module access for this business</div>
+      <div class="platform-switcher__empty">No business areas available</div>
       {% endfor %}
     </div>
   </details>

@@ -192,6 +192,7 @@ run_manage merge_shared_projects_report --fail-on-errors > "${evidence_dir}/proj
 run_manage merge_internal_payroll_report --fail-on-errors > "${evidence_dir}/internal-payroll-report.txt"
 run_manage merge_rental_manpower_report --fail-on-errors > "${evidence_dir}/rental-manpower-report.txt"
 run_manage merge_documents_management_report --fail-on-errors > "${evidence_dir}/documents-management-report.txt"
+run_manage payroll_bootstrap_report --fail-on-errors > "${evidence_dir}/payroll-bootstrap-report.txt"
 
 info "Running deployment checks, schema drift check and full Django regression suite"
 run_manage check --deploy --fail-level ERROR

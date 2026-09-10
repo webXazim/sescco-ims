@@ -60,7 +60,7 @@ bash scripts/create-production-env.sh
 # Review .env.production; required secrets are generated and its mode is 600.
 # Before the first merged cutover, rehearse against a current backup:
 ./scripts/rehearse-production-freeze.sh /absolute/path/to/current-production-backup
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ./scripts/create-admin.sh
 ```
 
@@ -106,7 +106,7 @@ coverage report
 ```
 
 Static validation commands and the runtime limitation of this build environment
-are recorded in `docs/VALIDATION.md`. The final `scripts/deploy-production-freeze.sh` entrypoint verifies `merge/production-freeze.sha256` before handing off to the unchanged Upgrade 11 production preflight/deploy pipeline; source/configuration drift from the frozen Upgrade 12 artifact blocks deployment.
+are recorded in `docs/VALIDATION.md`. The canonical `scripts/deploy-production.sh` entrypoint verifies `merge/production-freeze.sha256` before preflight, backup, release tasks and cutover. The compatibility `scripts/deploy-production-freeze.sh` wrapper remains available, but is no longer required for normal production deployment. Source/configuration drift from the packaged release blocks deployment.
 
 ## Inventory integrity rules
 

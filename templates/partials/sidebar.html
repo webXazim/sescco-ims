@@ -20,5 +20,30 @@
     <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}"><span class="nav-glyph">▮</span><span>Saved views</span></a>
     {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}"><span class="nav-glyph">⇧</span><span>Excel imports</span></a>{% endif %}
   </nav>
-  <div class="sidebar-foot"><div class="user-tile"><div class="avatar">{{ request.user.display_name|slice:':2'|upper }}</div><div class="user-tile-copy"><div class="user-name">{{ request.user.display_name }}</div><div class="user-meta">{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }} · {{ ACTIVE_COMPANY.name }}</div></div><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></div></div>
+  <div class="sidebar-foot">
+    <details class="platform-account" data-platform-switcher>
+      <summary class="platform-account__trigger" aria-label="Open account menu" title="Account">
+        <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
+        <span class="platform-account__copy">
+          <strong>{{ request.user.display_name }}</strong>
+          <small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }}</small>
+        </span>
+        <svg class="platform-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5-5 5 5"/></svg>
+      </summary>
+      <div class="platform-account__menu" role="menu" aria-label="Account menu">
+        <div class="platform-account__identity">
+          <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
+          <span><strong>{{ request.user.display_name }}</strong><small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }} · {{ ACTIVE_COMPANY.name }}</small></span>
+        </div>
+        <div class="platform-account__separator" aria-hidden="true"></div>
+        <form method="post" action="{% url 'accounts:logout' %}" class="platform-account__form">
+          {% csrf_token %}
+          <button class="platform-account__item" type="submit" role="menuitem">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9"/></svg>
+            <span><strong>Sign out</strong><small>End this authenticated session</small></span>
+          </button>
+        </form>
+      </div>
+    </details>
+  </div>
 </aside>

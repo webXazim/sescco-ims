@@ -1,4 +1,12 @@
-# Project Inventory 1.0.1
+# Project Inventory 1.0.2
+
+## Platform shell and Payroll production hotfix
+
+- Reworked the shared Business and Area switchers into compact navigation controls instead of oversized sidebar cards.
+- Replaced the Inventory footer's inline username/sign-out treatment with a consistent account drop-up and simplified the Payroll account trigger.
+- Made the shared 500 page module-neutral so Payroll failures no longer display stock-specific wording.
+- Kept `scripts/deploy-production.sh` as the canonical deployment command and made it verify the production source freeze directly.
+- Added a production-data Payroll bootstrap render gate to `scripts/release-tasks.sh`; deployment now exercises `/app/payroll/` against active company data before replacing the live web container and prints the full traceback if bootstrap rendering fails.
 
 ## Production-readiness hotfix
 

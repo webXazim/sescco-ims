@@ -7,7 +7,7 @@
 - [ ] `DJANGO_TRUSTED_PROXY_IPS` includes the confirmed `ims_edge` subnet `172.20.0.0/16`.
 - [ ] `./scripts/verify-production-infrastructure.sh` passes.
 - [ ] `./scripts/verify-production-freeze.sh` passes.
-- [ ] Production cutover uses `./scripts/deploy-production-freeze.sh`, not the lower-level deploy entrypoint directly.
+- [ ] Production cutover uses the canonical `./scripts/deploy-production.sh` entrypoint, which verifies the packaged production freeze itself.
 - [ ] A current production backup has passed `./scripts/rehearse-production-freeze.sh`.
 - [ ] Rehearsal evidence contains successful row-count preservation, legacy field-data fingerprint preservation, and SHA-256 checksums.
 - [ ] `/app/health/ready/` reports both `database=ready` and `migrations=ready`.

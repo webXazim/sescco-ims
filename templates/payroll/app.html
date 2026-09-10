@@ -114,7 +114,7 @@
         <div class="ui-v2-account-wrap ui-v2-prs-dropdown" data-dropdown>
           <button class="ui-v2-account" type="button" id="accountMenuButton" data-dropdown-trigger aria-haspopup="menu" aria-expanded="false" title="Account">
             <span class="ui-v2-account__avatar">{{ account_initials }}</span>
-            <span class="ui-v2-account__copy"><strong>{{ account_display_name }}</strong><small><span id="accountRoleLabel">{{ current_membership.get_role_display }}</span> · <span id="workspaceAccountLabel">Internal Company</span></small></span>
+            <span class="ui-v2-account__copy"><strong>{{ account_display_name }}</strong><small id="accountRoleLabel">{{ current_membership.get_role_display }}</small></span>
             <svg class="ui-v2-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="ui-v2-account-menu ui-v2-prs-dropdown-menu" data-dropdown-menu role="menu" aria-label="Account menu">

@@ -41,7 +41,7 @@ After rehearsal passes, production cutover uses:
 
 ```bash
 ./scripts/verify-production-freeze.sh
-./scripts/deploy-production-freeze.sh
+./scripts/deploy-production.sh
 ```
 
 The frozen deploy wrapper verifies Upgrade 12 first, then hands off to the unchanged Upgrade 11 deployment
