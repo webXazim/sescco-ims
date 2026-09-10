@@ -11,9 +11,9 @@ docker compose --env-file .env.production logs -f --tail=150 ims_gateway
 ## Health
 
 ```bash
-curl -H 'Host: ims.a2tdev.com' -H 'X-Forwarded-Proto: https' \
+curl -H 'Host: ims.sescco.com' -H 'X-Forwarded-Proto: https' \
   http://127.0.0.1:8087/app/health/live/
-curl -H 'Host: ims.a2tdev.com' -H 'X-Forwarded-Proto: https' \
+curl -H 'Host: ims.sescco.com' -H 'X-Forwarded-Proto: https' \
   http://127.0.0.1:8087/app/health/ready/
 ```
 
@@ -53,7 +53,7 @@ by the separate Nginx container:
 
 ```bash
 ./scripts/deploy-production-freeze.sh
-curl -I https://ims.a2tdev.com/static/css/styles.css
+curl -I https://ims.sescco.com/static/css/styles.css
 ```
 
 The CSS request should return `200`. Media upload permissions remain private;

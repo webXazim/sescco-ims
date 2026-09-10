@@ -47,9 +47,10 @@ compose exec -T -e RUN_STARTUP_TASKS=0 ims_web python manage.py makemigrations -
 
 http_port="$(read_env_value IMS_HTTP_PORT)"
 http_port="${http_port:-8087}"
+public_domain="$(read_env_value IMS_PUBLIC_DOMAIN)"
 info "Running local gateway readiness smoke test"
 curl --fail --silent --show-error \
-  --header 'Host: ims.a2tdev.com' \
+  --header "Host: ${public_domain}" \
   --header 'X-Forwarded-Proto: https' \
   "http://127.0.0.1:${http_port}/app/health/ready/" >/dev/null
 
@@ -60,12 +61,12 @@ for asset in \
   /static/payroll/css/v2/index.css \
   /static/payroll/js/app.js; do
   curl --fail --silent --show-error \
-    --header 'Host: ims.a2tdev.com' \
+    --header "Host: ${public_domain}" \
     --header 'X-Forwarded-Proto: https' \
     "http://127.0.0.1:${http_port}${asset}" >/dev/null
 done
 
 info "Deployment completed"
 printf 'Local origin: http://127.0.0.1:%s\n' "${http_port}"
-printf 'Public domain: https://ims.a2tdev.com\n'
+printf 'Public domain: https://%s\n' "${public_domain}"
 printf 'Compose project and persistent volume identities were preserved.\n'

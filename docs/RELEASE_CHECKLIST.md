@@ -17,7 +17,7 @@
 - [ ] `python manage.py check --deploy` passes.
 - [ ] `makemigrations --check --dry-run` reports no drift.
 - [ ] A pre-release database and media backup exists.
-- [ ] `ims.a2tdev.com` DNS resolves to the correct VPS.
+- [ ] `ims.sescco.com` DNS resolves to the correct VPS.
 - [ ] TLS certificate is valid and HTTPS redirect works.
 - [ ] Login, add stock, use stock, filtering and exact export are smoke-tested.
 - [ ] Storekeeper cannot access `/admin/`.

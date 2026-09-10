@@ -43,6 +43,7 @@ require_text nginx/default.conf 'location /media/' 'Private media must have an e
 require_text nginx/default.conf 'return 404;' 'Private media must not be served directly by Nginx.'
 require_text nginx/default.conf 'expires 1h;' 'Stable static compatibility URLs need bounded caching.'
 require_text .env.production.example 'PAYROLL_FIELD_ENCRYPTION_KEY=' 'Production env example is missing Payroll field encryption key.'
+require_text .env.production.example 'IMS_PUBLIC_DOMAIN=' 'Production env example is missing the public domain.'
 require_text .env.production.example 'DJANGO_TRUSTED_PROXY_IPS=' 'Production env example is missing trusted proxy configuration.'
 require_text .env.production.example 'IMS_BACKUP_RETENTION_DAYS=' 'Production env example is missing backup retention configuration.'
 require_text .env.production.example 'RUN_STARTUP_TASKS=0' 'Production runtime must explicitly disable startup migrations.'

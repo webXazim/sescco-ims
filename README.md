@@ -24,7 +24,7 @@ Core capabilities:
 - legacy workbook preview/import and atomic opening-stock import;
 - protected XLSX/XLSM parsing with archive expansion and path safety limits;
 - private authenticated attachments;
-- unified Inventory + Payroll production deployment at `ims.a2tdev.com` beside other Docker projects;
+- unified Inventory + Payroll production deployment at `ims.sescco.com` beside other Docker projects;
 - health checks, JSON logs, backups, restore controls and operator documentation.
 
 ## Local development
@@ -53,7 +53,7 @@ Open:
 Create operational users in Django admin with `role=Storekeeper`. Their staff
 status remains disabled automatically.
 
-## Production deployment for ims.a2tdev.com
+## Production deployment for ims.sescco.com
 
 ```bash
 cp .env.production.example .env.production
@@ -65,8 +65,8 @@ chmod 600 .env.production
 ./scripts/create-admin.sh
 ```
 
-Docker publishes only `127.0.0.1:8087`. Route `ims.a2tdev.com` through the
-existing host reverse proxy using `deploy/host-nginx/ims.a2tdev.com.conf`.
+Docker publishes only `127.0.0.1:8087`. Route `ims.sescco.com` through the
+existing host reverse proxy using `deploy/host-nginx/ims.sescco.com.conf`.
 
 The Compose project, services, networks and volumes all use an `ims` prefix, so
 this release can run beside another project without name or public-port
@@ -75,7 +75,7 @@ volumes.
 
 See:
 
-- `docs/DEPLOYMENT_IMS_A2TDEV.md`
+- `docs/DEPLOYMENT_IMS_SESCCO.md`
 - `docs/BACKUP_RESTORE.md`
 - `docs/OPERATIONS.md`
 - `docs/SECURITY.md`

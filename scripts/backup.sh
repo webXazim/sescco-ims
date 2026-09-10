@@ -35,10 +35,11 @@ compose run --rm --no-deps -T ims_tools sh -c \
 
 source_revision="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 app_version="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null || printf 'unknown')"
+public_domain="$(read_env_value IMS_PUBLIC_DOMAIN)"
 cat > "${backup_dir}/manifest.txt" <<MANIFEST
 service=ims
 platform=ims-payroll-merged
-domain=ims.a2tdev.com
+domain=${public_domain}
 created_at_utc=${timestamp}
 source_revision=${source_revision}
 app_version=${app_version}

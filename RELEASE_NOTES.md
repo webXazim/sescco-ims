@@ -7,6 +7,7 @@
 - Added missing model-state migrations required by the release migration-drift gate.
 - Fixed Rental Manpower assignment queries and stable settlement snapshot fingerprints.
 - Allowed system-finalized immutable documents to retain a null finalizing user.
+- Corrected the production hostname to `ims.sescco.com` and made it an explicit environment setting.
 
 ## Stock transfer upgrade
 
@@ -17,7 +18,7 @@
 - Added location and condition support to inventory, activity, filters and exports.
 
 This release completes the seven planned build upgrades and is prepared for an
-isolated production deployment at `ims.a2tdev.com` beside other Docker Compose
+isolated production deployment at `ims.sescco.com` beside other Docker Compose
 projects.
 
 ## Included
@@ -34,7 +35,7 @@ projects.
 
 ## Deployment target
 
-Follow `docs/DEPLOYMENT_IMS_A2TDEV.md`. Before traffic is enabled, complete every
+Follow `docs/DEPLOYMENT_IMS_SESCCO.md`. Before traffic is enabled, complete every
 item in `docs/RELEASE_CHECKLIST.md`, including the Docker/CI runtime test suite
 and an isolated restore test.
 

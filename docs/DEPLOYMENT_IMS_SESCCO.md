@@ -1,6 +1,6 @@
 # Deploying the merged IMS + Payroll platform beside another Docker project
 
-Target domain: `ims.a2tdev.com`
+Target domain: `ims.sescco.com`
 
 This deployment intentionally does not bind Docker directly to public ports 80
 or 443. The IMS gateway listens only on `127.0.0.1:8087`; the existing host
@@ -8,7 +8,7 @@ Nginx routes the domain to it. Other Compose projects remain isolated.
 
 ## 1. DNS
 
-Create an `A` record for `ims.a2tdev.com` pointing to the VPS public IPv4
+Create an `A` record for `ims.sescco.com` pointing to the VPS public IPv4
 address. When Cloudflare proxying is used, keep SSL/TLS mode at Full (strict)
 after the origin certificate is installed.
 
@@ -46,8 +46,9 @@ PY
 Put those values in `.env.production`. **Store the Payroll field-encryption key separately in a protected password/secret manager as part of disaster recovery.** Database backups contain only its fingerprint. The supplied defaults already include:
 
 ```text
-DJANGO_ALLOWED_HOSTS=ims.a2tdev.com,localhost,127.0.0.1
-DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.a2tdev.com
+IMS_PUBLIC_DOMAIN=ims.sescco.com
+DJANGO_ALLOWED_HOSTS=ims.sescco.com,localhost,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.sescco.com
 DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
 IMS_HTTP_PORT=8087
 RUN_STARTUP_TASKS=0
@@ -81,10 +82,10 @@ Install the HTTP-only bootstrap virtual host first:
 
 ```bash
 sudo mkdir -p /var/www/certbot
-sudo cp deploy/host-nginx/ims.a2tdev.com.bootstrap.conf \
-  /etc/nginx/sites-available/ims.a2tdev.com
-sudo ln -s /etc/nginx/sites-available/ims.a2tdev.com \
-  /etc/nginx/sites-enabled/ims.a2tdev.com
+sudo cp deploy/host-nginx/ims.sescco.com.bootstrap.conf \
+  /etc/nginx/sites-available/ims.sescco.com
+sudo ln -s /etc/nginx/sites-available/ims.sescco.com \
+  /etc/nginx/sites-enabled/ims.sescco.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -93,9 +94,9 @@ Request the certificate, then replace the bootstrap file with the final HTTPS
 configuration:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot -d ims.a2tdev.com
-sudo cp deploy/host-nginx/ims.a2tdev.com.conf \
-  /etc/nginx/sites-available/ims.a2tdev.com
+sudo certbot certonly --webroot -w /var/www/certbot -d ims.sescco.com
+sudo cp deploy/host-nginx/ims.sescco.com.conf \
+  /etc/nginx/sites-available/ims.sescco.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -103,8 +104,8 @@ sudo systemctl reload nginx
 Verify:
 
 ```bash
-curl -I https://ims.a2tdev.com/login/
-curl https://ims.a2tdev.com/app/health/ready/
+curl -I https://ims.sescco.com/login/
+curl https://ims.sescco.com/app/health/ready/
 ```
 
 ## 5. Existing Docker reverse proxy instead of host Nginx
@@ -132,7 +133,7 @@ The proxy can reach the upstream at:
 ims-gateway:8080
 ```
 
-Set the external hostname to `ims.a2tdev.com`, pass the original Host header,
+Set the external hostname to `ims.sescco.com`, pass the original Host header,
 and pass `X-Forwarded-Proto: https`.
 
 ## 6. Routine updates

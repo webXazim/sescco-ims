@@ -12,7 +12,7 @@ Replace `YOUR_REAL_EMAIL` below.
 
 ## 1. Create the Cloudflare DNS record
 
-In Cloudflare for `a2tdev.com`, add:
+In Cloudflare for `sescco.com`, add:
 
 ```text
 Type: A
@@ -27,7 +27,7 @@ Keep it DNS-only until the TLS certificate is installed.
 Verify:
 
 ```sh
-dig +short ims.a2tdev.com
+dig +short ims.sescco.com
 ```
 
 Expected:
@@ -144,8 +144,9 @@ Expected:
 COMPOSE_PROJECT_NAME=ims
 IMS_HTTP_PORT=8087
 IMS_USE_SHARED_PROXY=0
-DJANGO_ALLOWED_HOSTS=ims.a2tdev.com,localhost,127.0.0.1
-DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.a2tdev.com
+IMS_PUBLIC_DOMAIN=ims.sescco.com
+DJANGO_ALLOWED_HOSTS=ims.sescco.com,localhost,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.sescco.com
 DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
 POSTGRES_DB=ims_inventory
 POSTGRES_USER=ims_inventory
@@ -224,7 +225,7 @@ sudo docker compose --env-file .env.production logs --tail=100 ims_gateway
 
 ```sh
 curl -i \
-  -H "Host: ims.a2tdev.com" \
+  -H "Host: ims.sescco.com" \
   -H "X-Forwarded-Proto: https" \
   http://127.0.0.1:8087/app/health/ready/
 ```
@@ -255,12 +256,12 @@ cd /opt/sites/ims
 sudo mkdir -p /var/www/certbot
 
 sudo cp \
-  deploy/host-nginx/ims.a2tdev.com.bootstrap.conf \
-  /etc/nginx/sites-available/ims.a2tdev.com
+  deploy/host-nginx/ims.sescco.com.bootstrap.conf \
+  /etc/nginx/sites-available/ims.sescco.com
 
 sudo ln -sfn \
-  /etc/nginx/sites-available/ims.a2tdev.com \
-  /etc/nginx/sites-enabled/ims.a2tdev.com
+  /etc/nginx/sites-available/ims.sescco.com \
+  /etc/nginx/sites-enabled/ims.sescco.com
 ```
 
 Validate and reload:
@@ -274,7 +275,7 @@ sudo systemctl status nginx --no-pager
 Test HTTP:
 
 ```sh
-curl -I http://ims.a2tdev.com/login/
+curl -I http://ims.sescco.com/login/
 ```
 
 A redirect to HTTPS is acceptable.
@@ -287,7 +288,7 @@ Cloudflare must still be DNS-only.
 sudo certbot certonly \
   --webroot \
   -w /var/www/certbot \
-  -d ims.a2tdev.com \
+  -d ims.sescco.com \
   --agree-tos \
   --email YOUR_REAL_EMAIL \
   --no-eff-email
@@ -305,8 +306,8 @@ sudo certbot certificates
 cd /opt/sites/ims
 
 sudo cp \
-  deploy/host-nginx/ims.a2tdev.com.conf \
-  /etc/nginx/sites-available/ims.a2tdev.com
+  deploy/host-nginx/ims.sescco.com.conf \
+  /etc/nginx/sites-available/ims.sescco.com
 
 sudo nginx -t
 sudo systemctl reload nginx
@@ -321,8 +322,8 @@ sudo ss -lntp | grep -E ':(80|443)\b'
 ## 14. Test IMS publicly
 
 ```sh
-curl -I https://ims.a2tdev.com/login/
-curl -fsS https://ims.a2tdev.com/app/health/ready/
+curl -I https://ims.sescco.com/login/
+curl -fsS https://ims.sescco.com/app/health/ready/
 ```
 
 Expected health result:
@@ -334,7 +335,7 @@ Expected health result:
 Open:
 
 ```text
-https://ims.a2tdev.com/login/
+https://ims.sescco.com/login/
 ```
 
 Test certificate renewal:
@@ -347,7 +348,7 @@ sudo certbot renew --dry-run
 
 After direct HTTPS works:
 
-1. Change `ims.a2tdev.com` to **Proxied**—orange cloud.
+1. Change `ims.sescco.com` to **Proxied**—orange cloud.
 2. Click Save.
 3. Ensure Cloudflare SSL/TLS mode is **Full (strict)**.
 4. Wait several minutes.
@@ -357,8 +358,8 @@ Cloudflare recommends proxying web records and using Full (strict) when the orig
 Test again:
 
 ```sh
-curl -I https://ims.a2tdev.com/login/
-curl -fsS https://ims.a2tdev.com/app/health/ready/
+curl -I https://ims.sescco.com/login/
+curl -fsS https://ims.sescco.com/app/health/ready/
 ```
 
 ## 16. Create the IMS administrator
@@ -373,7 +374,7 @@ Enter the administrator username, email, and password.
 Then sign in:
 
 ```text
-https://ims.a2tdev.com/admin/
+https://ims.sescco.com/admin/
 ```
 
 Operational users can subsequently be created with the `Storekeeper` role.
@@ -452,7 +453,7 @@ sudo ./scripts/backup.sh
 sudo docker compose --env-file .env.production restart ims_web ims_gateway
 
 # Local readiness test
-curl -H "Host: ims.a2tdev.com" \
+curl -H "Host: ims.sescco.com" \
      -H "X-Forwarded-Proto: https" \
      http://127.0.0.1:8087/app/health/ready/
 ```

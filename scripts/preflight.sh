@@ -27,6 +27,7 @@ bash "${PROJECT_ROOT}/scripts/verify-production-infrastructure.sh"
 
 info "Validating production environment"
 required=(
+  IMS_PUBLIC_DOMAIN
   DJANGO_SECRET_KEY
   PAYROLL_FIELD_ENCRYPTION_KEY
   DJANGO_ALLOWED_HOSTS
@@ -52,10 +53,13 @@ password="$(read_env_value POSTGRES_PASSWORD)"
 
 allowed_hosts="$(read_env_value DJANGO_ALLOWED_HOSTS)"
 csrf_origins="$(read_env_value DJANGO_CSRF_TRUSTED_ORIGINS)"
-[[ ",${allowed_hosts}," == *",ims.a2tdev.com,"* ]] \
-  || fatal "DJANGO_ALLOWED_HOSTS must include ims.a2tdev.com."
-[[ ",${csrf_origins}," == *",https://ims.a2tdev.com,"* ]] \
-  || fatal "DJANGO_CSRF_TRUSTED_ORIGINS must include https://ims.a2tdev.com."
+public_domain="$(read_env_value IMS_PUBLIC_DOMAIN)"
+[[ "${public_domain}" =~ ^[A-Za-z0-9.-]+$ ]] \
+  || fatal "IMS_PUBLIC_DOMAIN must be a valid hostname."
+[[ ",${allowed_hosts}," == *",${public_domain},"* ]] \
+  || fatal "DJANGO_ALLOWED_HOSTS must include ${public_domain}."
+[[ ",${csrf_origins}," == *",https://${public_domain},"* ]] \
+  || fatal "DJANGO_CSRF_TRUSTED_ORIGINS must include https://${public_domain}."
 
 if grep -Eq 'replace-with|development-only|changeme|example-password' "${ENV_FILE}"; then
   fatal "Placeholder secrets remain in ${ENV_FILE}."

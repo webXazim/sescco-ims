@@ -6,7 +6,7 @@ Upgrade 7 completes the first production release.
 
 - isolated Compose project name, service names, networks and persistent volume names;
 - loopback-only Docker gateway on port `8087`, avoiding public-port conflicts;
-- deployment target `https://ims.a2tdev.com`;
+- deployment target `https://ims.sescco.com`;
 - optional shared Docker reverse-proxy network override persisted in the environment;
 - strong production environment validation;
 - database settings that safely accept passwords containing URL-reserved characters;
@@ -20,7 +20,7 @@ Upgrade 7 completes the first production release.
 - pre-deployment database and private-media backups;
 - checksum-verified database and media restore workflow;
 - deployment locking, health waits, smoke testing and Django deploy checks;
-- host Nginx configuration for `ims.a2tdev.com` with login throttling;
+- host Nginx configuration for `ims.sescco.com` with login throttling;
 - operator, administrator, storekeeper, security and release documentation.
 
 ## Isolation guarantee
