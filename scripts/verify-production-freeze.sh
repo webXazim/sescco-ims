@@ -54,6 +54,10 @@ require_text scripts/rehearse-production-freeze.sh 'test --noinput' 'Rehearsal m
 require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-baselines.py' 'Rehearsal must enforce pre/post legacy IMS row-count preservation.'
 require_text scripts/rehearse-production-freeze.sh 'rehearsal-data-fingerprint.py' 'Rehearsal must capture protected legacy IMS field fingerprints.'
 require_text scripts/rehearse-production-freeze.sh 'compare-rehearsal-fingerprints.py' 'Rehearsal must reject legacy IMS field-data drift.'
+rehearsal_collect_line="$(grep -nF 'run_manage collectstatic --noinput' scripts/rehearse-production-freeze.sh | head -1 | cut -d: -f1)"
+rehearsal_bootstrap_line="$(grep -nF 'run_manage payroll_bootstrap_report --fail-on-errors' scripts/rehearse-production-freeze.sh | head -1 | cut -d: -f1)"
+[[ -n "${rehearsal_collect_line}" && -n "${rehearsal_bootstrap_line}" ]] || fail 'Rehearsal static/bootstrap ordering cannot be verified.'
+(( rehearsal_collect_line < rehearsal_bootstrap_line )) || fail 'Rehearsal must collect static assets before rendering Payroll templates.'
 require_text scripts/deploy-production.sh 'scripts/verify-production-freeze.sh' 'Canonical production deployment must verify the packaged source freeze.'
 require_text scripts/deploy-production-freeze.sh 'scripts/verify-production-freeze.sh' 'Compatibility deploy wrapper must verify the production freeze.'
 require_text scripts/deploy-production-freeze.sh 'scripts/deploy-production.sh' 'Compatibility deploy wrapper must hand off to the canonical deployment pipeline.'
