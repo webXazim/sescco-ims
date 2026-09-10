@@ -1,4 +1,7 @@
 from django.contrib.auth import get_user_model
+from pathlib import Path
+
+from django.conf import settings
 from django.test import TestCase
 from django.urls import reverse
 
@@ -33,6 +36,11 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertContains(response, "Payroll Management")
         self.assertContains(response, "/static/platform/css/shell-switchers.css")
         self.assertContains(response, "/static/platform/js/shell-switchers.js")
+        self.assertContains(response, "/static/platform/css/inventory-shell.css")
+        self.assertContains(response, "/static/platform/js/inventory-shell.js")
+        self.assertContains(response, 'class="inventory-shell-v2"')
+        self.assertContains(response, 'data-inventory-sidebar-collapse')
+        self.assertContains(response, 'data-inventory-sidebar-resize')
         self.assertContains(response, company.name)
 
     def test_owner_payroll_shell_uses_same_platform_switchers(self):
@@ -48,6 +56,7 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertContains(response, "Payroll Management")
         self.assertContains(response, "/static/platform/css/shell-switchers.css")
         self.assertContains(response, "/static/platform/js/shell-switchers.js")
+        self.assertContains(response, "/static/platform/css/payroll-shell-fixes.css")
         self.assertContains(response, 'data-ui-v2-version="merge-10"')
 
     def test_inventory_only_membership_only_lists_inventory_module(self):
@@ -71,6 +80,13 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertEqual(response.status_code, 200)
         modules = response.context["PLATFORM_CONTEXT"]["modules"]
         self.assertEqual([item["key"] for item in modules], ["payroll"])
+
+    def test_timesheet_focus_mode_removes_v2_shell_offsets(self):
+        css = (Path(settings.BASE_DIR) / "static/platform/css/payroll-shell-fixes.css").read_text(encoding="utf-8")
+        self.assertIn("body.timesheet-focus-mode .ui-v2-app-shell > .ui-v2-sidebar", css)
+        self.assertIn("body.timesheet-focus-mode .ui-v2-topbar", css)
+        self.assertIn("margin-left: 0 !important;", css)
+        self.assertIn("width: 100vw !important;", css)
 
     def test_company_switch_preserves_payroll_module_when_destination_allows_it(self):
         first = self.make_company("First Payroll", "first-payroll")

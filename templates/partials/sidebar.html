@@ -1,26 +1,75 @@
-<aside class="sidebar">
-  <div class="brand"><div class="brand-mark">{{ ACTIVE_COMPANY.name|default:APP_NAME|slice:':1'|upper }}</div><div class="brand-copy"><div class="brand-name">{{ ACTIVE_COMPANY.name|default:APP_NAME }}</div><div class="brand-sub">Inventory Management</div></div></div>
-  {% include "partials/platform_switchers.html" %}
-  <nav class="nav">
-    <div class="nav-label">Workspace</div>
-    <a class="nav-link {% if page_key == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}"><span class="nav-glyph">⌂</span><span>Overview</span></a>
-    <a class="nav-link {% if page_key == 'inventory' or page_key == 'stock-detail' %}active{% endif %}" href="{% url 'inventory:list' %}"><span class="nav-glyph">▦</span><span>Inventory</span></a>
-    <a class="nav-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}"><span class="nav-glyph">＋</span><span>Add stock</span></a>
-    <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}"><span class="nav-glyph">−</span><span>Use stock</span></a>
-    <a class="nav-link {% if page_key == 'transfers' %}active{% endif %}" href="{% url 'inventory:transfer_list' %}"><span class="nav-glyph">⇄</span><span>Transfers</span></a>
-    <a class="nav-link {% if page_key == 'office' %}active{% endif %}" href="{% url 'inventory:office' %}"><span class="nav-glyph">▣</span><span>Office stock</span></a>
-    <a class="nav-link {% if page_key == 'activity' %}active{% endif %}" href="{% url 'core:activity' %}"><span class="nav-glyph">↕</span><span>Activity</span></a>
-    <div class="nav-label">Management</div>
-    <a class="nav-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}"><span class="nav-glyph">◇</span><span>Projects</span></a>
-    <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}"><span class="nav-glyph">U</span><span>Units</span></a>
-    <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}"><span class="nav-glyph">S</span><span>Suppliers</span></a>
-    <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}"><span class="nav-glyph">□</span><span>Archive</span><span class="nav-count">{{ NAV_ARCHIVE_COUNT }}</span></a>
-    {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}"><span class="nav-glyph">♲</span><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span></a>{% endif %}
-    <a class="nav-link {% if page_key == 'low-stock' %}active{% endif %}" href="{% url 'inventory:low_stock' %}"><span class="nav-glyph">!</span><span>Low stock</span><span class="nav-count">{{ NAV_LOW_STOCK_COUNT }}</span></a>
-    <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}"><span class="nav-glyph">▮</span><span>Saved views</span></a>
-    {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}"><span class="nav-glyph">⇧</span><span>Excel imports</span></a>{% endif %}
+<aside class="sidebar inventory-sidebar" id="inventorySidebar" aria-label="Inventory navigation">
+  <div class="brand inventory-sidebar__brand">
+    <a class="brand-mark inventory-brand-mark" href="{% url 'core:dashboard' %}" aria-label="Inventory home">{{ ACTIVE_COMPANY.name|default:APP_NAME|slice:':1'|upper }}</a>
+    <a class="brand-copy inventory-brand-copy" href="{% url 'core:dashboard' %}">
+      <div class="brand-name">{{ ACTIVE_COMPANY.name|default:APP_NAME }}</div>
+      <div class="brand-sub">Inventory Management</div>
+    </a>
+    <button class="inventory-sidebar__collapse" type="button" data-inventory-sidebar-collapse aria-label="Collapse navigation" title="Collapse navigation">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+
+  <div class="inventory-sidebar__switchers">
+    {% include "partials/platform_switchers.html" %}
+  </div>
+
+  <nav class="nav inventory-sidebar__nav" aria-label="Inventory sections">
+    <div class="nav-group inventory-nav-group">
+      <div class="nav-label">Workspace</div>
+      <a class="nav-link {% if page_key == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v8H4zM14 4h6v5h-6zM4 16h6v4H4zM14 13h6v7h-6z"/></svg><span>Overview</span>
+      </a>
+      <a class="nav-link {% if page_key == 'inventory' or page_key == 'stock-detail' %}active{% endif %}" href="{% url 'inventory:list' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM4 9h16M9 4v16"/></svg><span>Inventory</span>
+      </a>
+      <a class="nav-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add stock</span>
+      </a>
+      <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span>Use stock</span>
+      </a>
+      <a class="nav-link {% if page_key == 'transfers' %}active{% endif %}" href="{% url 'inventory:transfer_list' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3m3 3-3 3M17 17H6l3 3m-3-3 3-3"/></svg><span>Transfers</span>
+      </a>
+      <a class="nav-link {% if page_key == 'office' %}active{% endif %}" href="{% url 'inventory:office' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5"/></svg><span>Office stock</span>
+      </a>
+      <a class="nav-link {% if page_key == 'activity' %}active{% endif %}" href="{% url 'core:activity' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h11M16 4l3 3-3 3M16 17H5m3-3-3 3 3 3"/></svg><span>Activity</span>
+      </a>
+    </div>
+
+    <div class="nav-group inventory-nav-group">
+      <div class="nav-label">Management</div>
+      <a class="nav-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 8-8 8-8-8 8-8z"/></svg><span>Projects</span>
+      </a>
+      <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v10a6 6 0 0 0 12 0V4"/></svg><span>Units</span>
+      </a>
+      <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7a5 5 0 0 1 9-2M17 17a5 5 0 0 1-9 2M7 7v4h4M17 17v-4h-4"/></svg><span>Suppliers</span>
+      </a>
+      <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"/></svg><span>Archive</span><span class="nav-count">{{ NAV_ARCHIVE_COUNT }}</span>
+      </a>
+      {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5m4-5v5"/></svg><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span>
+      </a>{% endif %}
+      <a class="nav-link {% if page_key == 'low-stock' %}active{% endif %}" href="{% url 'inventory:low_stock' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3zM12 9v5m0 3h.01"/></svg><span>Low stock</span><span class="nav-count">{{ NAV_LOW_STOCK_COUNT }}</span>
+      </a>
+      <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4z"/></svg><span>Saved views</span>
+      </a>
+      {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M5 14v6h14v-6"/></svg><span>Excel imports</span>
+      </a>{% endif %}
+    </div>
   </nav>
-  <div class="sidebar-foot">
+
+  <div class="sidebar-foot inventory-sidebar__footer">
     <details class="platform-account" data-platform-switcher>
       <summary class="platform-account__trigger" aria-label="Open account menu" title="Account">
         <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
@@ -46,4 +95,6 @@
       </div>
     </details>
   </div>
+
+  <button class="inventory-sidebar-resize-handle" type="button" data-inventory-sidebar-resize aria-label="Resize navigation sidebar" aria-valuemin="210" aria-valuemax="360" aria-valuenow="236" title="Drag to resize · Arrow keys adjust · Home resets"></button>
 </aside>

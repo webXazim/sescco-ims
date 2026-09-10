@@ -1,3 +1,14 @@
+# SESCCO IMS 1.0.4
+
+## Unified Inventory/Payroll shell and true timesheet focus mode
+
+- Fixed Payroll Attendance & Overtime full-screen mode so the V2 sidebar, topbar, mobile scrim and collapsed-rail control are completely removed while the timesheet owns the full viewport.
+- Removed the V2 workspace sidebar offset and clipping during focus mode, so the sheet starts at the physical left edge instead of remaining constrained to the content column.
+- Moved Inventory onto the same light, compact navigation language as Payroll: matching 236px rail, 64px collapsed state, typography, active/hover states, business/area controls and account treatment.
+- Added Inventory sidebar collapse, drag-to-resize, keyboard resize and persisted width/state without changing Inventory URLs, page forms or backend behavior.
+- Replaced the Inventory navigation glyph characters with consistent SVG line icons and aligned the Inventory top rail/search controls with the Payroll shell.
+- The canonical production deployment command remains `./scripts/deploy-production.sh`; no database migration is required for this UI/shell release.
+
 # Project Inventory 1.0.3
 
 ## PostgreSQL Payroll row-lock hotfix
