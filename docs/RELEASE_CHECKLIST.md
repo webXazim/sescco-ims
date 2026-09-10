@@ -1,9 +1,10 @@
 # Release checklist
 
 - [ ] `.env.production` contains no placeholders and is mode 600.
+- [ ] Required secrets were generated independently with `scripts/create-production-env.sh` (or an equivalent cryptographically secure process).
 - [ ] `./scripts/preflight.sh` passes.
 - [ ] `PAYROLL_FIELD_ENCRYPTION_KEY` is stored in an independent protected disaster-recovery secret store.
-- [ ] `DJANGO_TRUSTED_PROXY_IPS` matches the actual Docker gateway/proxy subnet visible to Django.
+- [ ] `DJANGO_TRUSTED_PROXY_IPS` includes the confirmed `ims_edge` subnet `172.20.0.0/16`.
 - [ ] `./scripts/verify-production-infrastructure.sh` passes.
 - [ ] `./scripts/verify-production-freeze.sh` passes.
 - [ ] Production cutover uses `./scripts/deploy-production-freeze.sh`, not the lower-level deploy entrypoint directly.

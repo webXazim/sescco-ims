@@ -35,6 +35,7 @@ required=(
   POSTGRES_DB
   POSTGRES_USER
   POSTGRES_PASSWORD
+  DB_PASSWORD
 )
 for key in "${required[@]}"; do
   value="$(read_env_value "${key}")"
@@ -50,6 +51,8 @@ field_key="$(read_env_value PAYROLL_FIELD_ENCRYPTION_KEY)"
 
 password="$(read_env_value POSTGRES_PASSWORD)"
 [[ ${#password} -ge 20 ]] || fatal "POSTGRES_PASSWORD must contain at least 20 characters."
+[[ "$(read_env_value DB_PASSWORD)" == "${password}" ]] \
+  || fatal "DB_PASSWORD must match POSTGRES_PASSWORD."
 
 allowed_hosts="$(read_env_value DJANGO_ALLOWED_HOSTS)"
 csrf_origins="$(read_env_value DJANGO_CSRF_TRUSTED_ORIGINS)"

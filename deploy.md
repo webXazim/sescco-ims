@@ -102,11 +102,12 @@ sudo docker compose ls
 
 ```sh
 cd /opt/sites/ims
-cp .env.production.example .env.production
-chmod 600 .env.production
+bash scripts/create-production-env.sh
 ```
 
-Generate secure secrets:
+The command above copies the complete template, generates independent Django,
+Payroll, and PostgreSQL secrets, and applies mode `600`. To generate values
+manually instead, use:
 
 ```sh
 DJANGO_SECRET=$(openssl rand -hex 64)
@@ -115,6 +116,7 @@ PAYROLL_KEY=$(openssl rand -base64 32 | tr "+/" "-_" | tr -d "\n")
 
 sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${DJANGO_SECRET}|" .env.production
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${DATABASE_PASSWORD}|" .env.production
+sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DATABASE_PASSWORD}|" .env.production
 sed -i "s|^PAYROLL_FIELD_ENCRYPTION_KEY=.*|PAYROLL_FIELD_ENCRYPTION_KEY=${PAYROLL_KEY}|" .env.production
 
 unset DJANGO_SECRET
@@ -147,7 +149,7 @@ IMS_USE_SHARED_PROXY=0
 IMS_PUBLIC_DOMAIN=ims.sescco.com
 DJANGO_ALLOWED_HOSTS=ims.sescco.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.sescco.com
-DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
+DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.20.0.0/16
 POSTGRES_DB=ims_inventory
 POSTGRES_USER=ims_inventory
 ```

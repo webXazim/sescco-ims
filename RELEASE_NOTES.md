@@ -8,6 +8,7 @@
 - Fixed Rental Manpower assignment queries and stable settlement snapshot fingerprints.
 - Allowed system-finalized immutable documents to retain a null finalizing user.
 - Corrected the production hostname to `ims.sescco.com` and made it an explicit environment setting.
+- Added a complete production environment template and secure, non-overwriting secret generator for the confirmed `172.20.0.0/16` IMS network.
 
 ## Stock transfer upgrade
 

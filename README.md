@@ -56,9 +56,8 @@ status remains disabled automatically.
 ## Production deployment for ims.sescco.com
 
 ```bash
-cp .env.production.example .env.production
-chmod 600 .env.production
-# Replace every placeholder secret and password.
+bash scripts/create-production-env.sh
+# Review .env.production; required secrets are generated and its mode is 600.
 # Before the first merged cutover, rehearse against a current backup:
 ./scripts/rehearse-production-freeze.sh /absolute/path/to/current-production-backup
 ./scripts/deploy-production-freeze.sh

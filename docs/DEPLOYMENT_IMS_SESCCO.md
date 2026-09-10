@@ -24,18 +24,20 @@ sudo mkdir -p /opt/sites/ims
 sudo chown "$USER":"$USER" /opt/sites/ims
 cd /opt/sites/ims
 # Extract the release here.
-cp .env.production.example .env.production
-chmod 600 .env.production
+bash scripts/create-production-env.sh
 ```
 
-Generate independent secrets instead of reusing values from the other project:
+The generator creates independent secrets instead of reusing values from the
+other project. To inspect or generate the same values manually:
 
 ```bash
 python3 - <<'PY'
 import base64
 import secrets
+database_password = secrets.token_urlsafe(48)
 print("DJANGO_SECRET_KEY=" + secrets.token_urlsafe(64))
-print("POSTGRES_PASSWORD=" + secrets.token_urlsafe(48))
+print("POSTGRES_PASSWORD=" + database_password)
+print("DB_PASSWORD=" + database_password)
 print(
     "PAYROLL_FIELD_ENCRYPTION_KEY="
     + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
@@ -43,13 +45,14 @@ print(
 PY
 ```
 
-Put those values in `.env.production`. **Store the Payroll field-encryption key separately in a protected password/secret manager as part of disaster recovery.** Database backups contain only its fingerprint. The supplied defaults already include:
+The generated values are written to `.env.production` with mode `600`.
+**Store the Payroll field-encryption key separately in a protected password/secret manager as part of disaster recovery.** Database backups contain only its fingerprint. The supplied defaults already include:
 
 ```text
 IMS_PUBLIC_DOMAIN=ims.sescco.com
 DJANGO_ALLOWED_HOSTS=ims.sescco.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.sescco.com
-DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.16.0.0/12
+DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.20.0.0/16
 IMS_HTTP_PORT=8087
 RUN_STARTUP_TASKS=0
 ```

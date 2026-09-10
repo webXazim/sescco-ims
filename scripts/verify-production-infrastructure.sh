@@ -27,6 +27,8 @@ if grep -Eq '(^|[^0-9])5432:5432([^0-9]|$)' docker-compose.yml; then
 fi
 
 require_text scripts/deploy-production.sh 'scripts/release-tasks.sh' 'Deployment must run explicit release tasks.'
+require_text scripts/create-production-env.sh 'secrets.token_urlsafe(64)' 'Production environment generator must create a strong Django secret.'
+require_text scripts/create-production-env.sh 'secrets.token_bytes(32)' 'Production environment generator must create a valid Fernet key.'
 require_text scripts/restore.sh 'scripts/release-tasks.sh' 'Restore must run current release tasks before web startup.'
 require_text scripts/backup.sh 'payroll_field_key_fingerprint_sha256=' 'Backup must bind to the Payroll encryption key fingerprint.'
 require_text scripts/restore.sh 'PAYROLL_FIELD_ENCRYPTION_KEY does not match' 'Restore must reject a mismatched Payroll encryption key.'
@@ -45,6 +47,7 @@ require_text nginx/default.conf 'expires 1h;' 'Stable static compatibility URLs 
 require_text .env.production.example 'PAYROLL_FIELD_ENCRYPTION_KEY=' 'Production env example is missing Payroll field encryption key.'
 require_text .env.production.example 'IMS_PUBLIC_DOMAIN=' 'Production env example is missing the public domain.'
 require_text .env.production.example 'DJANGO_TRUSTED_PROXY_IPS=' 'Production env example is missing trusted proxy configuration.'
+require_text .env.production.example 'DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.20.0.0/16' 'Production env example must trust the confirmed ims_edge subnet.'
 require_text .env.production.example 'IMS_BACKUP_RETENTION_DAYS=' 'Production env example is missing backup retention configuration.'
 require_text .env.production.example 'RUN_STARTUP_TASKS=0' 'Production runtime must explicitly disable startup migrations.'
 
