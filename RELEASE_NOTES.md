@@ -1,3 +1,14 @@
+# SESCCO IMS 1.0.5
+
+## Static manifest bootstrap ordering hotfix
+
+- Fixed production cutover failure under `ManifestStaticFilesStorage` when a newly referenced Payroll/Platform asset was not yet present in `staticfiles.json` during the pre-cutover Payroll template render.
+- `collectstatic --noinput` now runs before `payroll_bootstrap_report --fail-on-errors`, while retaining previous release assets so the currently serving web release remains safe during cutover.
+- Applied the same ordering to the isolated production rehearsal path so a clean rehearsal static volume can render Payroll templates correctly.
+- Added release verifiers that reject any future regression where Payroll bootstrap rendering occurs before static collection.
+- Extended the post-cutover gateway smoke test to cover the new Inventory shell CSS/JS and Payroll shell-fix CSS.
+- No database migration or business-data change is required; the canonical deployment command remains `./scripts/deploy-production.sh`.
+
 # SESCCO IMS 1.0.4
 
 ## Unified Inventory/Payroll shell and true timesheet focus mode

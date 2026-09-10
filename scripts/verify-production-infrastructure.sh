@@ -45,6 +45,11 @@ if grep -Fq -- 'collectstatic --noinput --clear' scripts/release-tasks.sh script
   fail 'Production rollout must not clear previous static assets during cutover.'
 fi
 
+collect_line="$(grep -nF 'run_manage collectstatic --noinput' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
+bootstrap_line="$(grep -nF 'run_manage payroll_bootstrap_report --fail-on-errors' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
+[[ -n "${collect_line}" && -n "${bootstrap_line}" ]] || fail 'Static/bootstrap release ordering cannot be verified.'
+(( collect_line < bootstrap_line )) || fail 'collectstatic must run before Payroll template bootstrap under ManifestStaticFilesStorage.'
+
 require_text nginx/default.conf 'location /media/' 'Private media must have an explicit gateway rule.'
 require_text nginx/default.conf 'return 404;' 'Private media must not be served directly by Nginx.'
 require_text nginx/default.conf 'expires 1h;' 'Stable static compatibility URLs need bounded caching.'

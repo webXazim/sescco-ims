@@ -25,10 +25,10 @@ run_manage merge_rental_manpower_report --fail-on-errors >/dev/null
 run_manage merge_documents_management_report --fail-on-errors >/dev/null
 run_manage migrate --check
 
-info "Rendering the production Payroll bootstrap before live cutover"
-run_manage payroll_bootstrap_report --fail-on-errors
-
 info "Collecting static assets without deleting the previous release assets"
 run_manage collectstatic --noinput
+
+info "Rendering the production Payroll bootstrap before live cutover"
+run_manage payroll_bootstrap_report --fail-on-errors
 
 info "Release tasks completed"

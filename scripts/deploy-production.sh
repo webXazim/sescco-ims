@@ -61,6 +61,9 @@ info "Verifying Inventory and Payroll static assets through the gateway"
 for asset in \
   /static/css/styles.css \
   /static/platform/css/shell-switchers.css \
+  /static/platform/css/inventory-shell.css \
+  /static/platform/css/payroll-shell-fixes.css \
+  /static/platform/js/inventory-shell.js \
   /static/payroll/css/v2/index.css \
   /static/payroll/js/app.js; do
   curl --fail --silent --show-error \
