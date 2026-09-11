@@ -213,20 +213,37 @@ svg { display: block; }
   gap: 10px;
 }
 .inventory-explorer-toolbar > .inventory-explorer-search {
-  flex: 0 1 350px;
-  min-width: 270px;
-  max-width: 380px;
+  flex: 1 1 460px;
+  min-width: 340px;
+  max-width: none;
 }
 .inventory-explorer-toolbar > .inventory-explorer-filters {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
   justify-content: flex-end;
 }
-.inventory-explorer-filters #id_location { width: 172px; min-width: 150px; }
-.inventory-explorer-filters #id_stock_status { width: 148px; min-width: 138px; }
-.inventory-explorer-filters #id_date_preset { width: 142px; min-width: 132px; }
-.inventory-explorer-filters #id_sort { width: 180px; min-width: 165px; max-width: 180px; }
+.inventory-explorer-filters #id_location { width: 150px; min-width: 140px; }
+.inventory-explorer-filters #id_stock_status { width: 142px; min-width: 132px; }
+.inventory-explorer-filters #id_date_preset { width: 136px; min-width: 128px; }
+.inventory-explorer-filters #id_sort { width: 170px; min-width: 158px; max-width: 170px; }
+.inventory-explorer-icon-control {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 40px;
+  border-color: var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+.inventory-explorer-icon-control:hover { border-color: #b7c0c8; background: #fcfcfc; }
+.inventory-explorer-icon-control:focus-visible { outline: none; border-color: #8c98a3; box-shadow: 0 0 0 3px rgba(30,79,107,.08); }
+.inventory-explorer-icon-control .filter-control-icon { width: 15px; height: 14px; }
+.inventory-explorer-icon-control .column-settings-icon { width: 15px; height: 14px; }
 .inventory-explorer-filters .filter-live-status:empty { display: none; }
 .condition-filter-menu { position: relative; flex: 0 0 auto; }
 .condition-filter-menu > summary { list-style: none; }
@@ -308,7 +325,7 @@ svg { display: block; }
 
 @media (max-width: 1580px) {
   .inventory-explorer-toolbar { flex-wrap: wrap; }
-  .inventory-explorer-toolbar > .inventory-explorer-search { flex: 1 1 320px; max-width: 460px; }
+  .inventory-explorer-toolbar > .inventory-explorer-search { flex: 1 1 420px; min-width: 320px; max-width: none; }
   .inventory-explorer-toolbar > .inventory-explorer-filters { flex: 1 1 760px; justify-content: flex-start; flex-wrap: wrap; }
 }
 .date-filter-control { position: relative; }

@@ -1,8 +1,7 @@
 <details class="column-settings" data-column-settings>
-  <summary class="btn btn-ghost btn-sm premium-control" aria-label="Choose table columns">
+  <summary class="btn btn-ghost btn-sm premium-control{% if icon_only %} inventory-explorer-icon-control{% endif %}" aria-label="Choose table columns" title="Choose table columns">
     <span class="column-settings-icon" aria-hidden="true"></span>
-    <span>Columns</span>
-    <span class="control-chevron" aria-hidden="true"></span>
+    {% if icon_only %}<span class="sr-only">Columns</span>{% else %}<span>Columns</span><span class="control-chevron" aria-hidden="true"></span>{% endif %}
   </summary>
   <div class="column-settings-popover">
     <div class="popover-section-head">

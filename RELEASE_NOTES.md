@@ -1,3 +1,13 @@
+# SESCCO IMS 1.0.12
+
+## Inventory Explorer control density and dropdown convergence
+
+- Converted Inventory Explorer More Filters and Columns controls to accessible icon-only triggers, reclaiming horizontal space for search.
+- Expanded the Inventory Explorer search field to consume available desktop space while preserving clean responsive wrapping.
+- Converged native Inventory/Payroll selects and floating dropdown panels on the Condition dropdown visual language.
+- Preserved existing filtering, saved-view, column-selection, keyboard and accessibility behavior.
+- No database migration or production-data rewrite is required.
+
 # SESCCO IMS 1.0.11
 
 ## Inventory Explorer compact filter-row polish

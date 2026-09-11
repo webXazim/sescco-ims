@@ -117,7 +117,10 @@
     const label = button.querySelector("[data-filter-toggle-label]");
     if (label) label.textContent = open ? "Hide filters" : "More filters";
     else button.textContent = open ? "Hide filters" : "More filters";
+    const accessibleLabel = open ? "Hide filters" : "More filters";
     button.setAttribute("aria-expanded", String(open));
+    button.setAttribute("aria-label", accessibleLabel);
+    button.setAttribute("title", accessibleLabel);
   };
 
   document.querySelectorAll("[data-toggle-filter-panel]").forEach((button) => {

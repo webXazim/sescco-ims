@@ -174,3 +174,85 @@
   height: 34px !important;
   font-size: 12px;
 }
+
+/* 1.0.12 — dropdown visual convergence.
+ *
+ * Condition filtering established the final production dropdown language:
+ * white surface, restrained 1px border, 8px trigger radius, clear chevron,
+ * subtle hover/focus feedback, and an 11px floating panel with a soft shadow.
+ * Apply that language to native selects and application popovers without
+ * replacing native select semantics or changing business behavior.
+ */
+:root {
+  --platform-dropdown-trigger-radius: 8px;
+  --platform-dropdown-panel-radius: 11px;
+  --platform-dropdown-panel-shadow: 0 18px 45px rgba(20, 28, 36, .16);
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]),
+.ui-v2-root select:not([multiple]):not([size]) {
+  border-color: var(--platform-select-border) !important;
+  border-radius: var(--platform-dropdown-trigger-radius) !important;
+  background-color: #fff;
+  box-shadow: none;
+  font-weight: 560;
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]):hover:not(:disabled),
+.ui-v2-root select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: #b7c0c8 !important;
+  background-color: #fcfcfc;
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]):focus,
+.ui-v2-root select:not([multiple]):not([size]):focus {
+  border-color: #8c98a3 !important;
+  box-shadow: 0 0 0 3px rgba(30, 79, 107, .08) !important;
+}
+
+/* Inventory custom filter triggers and floating panels use exactly the same
+ * trigger/panel treatment as the Condition control. */
+.inventory-shell-v2 :where(.condition-filter-trigger, .inventory-explorer-icon-control) {
+  border: 1px solid var(--platform-select-border);
+  border-radius: var(--platform-dropdown-trigger-radius);
+  background: #fff;
+  color: #33383d;
+  font-size: 13px;
+  font-weight: 560;
+  transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+}
+
+.inventory-shell-v2 :where(.condition-filter-trigger, .inventory-explorer-icon-control):hover {
+  border-color: #b7c0c8;
+  background: #fcfcfc;
+}
+
+.inventory-shell-v2 :where(.condition-filter-trigger, .inventory-explorer-icon-control):focus-visible {
+  outline: 0;
+  border-color: #8c98a3;
+  box-shadow: 0 0 0 3px rgba(30, 79, 107, .08);
+}
+
+.inventory-shell-v2 :where(
+  .condition-filter-popover,
+  .column-settings-popover,
+  .date-range-popover,
+  .save-view-popover,
+  .saved-view-menu,
+  .filter-popover
+) {
+  border-color: var(--platform-select-border);
+  border-radius: var(--platform-dropdown-panel-radius);
+  background: rgba(255,255,255,.99);
+  box-shadow: var(--platform-dropdown-panel-shadow);
+}
+
+/* Payroll's custom dropdown panels use the same surface language while their
+ * deliberately larger shell switcher triggers keep their existing geometry. */
+.ui-v2-root .ui-v2-prs-dropdown-menu {
+  border-color: var(--platform-select-border) !important;
+  border-radius: var(--platform-dropdown-panel-radius) !important;
+  background: rgba(255,255,255,.99) !important;
+  box-shadow: var(--platform-dropdown-panel-shadow) !important;
+}
+

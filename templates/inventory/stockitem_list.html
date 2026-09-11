@@ -35,7 +35,7 @@
           </div>
         </div>
         {{ filter_form.sort }}
-        <div class="filter-panel-control"><button class="btn btn-ghost btn-sm premium-control" type="button" data-toggle-filter-panel aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span data-filter-toggle-label>More filters</span><span class="control-chevron" aria-hidden="true"></span></button>
+        <div class="filter-panel-control"><button class="btn btn-ghost btn-sm premium-control inventory-explorer-icon-control" type="button" data-toggle-filter-panel aria-label="More filters" title="More filters" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span class="sr-only" data-filter-toggle-label>More filters</span></button>
         <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
           <div class="popover-section-head"><div><strong>More filters</strong><span>Narrow the inventory without changing your saved columns.</span></div></div>
           <div class="advanced-grid">
@@ -48,7 +48,7 @@
           </div>
           <div class="advanced-footer"><p class="micro">Search project, material, description, supplier, unit, notes, reference, or user.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
         </div></div>
-        {% include "partials/column_settings.html" %}
+        {% include "partials/column_settings.html" with icon_only="1" %}
         <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
       </div>
     </div>

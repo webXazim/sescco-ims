@@ -13,9 +13,14 @@ require_text templates/inventory/stockitem_list.html 'class="explorer-toolbar in
 require_text templates/inventory/stockitem_list.html 'class="search-field inventory-explorer-search"'
 require_text templates/inventory/stockitem_list.html 'data-condition-filter'
 require_text templates/inventory/stockitem_list.html 'class="condition-filter-popover"'
+require_text templates/inventory/stockitem_list.html 'inventory-explorer-icon-control'
+require_text templates/inventory/stockitem_list.html 'with icon_only="1"'
+require_text templates/partials/column_settings.html 'inventory-explorer-icon-control'
 require_text templates/inventory/stockitem_list.html '{{ filter_form.condition }}'
 require_text static/css/styles.css '.inventory-explorer-toolbar > .inventory-explorer-search'
-require_text static/css/styles.css 'max-width: 380px;'
+require_text static/css/styles.css 'flex: 1 1 460px;'
+require_text static/css/styles.css 'max-width: none;'
+require_text static/css/styles.css '.inventory-explorer-icon-control'
 require_text static/css/styles.css '.condition-filter-trigger'
 require_text static/css/styles.css 'height: 40px;'
 require_text static/css/styles.css '.inventory-explorer-filters #id_location'
@@ -29,4 +34,4 @@ if command -v node >/dev/null 2>&1; then
   node --check static/js/app.js
 fi
 
-printf 'Inventory Explorer compact inline filters and condition dropdown verified.\n'
+printf 'Inventory Explorer search-first toolbar, icon actions and condition dropdown verified.\n'

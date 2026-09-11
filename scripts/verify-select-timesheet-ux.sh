@@ -18,6 +18,9 @@ require_text static/platform/css/select-controls.css "min-height: 40px !importan
 require_text static/platform/css/select-controls.css ".ui-v2-payroll-timesheet-command-strip select"
 require_text static/platform/css/select-controls.css "min-height: 38px !important;"
 require_text static/platform/css/select-controls.css "select.table-select:not([multiple]):not([size])"
+require_text static/platform/css/select-controls.css "--platform-dropdown-panel-radius"
+require_text static/platform/css/select-controls.css ".condition-filter-popover"
+require_text static/platform/css/select-controls.css ".ui-v2-prs-dropdown-menu"
 require_text static/payroll/js/app.js "function defaultTimesheetDay(periodLabel)"
 require_text static/payroll/js/app.js "return companyTodayDay;"
 require_text static/payroll/js/app.js "rentalTimesheetBulkDay: defaultTimesheetDay"
@@ -30,4 +33,4 @@ if command -v node >/dev/null 2>&1; then
   node --check "$ROOT/static/payroll/js/app.js"
 fi
 
-printf 'Shared select controls, production control heights and today-aware timesheet day selection verified.\n'
+printf 'Shared dropdown/select controls, production control heights and today-aware timesheet day selection verified.\n'
