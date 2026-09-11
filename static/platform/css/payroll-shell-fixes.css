@@ -190,3 +190,73 @@ body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
     grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 1fr)) !important;
   }
 }
+
+/* 1.0.19 — Rental settlement density + shared Payroll filter alignment.
+ * The settlement KPI strip must size to its content instead of stretching to
+ * the lifecycle card height. Operational filter rows also keep enough width
+ * for readable labels while search retains the flexible share of the row.
+ */
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-rental-settlement-control-grid {
+  align-items: start !important;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-rental-settlement-summary-grid {
+  align-self: start;
+  height: auto;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-rental-settlement-summary-grid > div {
+  min-height: 108px;
+  padding-block: 13px;
+}
+
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .payment-register-toolbar,
+  .payment-supplier-toolbar,
+  .adjustment-filterbar,
+  .assignment-filterbar,
+  .document-toolbar,
+  .report-filterbar,
+  .bank-transfer-toolbar
+) :where(select.ui-v2-payroll-compact-select, select.compact-select, select.select) {
+  min-width: 176px;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar {
+  align-items: center;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search {
+  min-height: 42px;
+  height: 42px;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar > .btn,
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar .timesheet-filter {
+  min-height: 42px;
+}
+
+@media (max-width: 760px) {
+  .ui-v2-root[data-area="payroll"] :where(
+    .ui-v2-filter-bar,
+    .ui-v2-payroll-rental-filterbar,
+    .ui-v2-payroll-register__toolbar,
+    .ui-v2-prs-assignment-filterbar,
+    .rental-timesheet-toolbar,
+    .payment-register-toolbar,
+    .payment-supplier-toolbar,
+    .adjustment-filterbar,
+    .assignment-filterbar,
+    .document-toolbar,
+    .report-filterbar,
+    .bank-transfer-toolbar
+  ) :where(select.ui-v2-payroll-compact-select, select.compact-select, select.select) {
+    width: 100%;
+    min-width: 0;
+  }
+}

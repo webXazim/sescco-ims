@@ -256,3 +256,56 @@
   box-shadow: var(--platform-dropdown-panel-shadow) !important;
 }
 
+
+/* 1.0.19 — Payroll select height authority.
+ * Operational Payroll selects use the same full-height trigger as search and
+ * action controls. This final loaded layer intentionally wins over legacy
+ * compact-select rules that could make dropdowns look like thin inline chips.
+ */
+:root {
+  --platform-payroll-select-height: 42px;
+  --platform-payroll-select-height-dense: 40px;
+}
+
+.ui-v2-root[data-area="payroll"] select:not([multiple]):not([size]) {
+  display: block;
+  min-height: var(--platform-payroll-select-height) !important;
+  height: var(--platform-payroll-select-height) !important;
+  padding-left: 12px;
+  padding-right: 38px;
+  background-position: right 12px center;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* Dedicated dense work surfaces remain compact, but still use a proper control
+ * height and the same trigger language. */
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-payroll-timesheet-command-strip,
+  .ui-v2-prs-timesheet-day-select
+) select:not([multiple]):not([size]) {
+  min-height: var(--platform-payroll-select-height-dense) !important;
+  height: var(--platform-payroll-select-height-dense) !important;
+}
+
+.ui-v2-root[data-area="payroll"] select.table-select:not([multiple]):not([size]),
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-timesheet-pagination__size select:not([multiple]):not([size]) {
+  min-height: 36px !important;
+  height: 36px !important;
+  font-size: 12px;
+}
+
+/* Administration owns the outer compact-select geometry; keep the nested
+ * native select transparent so the shared rule above cannot inflate it. */
+.ui-v2-root[data-area="payroll"] .ui-v2-compact-select select:not([multiple]):not([size]) {
+  min-height: 0 !important;
+  height: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font-size: 11px;
+}
