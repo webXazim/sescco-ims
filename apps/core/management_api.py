@@ -55,7 +55,7 @@ def management_api(request: HttpRequest) -> JsonResponse:
 
 def _report_payload(request: HttpRequest) -> dict[str, object]:
     if not request.user.is_authenticated:
-        raise PermissionError("Authentication is required.")
+        raise PermissionError("Your sign-in session is no longer active. Sign in again to continue.")
     membership = getattr(request, "company_membership", None)
     if membership is None:
         raise PermissionDenied("No active company access is assigned to this account.")
@@ -88,7 +88,7 @@ def _csv_cell(value):
 @require_GET
 def reports_api(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "errors": {"__all__": ["Authentication is required."]}}, status=401)
+        return JsonResponse({"ok": False, "errors": {"__all__": ["Your sign-in session is no longer active. Sign in again to continue."]}}, status=401)
     try:
         return JsonResponse(_report_payload(request))
     except PermissionDenied as exc:
@@ -100,7 +100,7 @@ def reports_api(request: HttpRequest) -> JsonResponse:
 @require_GET
 def report_export_api(request: HttpRequest) -> HttpResponse:
     if not request.user.is_authenticated:
-        return JsonResponse({"ok": False, "errors": {"__all__": ["Authentication is required."]}}, status=401)
+        return JsonResponse({"ok": False, "errors": {"__all__": ["Your sign-in session is no longer active. Sign in again to continue."]}}, status=401)
     try:
         payload = _report_payload(request)
     except PermissionDenied as exc:

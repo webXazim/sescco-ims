@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
 <body class="inventory-shell-v2" data-page="{{ page_key }}">
@@ -26,6 +27,7 @@
   </button>
 </div>
 <div class="toast-stack" id="toastStack"></div>
+<script src="{% static 'platform/js/form-validation.js' %}"></script>
 <script src="{% static 'js/app.js' %}"></script>
 <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
 <script src="{% static 'platform/js/inventory-shell.js' %}"></script>

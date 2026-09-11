@@ -9,6 +9,12 @@ class ProjectForm(StyledModelForm):
     def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company or getattr(self.instance, "company", None)
+        self.fields["end_date"].widget.attrs.update(
+            {
+                "data-required-when-name": "status",
+                "data-required-when-value": Project.Status.COMPLETED,
+            }
+        )
 
     class Meta:
         model = Project

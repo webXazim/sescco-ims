@@ -63,7 +63,9 @@ for asset in \
   /static/platform/css/shell-switchers.css \
   /static/platform/css/inventory-shell.css \
   /static/platform/css/payroll-shell-fixes.css \
+  /static/platform/css/form-validation.css \
   /static/platform/js/inventory-shell.js \
+  /static/platform/js/form-validation.js \
   /static/payroll/css/v2/index.css \
   /static/payroll/js/app.js; do
   curl --fail --silent --show-error \

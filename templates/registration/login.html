@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Sign in · {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
 </head>
 <body>
 <main class="login-page">
@@ -33,12 +34,12 @@
       <form method="post" novalidate>
         {% csrf_token %}
         {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
-        <div class="field">
+        <div class="field{% if form.username.errors %} is-invalid{% endif %}">
           <label class="field-label required" for="{{ form.username.id_for_label }}">Username</label>
           {{ form.username }}
           {% for error in form.username.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
         </div>
-        <div class="field">
+        <div class="field{% if form.password.errors %} is-invalid{% endif %}">
           <label class="field-label required" for="{{ form.password.id_for_label }}">Password</label>
           {{ form.password }}
           {% for error in form.password.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
@@ -49,5 +50,6 @@
     </div>
   </section>
 </main>
+<script src="{% static 'platform/js/form-validation.js' %}"></script>
 </body>
 </html>

@@ -77,6 +77,9 @@
     let payload = {};
     try { payload = await response.json(); }
     catch { throw new Error('The server returned an invalid response.'); }
+    if (response.status === 401) {
+      throw new Error('Your sign-in session is no longer active. Sign in again to continue.');
+    }
     if (!response.ok || payload.ok === false) {
       const errors = payload.errors || {};
       const first = Object.values(errors).flat().find(Boolean);
@@ -645,8 +648,12 @@
     applyRentalOperationsV2Classes(drawerBody);
     applyRentalFinancialV2Classes(drawerBody);
     applyRecordsManagementV2Classes(drawerBody);
+    applyPayrollRequiredFields(drawerBody, state.drawerType);
   });
-  if (drawerBody) primitiveObserver.observe(drawerBody, { childList: true, subtree: true });
+  if (drawerBody) {
+    primitiveObserver.observe(drawerBody, { childList: true, subtree: true });
+    drawerBody.addEventListener('change', () => applyPayrollRequiredFields(drawerBody, state.drawerType));
+  }
 
   const rentalTimesheetCache = {};
   const rentalTimesheetStatusCache = {};
@@ -7372,6 +7379,161 @@
     }
   };
 
+  function payrollRequiredFieldNames(type = state.drawerType) {
+    const fixed = {
+      'internal-employee': ['employee-name','employee-position','employee-department','employee-joining','employee-branch'],
+      'internal-employee-edit': ['employee-id','employee-name','employee-joining'],
+      'branch': ['branch-name'],
+      'branch-edit': ['branch-name','branch-code'],
+      'department': ['department-name'],
+      'department-edit': ['department-name','department-code'],
+      'employee-organization': ['organization-branch','organization-department','organization-position','organization-effective'],
+      'rental-worker': ['rental-worker-name','rental-worker-supplier'],
+      'supplier': ['supplier-name'],
+      'supplier-edit': ['supplier-name','supplier-code'],
+      'project': ['project-name','project-start'],
+      'project-edit': ['project-name','project-code','project-start'],
+      'attendance-import': ['attendance-import-text'],
+      'attendance-return': ['attendance-return-reason'],
+      'salary-component': ['salary-component-name'],
+      'salary-structure': ['salary-structure-employee','salary-structure-effective'],
+      'overtime-policy': ['ot-policy-name','ot-policy-base','ot-policy-divisor','ot-policy-multiplier'],
+      'advance': ['adjustment-person','adjustment-amount','adjustment-date'],
+      'bank-template': ['bank-template-code','bank-template-name','bank-template-columns','bank-template-headers'],
+      'supplier-payment': ['supplier-payment-settlement','supplier-payment-amount','supplier-payment-date'],
+      'payroll-policy': ['payroll-proration-method'],
+      'document-generate': ['document-source'],
+    };
+    const names = [...(fixed[type] || [])];
+
+    if (type === 'advance' && state.workspace === 'rental') names.push('adjustment-project');
+    if (type === 'salary-component' && state.drawerContext) names.push('salary-component-code');
+    if (type === 'overtime-policy' && state.drawerContext) names.push('ot-policy-code');
+
+    if (type === 'document-generate') {
+      const sources = state.drawerContext?.sources || [];
+      const index = Number(drawerBody?.querySelector('[name="document-source"]')?.value || 0);
+      if (sources[index]?.type === 'supplier_invoice') {
+        names.push('document-invoice-number','document-issue-date','document-vat-amount');
+      }
+    }
+
+    if (['internal-employee','internal-employee-edit'].includes(type)) {
+      const status = drawerBody?.querySelector('[name="employee-status"]')?.value || '';
+      if (status === 'Terminated') names.push('employee-end-date');
+    }
+
+    if (['project','project-edit'].includes(type)) {
+      const status = drawerBody?.querySelector('[name="project-status"]')?.value || '';
+      if (status === 'Completed') names.push('project-end');
+    }
+
+    if (type === 'bank-template') {
+      const resultNames = ['bank-result-employee','bank-result-status','bank-result-reference','bank-result-reason'];
+      if (resultNames.some(name => String(drawerBody?.querySelector(`[name="${name}"]`)?.value || '').trim())) {
+        names.push('bank-result-employee','bank-result-status');
+      }
+    }
+
+    if (type === 'employee-payment-profile') {
+      names.push('payment-profile-holder','payment-profile-bank-name');
+      const employeeId = state.drawerContext?.employeeId;
+      const profile = employeeId ? paymentContextForPeriod().profiles?.[employeeId] : null;
+      const destination = drawerBody?.querySelector('[name="payment-profile-destination"]')?.value || 'Bank account / IBAN';
+      if (destination === 'Salary card') {
+        if (!(profile?.destinationType === 'salary_card' && profile?.salaryCardMasked)) names.push('payment-profile-card');
+      } else if (!(profile?.destinationType === 'iban' && profile?.ibanMasked)) {
+        names.push('payment-profile-iban');
+      }
+    }
+
+    if (type === 'salary-structure') {
+      const basic = state.salaryComponents.find(component => component.status === 'Active' && component.recurrence === 'Recurring' && component.wpsMap === 'Basic Salary');
+      if (basic?.id) names.push(`salary-amount-${basic.id}`);
+    }
+
+    if (type === 'supplier-payment') {
+      const status = drawerBody?.querySelector('[name="supplier-payment-status"]')?.value || '';
+      const method = drawerBody?.querySelector('[name="supplier-payment-method"]')?.value || '';
+      if (status === 'Paid' && method !== 'Cash') names.push('supplier-payment-reference');
+    }
+
+    if (type === 'supplier-payment-result') {
+      const status = drawerBody?.querySelector('[name="supplier-payment-result-status"]')?.value || '';
+      const found = supplierPaymentById(state.drawerContext?.paymentId);
+      const method = found?.payment?.method || '';
+      if (status === 'Paid' && method !== 'Cash') names.push('supplier-payment-result-reference');
+      if (['Failed','Reversed'].includes(status)) names.push('supplier-payment-result-note');
+    }
+
+    if (type === 'payroll-review-decision') {
+      if (state.drawerContext === 'approve') names.push('payroll-review-confirm');
+      else names.push('payroll-review-note');
+    }
+
+    if (type === 'rental-assignment-action') {
+      const action = state.drawerContext?.action;
+      if (action === 'edit') names.push('rental-action-worker-code','rental-action-name');
+      else if (action === 'advance') names.push('rental-action-date','rental-action-project','rental-action-amount');
+      else if (action === 'cancel') names.push('rental-action-reason');
+      else {
+        names.push('rental-action-date');
+        if (['assign','transfer'].includes(action)) names.push('rental-action-project','rental-action-trade','rental-action-rate');
+        if (action === 'trade') names.push('rental-action-trade');
+        if (action === 'rate') names.push('rental-action-rate');
+      }
+    }
+
+    return [...new Set(names.filter(Boolean))];
+  }
+
+  function applyPayrollRequiredFields(root = drawerBody, type = state.drawerType) {
+    if (!root?.querySelectorAll || !type) return;
+    const requiredNames = new Set(payrollRequiredFieldNames(type));
+
+    root.querySelectorAll('[data-required-label="true"]').forEach(label => {
+      label.classList.remove('required');
+      delete label.dataset.requiredLabel;
+    });
+
+    root.querySelectorAll('[data-payroll-required="true"]').forEach(control => {
+      if (requiredNames.has(control.name)) return;
+      control.required = false;
+      control.removeAttribute('data-required');
+      control.removeAttribute('data-payroll-required');
+      control.removeAttribute('aria-required');
+      window.PlatformFormValidation?.clearInvalid?.(control);
+    });
+
+    requiredNames.forEach(name => {
+      const control = root.querySelector(`[name="${CSS.escape(name)}"]`);
+      if (!control || control.disabled) return;
+      control.required = true;
+      control.dataset.required = 'true';
+      control.dataset.payrollRequired = 'true';
+      control.setAttribute('aria-required', 'true');
+    });
+    window.PlatformFormValidation?.decorate?.(root);
+  }
+
+  function validatePayrollRequiredFields() {
+    applyPayrollRequiredFields(drawerBody, state.drawerType);
+    const valid = window.PlatformFormValidation?.validateRequired?.(drawerBody);
+    if (valid === false) {
+      showToast('Required fields missing', 'Complete the highlighted fields marked with * before saving.');
+      return false;
+    }
+    return true;
+  }
+
+  function markPayrollFieldInvalid(name, message = 'Required') {
+    const control = drawerBody?.querySelector(`[name="${CSS.escape(name)}"]`);
+    if (!control) return;
+    window.PlatformFormValidation?.markInvalid?.(control, message);
+    control.focus?.({ preventScroll:true });
+    control.scrollIntoView?.({ behavior:'smooth', block:'center' });
+  }
+
   function field(label, placeholder, type='text') { return `<div class="form-field"><label>${label}</label><input class="input" type="${type}" placeholder="${escapeHtml(placeholder)}"></div>`; }
   function namedField(label, name, value, type='text') { return `<div class="form-field"><label>${label}</label><input class="input" name="${name}" type="${type}" value="${escapeHtml(value)}" placeholder="${escapeHtml(value || label)}"></div>`; }
   function textareaField(label, placeholder) { return `<div class="form-field form-field--full"><label>${label}</label><textarea class="textarea" placeholder="${escapeHtml(placeholder)}"></textarea></div>`; }
@@ -7530,6 +7692,7 @@
     drawerSave.disabled = false;
     drawerSave.textContent = spec.saveLabel || 'Save draft';
     drawerBody.innerHTML = spec.html();
+    applyPayrollRequiredFields(drawerBody, type);
     drawer.classList.add('is-open');
     drawerScrim.classList.add('is-open');
     drawer.setAttribute('aria-hidden', 'false');
@@ -7564,6 +7727,7 @@
     if (approvalDrawer && !roleCanApprove()) { showToast('Approval permission required', `${roleDefinition().label} cannot make final review decisions.`); return; }
     if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${roleDefinition().label} cannot post or reconcile payments.`); return; }
     if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${roleDefinition().label} can view this workspace but cannot change operational records.`); return; }
+    if (!validatePayrollRequiredFields()) return;
     if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
       const type = state.drawerType;
       closeDrawer();
@@ -7713,7 +7877,7 @@
       const installmentAmount = Number(get('adjustment-installment') || 0);
       const recoveryStart = get('adjustment-recovery-start');
       if (!personId) { showToast('Person required','Select an employee or rental worker from the managed master.'); return; }
-      if (!(amount > 0)) { drawerBody.querySelector('[name="adjustment-amount"]')?.focus(); showToast('Amount required','Enter an amount greater than zero.'); return; }
+      if (!(amount > 0)) { markPayrollFieldInvalid('adjustment-amount', 'Enter an amount greater than zero'); showToast('Amount required','Enter an amount greater than zero.'); return; }
       if (!date) { showToast('Effective date required','Choose the transaction effective date.'); return; }
       if (workforce === 'Internal Employee') {
         const employee=state.employees.find(item=>item.id===personId); if(!employee){showToast('Employee not found','Choose a valid internal employee.');return;}
@@ -7809,7 +7973,7 @@
         const projectId = get('rental-action-project');
         const project = state.projects.find(item => item.id === projectId);
         const txDate = effective || rentalTodayIso();
-        if (!(amount > 0)) { drawerBody.querySelector('[name="rental-action-amount"]')?.focus(); showToast('Advance amount required','Enter an amount greater than zero.'); return; }
+        if (!(amount > 0)) { markPayrollFieldInvalid('rental-action-amount', 'Enter an amount greater than zero'); showToast('Advance amount required','Enter an amount greater than zero.'); return; }
         if (!project) { drawerBody.querySelector('[name="rental-action-project"]')?.focus(); showToast('Project required','Worker Advance must be attributed to the effective project assignment.'); return; }
         drawerSave.disabled = true;
         try {
@@ -7890,7 +8054,7 @@
       const method=get('supplier-payment-method')||'Bank', status=get('supplier-payment-status')||'Processing';
       const reference=get('supplier-payment-reference'), note=get('supplier-payment-note');
       if(!payable){showToast('Settlement required','Select an approved rental settlement.');return;}
-      if(!(amount>0)){drawerBody.querySelector('[name="supplier-payment-amount"]')?.focus();showToast('Amount required','Enter a supplier payment amount greater than zero.');return;}
+      if(!(amount>0)){markPayrollFieldInvalid('supplier-payment-amount','Enter an amount greater than zero');showToast('Amount required','Enter a supplier payment amount greater than zero.');return;}
       if(amount>payable.available+.005){drawerBody.querySelector('[name="supplier-payment-amount"]')?.focus();showToast('Amount exceeds available payable',`${formatCurrency(payable.available)} is currently unreserved on this settlement.`);return;}
       if(status==='Paid' && method!=='Cash' && !reference){drawerBody.querySelector('[name="supplier-payment-reference"]')?.focus();showToast('Reference required',`Record the ${method==='Cheque'?'cheque':'bank transaction'} reference before posting this payment as Paid.`);return;}
       drawerSave.disabled=true;
@@ -8026,6 +8190,7 @@
       const divisor = Number(get('ot-policy-divisor'));
       const multiplier = Number(get('ot-policy-multiplier'));
       if (!(divisor > 0) || !(multiplier > 0)) {
+        markPayrollFieldInvalid(!(divisor > 0) ? 'ot-policy-divisor' : 'ot-policy-multiplier', 'Enter a value greater than zero');
         showToast('Check formula values', 'Divisor and multiplier must both be greater than zero.');
         return;
       }
@@ -8077,7 +8242,7 @@
       }).filter(item => item.amount !== 0 || item.component.wpsMap === 'Basic Salary');
       const basic = components.find(item => item.component.wpsMap === 'Basic Salary');
       if (!basic || !(basic.amount > 0)) {
-        if (basic?.component?.id) drawerBody.querySelector(`[name="salary-amount-${basic.component.id}"]`)?.focus();
+        if (basic?.component?.id) markPayrollFieldInvalid(`salary-amount-${basic.component.id}`, 'Enter a value greater than zero');
         showToast('Basic salary required', 'Configure one active recurring earning component as Basic Salary and enter a positive amount.');
         return;
       }
@@ -8448,6 +8613,9 @@
   }
 
   function showToast(title, message) {
+    if (message === 'Your sign-in session is no longer active. Sign in again to continue.') {
+      title = 'Sign-in session expired';
+    }
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `<span class="toast__dot"></span><span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span></span>`;

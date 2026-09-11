@@ -1,3 +1,23 @@
+# SESCCO IMS 1.0.8
+
+## Required-field UX and session-message hardening
+
+- Added one shared required-field contract across Inventory, Projects, authentication forms and all Payroll workspaces. Required controls render a visible red `*` from the actual validation contract instead of relying on placeholder text.
+- Empty required controls are highlighted in place with a red border and inline `Required` indicator; the first missing control is focused and scrolled into view. The indicator clears as soon as the value is corrected.
+- Added Payroll drawer validation for Internal Company, Rental Manpower and Management workflows, including conditional requirements such as terminated-employee end dates, completed-project end dates, payment references, review notes and payment destinations.
+- Preserved server-side validation as the authority while adding the same visual error state to server-rendered Django form errors.
+- Replaced the technical `Authentication is required.` API message with a clear sign-in-session message so an expired session is no longer confused with a missing business-form field.
+- Added production verification and gateway smoke coverage for the shared validation CSS/JavaScript. No schema migration or business-data rewrite is required; deploy with `./scripts/deploy-production.sh`.
+
+## 1.0.7 — Payroll dropdown interaction hotfix
+
+- Fixed V2 Payroll dropdown menus that were visible but still had `pointer-events: none`, causing clicks to pass through to controls beneath the menu.
+- Aligned dropdown interaction with the existing controller contract: `.is-open` lives on the parent `[data-dropdown]`, while the child menu becomes interactive only when that parent is open.
+- Raised the active dropdown stacking context so Business, Business Area, Payroll Workspace, Account and topbar menus remain interactive above page content.
+- Added a production verification guard for the dropdown pointer-event contract.
+
+No migration or production-data change is required. Deploy with `./scripts/deploy-production.sh`.
+
 ## 1.0.6 — Payroll workspace navigation hotfix
 
 - Replaced the Internal / Rental / Management workspace menu's JavaScript-only buttons with real reload-safe Payroll URLs.
@@ -140,13 +160,3 @@ backups into `ims_merge_rehearsal_*` resources, applies the full migration chain
 reconciliation command and the complete Django regression suite, and compares protected legacy IMS row counts plus SHA-256 fingerprints of every pre-existing protected
 field before/after migration. The deployable source/configuration tree is frozen by
 `merge/production-freeze.sha256`, and the final frozen deploy entrypoint rejects source drift before handing off to the unchanged production preflight/deploy pipeline.
-
-## 1.0.7 — Payroll dropdown interaction hotfix
-
-- Fixed V2 Payroll dropdown menus that were visible but still had `pointer-events: none`, causing clicks to pass through to controls beneath the menu.
-- Aligned dropdown interaction with the existing controller contract: `.is-open` lives on the parent `[data-dropdown]`, while the child menu becomes interactive only when that parent is open.
-- Raised the active dropdown stacking context so Business, Business Area, Payroll Workspace, Account and topbar menus remain interactive above page content.
-- Added a production verification guard for the dropdown pointer-event contract.
-
-No migration or production-data change is required. Deploy with `./scripts/deploy-production.sh`.
-

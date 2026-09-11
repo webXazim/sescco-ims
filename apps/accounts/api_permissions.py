@@ -25,7 +25,7 @@ def api_workspace_required(workspace: Workspace | str) -> Callable[[F], F]:
         def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> JsonResponse:
             if not request.user.is_authenticated:
                 return JsonResponse(
-                    {"ok": False, "errors": {"__all__": ["Authentication is required."]}},
+                    {"ok": False, "errors": {"__all__": ["Your sign-in session is no longer active. Sign in again to continue."]}},
                     status=401,
                 )
 
@@ -59,7 +59,7 @@ def api_company_required(view_func: F) -> F:
     def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> JsonResponse:
         if not request.user.is_authenticated:
             return JsonResponse(
-                {"ok": False, "errors": {"__all__": ["Authentication is required."]}},
+                {"ok": False, "errors": {"__all__": ["Your sign-in session is no longer active. Sign in again to continue."]}},
                 status=401,
             )
         membership = getattr(request, "company_membership", None)

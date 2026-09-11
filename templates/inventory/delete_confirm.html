@@ -14,8 +14,8 @@
     <div class="card-head"><h2 class="card-title">Confirm deletion</h2></div>
     <form method="post" class="card-body form-stack">{% csrf_token %}
       {% if form_error %}<div class="form-error">{{ form_error }}</div>{% endif %}
-      <label class="field"><span>Reason for deletion <b>*</b></span><textarea class="textarea" name="reason" rows="4" required>{{ reason }}</textarea><small>This reason is shown in Trash for administrators.</small></label>
-      <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong> <b>*</b></span><input class="input" name="confirmation" autocomplete="off" required></label>
+      <label class="field"><span>Reason for deletion</span><textarea class="textarea" name="reason" rows="4" required>{{ reason }}</textarea><small>This reason is shown in Trash for administrators.</small></label>
+      <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong></span><input class="input" name="confirmation" autocomplete="off" required></label>
       <label class="confirm-check"><input type="checkbox" name="acknowledge" value="yes" required><span>I understand the effects above and the {{ retention_days }}-day recovery limit.</span></label>
       <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn btn-danger" type="submit">Move to Trash</button></div>
     </form>

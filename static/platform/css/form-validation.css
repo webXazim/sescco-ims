@@ -1,0 +1,56 @@
+/* Shared form-validation contract for Inventory + Payroll. */
+.required::after,
+[data-required-label="true"]::after {
+  content: " *";
+  color: #b42318;
+  font-weight: 800;
+}
+
+.field.is-invalid .input,
+.field.is-invalid .select,
+.field.is-invalid .textarea,
+.form-field.is-invalid .input,
+.form-field.is-invalid .select,
+.form-field.is-invalid .textarea,
+.form-field.is-invalid input,
+.form-field.is-invalid select,
+.form-field.is-invalid textarea,
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: #d92d20 !important;
+  box-shadow: 0 0 0 1px rgba(217, 45, 32, .08) !important;
+}
+
+.field.is-invalid .input:focus,
+.field.is-invalid .select:focus,
+.field.is-invalid .textarea:focus,
+.form-field.is-invalid input:focus,
+.form-field.is-invalid select:focus,
+.form-field.is-invalid textarea:focus,
+input[aria-invalid="true"]:focus,
+select[aria-invalid="true"]:focus,
+textarea[aria-invalid="true"]:focus {
+  outline: 0;
+  border-color: #b42318 !important;
+  box-shadow: 0 0 0 3px rgba(217, 45, 32, .10) !important;
+}
+
+.field-required-message {
+  display: block;
+  margin-top: 3px;
+  color: #b42318;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.form-field .field-required-message {
+  grid-column: 1 / -1;
+}
+
+input[type="checkbox"][aria-invalid="true"],
+input[type="radio"][aria-invalid="true"] {
+  outline: 2px solid #d92d20;
+  outline-offset: 2px;
+}

@@ -22,6 +22,9 @@ bash "${PROJECT_ROOT}/scripts/verify-payroll-frontend.sh"
 info "Verifying unified platform shell"
 bash "${PROJECT_ROOT}/scripts/verify-platform-shell.sh"
 
+info "Verifying project-wide required-field UX"
+bash "${PROJECT_ROOT}/scripts/verify-form-validation.sh"
+
 info "Verifying merged production infrastructure"
 bash "${PROJECT_ROOT}/scripts/verify-production-infrastructure.sh"
 
