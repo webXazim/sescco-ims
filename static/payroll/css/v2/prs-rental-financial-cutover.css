@@ -212,3 +212,87 @@
     justify-content:flex-start;
   }
 }
+
+
+/* 1.0.17 — Rental settlement toolbar and header refinement.
+ * The settlement workspace looked visually busy because stacked dropdown labels
+ * consumed vertical space while the select launcher itself remained too narrow.
+ * Convert the toolbar filters into cleaner inline controls, strengthen their
+ * width/height, and tighten the page-head/nav treatment for Supplier
+ * Settlements and the related finance pages.
+ */
+.ui-v2-root .ui-v2-payroll-rental-settlements > .page-head {
+  align-items:flex-start;
+  gap:18px;
+}
+.ui-v2-root .ui-v2-payroll-rental-settlements > .page-head > .page-head__copy {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:860px;
+}
+.ui-v2-root .ui-v2-payroll-rental-settlements > .page-head > .page-head__actions {
+  align-self:flex-start;
+}
+.ui-v2-root .ui-v2-payroll-rental-settlement-boundary {
+  padding:12px 14px;
+  border-radius:10px;
+  background:var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-payroll-rental-settlement-nav {
+  align-items:center;
+  gap:12px;
+  margin-bottom:0;
+}
+.ui-v2-root .ui-v2-payroll-rental-settlement-nav .ui-v2-payroll-view-tabs.is-compact {
+  flex:0 0 auto;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-register {
+  overflow:hidden;
+  border-radius:12px;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar {
+  gap:10px;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search {
+  min-width:280px;
+  flex:1 1 340px;
+  max-width:560px;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter,
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter--compact {
+  min-width:180px;
+  flex:0 1 190px;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter--compact {
+  display:flex;
+  align-items:center;
+  gap:0;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter--compact > span,
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-register .timesheet-filter > span {
+  display:none;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .timesheet-filter--compact > select,
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-register .timesheet-filter > select,
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar :where(select.ui-v2-payroll-compact-select, select.compact-select) {
+  width:100%;
+  min-width:180px;
+  min-height:40px;
+  font-size:13px;
+  font-weight:600;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar [data-settlement-reset],
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar [data-supplier-assignment-activity] {
+  min-height:40px;
+}
+.ui-v2-root .ui-v2-payroll-rental-settlement-summary-grid {
+  border-radius:12px;
+}
+@media (max-width:1050px) {
+  .ui-v2-root .ui-v2-payroll-rental-settlements > .page-head {
+    gap:14px;
+  }
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search {
+    max-width:none;
+  }
+}
