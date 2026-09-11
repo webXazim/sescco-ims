@@ -141,3 +141,74 @@
   .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-payment-tabs > button { min-width:150px; }
   .ui-v2-root .ui-v2-prs-settlement-segment { grid-template-columns:1fr; }
 }
+
+
+/* 1.0.16 — related Rental finance page-action alignment.
+ * Supplier Settlements, Worker Adjustments and Supplier Payments use each
+ * other as workflow shortcuts. Keep those actions as one intentional desktop
+ * row instead of allowing a single button to orphan onto a second line.
+ * At narrower viewport widths, move the action rail below the heading as a
+ * whole so wrapping remains deliberate and readable.
+ */
+@media (min-width:1051px) {
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head {
+    align-items:flex-start;
+  }
+
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head > .page-head__copy {
+    flex:1 1 auto;
+    min-width:0;
+    max-width:860px;
+  }
+
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head > .page-head__actions {
+    width:auto;
+    max-width:none;
+    flex:0 0 auto;
+    align-self:flex-start;
+    flex-wrap:nowrap;
+  }
+
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head > .page-head__actions > .btn {
+    flex:0 0 auto;
+    white-space:nowrap;
+  }
+}
+
+@media (max-width:1050px) {
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head {
+    align-items:stretch;
+    flex-direction:column;
+    gap:14px;
+  }
+
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head > .page-head__copy {
+    max-width:none;
+  }
+
+  .ui-v2-root :where(
+    .ui-v2-prs-rental-finance-page,
+    .adjustments-page
+  ) > .page-head > .page-head__actions {
+    width:100%;
+    justify-content:flex-start;
+  }
+}

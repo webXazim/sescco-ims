@@ -77,3 +77,116 @@ body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
 .ui-v2-root [data-dropdown].is-open > [data-dropdown-menu] {
   pointer-events: auto !important;
 }
+
+
+/* 1.0.13 — Payroll Runs filter/readiness layout polish.
+ * Keep operational selects within their grid cells and give the readiness
+ * panel enough room for semantic label/state text without word folding.
+ */
+.ui-v2-root .ui-v2-payroll-run-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 340px) !important;
+}
+
+.ui-v2-root .ui-v2-payroll-run-toolbar {
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 170px) minmax(150px, 170px) minmax(125px, 145px) auto !important;
+  align-items: end;
+}
+
+.ui-v2-root .ui-v2-payroll-run-toolbar .timesheet-filter {
+  min-width: 0;
+}
+
+.ui-v2-root .ui-v2-payroll-run-toolbar .timesheet-filter select {
+  width: 100%;
+  min-width: 0 !important;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs button {
+  grid-template-columns: 28px minmax(0, 1fr) minmax(52px, auto);
+  column-gap: 10px;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs button > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs button > div strong,
+.ui-v2-root .ui-v2-payroll-run-inputs button > div small {
+  min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs button > div strong {
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs button > div small {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.ui-v2-root .ui-v2-payroll-run-inputs em {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .ui-v2-root .ui-v2-payroll-run-toolbar {
+    grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .ui-v2-root .ui-v2-payroll-run-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .ui-v2-root .ui-v2-payroll-run-toolbar {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .ui-v2-root .ui-v2-payroll-run-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* 1.0.14 — Payroll filter width normalization.
+ * Several related payroll pages still allowed toolbar selects to shrink into
+ * narrow chips because search took too much width and compact selects carried
+ * small flex-basis values from earlier prototype cutovers. Normalize the
+ * shared operational filter width across employee, organization, rental and
+ * payroll-run pages so dropdown labels remain readable.
+ */
+.ui-v2-root :where(
+  .ui-v2-prs-internal-employees,
+  .ui-v2-prs-master-filter,
+  .ui-v2-prs-rental-timesheet-workspace,
+  .ui-v2-payroll-run-toolbar,
+  .ui-v2-payroll-report-filterbar
+) :where(select.ui-v2-payroll-compact-select, select.compact-select) {
+  min-width: 168px;
+}
+
+.ui-v2-root .ui-v2-payroll-run-toolbar {
+  grid-template-columns: minmax(240px, 1fr) minmax(168px, 188px) minmax(168px, 188px) minmax(150px, 170px) auto !important;
+}
+
+.ui-v2-root .ui-v2-payroll-run-toolbar .table-toolbar__search,
+.ui-v2-root .ui-v2-payroll-run-toolbar .ui-v2-filter-bar__search {
+  max-width: none;
+}
+
+@media (max-width: 1180px) {
+  .ui-v2-root .ui-v2-payroll-run-toolbar {
+    grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 1fr)) !important;
+  }
+}

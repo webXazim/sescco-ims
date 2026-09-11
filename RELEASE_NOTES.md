@@ -1,3 +1,41 @@
+# SESCCO IMS 1.0.16
+
+## Rental cost-and-settlement page action alignment
+
+- Kept Supplier Settlements workflow shortcuts on one deliberate desktop row so Project Timesheets, Worker Adjustments and Supplier Payments no longer orphan onto separate lines.
+- Applied the same action-area geometry to the related Supplier Payments and Worker Adjustments pages for consistent navigation between the three cost-and-settlement workflows.
+- Added a responsive handoff: at narrower widths the complete action rail moves below the heading rather than folding one button unpredictably.
+- Preserved existing routes, permissions and rental financial lifecycle behavior. No database migration or production-data rewrite is required.
+
+# SESCCO IMS 1.0.15
+
+## Rental Overview alignment polish
+
+- Corrected Recent manpower changes so assignment badges and worker copy use the intended two-column layout instead of inheriting the supplier-list four-column grid.
+- Centered assignment badges vertically and removed overlap/folding between the event badge, worker name and assignment detail.
+- Corrected Rental Overview Quick actions so action icons remain true centered icon containers rather than inheriting generic span typography rules.
+- Added dedicated action-copy geometry so title and helper text align consistently beside the icon across Add worker, Bulk onboard, Add project and Add supplier.
+- No database migration or production-data rewrite is required.
+
+# SESCCO IMS 1.0.14
+
+## Payroll filter width normalization
+
+- Increased minimum width for shared Payroll operational filters so Branch, Department, Status, WPS and related dropdown labels remain readable instead of collapsing into skinny chips.
+- Rebalanced Internal Employee and organization-master toolbar search width so dropdowns retain useful space on desktop.
+- Applied the same width floor to Rental Timesheets, Payroll Runs and related report/filter rows while preserving responsive wrapping.
+- No database migration or production-data rewrite is required.
+
+# SESCCO IMS 1.0.13
+
+## Payroll Runs filter and readiness panel polish
+
+- Corrected the Payroll Runs filter-grid sizing so Branch / Office, Department and Readiness selects stay inside their grid cells without clipping or overlap.
+- Increased the Input readiness side-panel width while preserving the responsive single-column fallback.
+- Corrected the readiness-row markup so label/subtext uses the intended flexible content column instead of inheriting the icon geometry.
+- Prevented readiness labels, states and explanatory text from folding into narrow word stacks.
+- No database migration or production-data rewrite is required.
+
 # SESCCO IMS 1.0.12
 
 ## Inventory Explorer control density and dropdown convergence

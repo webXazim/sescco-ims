@@ -195,6 +195,95 @@
   font-size: 10px; font-weight: 800;
 }
 
+
+/* Rental overview alignment polish.
+ * Recent activity has two semantic columns (event + copy), unlike the supplier
+ * list's four-column row. Quick-action tiles also need explicit icon/copy
+ * geometry so legacy generic span rules cannot pull icons off centre.
+ */
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events > button {
+  min-height: 58px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events__badge {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events__badge .assignment-event-badge {
+  margin: 0;
+  min-height: 22px;
+  font-size: 9px;
+  line-height: 1;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events__copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events__copy strong,
+.ui-v2-root .ui-v2-prs-rental-overview .rental-recent-events__copy small {
+  margin: 0;
+  text-align: left;
+}
+
+.ui-v2-root .ui-v2-prs-rental-overview .quick-actions {
+  align-items: stretch;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile {
+  min-height: 72px;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 13px;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile .action-tile__icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  color: var(--ui-v2-text-secondary);
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile .action-tile__icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  margin: 0;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile > .action-tile__copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: normal;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile > .action-tile__copy > strong,
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile > .action-tile__copy > span {
+  margin: 0;
+  text-align: left;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile > .action-tile__copy > strong {
+  color: var(--ui-v2-text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.ui-v2-root .ui-v2-prs-rental-overview .action-tile > .action-tile__copy > span {
+  color: var(--ui-v2-text-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
 /* Worker master */
 .ui-v2-root .ui-v2-payroll-assignment-summary,
 .ui-v2-root .ui-v2-prs-rental-summary {

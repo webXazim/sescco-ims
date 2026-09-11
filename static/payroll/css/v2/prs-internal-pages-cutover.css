@@ -125,14 +125,14 @@
 }
 .ui-v2-root .ui-v2-prs-internal-employees .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search,
 .ui-v2-root .ui-v2-prs-master-filter .ui-v2-filter-bar__search {
-  flex: 1 1 320px;
-  max-width: 520px;
+  flex: 1 1 280px;
+  max-width: 430px;
 }
 .ui-v2-root .ui-v2-prs-internal-employees .ui-v2-payroll-compact-select,
 .ui-v2-root .ui-v2-prs-master-filter .ui-v2-payroll-compact-select {
   width: auto !important;
-  min-width: 150px;
-  flex: 0 1 180px;
+  min-width: 168px;
+  flex: 1 1 188px;
 }
 .ui-v2-root .ui-v2-prs-internal-employees .ui-v2-payroll-table-meta {
   min-height: 34px;
