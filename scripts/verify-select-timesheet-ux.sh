@@ -13,7 +13,11 @@ require_text templates/base.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "platform/css/select-controls.css"
 require_text static/platform/css/select-controls.css "appearance: none;"
 require_text static/platform/css/select-controls.css "--platform-select-chevron"
+require_text static/platform/css/select-controls.css "select.ui-v2-select:not([multiple]):not([size])"
+require_text static/platform/css/select-controls.css "min-height: 40px !important;"
 require_text static/platform/css/select-controls.css ".ui-v2-payroll-timesheet-command-strip select"
+require_text static/platform/css/select-controls.css "min-height: 38px !important;"
+require_text static/platform/css/select-controls.css "select.table-select:not([multiple]):not([size])"
 require_text static/payroll/js/app.js "function defaultTimesheetDay(periodLabel)"
 require_text static/payroll/js/app.js "return companyTodayDay;"
 require_text static/payroll/js/app.js "rentalTimesheetBulkDay: defaultTimesheetDay"
@@ -26,4 +30,4 @@ if command -v node >/dev/null 2>&1; then
   node --check "$ROOT/static/payroll/js/app.js"
 fi
 
-printf 'Shared select controls and today-aware timesheet day selection verified.\n'
+printf 'Shared select controls, production control heights and today-aware timesheet day selection verified.\n'

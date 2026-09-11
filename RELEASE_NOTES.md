@@ -1,3 +1,25 @@
+# SESCCO IMS 1.0.11
+
+## Inventory Explorer compact filter-row polish
+
+- Reworked the Inventory Explorer filter toolbar so the search field stays intentionally compact on desktop instead of consuming an entire row.
+- Kept search, location, condition, stock status, date, sort, More filters and Columns aligned in one balanced desktop toolbar whenever the available width permits.
+- Replaced the always-visible New / Used / No value checkbox stack with a compact Condition dropdown while preserving multi-condition filtering and saved-query compatibility.
+- Condition selections refresh the live inventory results immediately, update the dropdown label, and support Clear / Done controls plus click-outside and Escape dismissal.
+- Added responsive fallbacks so the toolbar wraps cleanly on narrower screens and the condition menu becomes a safe mobile sheet.
+- Added a production freeze verifier for the Inventory Explorer filter composition. No schema migration or business-data rewrite is required; deploy with `./scripts/deploy-production.sh`.
+
+# SESCCO IMS 1.0.10
+
+## Payroll dropdown control-height correction
+
+- Fixed the remaining legacy CSS-specificity conflict that allowed Payroll compact selects to fall back to 30–32px even after the shared 1.0.9 select-control upgrade.
+- Standard Payroll and Inventory select controls now use a deterministic 40px production control height with aligned text, chevron spacing, radius and focus geometry.
+- Payroll filter selects, including Rental Project Timesheets project/supplier filters, now visually align with the search and action controls instead of appearing as thin inline chips.
+- Internal/Rental timesheet Day selectors use a 38px control height so the command strip remains compact without becoming too thin.
+- Dense import/staging and pagination selects remain intentionally compact at 34px to preserve table geometry.
+- No schema migration or business-data rewrite is required; deploy with `./scripts/deploy-production.sh`.
+
 # SESCCO IMS 1.0.9
 
 ## Unified dropdown controls and today-aware timesheet day

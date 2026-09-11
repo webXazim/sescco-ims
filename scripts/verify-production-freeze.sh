@@ -14,6 +14,7 @@ sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
 bash scripts/verify-select-timesheet-ux.sh
+bash scripts/verify-inventory-explorer-ux.sh
 
 [[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
 sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \

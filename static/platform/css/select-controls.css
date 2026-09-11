@@ -7,8 +7,8 @@
  */
 
 :root {
-  --platform-select-height: 38px;
-  --platform-select-height-compact: 34px;
+  --platform-select-height: 40px;
+  --platform-select-height-compact: 40px;
   --platform-select-radius: 8px;
   --platform-select-border: #d7d9d6;
   --platform-select-border-hover: #bfc3bf;
@@ -114,4 +114,63 @@
 .inventory-shell-v2 select[aria-invalid="true"],
 .ui-v2-root select[aria-invalid="true"] {
   border-color: #d92d20 !important;
+}
+
+/* 1.0.10 — production select geometry hardening.
+ *
+ * Some legacy Payroll selectors have greater specificity than the shared
+ * :where(...) rules above and can otherwise force operational filters back to
+ * the old 30–32px prototype geometry.  These selectors intentionally carry
+ * enough specificity (and explicit height authority) to make the final
+ * application control size deterministic without replacing native select
+ * semantics.
+ */
+.inventory-shell-v2 select:not([multiple]):not([size]),
+.ui-v2-root select.ui-v2-select:not([multiple]):not([size]),
+.ui-v2-root select.select:not([multiple]):not([size]),
+.ui-v2-root select.compact-select:not([multiple]):not([size]) {
+  min-height: 40px !important;
+  height: 40px !important;
+  border-radius: 8px;
+  padding-left: 12px;
+  padding-right: 36px;
+  background-position: right 11px center;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* Primary Payroll filter rows should visually align with their search input
+ * and reset/action controls instead of looking like narrow inline chips. */
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .timesheet-filter
+) select:not([multiple]):not([size]) {
+  min-height: 40px !important;
+  height: 40px !important;
+  font-size: 13px;
+}
+
+/* The Day selector stays a touch denser than the large filter controls, while
+ * remaining a real touch target rather than the old 30–32px prototype select. */
+.ui-v2-root .ui-v2-payroll-timesheet-command-strip select:not([multiple]):not([size]),
+.ui-v2-root .ui-v2-prs-timesheet-day-select select:not([multiple]):not([size]) {
+  min-height: 38px !important;
+  height: 38px !important;
+  border-radius: 8px;
+  padding-left: 10px;
+  padding-right: 31px;
+  background-position: right 9px center;
+  font-size: 12.5px;
+}
+
+/* Dense staging/import table editors may stay compact, but not sub-30px. */
+.ui-v2-root select.table-select:not([multiple]):not([size]),
+.ui-v2-root .ui-v2-payroll-timesheet-pagination__size select:not([multiple]):not([size]) {
+  min-height: 34px !important;
+  height: 34px !important;
+  font-size: 12px;
 }

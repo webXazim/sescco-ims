@@ -252,6 +252,47 @@
       });
     });
 
+    const conditionFilter = liveFilterForm.querySelector("[data-condition-filter]");
+    const conditionSummary = conditionFilter?.querySelector("[data-condition-summary]");
+    const conditionInputs = Array.from(conditionFilter?.querySelectorAll('input[name="condition"]') || []);
+    const updateConditionSummary = () => {
+      if (!conditionSummary) return;
+      const checked = conditionInputs.filter((input) => input.checked);
+      if (!checked.length) {
+        conditionSummary.textContent = "Any condition";
+      } else if (checked.length === 1) {
+        conditionSummary.textContent = checked[0].closest("label")?.textContent.trim() || "Condition · 1";
+      } else {
+        conditionSummary.textContent = `Condition · ${checked.length}`;
+      }
+    };
+    updateConditionSummary();
+    conditionInputs.forEach((input) => {
+      input.addEventListener("change", () => {
+        updateConditionSummary();
+        refreshFilterResults();
+      });
+    });
+    conditionFilter?.querySelector("[data-condition-clear]")?.addEventListener("click", () => {
+      conditionInputs.forEach((input) => { input.checked = false; });
+      updateConditionSummary();
+      refreshFilterResults();
+    });
+    conditionFilter?.querySelector("[data-condition-done]")?.addEventListener("click", () => {
+      conditionFilter.removeAttribute("open");
+    });
+    document.addEventListener("click", (event) => {
+      if (conditionFilter?.hasAttribute("open") && !conditionFilter.contains(event.target)) {
+        conditionFilter.removeAttribute("open");
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && conditionFilter?.hasAttribute("open")) {
+        conditionFilter.removeAttribute("open");
+        conditionFilter.querySelector("summary")?.focus();
+      }
+    });
+
     [dateFrom, dateTo].forEach((input) => {
       input?.addEventListener("change", () => {
         const hasDate = Boolean(dateFrom?.value || dateTo?.value);

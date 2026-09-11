@@ -6,11 +6,21 @@
 </div>
 <section class="card explorer">
   <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
-    <div class="explorer-toolbar">
-      <div class="search-field"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
-      <div class="quick-filters">
+    <div class="explorer-toolbar inventory-explorer-toolbar">
+      <div class="search-field inventory-explorer-search"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
+      <div class="quick-filters inventory-explorer-filters">
         {{ filter_form.location }}
-        {{ filter_form.condition }}
+        <details class="condition-filter-menu" data-condition-filter>
+          <summary class="condition-filter-trigger" aria-label="Filter by stock condition">
+            {% with selected_conditions=filter_form.condition.value %}<span data-condition-summary>{% if selected_conditions %}{% if selected_conditions|length == 1 %}Condition · 1{% else %}Condition · {{ selected_conditions|length }}{% endif %}{% else %}Any condition{% endif %}</span>{% endwith %}
+            <span class="condition-filter-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="condition-filter-popover">
+            <div class="condition-filter-head"><strong>Condition</strong><span>Show one or more stock conditions.</span></div>
+            <div class="condition-filter-options">{{ filter_form.condition }}</div>
+            <div class="condition-filter-actions"><button class="btn btn-ghost btn-sm" type="button" data-condition-clear>Clear</button><button class="btn btn-primary btn-sm" type="button" data-condition-done>Done</button></div>
+          </div>
+        </details>
         {{ filter_form.stock_status }}
         <div class="date-filter-control" data-date-filter-control>
           {{ filter_form.date_preset }}
