@@ -476,10 +476,11 @@
     add('.bank-issue-list','ui-v2-payroll-bank-issue-list');
   }
 
-  /* 1.0.24: canonical Payroll control normalization.
+  /* 1.0.25: canonical Payroll control normalization.
      Every operational select is tagged once after render and legacy compact
      classes are removed from business filters. Only day/page-size/table editors
-     remain dense. This keeps Internal + Rental on one CSS contract. */
+     remain dense. Standalone labelled pickers are normalized as selects without
+     being converted into row toolbars, so flex-basis can never inflate control height. */
   function applyPayrollControlClasses(root = pageRoot) {
     if (!root || !root.querySelectorAll) return;
 
@@ -516,22 +517,31 @@
       '.ui-v2-payroll-advanced-filters',
       '[data-advanced-filter-panel]',
       '.payment-head-actions',
-      '.bank-template-picker',
       '.ui-v2-payroll-timesheet-toolbar',
       '.payroll-toolbar'
     ].join(',');
+
+    const markOperationalSelect = (select) => {
+      if (!select || select.matches(denseSelector) || select.closest('table, .ui-v2-compact-select')) return;
+      select.classList.remove('compact-select', 'ui-v2-payroll-compact-select', 'ui-v2-payroll-dense-select');
+      select.classList.add('ui-v2-select', 'ui-v2-payroll-operational-select');
+    };
 
     root.querySelectorAll(toolbarSelector).forEach(container => {
       if (container.closest('.document-preview-toolbar, .receipt-preview-toolbar, .onboarding-stage-toolbar')) return;
       container.classList.add('ui-v2-payroll-control-toolbar');
       container.querySelectorAll('select:not([multiple]):not([size])').forEach(select => {
-        if (select.matches(denseSelector) || select.closest('table, .ui-v2-compact-select')) return;
-        select.classList.remove('compact-select', 'ui-v2-payroll-compact-select', 'ui-v2-payroll-dense-select');
-        select.classList.add('ui-v2-select', 'ui-v2-payroll-operational-select');
+        markOperationalSelect(select);
         const labelled = select.closest('.timesheet-filter, .timesheet-filter--compact');
         if (labelled && container.contains(labelled)) labelled.classList.add('ui-v2-payroll-operational-filter');
       });
     });
+
+    /* Standalone labelled selectors are controls, not toolbars. Keeping the
+       parent out of ui-v2-payroll-control-toolbar prevents row flex sizing from
+       becoming vertical flex sizing on column layouts (the Bank/WPS template
+       picker regression that produced a ~220px-tall select). */
+    root.querySelectorAll('.bank-template-picker select:not([multiple]):not([size])').forEach(markOperationalSelect);
   }
 
 

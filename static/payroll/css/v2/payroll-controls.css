@@ -231,11 +231,31 @@
   max-width: 280px !important;
 }
 
+/* Bank/WPS export-template selector is a standalone labelled field, not a
+ * toolbar. Its parent keeps column layout and the select never receives toolbar
+ * flex-basis, which would become vertical height in a column flex container. */
+.ui-v2-root[data-area="payroll"] .bank-template-picker {
+  box-sizing: border-box;
+  display: grid !important;
+  grid-template-rows: auto var(--payroll-control-h);
+  align-items: start !important;
+  align-self: end;
+  gap: 5px !important;
+  width: min(280px, 100%);
+  min-width: 220px;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
 .ui-v2-root[data-area="payroll"] .bank-template-picker select.ui-v2-payroll-operational-select,
 .ui-v2-root[data-area="payroll"] .ui-v2-payroll-bank-template-select.ui-v2-payroll-operational-select {
-  width: min(280px, 100%) !important;
-  min-width: 220px !important;
-  max-width: 280px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: var(--payroll-control-h) !important;
+  height: var(--payroll-control-h) !important;
+  flex: none !important;
+  align-self: start !important;
 }
 
 /* Register filters should never become edge-to-edge bars on desktop. */
@@ -288,12 +308,16 @@
 
   .ui-v2-root[data-area="payroll"] .ui-v2-payroll-control-toolbar > select.ui-v2-payroll-operational-select,
   .ui-v2-root[data-area="payroll"] .ui-v2-payroll-operational-filter,
-  .ui-v2-root[data-area="payroll"] .payment-supplier-toolbar #paymentSupplierFilter.ui-v2-payroll-operational-select,
-  .ui-v2-root[data-area="payroll"] .bank-template-picker select.ui-v2-payroll-operational-select {
+  .ui-v2-root[data-area="payroll"] .payment-supplier-toolbar #paymentSupplierFilter.ui-v2-payroll-operational-select {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
     flex-basis: 100% !important;
+  }
+
+  .ui-v2-root[data-area="payroll"] .bank-template-picker {
+    width: 100%;
+    min-width: 0;
   }
 
   .ui-v2-root[data-area="payroll"] .payment-supplier-toolbar > :is(.segmented, .compact-segmented) {

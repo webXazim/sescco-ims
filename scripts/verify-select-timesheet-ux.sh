@@ -19,7 +19,7 @@ reject_text() {
 require_text templates/base.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "payroll/css/v2/payroll-controls.css"
-require_text templates/payroll/app.html "?v=1.0.24"
+require_text templates/payroll/app.html "?v=1.0.25"
 
 # Shared file is intentionally cross-app only.
 require_text static/platform/css/select-controls.css "appearance: none;"
@@ -45,6 +45,23 @@ require_text static/payroll/js/app.js "select.classList.remove('compact-select',
 require_text static/payroll/js/app.js "select.classList.add('ui-v2-select', 'ui-v2-payroll-operational-select')"
 require_text static/payroll/js/app.js "select.classList.add('ui-v2-select', 'ui-v2-payroll-dense-select')"
 require_text static/payroll/js/app.js "applyPayrollControlClasses(pageRoot);"
+require_text static/payroll/js/app.js "root.querySelectorAll('.bank-template-picker select:not([multiple]):not([size])').forEach(markOperationalSelect);"
+if python3 - "$ROOT/static/payroll/js/app.js" <<'PY_BANK_PICKER'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text(encoding='utf-8')
+start = text.index('const toolbarSelector = [')
+end = text.index("].join(',');", start)
+raise SystemExit(0 if "'.bank-template-picker'" in text[start:end] else 1)
+PY_BANK_PICKER
+then
+  fail 'bank-template-picker must stay out of the row-toolbar selector; it is a standalone column field.'
+fi
+require_text static/payroll/css/v2/payroll-controls.css ".bank-template-picker {"
+require_text static/payroll/css/v2/payroll-controls.css "grid-template-rows: auto var(--payroll-control-h);"
+require_text static/payroll/css/v2/payroll-controls.css "flex: none !important;"
+require_text static/payroll/css/v2/prs-internal-execution-cutover.css ".ui-v2-payroll-payment-empty{ min-height:116px;"
+require_text static/payroll/css/v2/pages/payroll.css ".ui-v2-payroll-payment-empty{ min-height:116px;"
 require_text static/payroll/js/app.js 'id="paymentSupplierFilter"'
 require_text static/payroll/js/app.js 'class="ui-v2-select ui-v2-payroll-operational-select" id="paymentSupplierFilter"'
 
