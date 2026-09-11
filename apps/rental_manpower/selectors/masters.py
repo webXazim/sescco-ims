@@ -38,7 +38,18 @@ def suppliers_for_company(*, company, query: str = "", status: str = ""):
     queryset = ManpowerSupplier.objects.for_company(company)
     if query.strip():
         q = query.strip()
-        queryset = queryset.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(contact_person__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q))
+        queryset = queryset.filter(
+            Q(code__icontains=q)
+            | Q(name__icontains=q)
+            | Q(contact_person__icontains=q)
+            | Q(phone__icontains=q)
+            | Q(email__icontains=q)
+            | Q(cr_number__icontains=q)
+            | Q(vat_number__icontains=q)
+            | Q(payment_terms__icontains=q)
+            | Q(address__icontains=q)
+            | Q(notes__icontains=q)
+        )
     if status:
         queryset = queryset.filter(status=status)
     return (
@@ -91,7 +102,18 @@ def workers_for_company(*, company, query: str = "", status: str = "", supplier_
     )
     if query.strip():
         q = query.strip()
-        queryset = queryset.filter(Q(worker_number__icontains=q) | Q(full_name__icontains=q) | Q(national_id__icontains=q) | Q(phone__icontains=q) | Q(supplier__name__icontains=q))
+        queryset = queryset.filter(
+            Q(worker_number__icontains=q)
+            | Q(full_name__icontains=q)
+            | Q(national_id__icontains=q)
+            | Q(phone__icontains=q)
+            | Q(supplier__code__icontains=q)
+            | Q(supplier__name__icontains=q)
+            | Q(rental_assignments__trade__icontains=q)
+            | Q(rental_assignments__project__code__icontains=q)
+            | Q(rental_assignments__project__name__icontains=q)
+            | Q(notes__icontains=q)
+        ).distinct()
     if status:
         queryset = queryset.filter(status=status)
     if supplier_id:

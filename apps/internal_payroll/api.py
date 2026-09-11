@@ -6,6 +6,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
+from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
 from apps.internal_payroll.api_utils import (
     handle_api_error as _handle_error,
     json_body as _json_body,
@@ -49,12 +50,22 @@ def _employee_status_query(value: str) -> str:
 def branches_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            allowed_sorts = {
+                "code": "code",
+                "name": "name",
+                "location": "location",
+                "manager": "manager_name",
+                "status": "is_active",
+            }
+            controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
             rows = branches_for_company(
                 company=request.company,
                 query=request.GET.get("q", ""),
                 active=_active_query(request.GET.get("status", "")),
             )
-            return JsonResponse({"ok": True, "results": [serialize_branch(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_branch)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
         branch = create_branch(
             actor_membership=request.company_membership,
@@ -98,12 +109,16 @@ def branch_detail_api(request: HttpRequest, branch_id) -> JsonResponse:
 def departments_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            allowed_sorts = {"code": "code", "name": "name", "status": "is_active"}
+            controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
             rows = departments_for_company(
                 company=request.company,
                 query=request.GET.get("q", ""),
                 active=_active_query(request.GET.get("status", "")),
             )
-            return JsonResponse({"ok": True, "results": [serialize_department(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_department)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
         department = create_department(
             actor_membership=request.company_membership,
@@ -143,6 +158,13 @@ def department_detail_api(request: HttpRequest, department_id) -> JsonResponse:
 def employees_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            allowed_sorts = {
+                "employee": "employee_number",
+                "name": "full_name",
+                "joining": "joining_date",
+                "status": "status",
+            }
+            controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="employee")
             rows = employees_for_company(
                 company=request.company,
                 query=request.GET.get("q", ""),
@@ -150,7 +172,9 @@ def employees_api(request: HttpRequest) -> JsonResponse:
                 branch_id=request.GET.get("branch") or None,
                 department_id=request.GET.get("department") or None,
             )
-            return JsonResponse({"ok": True, "results": [serialize_employee(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_employee)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
         employee = create_employee(
             actor_membership=request.company_membership,

@@ -105,6 +105,117 @@
     if (index >= 0) collection.splice(index, 1, record);
     else collection.push(record);
   }
+
+  const payrollTableSortPrefs = (() => {
+    try { return JSON.parse(localStorage.getItem('payroll-ui-table-sort') || '{}') || {}; }
+    catch { return {}; }
+  })();
+  function persistPayrollTableSortPrefs() {
+    try { localStorage.setItem('payroll-ui-table-sort', JSON.stringify(payrollTableSortPrefs)); }
+    catch { /* Storage may be unavailable in hardened/private browser modes. */ }
+  }
+
+  function bindPayrollSearch(input, setter, { delay = 180, beforeRender = null } = {}) {
+    if (!input) return;
+    let renderTimer = null;
+    const commit = () => {
+      setter(input.value);
+      if (beforeRender) beforeRender();
+      const cursor = input.selectionStart;
+      clearTimeout(renderTimer);
+      renderTimer = setTimeout(() => {
+        renderRoute();
+        const next = input.id ? document.getElementById(input.id) : null;
+        if (next) {
+          next.focus({ preventScroll:true });
+          if (typeof cursor === 'number') next.setSelectionRange(cursor, cursor);
+        }
+      }, delay);
+    };
+    input.addEventListener('input', commit);
+    input.addEventListener('search', commit);
+  }
+
+  function payrollSortValue(cell) {
+    const explicit = cell?.dataset?.sortValue;
+    const raw = String(explicit ?? cell?.innerText ?? cell?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (!raw || raw === '—' || raw === '-') return { type:'empty', value:'' };
+
+    const compact = raw.replace(/SAR\s*/gi, '').replace(/,/g, '').replace(/%/g, '').trim();
+    if (/^[+-]?\d+(?:\.\d+)?$/.test(compact)) return { type:'number', value:Number(compact) };
+
+    if (/^(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3}\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})$/.test(raw)) {
+      const timestamp = Date.parse(raw);
+      if (Number.isFinite(timestamp)) return { type:'number', value:timestamp };
+    }
+    const leadingNumber = raw.match(/^(?:SAR\s*)?([+-]?\d[\d,]*(?:\.\d+)?)(?:%|\s|$)/i);
+    if (leadingNumber) return { type:'number', value:Number(leadingNumber[1].replace(/,/g, '')) };
+    return { type:'text', value:raw };
+  }
+
+  function comparePayrollSortValues(left, right) {
+    if (left.type === 'empty' && right.type === 'empty') return 0;
+    if (left.type === 'empty') return 1;
+    if (right.type === 'empty') return -1;
+    if (left.type === 'number' && right.type === 'number') return left.value - right.value;
+    return String(left.value).localeCompare(String(right.value), undefined, { numeric:true, sensitivity:'base' });
+  }
+
+  function applyPayrollTableSort(table, tableKey, columnIndex, direction) {
+    const body = table.tBodies?.[0];
+    if (!body) return;
+    const rows = Array.from(body.rows).filter(row => row.cells.length > columnIndex && !row.querySelector('.table-empty'));
+    if (rows.length < 2) return;
+    rows.forEach((row, index) => { row.dataset.sortStableIndex = String(index); });
+    rows.sort((a,b) => {
+      const compared = comparePayrollSortValues(payrollSortValue(a.cells[columnIndex]), payrollSortValue(b.cells[columnIndex]));
+      if (compared) return direction === 'desc' ? -compared : compared;
+      return Number(a.dataset.sortStableIndex || 0) - Number(b.dataset.sortStableIndex || 0);
+    });
+    rows.forEach(row => body.appendChild(row));
+    table.querySelectorAll('thead th').forEach((th, index) => {
+      th.setAttribute('aria-sort', index === columnIndex ? (direction === 'desc' ? 'descending' : 'ascending') : 'none');
+      th.classList.toggle('is-sorted', index === columnIndex);
+      th.classList.toggle('is-desc', index === columnIndex && direction === 'desc');
+    });
+    payrollTableSortPrefs[tableKey] = { columnIndex, direction };
+    persistPayrollTableSortPrefs();
+  }
+
+  function enhancePayrollSortableTables(root = pageRoot) {
+    if (!root?.querySelectorAll) return;
+    const routeKey = currentRoute();
+    root.querySelectorAll('table.data-table').forEach((table, tableIndex) => {
+      if (table.closest('.ui-v2-payroll-timesheet-workspace, .rental-timesheet-workspace, .timesheet-sheet')) return;
+      const tableKey = `${state.workspace}:${routeKey}:${table.dataset.tableKey || tableIndex}`;
+      const headers = Array.from(table.querySelectorAll('thead th'));
+      headers.forEach((th, columnIndex) => {
+        const label = String(th.textContent || '').trim();
+        const ariaLabel = String(th.getAttribute('aria-label') || '').toLowerCase();
+        if (!label || /action|open/.test(ariaLabel) || th.dataset.noSort === 'true') return;
+        th.classList.add('ui-v2-payroll-sortable');
+        th.tabIndex = 0;
+        th.setAttribute('role', 'button');
+        th.setAttribute('aria-sort', 'none');
+        th.title = `Sort by ${label}`;
+        const trigger = () => {
+          const current = payrollTableSortPrefs[tableKey];
+          const direction = current?.columnIndex === columnIndex && current.direction === 'asc' ? 'desc' : 'asc';
+          applyPayrollTableSort(table, tableKey, columnIndex, direction);
+        };
+        th.addEventListener('click', trigger);
+        th.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          trigger();
+        });
+      });
+      const saved = payrollTableSortPrefs[tableKey];
+      if (saved && Number.isInteger(saved.columnIndex) && saved.columnIndex >= 0 && saved.columnIndex < headers.length) {
+        applyPayrollTableSort(table, tableKey, saved.columnIndex, saved.direction === 'desc' ? 'desc' : 'asc');
+      }
+    });
+  }
   const appShell = document.getElementById('app');
   const sidebar = document.getElementById('sidebar');
   const shell = document.querySelector('.ui-v2-app-shell__workspace');
@@ -713,17 +824,38 @@
     sidebarCollapsed: localStorage.getItem('payroll-ui-sidebar') === 'collapsed',
     projectSearch: '',
     projectStatus: 'All',
+    projectFiltersOpen: false,
+    projectClient: 'All clients',
+    projectManager: 'All managers',
+    projectSupplier: 'All suppliers',
+    projectWorkerSearch: '',
+    projectWorkerStatus: 'All statuses',
+    projectWorkerSupplier: 'All suppliers',
+    projectWorkerTrade: 'All trades',
+    projectWorkerFiltersOpen: false,
     projectTab: 'overview',
     branchSearch: '',
     branchStatus: 'All',
+    branchSort: localStorage.getItem('payroll-ui-branch-sort') || 'code-asc',
     branchTab: 'overview',
     branchSelectedId: '',
     departmentSearch: '',
     departmentStatus: 'All',
+    departmentSort: localStorage.getItem('payroll-ui-department-sort') || 'code-asc',
     departmentTab: 'overview',
     departmentSelectedId: '',
     supplierSearch: '',
     supplierStatus: 'All',
+    supplierFiltersOpen: false,
+    supplierProject: 'All projects',
+    supplierPaymentTerm: 'All payment terms',
+    supplierWorkforce: 'Any workforce',
+    supplierOutstanding: 'Any balance',
+    supplierWorkerSearch: '',
+    supplierWorkerStatus: 'All statuses',
+    supplierWorkerProject: 'All projects',
+    supplierWorkerTrade: 'All trades',
+    supplierWorkerFiltersOpen: false,
     supplierTab: 'overview',
     employeeSearch: '',
     employeeStatus: 'All',
@@ -1174,34 +1306,78 @@
 
   function rentalProjectControlRows() {
     const projects = state.projects.filter(project => project.status === 'Active' && !project.legacyInternal);
-    const payables = supplierPayables(state.period);
+    const projectMetrics = new Map(projects.map(project => [project.id, { workers:0, suppliers:new Set() }]));
+    state.rentalWorkers.forEach(worker => {
+      if (worker.status !== 'Assigned') return;
+      const projectId = rentalWorkerCurrentSnapshot(worker).project?.id;
+      const metric = projectMetrics.get(projectId);
+      if (!metric) return;
+      metric.workers += 1;
+      if (worker.supplierId) metric.suppliers.add(worker.supplierId);
+    });
+    const payablesByProject = new Map();
+    supplierPayables(state.period).forEach(row => {
+      const metric = payablesByProject.get(row.projectId) || { payable:0, paid:0, outstanding:0 };
+      metric.payable += Number(row.amount || 0);
+      metric.paid += Number(row.paid || 0);
+      metric.outstanding += Number(row.outstanding || 0);
+      payablesByProject.set(row.projectId, metric);
+    });
+    const settlementByProject = new Map();
+    Object.values(state.rentalSettlements || {}).forEach(row => {
+      if (row.period !== state.period) return;
+      const current = settlementByProject.get(row.projectId);
+      if (!current || rentalSettlementStage(row.status) > rentalSettlementStage(current.status)) settlementByProject.set(row.projectId, row);
+    });
     return projects.map(project => {
-      const currentWorkers = state.rentalWorkers.filter(worker => worker.status === 'Assigned' && rentalWorkerCurrentSnapshot(worker).project?.id === project.id);
-      const suppliers = new Set(currentWorkers.map(worker => worker.supplierId).filter(Boolean));
-      const timesheet = rentalTimesheetStatus(state.period, project.id);
-      const settlementRows = Object.values(state.rentalSettlements || {}).filter(row => row.period === state.period && row.projectId === project.id);
-      const settlement = settlementRows.length ? settlementRows.sort((a,b)=>rentalSettlementStage(b.status)-rentalSettlementStage(a.status))[0].status : 'Not started';
-      const projectPayables = payables.filter(row => row.projectId === project.id);
-      const payable = projectPayables.reduce((sum,row)=>sum+Number(row.amount||0),0);
-      const paid = projectPayables.reduce((sum,row)=>sum+Number(row.paid||0),0);
-      const outstanding = projectPayables.reduce((sum,row)=>sum+Number(row.outstanding||0),0);
-      return { project, workers:currentWorkers.length, suppliers:suppliers.size, timesheet, settlement, payable, paid, outstanding, cost:payable };
+      const workforce = projectMetrics.get(project.id) || { workers:0, suppliers:new Set() };
+      const payable = payablesByProject.get(project.id) || { payable:0, paid:0, outstanding:0 };
+      return {
+        project,
+        workers: workforce.workers,
+        suppliers: workforce.suppliers.size,
+        timesheet: rentalTimesheetStatus(state.period, project.id),
+        settlement: settlementByProject.get(project.id)?.status || 'Not started',
+        payable: payable.payable,
+        paid: payable.paid,
+        outstanding: payable.outstanding,
+        cost: payable.payable
+      };
     });
   }
 
   function rentalSupplierControlRows() {
-    const payables = supplierPayables(state.period);
+    const supplierMetrics = new Map(state.suppliers.map(supplier => [supplier.id, { assigned:0, available:0, projects:new Set() }]));
+    state.rentalWorkers.forEach(worker => {
+      const metric = supplierMetrics.get(worker.supplierId);
+      if (!metric) return;
+      if (worker.status === 'Assigned') {
+        metric.assigned += 1;
+        const projectId = rentalWorkerCurrentSnapshot(worker).project?.id;
+        if (projectId) metric.projects.add(projectId);
+      } else if (worker.status === 'Available') {
+        metric.available += 1;
+      }
+    });
+    const payableBySupplier = new Map();
+    supplierPayables(state.period).forEach(row => {
+      const metric = payableBySupplier.get(row.supplierId) || { payable:0, paid:0, outstanding:0 };
+      metric.payable += Number(row.amount || 0);
+      metric.paid += Number(row.paid || 0);
+      metric.outstanding += Number(row.outstanding || 0);
+      payableBySupplier.set(row.supplierId, metric);
+    });
     return state.suppliers.filter(supplier => supplier.status === 'Active').map(supplier => {
-      const workers = state.rentalWorkers.filter(worker => worker.supplierId === supplier.id);
-      const assigned = workers.filter(worker => worker.status === 'Assigned').length;
-      const available = workers.filter(worker => worker.status === 'Available').length;
-      const projects = new Set(workers.filter(worker => worker.status === 'Assigned').map(worker => rentalWorkerCurrentSnapshot(worker).project?.id).filter(Boolean));
-      const rows = payables.filter(row => row.supplierId === supplier.id);
+      const workforce = supplierMetrics.get(supplier.id) || { assigned:0, available:0, projects:new Set() };
+      const payable = payableBySupplier.get(supplier.id) || { payable:0, paid:0, outstanding:0 };
       return {
-        supplier, assigned, available, projects:projects.size,
-        payable:rows.reduce((sum,row)=>sum+Number(row.amount||0),0),
-        paid:rows.reduce((sum,row)=>sum+Number(row.paid||0),0),
-        outstanding:rows.reduce((sum,row)=>sum+Number(row.outstanding||0),0)
+        supplier,
+        assigned: workforce.assigned,
+        available: workforce.available,
+        projects: workforce.projects.size,
+        payable: payable.payable,
+        paid: payable.paid,
+        outstanding: payable.outstanding
       };
     });
   }
@@ -1386,10 +1562,23 @@
 
   function branchesTemplate() {
     const q = state.branchSearch.trim().toLowerCase();
+    const branchActiveCounts = new Map();
+    state.employees.forEach(employee => {
+      if (employee.status !== 'Active' || !employee.branchId) return;
+      branchActiveCounts.set(employee.branchId, (branchActiveCounts.get(employee.branchId) || 0) + 1);
+    });
     const branches = state.branches.filter(branch => {
       const statusMatch = state.branchStatus === 'All' || branch.status === state.branchStatus;
       const text = `${branch.name} ${branch.code} ${branch.location} ${branch.address} ${branch.manager || ''}`.toLowerCase();
       return statusMatch && (!q || text.includes(q));
+    });
+    const [branchSortKey, branchSortDirection] = String(state.branchSort || 'code-asc').split('-');
+    branches.sort((left, right) => {
+      const values = branchSortKey === 'employees'
+        ? [branchActiveCounts.get(left.id) || 0, branchActiveCounts.get(right.id) || 0]
+        : [String(left[branchSortKey] || '').toLowerCase(), String(right[branchSortKey] || '').toLowerCase()];
+      const cmp = typeof values[0] === 'number' ? values[0] - values[1] : values[0].localeCompare(values[1], undefined, { numeric:true, sensitivity:'base' });
+      return branchSortDirection === 'desc' ? -cmp : cmp;
     });
     if (!branches.some(item => item.id === state.branchSelectedId)) state.branchSelectedId = branches[0]?.id || '';
     const selected = branches.find(item => item.id === state.branchSelectedId) || branches[0] || null;
@@ -1401,10 +1590,10 @@
     const selectedReady = selectedEmployees.filter(employee => employee.wps === 'Ready').length;
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Branches & Offices</h1><p class="ui-v2-body">Company offices are organization masters for internal employees. Inactive values remain in history but are unavailable for new assignments.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="departments">Departments</button><button class="btn btn--primary" data-quick-add="branch">${icon('plus')} Add Branch / Office</button></div></div>
-      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${Math.max(0, ...state.branches.map(item => branchEmployees(item.id).filter(employee => employee.status === 'Active').length))}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
-      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Filter branch status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select></div></section>
+      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${Math.max(0, ...branchActiveCounts.values())}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
+      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Filter branch status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'All' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
       ${branches.length ? `<div class="ui-v2-payroll-master-grid">
-        <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const rows=branchEmployees(branch.id).filter(employee=>employee.status==='Active'); return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.location || 'Location not set')}${branch.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${rows.length}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
+        <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.location || 'Location not set')}${branch.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
         <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-edit-branch="${escapeHtml(selected.id)}">${icon('edit')} Edit</button><button class="btn btn--secondary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button></div></section>
       </div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branches and offices are company-controlled masters. Moving an employee creates effective-dated organization history rather than rewriting prior payroll context.</span></div>
@@ -1440,23 +1629,37 @@
 
   function departmentsTemplate() {
     const q = state.departmentSearch.trim().toLowerCase();
+    const departmentActiveCounts = new Map();
+    state.employees.forEach(employee => {
+      if (employee.status !== 'Active') return;
+      const key = employee.departmentId || departmentByName(employee.department)?.id;
+      if (key) departmentActiveCounts.set(key, (departmentActiveCounts.get(key) || 0) + 1);
+    });
     const departments = state.departments.filter(item => {
       const statusMatch = state.departmentStatus === 'All' || item.status === state.departmentStatus;
       return statusMatch && (!q || `${item.name} ${item.code} ${item.notes || ''}`.toLowerCase().includes(q));
+    });
+    const [departmentSortKey, departmentSortDirection] = String(state.departmentSort || 'code-asc').split('-');
+    departments.sort((left, right) => {
+      const values = departmentSortKey === 'employees'
+        ? [departmentActiveCounts.get(left.id) || 0, departmentActiveCounts.get(right.id) || 0]
+        : [String(left[departmentSortKey] || '').toLowerCase(), String(right[departmentSortKey] || '').toLowerCase()];
+      const cmp = typeof values[0] === 'number' ? values[0] - values[1] : values[0].localeCompare(values[1], undefined, { numeric:true, sensitivity:'base' });
+      return departmentSortDirection === 'desc' ? -cmp : cmp;
     });
     if (!departments.some(item => item.id === state.departmentSelectedId)) state.departmentSelectedId = departments[0]?.id || '';
     const selected = departments.find(item => item.id === state.departmentSelectedId) || departments[0] || null;
     const active = state.departments.filter(item=>item.status==='Active').length;
     const assigned = state.employees.filter(item=>item.department).length;
-    const counts = state.departments.map(item => departmentEmployees(item.id).filter(employee=>employee.status==='Active').length);
+    const counts = [...departmentActiveCounts.values()];
     const selectedEmployees = selected ? departmentEmployees(selected.id) : [];
     const selectedBranches = new Set(selectedEmployees.map(employee=>employee.branchId).filter(Boolean)).size;
     const selectedTotals = selected ? departmentPayrollTotals(selected.id) : payrollTotals([]);
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Departments</h1><p class="ui-v2-body">Departments are published organization masters used across employee assignment, filtering and reporting. Inactive values remain available to historical records.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="branches">Branches & Offices</button><button class="btn btn--primary" data-quick-add="department">${icon('plus')} Add Department</button></div></div>
       <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${state.departments.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>Internal company records</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest department</span><strong>${Math.max(0,...counts)}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
-      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Filter department status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select></div></section>
-      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentEmployees(department.id).filter(employee=>employee.status==='Active').length; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-edit-department="${escapeHtml(selected.id)}">${icon('edit')} Edit</button><button class="btn btn--secondary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button></div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
+      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Filter department status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'All' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
+      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-edit-department="${escapeHtml(selected.id)}">${icon('edit')} Edit</button><button class="btn btn--secondary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button></div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department edits affect the current master only; employee organization history and closed payroll snapshots remain attributable to their original effective records.</span></div>
     </section>`;
   }
@@ -1773,13 +1976,25 @@
       </section>`;
   }
 
+
   function getFilteredProjects() {
     const q = state.projectSearch.trim().toLowerCase();
+    const supplierProjectIds = new Set();
+    if (state.projectSupplier !== 'All suppliers') {
+      state.rentalWorkers.forEach(worker => {
+        if (worker.supplierId !== state.projectSupplier || worker.status !== 'Assigned') return;
+        const projectId = rentalWorkerCurrentSnapshot(worker).project?.id || worker.projectId;
+        if (projectId) supplierProjectIds.add(projectId);
+      });
+    }
     return state.projects.filter(project => {
       if (project.legacyInternal) return false;
       const statusMatch = state.projectStatus === 'All' || project.status === state.projectStatus;
-      const text = `${project.name} ${project.code} ${project.client} ${project.location}`.toLowerCase();
-      return statusMatch && (!q || text.includes(q));
+      const clientMatch = state.projectClient === 'All clients' || (state.projectClient === 'Client not set' ? !project.client : project.client === state.projectClient);
+      const managerMatch = state.projectManager === 'All managers' || (state.projectManager === 'Manager not set' ? !project.manager : project.manager === state.projectManager);
+      const supplierMatch = state.projectSupplier === 'All suppliers' || supplierProjectIds.has(project.id);
+      const text = `${project.name} ${project.code} ${project.client || ''} ${project.location || ''} ${project.manager || ''}`.toLowerCase();
+      return statusMatch && clientMatch && managerMatch && supplierMatch && (!q || text.includes(q));
     });
   }
 
@@ -1790,6 +2005,14 @@
     const rental = rentalProjects.reduce((sum, p) => sum + Number(p.rentalWorkers || 0), 0);
     const supplierCount = state.suppliers.filter(s=>s.status==='Active').length;
     const knownCost = rentalProjects.reduce((sum, p) => sum + Number(p.netCost || 0), 0);
+    const clientOptions = [...new Set(rentalProjects.map(project => project.client).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const managerOptions = [...new Set(rentalProjects.map(project => project.manager).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const projectAdvancedCount = [
+      state.projectClient !== 'All clients',
+      state.projectManager !== 'All managers',
+      state.projectSupplier !== 'All suppliers'
+    ].filter(Boolean).length;
+    const projectHasFilters = !!state.projectSearch || state.projectStatus !== 'All' || projectAdvancedCount > 0;
 
     return `
       <section class="page projects-page">
@@ -1818,8 +2041,15 @@
             <div class="segmented segmented--compact" aria-label="Project status filter">
               ${['All','Active','On Hold','Completed'].map(status => `<button type="button" data-project-status="${status}" class="${state.projectStatus === status ? 'is-active' : ''}">${status}</button>`).join('')}
             </div>
-            <button class="btn btn--ghost" data-project-filter>${icon('more')} More filters</button>
+            <button class="btn btn--ghost ${projectAdvancedCount ? 'is-active-filter' : ''}" data-project-filter aria-expanded="${state.projectFiltersOpen}">${icon('more')} More filters${projectAdvancedCount ? ` (${projectAdvancedCount})` : ''}</button>
+            ${projectHasFilters ? '<button class="btn btn--ghost" data-project-reset>Reset</button>' : ''}
           </div>
+          ${state.projectFiltersOpen ? `<div class="ui-v2-payroll-advanced-filters" data-advanced-filter-panel>
+            <label><span>Client</span><select id="projectClientFilter" class="ui-v2-select"><option>All clients</option><option ${state.projectClient==='Client not set'?'selected':''}>Client not set</option>${clientOptions.map(value=>`<option ${state.projectClient===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+            <label><span>Manager</span><select id="projectManagerFilter" class="ui-v2-select"><option>All managers</option><option ${state.projectManager==='Manager not set'?'selected':''}>Manager not set</option>${managerOptions.map(value=>`<option ${state.projectManager===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+            <label><span>Supplier</span><select id="projectSupplierFilter" class="ui-v2-select"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.projectSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select></label>
+            <button class="btn btn--secondary" type="button" data-project-advanced-reset>Clear advanced</button>
+          </div>` : ''}
 
           <div class="table-meta"><span><strong>${projects.length}</strong> project${projects.length === 1 ? '' : 's'}</span><span>Names are clickable; project profiles preserve workforce and cost context.</span></div>
 
@@ -1980,6 +2210,20 @@
       </div>`;
   }
   function projectWorkforceTab(project, workers, activeWorkers, releasedWorkers) {
+    const q = state.projectWorkerSearch.trim().toLowerCase();
+    const supplierOptions = [...new Set(workers.map(worker=>worker.supplier).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const tradeOptions = [...new Set(workers.map(worker=>worker.trade).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    if (state.projectWorkerSupplier !== 'All suppliers' && !supplierOptions.includes(state.projectWorkerSupplier)) state.projectWorkerSupplier = 'All suppliers';
+    if (state.projectWorkerTrade !== 'All trades' && !tradeOptions.includes(state.projectWorkerTrade)) state.projectWorkerTrade = 'All trades';
+    const filteredWorkers = workers.filter(worker => {
+      const statusMatch = state.projectWorkerStatus === 'All statuses' || worker.status === state.projectWorkerStatus;
+      const supplierMatch = state.projectWorkerSupplier === 'All suppliers' || worker.supplier === state.projectWorkerSupplier;
+      const tradeMatch = state.projectWorkerTrade === 'All trades' || worker.trade === state.projectWorkerTrade;
+      const haystack = `${worker.name} ${worker.id || ''} ${worker.trade || ''} ${worker.supplier || ''} ${worker.rate || ''} ${worker.status || ''}`.toLowerCase();
+      return statusMatch && supplierMatch && tradeMatch && (!q || haystack.includes(q));
+    });
+    const advancedCount = [state.projectWorkerSupplier !== 'All suppliers', state.projectWorkerTrade !== 'All trades'].filter(Boolean).length;
+    const hasFilters = !!state.projectWorkerSearch || state.projectWorkerStatus !== 'All statuses' || advancedCount > 0;
     return `
       <section class="data-panel">
         <div class="section-headline">
@@ -1987,14 +2231,22 @@
           <div class="section-headline__actions"><span class="inline-stat"><strong>${activeWorkers || project.rentalWorkers}</strong> active rental</span>${releasedWorkers ? `<span class="inline-stat"><strong>${releasedWorkers}</strong> historical</span>` : ''}<button class="btn btn--secondary" data-project-bulk-onboard="${escapeHtml(project.id)}">Bulk Assign</button><button class="btn btn--primary" data-project-add-worker="${escapeHtml(project.id)}">${icon('plus')} Assign Worker</button></div>
         </div>
         <div class="table-toolbar table-toolbar--inside">
-          <div class="table-toolbar__search">${icon('search')}<input type="search" placeholder="Search worker, trade or supplier" data-project-worker-search></div>
-          <button class="btn btn--ghost" data-project-action="workforce-filter">${icon('more')} Filters</button>
+          <div class="table-toolbar__search">${icon('search')}<input id="projectWorkerSearch" type="search" placeholder="Search worker, trade or supplier" value="${escapeHtml(state.projectWorkerSearch)}"></div>
+          <select id="projectWorkerStatusFilter" class="ui-v2-select ui-v2-payroll-compact-select" aria-label="Filter project workers by status">${['All statuses','Assigned','Released','Transferred'].map(value=>`<option ${state.projectWorkerStatus===value?'selected':''}>${value}</option>`).join('')}</select>
+          <button class="btn btn--ghost ${advancedCount ? 'is-active-filter' : ''}" data-project-workforce-filter aria-expanded="${state.projectWorkerFiltersOpen}">${icon('more')} Filters${advancedCount ? ` (${advancedCount})` : ''}</button>
+          ${hasFilters ? '<button class="btn btn--ghost" data-project-workforce-reset>Reset</button>' : ''}
         </div>
+        ${state.projectWorkerFiltersOpen ? `<div class="ui-v2-payroll-advanced-filters ui-v2-payroll-advanced-filters--compact" data-advanced-filter-panel>
+          <label><span>Supplier</span><select id="projectWorkerSupplierFilter" class="ui-v2-select"><option>All suppliers</option>${supplierOptions.map(value=>`<option ${state.projectWorkerSupplier===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+          <label><span>Trade</span><select id="projectWorkerTradeFilter" class="ui-v2-select"><option>All trades</option>${tradeOptions.map(value=>`<option ${state.projectWorkerTrade===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+          <button class="btn btn--secondary" type="button" data-project-workforce-advanced-reset>Clear advanced</button>
+        </div>` : ''}
+        <div class="table-meta"><span><strong>${filteredWorkers.length}</strong> worker${filteredWorkers.length===1?'':'s'} in this view</span><span>Search and filters apply to the current project assignment roster.</span></div>
         <div class="table-scroll">
           <table class="data-table workforce-table">
             <thead><tr><th>Worker</th><th>Type</th><th>Supplier</th><th>Trade</th><th>Rate</th><th>Assigned Since</th><th>Status</th><th></th></tr></thead>
             <tbody data-worker-body>
-              ${workers.length ? workers.map(worker => workerRow(worker)).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No manpower assignments yet.</strong><span>Assign a rental worker from a managed manpower supplier to this project.</span></div></td></tr>`}
+              ${filteredWorkers.length ? filteredWorkers.map(worker => workerRow(worker)).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No project workers match these filters.</strong><span>Reset the search/filter controls or assign a worker to this project.</span></div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2076,16 +2328,56 @@
   function suppliersTemplate() {
     if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
     const controlRows = rentalSupplierControlRows();
+    const controlBySupplier = new Map(controlRows.map(row => [row.supplier.id, row]));
+    const workforceBySupplier = new Map(state.suppliers.map(supplier => [supplier.id, { total:0, assigned:0, available:0, released:0, projects:new Set() }]));
+    state.rentalWorkers.forEach(worker => {
+      const metric = workforceBySupplier.get(worker.supplierId);
+      if (!metric) return;
+      metric.total += 1;
+      if (worker.status === 'Assigned') { metric.assigned += 1; if (worker.projectId) metric.projects.add(worker.projectId); }
+      else if (worker.status === 'Available') metric.available += 1;
+      else if (worker.status === 'Released') metric.released += 1;
+    });
+    const supplierStats = supplierId => { const metric=workforceBySupplier.get(supplierId)||{total:0,assigned:0,available:0,released:0,projects:new Set()}; return { ...metric, activeProjects:metric.projects.size }; };
+    const supplierProjectIds = new Map();
+    state.rentalWorkers.forEach(worker => {
+      if (worker.status !== 'Assigned' || !worker.supplierId) return;
+      const projectId = rentalWorkerCurrentSnapshot(worker).project?.id || worker.projectId;
+      if (!projectId) return;
+      if (!supplierProjectIds.has(worker.supplierId)) supplierProjectIds.set(worker.supplierId, new Set());
+      supplierProjectIds.get(worker.supplierId).add(projectId);
+    });
     const q = state.supplierSearch.trim().toLowerCase();
     const suppliers = state.suppliers.filter(supplier => {
       const matchesStatus = state.supplierStatus === 'All' || supplier.status === state.supplierStatus;
-      const haystack = `${supplier.name} ${supplier.code} ${supplier.contact} ${supplier.phone} ${supplier.address}`.toLowerCase();
-      return matchesStatus && (!q || haystack.includes(q));
+      const stats = supplierStats(supplier.id);
+      const control = controlBySupplier.get(supplier.id);
+      const projectMatch = state.supplierProject === 'All projects' || supplierProjectIds.get(supplier.id)?.has(state.supplierProject);
+      const paymentTerm = supplier.paymentTerms || 'Payment terms not set';
+      const paymentTermMatch = state.supplierPaymentTerm === 'All payment terms' || paymentTerm === state.supplierPaymentTerm;
+      const workforceMatch = state.supplierWorkforce === 'Any workforce'
+        || (state.supplierWorkforce === 'Assigned workers' && stats.assigned > 0)
+        || (state.supplierWorkforce === 'Available workers' && stats.available > 0)
+        || (state.supplierWorkforce === 'No active workers' && stats.assigned + stats.available === 0);
+      const outstanding = Number(control?.outstanding || 0);
+      const outstandingMatch = state.supplierOutstanding === 'Any balance'
+        || (state.supplierOutstanding === 'Open payable' && outstanding > .005)
+        || (state.supplierOutstanding === 'Cleared / none' && outstanding <= .005);
+      const haystack = `${supplier.name} ${supplier.code} ${supplier.contact || ''} ${supplier.phone || ''} ${supplier.address || ''} ${supplier.email || ''} ${supplier.cr || ''} ${supplier.vat || ''}`.toLowerCase();
+      return matchesStatus && projectMatch && paymentTermMatch && workforceMatch && outstandingMatch && (!q || haystack.includes(q));
     });
     const active = state.suppliers.filter(s => s.status === 'Active').length;
     const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
     const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
     const currentCost = controlRows.reduce((sum, row) => sum + Number(row.payable || 0), 0);
+    const paymentTermOptions = [...new Set(state.suppliers.map(s => s.paymentTerms || 'Payment terms not set'))].sort((a,b)=>a.localeCompare(b));
+    const supplierAdvancedCount = [
+      state.supplierProject !== 'All projects',
+      state.supplierPaymentTerm !== 'All payment terms',
+      state.supplierWorkforce !== 'Any workforce',
+      state.supplierOutstanding !== 'Any balance'
+    ].filter(Boolean).length;
+    const supplierHasFilters = !!state.supplierSearch || state.supplierStatus !== 'All' || supplierAdvancedCount > 0;
 
     return `
       <section class="page supplier-directory">
@@ -2114,14 +2406,22 @@
             <div class="segmented segmented--compact" aria-label="Supplier status filter">
               ${['All','Active','Inactive'].map(status => `<button type="button" data-supplier-status="${status}" class="${state.supplierStatus === status ? 'is-active' : ''}">${status}</button>`).join('')}
             </div>
-            <button class="btn btn--ghost" data-supplier-filter>${icon('more')} More filters</button>
+            <button class="btn btn--ghost ${supplierAdvancedCount ? 'is-active-filter' : ''}" data-supplier-filter aria-expanded="${state.supplierFiltersOpen}">${icon('more')} More filters${supplierAdvancedCount ? ` (${supplierAdvancedCount})` : ''}</button>
+            ${supplierHasFilters ? '<button class="btn btn--ghost" data-supplier-reset>Reset</button>' : ''}
           </div>
+          ${state.supplierFiltersOpen ? `<div class="ui-v2-payroll-advanced-filters" data-advanced-filter-panel>
+            <label><span>Project</span><select id="supplierProjectFilter" class="ui-v2-select"><option value="All projects">All projects</option>${state.projects.filter(p=>!p.legacyInternal && p.status==='Active').map(p=>`<option value="${escapeHtml(p.id)}" ${state.supplierProject===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select></label>
+            <label><span>Payment terms</span><select id="supplierPaymentTermFilter" class="ui-v2-select"><option>All payment terms</option>${paymentTermOptions.map(value=>`<option ${state.supplierPaymentTerm===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+            <label><span>Workforce</span><select id="supplierWorkforceFilter" class="ui-v2-select">${['Any workforce','Assigned workers','Available workers','No active workers'].map(value=>`<option ${state.supplierWorkforce===value?'selected':''}>${value}</option>`).join('')}</select></label>
+            <label><span>Payable</span><select id="supplierOutstandingFilter" class="ui-v2-select">${['Any balance','Open payable','Cleared / none'].map(value=>`<option ${state.supplierOutstanding===value?'selected':''}>${value}</option>`).join('')}</select></label>
+            <button class="btn btn--secondary" type="button" data-supplier-advanced-reset>Clear advanced</button>
+          </div>` : ''}
           <div class="table-meta"><span><strong>${suppliers.length}</strong> supplier${suppliers.length === 1 ? '' : 's'}</span><span>Open a supplier to see workers, projects, settlements and payments.</span></div>
           <div class="table-scroll">
             <table class="data-table supplier-table">
               <thead><tr><th>Supplier</th><th>Contact</th><th>Assigned</th><th>Available</th><th>Projects</th><th>Current Cost</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                ${suppliers.length ? suppliers.map(supplier => { const stats = supplierWorkforceStats(supplier.id); const control=controlRows.find(row=>row.supplier.id===supplier.id); return `
+                ${suppliers.length ? suppliers.map(supplier => { const stats = supplierStats(supplier.id); const control=controlBySupplier.get(supplier.id); return `
                   <tr>
                     <td><button class="entity-link entity-link--stack" data-open-supplier="${supplier.id}"><strong>${escapeHtml(supplier.name)}</strong><span>${escapeHtml(supplier.code)} · ${escapeHtml(supplier.paymentTerms || 'Payment terms not set')}</span></button></td>
                     <td><div class="table-primary">${escapeHtml(supplier.contact || '—')}</div><div class="table-secondary">${escapeHtml(supplier.phone || '—')}</div></td>
@@ -2251,12 +2551,32 @@
   }
 
   function supplierWorkersTab(supplier, workers) {
+    const q = state.supplierWorkerSearch.trim().toLowerCase();
+    const projectOptions = [...new Set(workers.map(worker=>worker.project).filter(value=>value && !String(value).toLowerCase().startsWith('available') && value !== 'Inactive'))].sort((a,b)=>a.localeCompare(b));
+    const tradeOptions = [...new Set(workers.map(worker=>worker.trade).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    if (state.supplierWorkerProject !== 'All projects' && !projectOptions.includes(state.supplierWorkerProject)) state.supplierWorkerProject = 'All projects';
+    if (state.supplierWorkerTrade !== 'All trades' && !tradeOptions.includes(state.supplierWorkerTrade)) state.supplierWorkerTrade = 'All trades';
+    const filteredWorkers = workers.filter(worker => {
+      const statusMatch = state.supplierWorkerStatus === 'All statuses' || worker.status === state.supplierWorkerStatus;
+      const projectMatch = state.supplierWorkerProject === 'All projects' || worker.project === state.supplierWorkerProject;
+      const tradeMatch = state.supplierWorkerTrade === 'All trades' || worker.trade === state.supplierWorkerTrade;
+      const haystack = `${worker.name} ${worker.id || ''} ${worker.trade || ''} ${worker.project || ''} ${worker.rate || ''} ${worker.status || ''}`.toLowerCase();
+      return statusMatch && projectMatch && tradeMatch && (!q || haystack.includes(q));
+    });
+    const advancedCount = [state.supplierWorkerProject !== 'All projects', state.supplierWorkerTrade !== 'All trades'].filter(Boolean).length;
+    const hasFilters = !!state.supplierWorkerSearch || state.supplierWorkerStatus !== 'All statuses' || advancedCount > 0;
     return `
       <section class="data-panel">
-        <div class="section-headline"><div><h2>Supplier workers</h2><p>See exactly who is assigned, where they are working and which workers are currently available.</p></div><div class="section-headline__actions"><button class="btn btn--secondary" data-supplier-worker-filter>Filter</button><button class="btn btn--primary" data-quick-add="rental-worker">${icon('plus')} Add Worker</button></div></div>
-        <div class="table-toolbar table-toolbar--inner"><div class="table-toolbar__search">${icon('search')}<input type="search" placeholder="Search worker, trade or project" data-supplier-worker-search></div><div class="segmented segmented--compact"><button class="is-active">All</button><button>Assigned</button><button>Available</button></div></div>
+        <div class="section-headline"><div><h2>Supplier workers</h2><p>See exactly who is assigned, where they are working and which workers are currently available.</p></div><div class="section-headline__actions"><button class="btn btn--secondary ${advancedCount ? 'is-active-filter' : ''}" data-supplier-worker-filter aria-expanded="${state.supplierWorkerFiltersOpen}">${icon('more')} Filters${advancedCount ? ` (${advancedCount})` : ''}</button><button class="btn btn--primary" data-quick-add="rental-worker">${icon('plus')} Add Worker</button></div></div>
+        <div class="table-toolbar table-toolbar--inner"><div class="table-toolbar__search">${icon('search')}<input id="supplierWorkerSearch" type="search" placeholder="Search worker, trade or project" value="${escapeHtml(state.supplierWorkerSearch)}"></div><div class="segmented segmented--compact" aria-label="Supplier worker status filter">${[['All statuses','All'],['Assigned','Assigned'],['Available','Available']].map(([value,label])=>`<button type="button" data-supplier-worker-status="${value}" class="${state.supplierWorkerStatus===value?'is-active':''}">${label}</button>`).join('')}</div>${hasFilters ? '<button class="btn btn--ghost" data-supplier-worker-reset>Reset</button>' : ''}</div>
+        ${state.supplierWorkerFiltersOpen ? `<div class="ui-v2-payroll-advanced-filters ui-v2-payroll-advanced-filters--compact" data-advanced-filter-panel>
+          <label><span>Project</span><select id="supplierWorkerProjectFilter" class="ui-v2-select"><option>All projects</option>${projectOptions.map(value=>`<option ${state.supplierWorkerProject===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+          <label><span>Trade</span><select id="supplierWorkerTradeFilter" class="ui-v2-select"><option>All trades</option>${tradeOptions.map(value=>`<option ${state.supplierWorkerTrade===value?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
+          <button class="btn btn--secondary" type="button" data-supplier-worker-advanced-reset>Clear advanced</button>
+        </div>` : ''}
+        <div class="table-meta"><span><strong>${filteredWorkers.length}</strong> worker${filteredWorkers.length===1?'':'s'} in this view</span><span>Filters use the current effective supplier/project assignment snapshot.</span></div>
         <div class="table-scroll"><table class="data-table"><thead><tr><th>Worker</th><th>Trade</th><th>Current Project</th><th>Rate</th><th>Assigned Since</th><th>Status</th><th></th></tr></thead><tbody>
-          ${workers.length ? workers.map(worker => `<tr data-supplier-worker-row="${escapeHtml(`${worker.name} ${worker.trade} ${worker.project}`.toLowerCase())}"><td><button class="entity-link entity-link--stack" data-worker-profile="${escapeHtml(worker.name)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(worker.id.toUpperCase())}</span></button></td><td><div class="table-primary">${escapeHtml(worker.trade)}</div>${worker.changed ? '<div class="table-secondary">Effective-dated change</div>' : ''}</td><td>${worker.projectId ? `<button class="entity-link" data-route-link="projects/${worker.projectId}">${escapeHtml(worker.project)}</button>` : `<span class="table-secondary">${escapeHtml(worker.project)}</span>`}</td><td>${escapeHtml(worker.rate)}</td><td>${escapeHtml(worker.since)}</td><td>${statusBadge(worker.status)}</td><td class="table-actions"><button class="icon-btn icon-btn--sm" data-worker-menu="${escapeHtml(worker.name)}">${icon('more')}</button></td></tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No workers yet.</strong><span>Add or bulk-import workers and link them to this supplier master.</span></div></td></tr>`}
+          ${filteredWorkers.length ? filteredWorkers.map(worker => `<tr><td><button class="entity-link entity-link--stack" data-worker-profile="${escapeHtml(worker.name)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(worker.id.toUpperCase())}</span></button></td><td><div class="table-primary">${escapeHtml(worker.trade)}</div>${worker.changed ? '<div class="table-secondary">Effective-dated change</div>' : ''}</td><td>${worker.projectId ? `<button class="entity-link" data-route-link="projects/${worker.projectId}">${escapeHtml(worker.project)}</button>` : `<span class="table-secondary">${escapeHtml(worker.project)}</span>`}</td><td>${escapeHtml(worker.rate)}</td><td>${escapeHtml(worker.since)}</td><td>${statusBadge(worker.status)}</td><td class="table-actions"><button class="icon-btn icon-btn--sm" data-worker-menu="${escapeHtml(worker.name)}">${icon('more')}</button></td></tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No supplier workers match these filters.</strong><span>Reset the search/filter controls or add a worker to this supplier.</span></div></td></tr>`}
         </tbody></table></div>
       </section>`;
   }
@@ -5946,6 +6266,7 @@
     applyRentalOperationsV2Classes(pageRoot);
     applyRentalFinancialV2Classes(pageRoot);
     applyRecordsManagementV2Classes(pageRoot);
+    enhancePayrollSortableTables(pageRoot);
 
     const rootCrumb = workspaceLabel();
     const breadcrumbChevron = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
@@ -6010,7 +6331,7 @@
       afterSwitch();
     }));
     document.querySelectorAll('[data-management-approval-filter]').forEach(btn => btn.addEventListener('click', () => { state.managementApprovalFilter=btn.dataset.managementApprovalFilter; renderRoute(); }));
-    const managementAuditSearch=document.getElementById('managementAuditSearch'); if(managementAuditSearch) managementAuditSearch.addEventListener('input',()=>{state.managementAuditSearch=managementAuditSearch.value;const cursor=managementAuditSearch.selectionStart;renderRoute();const next=document.getElementById('managementAuditSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const managementAuditSearch=document.getElementById('managementAuditSearch'); bindPayrollSearch(managementAuditSearch,value=>{state.managementAuditSearch=value;});
     const managementAuditType=document.getElementById('managementAuditType'); if(managementAuditType) managementAuditType.addEventListener('change',()=>{state.managementAuditType=managementAuditType.value;renderRoute();});
     document.querySelectorAll('[data-select-branch]').forEach(btn => btn.addEventListener('click', () => { state.branchSelectedId=btn.dataset.selectBranch; renderRoute(); }));
     document.querySelectorAll('[data-select-department]').forEach(btn => btn.addEventListener('click', () => { state.departmentSelectedId=btn.dataset.selectDepartment; renderRoute(); }));
@@ -6020,12 +6341,16 @@
     document.querySelectorAll('[data-open-department]').forEach(btn => btn.addEventListener('click', () => navigate(`departments/${btn.dataset.openDepartment}`)));
     document.querySelectorAll('[data-branch-tab]').forEach(btn => btn.addEventListener('click', () => { state.branchTab=btn.dataset.branchTab; renderRoute(); }));
     document.querySelectorAll('[data-department-tab]').forEach(btn => btn.addEventListener('click', () => { state.departmentTab=btn.dataset.departmentTab; renderRoute(); }));
-    const branchSearch=document.getElementById('branchSearch'); if(branchSearch) branchSearch.addEventListener('input',()=>{state.branchSearch=branchSearch.value;const cursor=branchSearch.selectionStart;renderRoute();const next=document.getElementById('branchSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const branchSearch=document.getElementById('branchSearch'); bindPayrollSearch(branchSearch,value=>{state.branchSearch=value;});
     document.querySelectorAll('[data-branch-status]').forEach(btn=>btn.addEventListener('click',()=>{state.branchStatus=btn.dataset.branchStatus;renderRoute();}));
     const branchStatusFilter=document.getElementById('branchStatusFilter'); if(branchStatusFilter) branchStatusFilter.addEventListener('change',()=>{state.branchStatus=branchStatusFilter.value;renderRoute();});
-    const departmentSearch=document.getElementById('departmentSearch'); if(departmentSearch) departmentSearch.addEventListener('input',()=>{state.departmentSearch=departmentSearch.value;const cursor=departmentSearch.selectionStart;renderRoute();const next=document.getElementById('departmentSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const branchSortFilter=document.getElementById('branchSortFilter'); if(branchSortFilter) branchSortFilter.addEventListener('change',()=>{state.branchSort=branchSortFilter.value;localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();});
+    document.querySelectorAll('[data-branch-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.branchSearch='';state.branchStatus='All';state.branchSort='code-asc';localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();}));
+    const departmentSearch=document.getElementById('departmentSearch'); bindPayrollSearch(departmentSearch,value=>{state.departmentSearch=value;});
     document.querySelectorAll('[data-department-status]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentStatus=btn.dataset.departmentStatus;renderRoute();}));
     const departmentStatusFilter=document.getElementById('departmentStatusFilter'); if(departmentStatusFilter) departmentStatusFilter.addEventListener('change',()=>{state.departmentStatus=departmentStatusFilter.value;renderRoute();});
+    const departmentSortFilter=document.getElementById('departmentSortFilter'); if(departmentSortFilter) departmentSortFilter.addEventListener('change',()=>{state.departmentSort=departmentSortFilter.value;localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();});
+    document.querySelectorAll('[data-department-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentSearch='';state.departmentStatus='All';state.departmentSort='code-asc';localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();}));
     document.querySelectorAll('[data-edit-branch]').forEach(btn=>btn.addEventListener('click',()=>openBranchEditDrawer(btn.dataset.editBranch)));
     document.querySelectorAll('[data-edit-department]').forEach(btn=>btn.addEventListener('click',()=>openDepartmentEditDrawer(btn.dataset.editDepartment)));
     document.querySelectorAll('[data-change-employee-organization]').forEach(btn=>btn.addEventListener('click',()=>openEmployeeOrganizationDrawer(btn.dataset.changeEmployeeOrganization)));
@@ -6036,7 +6361,7 @@
     document.querySelectorAll('[data-bank-export-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportTab=btn.dataset.bankExportTab;localStorage.setItem('payroll-ui-bank-export-tab',state.bankExportTab);renderRoute();}));
     document.querySelectorAll('[data-bank-export-view]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportView=btn.dataset.bankExportView;localStorage.setItem('payroll-ui-bank-export-view',state.bankExportView);renderRoute();}));
     document.querySelectorAll('[data-bank-export-status]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportStatus=btn.dataset.bankExportStatus;renderRoute();}));
-    const bankExportSearch=document.getElementById('bankExportSearch'); if(bankExportSearch) bankExportSearch.addEventListener('input',()=>{state.bankExportSearch=bankExportSearch.value;const cursor=bankExportSearch.selectionStart;renderRoute();const next=document.getElementById('bankExportSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const bankExportSearch=document.getElementById('bankExportSearch'); bindPayrollSearch(bankExportSearch,value=>{state.bankExportSearch=value;});
     const bankExportBranch=document.getElementById('bankExportBranch'); if(bankExportBranch) bankExportBranch.addEventListener('change',()=>{state.bankExportBranch=bankExportBranch.value;renderRoute();});
     const bankTemplateSelect=document.getElementById('bankTemplateSelect'); if(bankTemplateSelect) bankTemplateSelect.addEventListener('change',async()=>{state.bankTemplateId=bankTemplateSelect.value;localStorage.setItem('payroll-ui-bank-template-id',state.bankTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
     document.querySelectorAll('[data-bank-batch-prepare]').forEach(btn=>btn.addEventListener('click',()=>preparePaymentChannel('bank_csv')));
@@ -6050,7 +6375,7 @@
     const bankResultFile=document.getElementById('bankResultFile'); if(bankResultFile) bankResultFile.addEventListener('change',async()=>{const file=bankResultFile.files?.[0];if(!file)return;const batch=[...paymentBatchesForPeriod()].filter(item=>item.channelValue==='bank_csv').sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];if(!batch){showToast('No bank batch','Prepare and start a bank salary-payment batch first.');return;}await importPaymentResults(batch.id,file);});
     document.querySelectorAll('[data-report-type]').forEach(btn=>btn.addEventListener('click',()=>{state.reportType=btn.dataset.reportType;state.reportSearch='';localStorage.setItem('payroll-ui-report-type',state.reportType);renderRoute();}));
     document.querySelectorAll('[data-open-report]').forEach(btn=>btn.addEventListener('click',()=>{state.reportType=btn.dataset.openReport||'workforce-cost';state.reportPeriod=btn.dataset.reportPeriod||state.period;state.reportSearch='';localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);if(currentRoute()==='reports')renderRoute();else navigate('reports');}));
-    const reportSearch=document.getElementById('reportSearch'); if(reportSearch) reportSearch.addEventListener('input',()=>{state.reportSearch=reportSearch.value;const cursor=reportSearch.selectionStart;renderRoute();const next=document.getElementById('reportSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const reportSearch=document.getElementById('reportSearch'); bindPayrollSearch(reportSearch,value=>{state.reportSearch=value;});
     const reportPeriod=document.getElementById('reportPeriod'); if(reportPeriod) reportPeriod.addEventListener('change',()=>{state.reportPeriod=reportPeriod.value;localStorage.setItem('payroll-ui-report-period',state.reportPeriod);renderRoute();});
     document.querySelectorAll('[data-report-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.reportSearch='';renderRoute();}));
     document.querySelectorAll('[data-report-export]').forEach(btn=>btn.addEventListener('click',exportCurrentReport));
@@ -6058,7 +6383,7 @@
     document.querySelectorAll('[data-settings-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.settingsTab=btn.dataset.settingsTab;localStorage.setItem('payroll-ui-settings-tab',state.settingsTab);renderRoute();}));
     document.querySelectorAll('[data-settings-save]').forEach(btn=>btn.addEventListener('click',saveSettingsFromPage));
     document.querySelectorAll('[data-document-tab]').forEach(btn => btn.addEventListener('click', () => { state.documentTab=btn.dataset.documentTab; localStorage.setItem('payroll-ui-document-tab',state.documentTab); renderRoute(); }));
-    const documentSearch=document.getElementById('documentSearch'); if(documentSearch) documentSearch.addEventListener('input',()=>{state.documentSearch=documentSearch.value;const cursor=documentSearch.selectionStart;renderRoute();const next=document.getElementById('documentSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    const documentSearch=document.getElementById('documentSearch'); bindPayrollSearch(documentSearch,value=>{state.documentSearch=value;});
     const documentPeriod=document.getElementById('documentPeriodFilter'); if(documentPeriod) documentPeriod.addEventListener('change',()=>{state.documentPeriodFilter=documentPeriod.value;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();});
     const documentStatus=document.getElementById('documentStatusFilter'); if(documentStatus) documentStatus.addEventListener('change',()=>{state.documentStatusFilter=documentStatus.value;renderRoute();});
     document.querySelectorAll('[data-document-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.documentSearch='';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();}));
@@ -6067,7 +6392,7 @@
     document.querySelectorAll('[data-document-print]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===state.selectedDocumentId);printDocumentRecord(doc);}));
     document.querySelectorAll('[data-adjustment-view]').forEach(btn => btn.addEventListener('click', () => { state.adjustmentView=btn.dataset.adjustmentView; renderRoute(); }));
     const adjustmentSearch=document.getElementById('adjustmentSearch');
-    if(adjustmentSearch) adjustmentSearch.addEventListener('input',()=>{state.adjustmentSearch=adjustmentSearch.value;const cursor=adjustmentSearch.selectionStart;renderRoute();const next=document.getElementById('adjustmentSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    bindPayrollSearch(adjustmentSearch,value=>{state.adjustmentSearch=value;});
     const adjustmentWorkforce=document.getElementById('adjustmentWorkforce'); if(adjustmentWorkforce) adjustmentWorkforce.addEventListener('change',()=>{state.adjustmentWorkforce=adjustmentWorkforce.value;renderRoute();});
     const adjustmentType=document.getElementById('adjustmentType'); if(adjustmentType) adjustmentType.addEventListener('change',()=>{state.adjustmentType=adjustmentType.value;renderRoute();});
     const adjustmentStatus=document.getElementById('adjustmentStatus'); if(adjustmentStatus) adjustmentStatus.addEventListener('change',()=>{state.adjustmentStatus=adjustmentStatus.value;renderRoute();});
@@ -6121,7 +6446,7 @@
       if(currentRoute()==='rental-settlements') renderRoute(); else navigate('rental-settlements');
     }));
     const rentalSettlementSearch=document.getElementById('rentalSettlementSearch');
-    if(rentalSettlementSearch) rentalSettlementSearch.addEventListener('input',()=>{state.rentalSettlementSearch=rentalSettlementSearch.value;const cursor=rentalSettlementSearch.selectionStart;renderRoute();const next=document.getElementById('rentalSettlementSearch');if(next){next.focus();next.setSelectionRange(cursor,cursor);}});
+    bindPayrollSearch(rentalSettlementSearch,value=>{state.rentalSettlementSearch=value;});
     const rentalSettlementProject=document.getElementById('rentalSettlementProject');
     if(rentalSettlementProject) rentalSettlementProject.addEventListener('change',()=>{state.rentalSettlementProject=rentalSettlementProject.value;state.rentalSettlementSupplier='All suppliers';localStorage.setItem('payroll-ui-rental-settlement-project',state.rentalSettlementProject);renderRoute();});
     const rentalSettlementSupplier=document.getElementById('rentalSettlementSupplier');
@@ -6180,19 +6505,13 @@
     document.querySelectorAll('[data-project-assignment-activity]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab='activity'; state.rentalAssignmentProject=btn.dataset.projectAssignmentActivity; state.rentalAssignmentSupplier='All suppliers'; state.rentalAssignmentType='All activity'; state.rentalAssignmentSearch=''; navigate('rental-assignments'); }));
     document.querySelectorAll('[data-supplier-assignment-activity]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab='activity'; state.rentalAssignmentSupplier=btn.dataset.supplierAssignmentActivity; state.rentalAssignmentProject='All projects'; state.rentalAssignmentType='All activity'; state.rentalAssignmentSearch=''; navigate('rental-assignments'); }));
     const rentalAssignmentSearch = document.getElementById('rentalAssignmentSearch');
-    if (rentalAssignmentSearch) rentalAssignmentSearch.addEventListener('input', () => { state.rentalAssignmentSearch=rentalAssignmentSearch.value; const cursor=rentalAssignmentSearch.selectionStart; renderRoute(); const next=document.getElementById('rentalAssignmentSearch'); if(next){next.focus();next.setSelectionRange(cursor,cursor);} });
+    bindPayrollSearch(rentalAssignmentSearch,value=>{state.rentalAssignmentSearch=value;});
     const rentalAssignmentSupplier = document.getElementById('rentalAssignmentSupplier'); if (rentalAssignmentSupplier) rentalAssignmentSupplier.addEventListener('change', () => { state.rentalAssignmentSupplier=rentalAssignmentSupplier.value; renderRoute(); });
     const rentalAssignmentProject = document.getElementById('rentalAssignmentProject'); if (rentalAssignmentProject) rentalAssignmentProject.addEventListener('change', () => { state.rentalAssignmentProject=rentalAssignmentProject.value; renderRoute(); });
     const rentalAssignmentType = document.getElementById('rentalAssignmentType'); if (rentalAssignmentType) rentalAssignmentType.addEventListener('change', () => { state.rentalAssignmentType=rentalAssignmentType.value; renderRoute(); });
 
     const rentalSearch = document.getElementById('rentalSearch');
-    if (rentalSearch) rentalSearch.addEventListener('input', () => {
-      state.rentalSearch = rentalSearch.value;
-      const cursor = rentalSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('rentalSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(rentalSearch,value=>{state.rentalSearch=value;});
     const rentalSupplierFilter = document.getElementById('rentalSupplierFilter');
     if (rentalSupplierFilter) rentalSupplierFilter.addEventListener('change', () => { state.rentalSupplier = rentalSupplierFilter.value; renderRoute(); });
     const rentalProjectFilter = document.getElementById('rentalProjectFilter');
@@ -6250,13 +6569,7 @@
     }));
 
     const payrollSearch = document.getElementById('payrollSearch');
-    if (payrollSearch) payrollSearch.addEventListener('input', () => {
-      state.payrollSearch = payrollSearch.value;
-      const cursor = payrollSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('payrollSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(payrollSearch,value=>{state.payrollSearch=value;});
     const payrollBranchFilter = document.getElementById('payrollBranchFilter');
     if (payrollBranchFilter) payrollBranchFilter.addEventListener('change', () => { state.payrollBranch = payrollBranchFilter.value; renderRoute(); });
     const payrollDepartmentFilter = document.getElementById('payrollDepartmentFilter');
@@ -6372,15 +6685,7 @@
     }));
 
     const rentalTimesheetSearch = document.getElementById('rentalTimesheetSearch');
-    if (rentalTimesheetSearch) rentalTimesheetSearch.addEventListener('input', () => {
-      state.rentalTimesheetSearch = rentalTimesheetSearch.value;
-      state.rentalTimesheetPage = 1;
-      state.rentalTimesheetSelected.clear();
-      const cursor = rentalTimesheetSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('rentalTimesheetSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor,cursor); }
-    });
+    bindPayrollSearch(rentalTimesheetSearch,value=>{state.rentalTimesheetSearch=value;},{beforeRender:()=>{state.rentalTimesheetPage=1;state.rentalTimesheetSelected.clear();}});
     const rentalTimesheetProjectFilter = document.getElementById('rentalTimesheetProjectFilter');
     if (rentalTimesheetProjectFilter) rentalTimesheetProjectFilter.addEventListener('change', () => {
       state.rentalTimesheetProject = rentalTimesheetProjectFilter.value;
@@ -6523,14 +6828,7 @@
     }));
 
     const timesheetSearch = document.getElementById('timesheetSearch');
-    if (timesheetSearch) timesheetSearch.addEventListener('input', () => {
-      state.timesheetSearch = timesheetSearch.value;
-      state.timesheetPage = 1;
-      const cursor = timesheetSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('timesheetSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(timesheetSearch,value=>{state.timesheetSearch=value;},{beforeRender:()=>{state.timesheetPage=1;}});
     const timesheetBranchFilter = document.getElementById('timesheetBranchFilter');
     if (timesheetBranchFilter) timesheetBranchFilter.addEventListener('change', () => { state.timesheetBranch = timesheetBranchFilter.value; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); });
     const timesheetDepartmentFilter = document.getElementById('timesheetDepartmentFilter');
@@ -6678,13 +6976,7 @@
       renderRoute();
     }));
     const employeeSearch = document.getElementById('employeeSearch');
-    if (employeeSearch) employeeSearch.addEventListener('input', () => {
-      state.employeeSearch = employeeSearch.value;
-      const cursor = employeeSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('employeeSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(employeeSearch,value=>{state.employeeSearch=value;});
     const employeeStatusFilter = document.getElementById('employeeStatusFilter'); if(employeeStatusFilter) employeeStatusFilter.addEventListener('change',()=>{state.employeeStatus=employeeStatusFilter.value;renderRoute();});
     const employeeBranchFilter = document.getElementById('employeeBranchFilter');
     if (employeeBranchFilter) employeeBranchFilter.addEventListener('change', () => { state.employeeBranch = employeeBranchFilter.value; renderRoute(); });
@@ -6732,13 +7024,7 @@
       renderRoute();
     }));
     const salaryComponentSearch = document.getElementById('salaryComponentSearch');
-    if (salaryComponentSearch) salaryComponentSearch.addEventListener('input', () => {
-      state.salaryComponentSearch = salaryComponentSearch.value;
-      const cursor = salaryComponentSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('salaryComponentSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(salaryComponentSearch,value=>{state.salaryComponentSearch=value;});
     const salaryComponentStatus = document.getElementById('salaryComponentStatus');
     if (salaryComponentStatus) salaryComponentStatus.addEventListener('change', () => {
       state.salaryComponentStatus = salaryComponentStatus.value;
@@ -6749,13 +7035,7 @@
     document.querySelectorAll('[data-salary-structure-new]').forEach(btn => btn.addEventListener('click', () => openSalaryStructureDrawer()));
     document.querySelectorAll('[data-salary-structure-edit]').forEach(btn => btn.addEventListener('click', () => openSalaryStructureDrawer(btn.dataset.salaryStructureEdit)));
     const salaryStructureSearch = document.getElementById('salaryStructureSearch');
-    if (salaryStructureSearch) salaryStructureSearch.addEventListener('input', () => {
-      state.salaryStructureSearch = salaryStructureSearch.value;
-      const cursor = salaryStructureSearch.selectionStart;
-      renderRoute();
-      const next = document.getElementById('salaryStructureSearch');
-      if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-    });
+    bindPayrollSearch(salaryStructureSearch,value=>{state.salaryStructureSearch=value;});
     document.querySelectorAll('[data-overtime-policy-add]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer()));
     document.querySelectorAll('[data-overtime-policy-edit]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer(btn.dataset.overtimePolicyEdit)));
     const otBasic = document.getElementById('otPreviewBasic');
@@ -6777,15 +7057,7 @@
     }));
 
     const supplierSearch = document.getElementById('supplierSearch');
-    if (supplierSearch) {
-      supplierSearch.addEventListener('input', () => {
-        state.supplierSearch = supplierSearch.value;
-        const cursor = supplierSearch.selectionStart;
-        renderRoute();
-        const next = document.getElementById('supplierSearch');
-        if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-      });
-    }
+    bindPayrollSearch(supplierSearch, value => { state.supplierSearch = value; });
 
     document.querySelectorAll('[data-supplier-tab]').forEach(btn => btn.addEventListener('click', () => {
       state.supplierTab = btn.dataset.supplierTab;
@@ -6796,11 +7068,14 @@
       renderRoute();
     }));
 
-    const supplierWorkerSearch = document.querySelector('[data-supplier-worker-search]');
-    if (supplierWorkerSearch) supplierWorkerSearch.addEventListener('input', () => {
-      const q = supplierWorkerSearch.value.trim().toLowerCase();
-      document.querySelectorAll('[data-supplier-worker-row]').forEach(row => row.hidden = q && !row.dataset.supplierWorkerRow.includes(q));
-    });
+    const supplierWorkerSearch = document.getElementById('supplierWorkerSearch');
+    bindPayrollSearch(supplierWorkerSearch, value => { state.supplierWorkerSearch = value; });
+    document.querySelectorAll('[data-supplier-worker-status]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierWorkerStatus=btn.dataset.supplierWorkerStatus;renderRoute();}));
+    document.querySelectorAll('[data-supplier-worker-filter]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierWorkerFiltersOpen=!state.supplierWorkerFiltersOpen;renderRoute();}));
+    const supplierWorkerProjectFilter=document.getElementById('supplierWorkerProjectFilter'); if(supplierWorkerProjectFilter) supplierWorkerProjectFilter.addEventListener('change',()=>{state.supplierWorkerProject=supplierWorkerProjectFilter.value;renderRoute();});
+    const supplierWorkerTradeFilter=document.getElementById('supplierWorkerTradeFilter'); if(supplierWorkerTradeFilter) supplierWorkerTradeFilter.addEventListener('change',()=>{state.supplierWorkerTrade=supplierWorkerTradeFilter.value;renderRoute();});
+    document.querySelectorAll('[data-supplier-worker-advanced-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierWorkerProject='All projects';state.supplierWorkerTrade='All trades';renderRoute();}));
+    document.querySelectorAll('[data-supplier-worker-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierWorkerSearch='';state.supplierWorkerStatus='All statuses';state.supplierWorkerProject='All projects';state.supplierWorkerTrade='All trades';renderRoute();}));
 
     document.querySelectorAll('[data-supplier-row-menu]').forEach(btn => btn.addEventListener('click', () => {
       const supplier = state.suppliers.find(item => item.id === btn.dataset.supplierRowMenu);
@@ -6815,24 +7090,20 @@
     }));
     document.querySelectorAll('[data-supplier-settlement]').forEach(btn => btn.addEventListener('click', () => showToast('Settlement detail', `${btn.dataset.supplierSettlement} settlement detail will be fully interactive with rental settlement processing.`)));
     document.querySelectorAll('[data-supplier-export]').forEach(btn => btn.addEventListener('click', () => { state.reportType='supplier-cost';state.reportPeriod=state.period;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);navigate('reports'); }));
-    document.querySelectorAll('[data-supplier-filter]').forEach(btn => btn.addEventListener('click', () => showToast('More supplier filters', 'Project, payment term, worker count and outstanding balance filters are reserved for production data.')));
-    document.querySelectorAll('[data-supplier-worker-filter]').forEach(btn => btn.addEventListener('click', () => showToast('Worker filters', 'Trade, project, assignment status and joining period filters are planned for this supplier worker view.')));
-
+    document.querySelectorAll('[data-supplier-filter]').forEach(btn => btn.addEventListener('click', () => { state.supplierFiltersOpen = !state.supplierFiltersOpen; renderRoute(); }));
+    const supplierProjectFilter=document.getElementById('supplierProjectFilter'); if(supplierProjectFilter) supplierProjectFilter.addEventListener('change',()=>{state.supplierProject=supplierProjectFilter.value;renderRoute();});
+    const supplierPaymentTermFilter=document.getElementById('supplierPaymentTermFilter'); if(supplierPaymentTermFilter) supplierPaymentTermFilter.addEventListener('change',()=>{state.supplierPaymentTerm=supplierPaymentTermFilter.value;renderRoute();});
+    const supplierWorkforceFilter=document.getElementById('supplierWorkforceFilter'); if(supplierWorkforceFilter) supplierWorkforceFilter.addEventListener('change',()=>{state.supplierWorkforce=supplierWorkforceFilter.value;renderRoute();});
+    const supplierOutstandingFilter=document.getElementById('supplierOutstandingFilter'); if(supplierOutstandingFilter) supplierOutstandingFilter.addEventListener('change',()=>{state.supplierOutstanding=supplierOutstandingFilter.value;renderRoute();});
+    document.querySelectorAll('[data-supplier-advanced-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierProject='All projects';state.supplierPaymentTerm='All payment terms';state.supplierWorkforce='Any workforce';state.supplierOutstanding='Any balance';renderRoute();}));
+    document.querySelectorAll('[data-supplier-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.supplierSearch='';state.supplierStatus='All';state.supplierProject='All projects';state.supplierPaymentTerm='All payment terms';state.supplierWorkforce='Any workforce';state.supplierOutstanding='Any balance';renderRoute();}));
     document.querySelectorAll('[data-project-status]').forEach(btn => btn.addEventListener('click', () => {
       state.projectStatus = btn.dataset.projectStatus;
       renderRoute();
     }));
 
     const projectSearch = document.getElementById('projectSearch');
-    if (projectSearch) {
-      projectSearch.addEventListener('input', () => {
-        state.projectSearch = projectSearch.value;
-        const cursor = projectSearch.selectionStart;
-        renderRoute();
-        const next = document.getElementById('projectSearch');
-        if (next) { next.focus(); next.setSelectionRange(cursor, cursor); }
-      });
-    }
+    bindPayrollSearch(projectSearch, value => { state.projectSearch = value; });
 
     document.querySelectorAll('[data-project-tab]').forEach(btn => btn.addEventListener('click', () => {
       state.projectTab = btn.dataset.projectTab;
@@ -6843,11 +7114,14 @@
       renderRoute();
     }));
 
-    const workerSearch = document.querySelector('[data-project-worker-search]');
-    if (workerSearch) workerSearch.addEventListener('input', () => {
-      const q = workerSearch.value.trim().toLowerCase();
-      document.querySelectorAll('[data-worker-search-row]').forEach(row => row.hidden = q && !row.dataset.workerSearchRow.includes(q));
-    });
+    const workerSearch = document.getElementById('projectWorkerSearch');
+    bindPayrollSearch(workerSearch, value => { state.projectWorkerSearch = value; });
+    const projectWorkerStatusFilter=document.getElementById('projectWorkerStatusFilter'); if(projectWorkerStatusFilter) projectWorkerStatusFilter.addEventListener('change',()=>{state.projectWorkerStatus=projectWorkerStatusFilter.value;renderRoute();});
+    document.querySelectorAll('[data-project-workforce-filter]').forEach(btn=>btn.addEventListener('click',()=>{state.projectWorkerFiltersOpen=!state.projectWorkerFiltersOpen;renderRoute();}));
+    const projectWorkerSupplierFilter=document.getElementById('projectWorkerSupplierFilter'); if(projectWorkerSupplierFilter) projectWorkerSupplierFilter.addEventListener('change',()=>{state.projectWorkerSupplier=projectWorkerSupplierFilter.value;renderRoute();});
+    const projectWorkerTradeFilter=document.getElementById('projectWorkerTradeFilter'); if(projectWorkerTradeFilter) projectWorkerTradeFilter.addEventListener('change',()=>{state.projectWorkerTrade=projectWorkerTradeFilter.value;renderRoute();});
+    document.querySelectorAll('[data-project-workforce-advanced-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.projectWorkerSupplier='All suppliers';state.projectWorkerTrade='All trades';renderRoute();}));
+    document.querySelectorAll('[data-project-workforce-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.projectWorkerSearch='';state.projectWorkerStatus='All statuses';state.projectWorkerSupplier='All suppliers';state.projectWorkerTrade='All trades';renderRoute();}));
 
     document.querySelectorAll('[data-worker-profile]').forEach(btn => btn.addEventListener('click', () => {
       const worker = state.rentalWorkers.find(item => item.name === btn.dataset.workerProfile);
@@ -6873,12 +7147,17 @@
     }));
 
     document.querySelectorAll('[data-project-export]').forEach(btn => btn.addEventListener('click', () => { state.reportType='rental-project-cost';state.reportPeriod=state.period;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);navigate('reports'); }));
-    document.querySelectorAll('[data-project-filter]').forEach(btn => btn.addEventListener('click', () => showToast('More filters', 'Client, date range, manager and supplier filters are reserved for production data.')));
+    document.querySelectorAll('[data-project-filter]').forEach(btn => btn.addEventListener('click', () => { state.projectFiltersOpen = !state.projectFiltersOpen; renderRoute(); }));
+    const projectClientFilter=document.getElementById('projectClientFilter'); if(projectClientFilter) projectClientFilter.addEventListener('change',()=>{state.projectClient=projectClientFilter.value;renderRoute();});
+    const projectManagerFilter=document.getElementById('projectManagerFilter'); if(projectManagerFilter) projectManagerFilter.addEventListener('change',()=>{state.projectManager=projectManagerFilter.value;renderRoute();});
+    const projectSupplierFilter=document.getElementById('projectSupplierFilter'); if(projectSupplierFilter) projectSupplierFilter.addEventListener('change',()=>{state.projectSupplier=projectSupplierFilter.value;renderRoute();});
+    document.querySelectorAll('[data-project-advanced-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.projectClient='All clients';state.projectManager='All managers';state.projectSupplier='All suppliers';renderRoute();}));
+    document.querySelectorAll('[data-project-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.projectSearch='';state.projectStatus='All';state.projectClient='All clients';state.projectManager='All managers';state.projectSupplier='All suppliers';renderRoute();}));
 
     document.querySelectorAll('[data-wps-tab]').forEach(btn => btn.addEventListener('click', () => { state.wpsTab = btn.dataset.wpsTab; renderRoute(); }));
     document.querySelectorAll('[data-wps-status]').forEach(btn => btn.addEventListener('click', () => { state.wpsStatusFilter = btn.dataset.wpsStatus; renderRoute(); }));
     const wpsSearch = document.getElementById('wpsSearch');
-    if (wpsSearch) wpsSearch.addEventListener('input', () => { state.wpsSearch = wpsSearch.value; const cursor = wpsSearch.selectionStart; renderRoute(); const next=document.getElementById('wpsSearch'); if(next){next.focus();next.setSelectionRange(cursor,cursor);} });
+    bindPayrollSearch(wpsSearch,value=>{state.wpsSearch=value;});
     const wpsTemplateSelect=document.getElementById('wpsTemplateSelect');
     if(wpsTemplateSelect) wpsTemplateSelect.addEventListener('change',async()=>{state.wpsTemplateId=wpsTemplateSelect.value;localStorage.setItem('payroll-ui-wps-template-id',state.wpsTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
     document.querySelectorAll('[data-wps-reset]').forEach(btn => btn.addEventListener('click', () => { state.wpsSearch=''; state.wpsStatusFilter='All'; renderRoute(); }));
@@ -6889,7 +7168,7 @@
 
     document.querySelectorAll('[data-payment-tab]').forEach(btn => btn.addEventListener('click', () => { state.paymentTab = btn.dataset.paymentTab; state.paymentSearch=''; state.paymentStatusFilter='All'; renderRoute(); }));
     const paymentSearch = document.getElementById('paymentSearch');
-    if (paymentSearch) paymentSearch.addEventListener('input', () => { state.paymentSearch = paymentSearch.value; const cursor=paymentSearch.selectionStart; renderRoute(); const next=document.getElementById('paymentSearch'); if(next){next.focus();next.setSelectionRange(cursor,cursor);} });
+    bindPayrollSearch(paymentSearch,value=>{state.paymentSearch=value;});
     const paymentStatusFilter=document.getElementById('paymentStatusFilter');
     if(paymentStatusFilter) paymentStatusFilter.addEventListener('change',()=>{state.paymentStatusFilter=paymentStatusFilter.value;renderRoute();});
     const internalPaymentBatchSelect=document.getElementById('internalPaymentBatchSelect');

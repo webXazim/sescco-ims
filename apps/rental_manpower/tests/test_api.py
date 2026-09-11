@@ -81,6 +81,25 @@ class RentalMasterApiTests(TestCase):
         self.assertEqual(payload["id"], str(project.reference))
         self.assertEqual(payload["manager"], "Rental Manager")
 
+    def test_supplier_list_supports_search_sort_and_pagination(self):
+        create_supplier(actor_membership=self.membership, code="SUP-Z", name="Zulu Supplier")
+        create_supplier(actor_membership=self.membership, code="SUP-A", name="Alpha Supplier")
+        response = self.client.get(
+            reverse("rental_manpower:suppliers-api"),
+            {"q": "Supplier", "sort": "name", "direction": "desc", "page": 1, "page_size": 2},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([row["name"] for row in payload["results"]], ["Zulu Supplier", "API Supplier"])
+        self.assertEqual(payload["meta"]["count"], 3)
+        self.assertEqual(payload["meta"]["pageSize"], 2)
+        self.assertEqual(payload["meta"]["totalPages"], 2)
+
+    def test_supplier_list_rejects_unknown_sort(self):
+        response = self.client.get(reverse("rental_manpower:suppliers-api"), {"sort": "unsafe"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+
     def test_list_suppliers_is_company_scoped(self):
         other_company = Company.objects.create(name="Other", slug="other-rental-api")
         other_user = User.objects.create_user(username="other-rental-api")

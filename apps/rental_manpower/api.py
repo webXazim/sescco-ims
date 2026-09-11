@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
+from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
 from apps.rental_manpower.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
 from apps.rental_manpower.models import (
     ManpowerSupplier,
@@ -104,8 +105,20 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
             status = _status_query(request.GET.get("status", ""), {item.value for item in SupplierStatus})
+            allowed_sorts = {
+                "code": "code",
+                "name": "name",
+                "contact": "contact_person",
+                "status": "status",
+                "workers": "active_worker_count",
+                "assigned": "assigned_worker_count",
+                "projects": "active_project_count",
+            }
+            controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
             rows = suppliers_for_company(company=request.company, query=request.GET.get("q", ""), status=status)
-            return JsonResponse({"ok": True, "results": [serialize_supplier(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_supplier)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         supplier = create_supplier(
             actor_membership=request.company_membership,
@@ -162,8 +175,24 @@ def projects_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
             status = _status_query(request.GET.get("status", ""), {item.value for item in ProjectStatus})
+            allowed_sorts = {
+                "code": "code",
+                "name": "name",
+                "client": "client_name",
+                "location": "location",
+                "manager": "manager_name",
+                "start": "start_date",
+                "status": "status",
+                "workers": "assigned_worker_count",
+                "suppliers": "assigned_supplier_count",
+            }
+            controls = parse_list_controls(
+                request, allowed_sorts=allowed_sorts, default_sort="start", default_direction="desc"
+            )
             rows = projects_for_company(company=request.company, query=request.GET.get("q", ""), status=status)
-            return JsonResponse({"ok": True, "results": [serialize_project(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_project)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         project = create_project(
             actor_membership=request.company_membership,
@@ -215,13 +244,22 @@ def workers_api(request: HttpRequest) -> JsonResponse:
         if request.method == "GET":
             status = _status_query(request.GET.get("status", ""), {item.value for item in RentalWorkerStatus})
             supplier_id = request.GET.get("supplier_id") or None
+            allowed_sorts = {
+                "worker": "worker_number",
+                "name": "full_name",
+                "supplier": "supplier__name",
+                "status": "status",
+            }
+            controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="worker")
             rows = workers_for_company(
                 company=request.company,
                 query=request.GET.get("q", ""),
                 status=status,
                 supplier_id=supplier_id,
             )
-            return JsonResponse({"ok": True, "results": [serialize_worker(item) for item in rows]})
+            rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_worker)
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         worker = create_worker(
             actor_membership=request.company_membership,

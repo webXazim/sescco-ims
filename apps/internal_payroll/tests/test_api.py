@@ -48,6 +48,26 @@ class InternalOrganizationApiTests(TestCase):
         self.assertEqual(payload["employee"]["branchId"], str(self.branch.pk))
         self.assertEqual(len(payload["history"]), 1)
 
+    def test_branch_list_supports_search_sort_and_pagination(self):
+        create_branch(actor_membership=self.membership, code="BR-B", name="Beta Office")
+        create_branch(actor_membership=self.membership, code="BR-A", name="Alpha Office")
+        response = self.client.get(
+            reverse("internal_payroll:branches-api"),
+            {"q": "Office", "sort": "name", "direction": "desc", "page": 1, "page_size": 1},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"][0]["name"], "Beta Office")
+        self.assertEqual(payload["meta"]["count"], 2)
+        self.assertEqual(payload["meta"]["pageSize"], 1)
+        self.assertEqual(payload["meta"]["sort"], "name")
+        self.assertEqual(payload["meta"]["direction"], "desc")
+
+    def test_branch_list_rejects_unknown_sort(self):
+        response = self.client.get(reverse("internal_payroll:branches-api"), {"sort": "unsafe"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+
     def test_list_branches_is_company_scoped(self):
         other_company = Company.objects.create(name="Other", slug="other-api")
         other_user = User.objects.create_user(username="other")
