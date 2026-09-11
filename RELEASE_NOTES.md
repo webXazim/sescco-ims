@@ -1,7 +1,8 @@
-# SESCCO IMS 1.0.19
+# SESCCO IMS 1.0.20
 
-- Refines Rental Supplier Settlements so the five-metric summary strip sizes to its content instead of stretching to the lifecycle-control height.
-- Gives Payroll operational dropdowns a consistent 42px production trigger height, stronger label readability, and the same visual rhythm as search/action controls.
-- Normalizes filter dropdown minimum widths across related Payroll registers while preserving responsive full-width behavior on small screens.
-- Keeps dedicated timesheet/table editors intentionally denser without allowing the old thin 30–32px dropdown geometry to return.
+- Reuses the empty Supplier Settlements space by docking worker search, project/supplier filters, reset, and snapshot context directly below the KPI strip.
+- Keeps the settlement lifecycle card on the left and the financial register full-width below it, preserving table reading space without decorative filler.
+- Hardens Payroll operational dropdown launchers at the final platform CSS layer so legacy compact rules cannot collapse them into thin controls.
+- Gives related Payroll register/filter selects a consistent 42px trigger, readable 13px label, full chevron area, and matching hover/focus treatment.
+- Leaves dedicated timesheet day selectors and table editors intentionally denser.
 - UI-only release: no payroll calculation, settlement lifecycle, tenant, API, or database behavior is changed.

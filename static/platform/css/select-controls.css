@@ -309,3 +309,116 @@
   box-shadow: none !important;
   font-size: 11px;
 }
+
+/* 1.0.20 — Payroll operational dropdown trigger hardening.
+ * Some legacy toolbar wrappers still carried compact prototype geometry and
+ * could visually compress the native select even after the shared 42px token
+ * was introduced. Give the actual operational launchers explicit final
+ * geometry at the last-loaded platform layer. Dedicated day/table editors are
+ * intentionally excluded by using only the register/filter containers below.
+ */
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .payment-register-toolbar,
+  .payment-supplier-toolbar,
+  .adjustment-filterbar,
+  .assignment-filterbar,
+  .document-toolbar,
+  .report-filterbar,
+  .bank-transfer-toolbar
+) :where(.timesheet-filter, .timesheet-filter--compact) {
+  min-height:42px !important;
+  height:42px !important;
+  align-items:stretch !important;
+}
+
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .payment-register-toolbar,
+  .payment-supplier-toolbar,
+  .adjustment-filterbar,
+  .assignment-filterbar,
+  .document-toolbar,
+  .report-filterbar,
+  .bank-transfer-toolbar
+) select:not([multiple]):not([size]) {
+  display:block !important;
+  min-height:42px !important;
+  height:42px !important;
+  padding:0 38px 0 12px !important;
+  border:1px solid var(--platform-select-border) !important;
+  border-radius:8px !important;
+  background-color:#fff !important;
+  background-image:var(--platform-select-chevron) !important;
+  background-repeat:no-repeat !important;
+  background-position:right 12px center !important;
+  background-size:14px 14px !important;
+  font-size:13px !important;
+  font-weight:600 !important;
+  line-height:1.25 !important;
+}
+
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .payment-register-toolbar,
+  .payment-supplier-toolbar,
+  .adjustment-filterbar,
+  .assignment-filterbar,
+  .document-toolbar,
+  .report-filterbar,
+  .bank-transfer-toolbar
+) select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color:var(--platform-select-border-hover) !important;
+  background-color:#fdfdfd !important;
+}
+
+.ui-v2-root[data-area="payroll"] :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar,
+  .rental-timesheet-toolbar,
+  .payment-register-toolbar,
+  .payment-supplier-toolbar,
+  .adjustment-filterbar,
+  .assignment-filterbar,
+  .document-toolbar,
+  .report-filterbar,
+  .bank-transfer-toolbar
+) select:not([multiple]):not([size]):focus {
+  border-color:var(--platform-select-border-focus) !important;
+  box-shadow:var(--platform-select-focus-ring) !important;
+}
+
+@media (max-width:760px) {
+  .ui-v2-root[data-area="payroll"] :where(
+    .ui-v2-filter-bar,
+    .ui-v2-payroll-rental-filterbar,
+    .ui-v2-payroll-register__toolbar,
+    .ui-v2-prs-assignment-filterbar,
+    .rental-timesheet-toolbar,
+    .payment-register-toolbar,
+    .payment-supplier-toolbar,
+    .adjustment-filterbar,
+    .assignment-filterbar,
+    .document-toolbar,
+    .report-filterbar,
+    .bank-transfer-toolbar
+  ) :where(.timesheet-filter, .timesheet-filter--compact) {
+    width:100%;
+    height:auto !important;
+    min-height:42px !important;
+  }
+}
