@@ -1286,10 +1286,7 @@ button.rental-summary-item:hover { background:#fafbfc; }
 @media (max-width:1180px){.adjustment-summary-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.adjustment-summary-strip>*{border-bottom:1px solid var(--line)}.adjustment-summary-strip>*:nth-child(3){border-right:0}.adjustment-summary-strip>*:nth-child(4),.adjustment-summary-strip>*:nth-child(5){border-bottom:0}.adjustment-filterbar{grid-template-columns:minmax(220px,1.4fr) repeat(2,minmax(150px,1fr));}.adjustment-filterbar .btn{justify-self:start}.adjustment-balance-layout{grid-template-columns:1fr}.adjustment-balance-side{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .payment-workspace-switch--three{grid-template-columns:repeat(3,minmax(0,1fr))}
-.payment-supplier-toolbar,.payment-register-toolbar{gap:8px;flex-wrap:wrap}
-.payment-supplier-toolbar>.select{min-width:220px}
-.payment-register-toolbar .search-field{min-width:300px;flex:1}
-.payment-register-toolbar>.select{min-width:140px}
+/* Payment toolbar control geometry moved to css/v2/payroll-controls.css. */
 .supplier-payable-table,.supplier-payment-table{min-width:1080px}
 .supplier-payable-table .source-mini{display:inline-flex;margin-left:6px;vertical-align:middle}
 .supplier-payment-scope{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin-top:12px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface)}

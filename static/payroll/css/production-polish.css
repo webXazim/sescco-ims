@@ -151,24 +151,7 @@
 .toolbar--table > .btn:last-child,
 .table-toolbar > .btn:last-child { flex: 0 0 auto; }
 
-/* Payment register: exact issue visible in the supplied screenshot. */
-.payment-register-toolbar {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) 160px 145px auto;
-  align-items: center;
-  gap: 8px;
-}
-.payment-register-toolbar .search-field { width: 100%; min-width: 0; }
-.payment-register-toolbar > .select { width: 100%; min-width: 0; }
-.payment-register-toolbar > .btn { min-width: 64px; }
-.payment-supplier-toolbar {
-  display: grid;
-  grid-template-columns: minmax(220px, 320px) max-content;
-  justify-content: start;
-  align-items: center;
-  gap: 8px;
-}
-.payment-supplier-toolbar > .select { width: 100%; min-width: 0; }
+/* Payment/register control composition is owned by v2/payroll-controls.css. */
 
 /* ---------- Buttons ---------- */
 .btn { min-height: var(--control-h); border-radius: var(--control-radius); }
@@ -312,9 +295,7 @@ a:focus-visible,
 
 /* ---------- Responsive control behavior ---------- */
 @media (max-width: 1100px) {
-  .payment-register-toolbar { grid-template-columns: minmax(240px,1fr) 150px 140px; }
-  .payment-register-toolbar > .btn { grid-column: 3; justify-self: end; }
-  .payment-supplier-toolbar { grid-template-columns: minmax(220px,1fr) max-content; }
+  /* Payroll payment toolbar geometry is owned by v2/payroll-controls.css. */
 }
 
 @media (max-width: 820px) {
@@ -322,11 +303,6 @@ a:focus-visible,
   .page-head { margin-bottom: 16px; }
   .toolbar--table,
   .table-toolbar { padding: 9px 10px; }
-  .payment-register-toolbar { grid-template-columns: 1fr 1fr; }
-  .payment-register-toolbar .search-field { grid-column: 1 / -1; }
-  .payment-register-toolbar > .btn { grid-column: auto; justify-self: stretch; }
-  .payment-supplier-toolbar { grid-template-columns: 1fr; }
-  .payment-supplier-toolbar .segmented { width: 100%; overflow-x: auto; justify-content: flex-start; }
   .workspace-context-banner .text-link { margin-left: 48px; }
 }
 
@@ -334,10 +310,6 @@ a:focus-visible,
   :root { --control-h: 42px; --control-h-sm: 36px; }
   .main { padding: 14px 12px 28px; }
   .page-head { gap: 14px; }
-  .payment-register-toolbar { grid-template-columns: 1fr; }
-  .payment-register-toolbar .search-field,
-  .payment-register-toolbar > .select,
-  .payment-register-toolbar > .btn { grid-column: auto; width: 100%; }
   .toolbar--table > .select,
   .toolbar--table > .compact-select,
   .table-toolbar > .select,

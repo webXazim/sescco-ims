@@ -1,14 +1,16 @@
 /*
- * Shared application select-control contract.
+ * Shared native select contract for the platform.
  *
- * Keeps native <select> semantics/accessibility while giving Inventory + Payroll
- * one visual language.  Custom menu/dropdown components are intentionally not
- * targeted here.
+ * Scope: cross-application visual baseline only.
+ * Payroll page geometry is intentionally NOT defined here; Payroll owns its
+ * operational launchers in static/payroll/css/v2/payroll-controls.css.
+ * Keeping this file generic prevents Inventory and Payroll from competing for
+ * the same select height/width rules.
  */
 
 :root {
   --platform-select-height: 40px;
-  --platform-select-height-compact: 40px;
+  --platform-select-height-dense: 34px;
   --platform-select-radius: 8px;
   --platform-select-border: #d7d9d6;
   --platform-select-border-hover: #bfc3bf;
@@ -16,30 +18,36 @@
   --platform-select-text: #252725;
   --platform-select-muted: #8a8e8a;
   --platform-select-disabled: #f3f4f3;
-  --platform-select-focus-ring: 0 0 0 3px rgba(120, 126, 120, .10);
+  --platform-select-focus-ring: 0 0 0 3px rgba(120,126,120,.10);
   --platform-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23666b66' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+  --platform-dropdown-trigger-radius: 8px;
+  --platform-dropdown-panel-radius: 11px;
+  --platform-dropdown-panel-shadow: 0 18px 45px rgba(20,28,36,.16);
 }
 
-/* Main application selects. Multiple/listbox selects keep their native geometry. */
+/* Native single-value select baseline. */
 .inventory-shell-v2 select:not([multiple]):not([size]),
 .ui-v2-root select:not([multiple]):not([size]) {
+  box-sizing: border-box;
   -webkit-appearance: none;
   appearance: none;
   min-height: var(--platform-select-height);
   border: 1px solid var(--platform-select-border);
-  border-radius: var(--platform-select-radius);
+  border-radius: var(--platform-dropdown-trigger-radius);
   background-color: #fff;
   background-image: var(--platform-select-chevron);
   background-repeat: no-repeat;
-  background-position: right 10px center;
+  background-position: right 11px center;
   background-size: 14px 14px;
-  padding-left: 11px;
-  padding-right: 34px;
+  padding: 0 36px 0 12px;
   color: var(--platform-select-text);
   font: inherit;
+  font-size: 13px;
+  font-weight: 560;
   line-height: 1.25;
   text-overflow: ellipsis;
   cursor: pointer;
+  box-shadow: none;
   transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
 }
 
@@ -71,147 +79,43 @@
   color: var(--platform-select-text);
 }
 
-/* Compact Payroll filters stay dense, but no longer look like browser-native controls. */
-.ui-v2-root :where(.ui-v2-payroll-compact-select, .compact-select) {
-  min-height: var(--platform-select-height-compact);
-  height: var(--platform-select-height-compact);
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 520;
-}
-
-/* Search/filter rows use one common control height. */
-.ui-v2-root :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar
-) select:not([multiple]):not([size]) {
-  min-height: 36px;
-  height: 36px;
-}
-
-/* The timesheet day selector is intentionally a little denser than main filters. */
-.ui-v2-root .ui-v2-payroll-timesheet-command-strip select:not([multiple]):not([size]) {
-  min-height: 32px;
-  height: 32px;
-  border-radius: 7px;
-  background-position: right 8px center;
-  padding-left: 9px;
-  padding-right: 29px;
-  font-size: 12px;
-  font-weight: 620;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Selects with an explicit wrapper-owned chevron must not draw a second arrow. */
+/* Wrapper-owned chevrons must not double-render. */
 .ui-v2-root .ui-v2-select-wrap > select:not([multiple]):not([size]) {
   background-image: none;
   padding-right: 34px;
 }
 
-/* Preserve the shared invalid-state authority introduced in 1.0.8. */
+/* Dense table/import editors are the only cross-app compact native selects. */
+.ui-v2-root select.table-select:not([multiple]):not([size]),
+.inventory-shell-v2 select.table-select:not([multiple]):not([size]) {
+  min-height: var(--platform-select-height-dense);
+  height: var(--platform-select-height-dense);
+  padding-left: 9px;
+  padding-right: 30px;
+  background-position: right 8px center;
+  font-size: 12px;
+}
+
+/* Administration has an outer compact launcher that owns its geometry. */
+.ui-v2-root .ui-v2-compact-select select:not([multiple]):not([size]) {
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+/* Shared invalid state. */
 .inventory-shell-v2 select[aria-invalid="true"],
 .ui-v2-root select[aria-invalid="true"] {
   border-color: #d92d20 !important;
 }
 
-/* 1.0.10 — production select geometry hardening.
- *
- * Some legacy Payroll selectors have greater specificity than the shared
- * :where(...) rules above and can otherwise force operational filters back to
- * the old 30–32px prototype geometry.  These selectors intentionally carry
- * enough specificity (and explicit height authority) to make the final
- * application control size deterministic without replacing native select
- * semantics.
- */
-.inventory-shell-v2 select:not([multiple]):not([size]),
-.ui-v2-root select.ui-v2-select:not([multiple]):not([size]),
-.ui-v2-root select.select:not([multiple]):not([size]),
-.ui-v2-root select.compact-select:not([multiple]):not([size]) {
-  min-height: 40px !important;
-  height: 40px !important;
-  border-radius: 8px;
-  padding-left: 12px;
-  padding-right: 36px;
-  background-position: right 11px center;
-  font-size: 13px;
-  line-height: 1.2;
-}
-
-/* Primary Payroll filter rows should visually align with their search input
- * and reset/action controls instead of looking like narrow inline chips. */
-.ui-v2-root :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .timesheet-filter
-) select:not([multiple]):not([size]) {
-  min-height: 40px !important;
-  height: 40px !important;
-  font-size: 13px;
-}
-
-/* The Day selector stays a touch denser than the large filter controls, while
- * remaining a real touch target rather than the old 30–32px prototype select. */
-.ui-v2-root .ui-v2-payroll-timesheet-command-strip select:not([multiple]):not([size]),
-.ui-v2-root .ui-v2-prs-timesheet-day-select select:not([multiple]):not([size]) {
-  min-height: 38px !important;
-  height: 38px !important;
-  border-radius: 8px;
-  padding-left: 10px;
-  padding-right: 31px;
-  background-position: right 9px center;
-  font-size: 12.5px;
-}
-
-/* Dense staging/import table editors may stay compact, but not sub-30px. */
-.ui-v2-root select.table-select:not([multiple]):not([size]),
-.ui-v2-root .ui-v2-payroll-timesheet-pagination__size select:not([multiple]):not([size]) {
-  min-height: 34px !important;
-  height: 34px !important;
-  font-size: 12px;
-}
-
-/* 1.0.12 — dropdown visual convergence.
- *
- * Condition filtering established the final production dropdown language:
- * white surface, restrained 1px border, 8px trigger radius, clear chevron,
- * subtle hover/focus feedback, and an 11px floating panel with a soft shadow.
- * Apply that language to native selects and application popovers without
- * replacing native select semantics or changing business behavior.
- */
-:root {
-  --platform-dropdown-trigger-radius: 8px;
-  --platform-dropdown-panel-radius: 11px;
-  --platform-dropdown-panel-shadow: 0 18px 45px rgba(20, 28, 36, .16);
-}
-
-.inventory-shell-v2 select:not([multiple]):not([size]),
-.ui-v2-root select:not([multiple]):not([size]) {
-  border-color: var(--platform-select-border) !important;
-  border-radius: var(--platform-dropdown-trigger-radius) !important;
-  background-color: #fff;
-  box-shadow: none;
-  font-weight: 560;
-}
-
-.inventory-shell-v2 select:not([multiple]):not([size]):hover:not(:disabled),
-.ui-v2-root select:not([multiple]):not([size]):hover:not(:disabled) {
-  border-color: #b7c0c8 !important;
-  background-color: #fcfcfc;
-}
-
-.inventory-shell-v2 select:not([multiple]):not([size]):focus,
-.ui-v2-root select:not([multiple]):not([size]):focus {
-  border-color: #8c98a3 !important;
-  box-shadow: 0 0 0 3px rgba(30, 79, 107, .08) !important;
-}
-
-/* Inventory custom filter triggers and floating panels use exactly the same
- * trigger/panel treatment as the Condition control. */
+/* Inventory custom dropdown triggers/panels share the native select language. */
 .inventory-shell-v2 :where(.condition-filter-trigger, .inventory-explorer-icon-control) {
   border: 1px solid var(--platform-select-border);
   border-radius: var(--platform-dropdown-trigger-radius);
@@ -230,7 +134,7 @@
 .inventory-shell-v2 :where(.condition-filter-trigger, .inventory-explorer-icon-control):focus-visible {
   outline: 0;
   border-color: #8c98a3;
-  box-shadow: 0 0 0 3px rgba(30, 79, 107, .08);
+  box-shadow: 0 0 0 3px rgba(30,79,107,.08);
 }
 
 .inventory-shell-v2 :where(
@@ -247,178 +151,11 @@
   box-shadow: var(--platform-dropdown-panel-shadow);
 }
 
-/* Payroll's custom dropdown panels use the same surface language while their
- * deliberately larger shell switcher triggers keep their existing geometry. */
+/* Payroll custom menu panels use the same surface language. Trigger geometry is
+ * owned by the Payroll stylesheet loaded after this shared platform layer. */
 .ui-v2-root .ui-v2-prs-dropdown-menu {
   border-color: var(--platform-select-border) !important;
   border-radius: var(--platform-dropdown-panel-radius) !important;
   background: rgba(255,255,255,.99) !important;
   box-shadow: var(--platform-dropdown-panel-shadow) !important;
-}
-
-
-/* 1.0.19 — Payroll select height authority.
- * Operational Payroll selects use the same full-height trigger as search and
- * action controls. This final loaded layer intentionally wins over legacy
- * compact-select rules that could make dropdowns look like thin inline chips.
- */
-:root {
-  --platform-payroll-select-height: 42px;
-  --platform-payroll-select-height-dense: 40px;
-}
-
-.ui-v2-root[data-area="payroll"] select:not([multiple]):not([size]) {
-  display: block;
-  min-height: var(--platform-payroll-select-height) !important;
-  height: var(--platform-payroll-select-height) !important;
-  padding-left: 12px;
-  padding-right: 38px;
-  background-position: right 12px center;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-/* Dedicated dense work surfaces remain compact, but still use a proper control
- * height and the same trigger language. */
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-payroll-timesheet-command-strip,
-  .ui-v2-prs-timesheet-day-select
-) select:not([multiple]):not([size]) {
-  min-height: var(--platform-payroll-select-height-dense) !important;
-  height: var(--platform-payroll-select-height-dense) !important;
-}
-
-.ui-v2-root[data-area="payroll"] select.table-select:not([multiple]):not([size]),
-.ui-v2-root[data-area="payroll"] .ui-v2-payroll-timesheet-pagination__size select:not([multiple]):not([size]) {
-  min-height: 36px !important;
-  height: 36px !important;
-  font-size: 12px;
-}
-
-/* Administration owns the outer compact-select geometry; keep the nested
- * native select transparent so the shared rule above cannot inflate it. */
-.ui-v2-root[data-area="payroll"] .ui-v2-compact-select select:not([multiple]):not([size]) {
-  min-height: 0 !important;
-  height: 100% !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  font-size: 11px;
-}
-
-/* 1.0.20 — Payroll operational dropdown trigger hardening.
- * Some legacy toolbar wrappers still carried compact prototype geometry and
- * could visually compress the native select even after the shared 42px token
- * was introduced. Give the actual operational launchers explicit final
- * geometry at the last-loaded platform layer. Dedicated day/table editors are
- * intentionally excluded by using only the register/filter containers below.
- */
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .payment-register-toolbar,
-  .payment-supplier-toolbar,
-  .adjustment-filterbar,
-  .assignment-filterbar,
-  .document-toolbar,
-  .report-filterbar,
-  .bank-transfer-toolbar
-) :where(.timesheet-filter, .timesheet-filter--compact) {
-  min-height:42px !important;
-  height:42px !important;
-  align-items:stretch !important;
-}
-
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .payment-register-toolbar,
-  .payment-supplier-toolbar,
-  .adjustment-filterbar,
-  .assignment-filterbar,
-  .document-toolbar,
-  .report-filterbar,
-  .bank-transfer-toolbar
-) select:not([multiple]):not([size]) {
-  display:block !important;
-  min-height:42px !important;
-  height:42px !important;
-  padding:0 38px 0 12px !important;
-  border:1px solid var(--platform-select-border) !important;
-  border-radius:8px !important;
-  background-color:#fff !important;
-  background-image:var(--platform-select-chevron) !important;
-  background-repeat:no-repeat !important;
-  background-position:right 12px center !important;
-  background-size:14px 14px !important;
-  font-size:13px !important;
-  font-weight:600 !important;
-  line-height:1.25 !important;
-}
-
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .payment-register-toolbar,
-  .payment-supplier-toolbar,
-  .adjustment-filterbar,
-  .assignment-filterbar,
-  .document-toolbar,
-  .report-filterbar,
-  .bank-transfer-toolbar
-) select:not([multiple]):not([size]):hover:not(:disabled) {
-  border-color:var(--platform-select-border-hover) !important;
-  background-color:#fdfdfd !important;
-}
-
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .payment-register-toolbar,
-  .payment-supplier-toolbar,
-  .adjustment-filterbar,
-  .assignment-filterbar,
-  .document-toolbar,
-  .report-filterbar,
-  .bank-transfer-toolbar
-) select:not([multiple]):not([size]):focus {
-  border-color:var(--platform-select-border-focus) !important;
-  box-shadow:var(--platform-select-focus-ring) !important;
-}
-
-@media (max-width:760px) {
-  .ui-v2-root[data-area="payroll"] :where(
-    .ui-v2-filter-bar,
-    .ui-v2-payroll-rental-filterbar,
-    .ui-v2-payroll-register__toolbar,
-    .ui-v2-prs-assignment-filterbar,
-    .rental-timesheet-toolbar,
-    .payment-register-toolbar,
-    .payment-supplier-toolbar,
-    .adjustment-filterbar,
-    .assignment-filterbar,
-    .document-toolbar,
-    .report-filterbar,
-    .bank-transfer-toolbar
-  ) :where(.timesheet-filter, .timesheet-filter--compact) {
-    width:100%;
-    height:auto !important;
-    min-height:42px !important;
-  }
 }

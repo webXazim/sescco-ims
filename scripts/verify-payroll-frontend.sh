@@ -13,6 +13,7 @@ printf 'Checking merged Payroll frontend namespace...\n'
 [[ -f static/payroll/js/app.js ]] || fail "static/payroll/js/app.js is missing."
 [[ -f static/payroll/css/v2/index.css ]] || fail "Payroll V2 index stylesheet is missing."
 [[ -f static/payroll/css/v2/prs-final.css ]] || fail "Payroll final cutover stylesheet is missing."
+[[ -f static/payroll/css/v2/payroll-controls.css ]] || fail "Canonical Payroll control stylesheet is missing."
 [[ -f templates/payroll/app.html ]] || fail "Payroll Django shell template is missing."
 [[ -f apps/core/payroll_views.py ]] || fail "Payroll shell bootstrap view is missing."
 
@@ -22,9 +23,21 @@ grep -Fq "payroll/css/v2/index.css" templates/payroll/app.html \
   || fail "Payroll shell is not using namespaced V2 CSS."
 grep -Fq "payroll/js/app.js" templates/payroll/app.html \
   || fail "Payroll shell is not using the namespaced JS bundle."
+grep -Fq "payroll/css/v2/payroll-controls.css" templates/payroll/app.html \
+  || fail "Payroll shell is not loading the canonical control stylesheet."
 if grep -Eq "static ['\"](css|js)/" templates/payroll/app.html; then
   fail "Payroll template references an un-namespaced root CSS/JS asset."
 fi
+
+python3 - <<'PY_ORDER'
+from pathlib import Path
+text = Path('templates/payroll/app.html').read_text(encoding='utf-8')
+shared = text.index("platform/css/select-controls.css")
+validation = text.index("platform/css/form-validation.css")
+canonical = text.index("payroll/css/v2/payroll-controls.css")
+assert shared < canonical and validation < canonical, "canonical Payroll controls must load after shared/platform form CSS"
+assert "?v=1.0.24" in text, "Payroll control asset must carry the 1.0.24 cache buster"
+PY_ORDER
 
 printf 'Checking Payroll workspace navigation contract...\n'
 grep -Fq "?workspace=internal#/overview" templates/payroll/app.html \

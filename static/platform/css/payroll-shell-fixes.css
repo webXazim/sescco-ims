@@ -159,37 +159,8 @@ body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
 }
 
 
-/* 1.0.14 — Payroll filter width normalization.
- * Several related payroll pages still allowed toolbar selects to shrink into
- * narrow chips because search took too much width and compact selects carried
- * small flex-basis values from earlier prototype cutovers. Normalize the
- * shared operational filter width across employee, organization, rental and
- * payroll-run pages so dropdown labels remain readable.
- */
-.ui-v2-root :where(
-  .ui-v2-prs-internal-employees,
-  .ui-v2-prs-master-filter,
-  .ui-v2-prs-rental-timesheet-workspace,
-  .ui-v2-payroll-run-toolbar,
-  .ui-v2-payroll-report-filterbar
-) :where(select.ui-v2-payroll-compact-select, select.compact-select) {
-  min-width: 168px;
-}
-
-.ui-v2-root .ui-v2-payroll-run-toolbar {
-  grid-template-columns: minmax(240px, 1fr) minmax(168px, 188px) minmax(168px, 188px) minmax(150px, 170px) auto !important;
-}
-
-.ui-v2-root .ui-v2-payroll-run-toolbar .table-toolbar__search,
-.ui-v2-root .ui-v2-payroll-run-toolbar .ui-v2-filter-bar__search {
-  max-width: none;
-}
-
-@media (max-width: 1180px) {
-  .ui-v2-root .ui-v2-payroll-run-toolbar {
-    grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 1fr)) !important;
-  }
-}
+/* Payroll operational control sizing moved to
+ * static/payroll/css/v2/payroll-controls.css in 1.0.24. */
 
 /* 1.0.19 — Rental settlement density + shared Payroll filter alignment.
  * The settlement KPI strip must size to its content instead of stretching to
@@ -210,53 +181,5 @@ body.timesheet-focus-mode .ui-v2-payroll-timesheet-workspace.is-fullscreen {
   padding-block: 13px;
 }
 
-.ui-v2-root[data-area="payroll"] :where(
-  .ui-v2-filter-bar,
-  .ui-v2-payroll-rental-filterbar,
-  .ui-v2-payroll-register__toolbar,
-  .ui-v2-prs-assignment-filterbar,
-  .rental-timesheet-toolbar,
-  .payment-register-toolbar,
-  .payment-supplier-toolbar,
-  .adjustment-filterbar,
-  .assignment-filterbar,
-  .document-toolbar,
-  .report-filterbar,
-  .bank-transfer-toolbar
-) :where(select.ui-v2-payroll-compact-select, select.compact-select, select.select) {
-  min-width: 176px;
-}
 
-.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar {
-  align-items: center;
-}
-
-.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar .ui-v2-filter-bar__search {
-  min-height: 42px;
-  height: 42px;
-}
-
-.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar > .btn,
-.ui-v2-root[data-area="payroll"] .ui-v2-payroll-register__toolbar .timesheet-filter {
-  min-height: 42px;
-}
-
-@media (max-width: 760px) {
-  .ui-v2-root[data-area="payroll"] :where(
-    .ui-v2-filter-bar,
-    .ui-v2-payroll-rental-filterbar,
-    .ui-v2-payroll-register__toolbar,
-    .ui-v2-prs-assignment-filterbar,
-    .rental-timesheet-toolbar,
-    .payment-register-toolbar,
-    .payment-supplier-toolbar,
-    .adjustment-filterbar,
-    .assignment-filterbar,
-    .document-toolbar,
-    .report-filterbar,
-    .bank-transfer-toolbar
-  ) :where(select.ui-v2-payroll-compact-select, select.compact-select, select.select) {
-    width: 100%;
-    min-width: 0;
-  }
-}
+/* Payroll register/filter geometry is owned by payroll-controls.css. */

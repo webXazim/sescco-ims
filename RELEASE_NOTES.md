@@ -1,11 +1,12 @@
-# SESCCO IMS 1.0.21
+# SESCCO IMS 1.0.24
 
-- Makes Payroll register search production-safe with a shared debounced search contract, cursor/focus preservation after route redraws, and consistent Reset behavior across Internal Company, Rental Manpower, financial, document, and reporting screens.
-- Adds accessible, keyboard-operable sorting to Payroll data tables. Sort direction is retained per workspace/route/table, numeric/currency/date values sort naturally, and timesheet editing grids remain excluded from generic row sorting.
-- Adds explicit sort controls for Branches & Offices and Departments, including code/name/headcount ordering and persisted sort preference.
-- Replaces remaining placeholder workforce filters with working project/supplier worker filters for status, supplier/project, trade, and search; active filter counts and clear/reset actions are shown in the UI.
-- Keeps the Projects and Manpower Suppliers advanced filters functional for client/manager/supplier, project/payment terms/workforce/payable, with faster one-pass workforce indexes for large master lists.
-- Adds a shared Django list-query contract with allow-listed sort fields, validated asc/desc direction, deterministic ordering, optional bounded pagination, and response metadata for Internal Payroll and Rental Manpower master APIs.
-- Expands server-side master search coverage to organization names/codes, supplier contact/address/payment data, and rental worker assignment trade/project fields so API search matches the production UI more closely.
-- Extends the Payroll frontend verification contract so non-functional filter placeholders, missing search wiring, missing sortable-table activation, or missing backend list-control hooks fail release verification.
-- No database schema, payroll calculation formula, timesheet approval rule, supplier-settlement lifecycle, payment lifecycle, tenant boundary, or authorization model is changed.
+- Rebuilds the Payroll dropdown/control CSS boundary instead of adding another override patch. `static/platform/css/select-controls.css` is now a cross-application baseline only, while `static/payroll/css/v2/payroll-controls.css` is the single final Payroll authority loaded last.
+- Fixes the Supplier Payments `All suppliers` launcher with an explicit 42px production height, readable 13px text, normal chevron/padding and a bounded 220–320px desktop width instead of the thin full-row control shown in production.
+- Removes obsolete Supplier Payments toolbar geometry from legacy `components.css`, `responsive.css` and `production-polish.css`, eliminating the competing declarations that were overriding previous refinements.
+- Normalizes Internal and Rental Payroll business-filter selects after every render: legacy `compact-select` classes are removed from operational filters and only genuine timesheet day/page-size/table editors retain dense sizing.
+- Covers normal register/filter toolbars, Payroll Run controls, Salary Setup, Salary Payments, Bank/WPS, Advances & Adjustments, Documents, Reports, Rental workforce/assignment filters, settlement/payment filters, management audit filters and advanced Project/Supplier filters.
+- Adds a semantic CSS fallback for normalized Payroll toolbars so 42px control geometry does not depend on per-select class timing.
+- Keeps dense attendance/timesheet controls intentionally compact and leaves form/drawer/table-cell editors outside the operational launcher contract.
+- Adds a versioned `?v=1.0.24` final Payroll control stylesheet reference so a stale browser/CDN copy cannot mask this CSS reset after deployment/collectstatic.
+- Extends release verification to enforce final stylesheet load order and reject reintroduction of Supplier Payments toolbar geometry into legacy CSS files.
+- No payroll calculations, attendance logic, settlements, payment lifecycle, API behavior, database schema, permissions, authorization or tenant isolation are changed.
