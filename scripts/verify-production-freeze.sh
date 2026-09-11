@@ -13,6 +13,8 @@ require_text() {
 sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
+bash scripts/verify-select-timesheet-ux.sh
+
 [[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
 sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \
   || fail 'Unified Inventory/Payroll shell assets changed.'

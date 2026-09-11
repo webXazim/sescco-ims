@@ -64,6 +64,7 @@ for asset in \
   /static/platform/css/inventory-shell.css \
   /static/platform/css/payroll-shell-fixes.css \
   /static/platform/css/form-validation.css \
+  /static/platform/css/select-controls.css \
   /static/platform/js/inventory-shell.js \
   /static/platform/js/form-validation.js \
   /static/payroll/css/v2/index.css \

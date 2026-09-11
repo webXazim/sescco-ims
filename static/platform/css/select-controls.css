@@ -1,0 +1,117 @@
+/*
+ * Shared application select-control contract.
+ *
+ * Keeps native <select> semantics/accessibility while giving Inventory + Payroll
+ * one visual language.  Custom menu/dropdown components are intentionally not
+ * targeted here.
+ */
+
+:root {
+  --platform-select-height: 38px;
+  --platform-select-height-compact: 34px;
+  --platform-select-radius: 8px;
+  --platform-select-border: #d7d9d6;
+  --platform-select-border-hover: #bfc3bf;
+  --platform-select-border-focus: #8f948f;
+  --platform-select-text: #252725;
+  --platform-select-muted: #8a8e8a;
+  --platform-select-disabled: #f3f4f3;
+  --platform-select-focus-ring: 0 0 0 3px rgba(120, 126, 120, .10);
+  --platform-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23666b66' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+}
+
+/* Main application selects. Multiple/listbox selects keep their native geometry. */
+.inventory-shell-v2 select:not([multiple]):not([size]),
+.ui-v2-root select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: var(--platform-select-height);
+  border: 1px solid var(--platform-select-border);
+  border-radius: var(--platform-select-radius);
+  background-color: #fff;
+  background-image: var(--platform-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  padding-left: 11px;
+  padding-right: 34px;
+  color: var(--platform-select-text);
+  font: inherit;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]):hover:not(:disabled),
+.ui-v2-root select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: var(--platform-select-border-hover);
+  background-color: #fdfdfd;
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]):focus,
+.ui-v2-root select:not([multiple]):not([size]):focus {
+  outline: 0;
+  border-color: var(--platform-select-border-focus);
+  box-shadow: var(--platform-select-focus-ring);
+}
+
+.inventory-shell-v2 select:not([multiple]):not([size]):disabled,
+.ui-v2-root select:not([multiple]):not([size]):disabled {
+  border-color: #e1e3e1;
+  background-color: var(--platform-select-disabled);
+  color: var(--platform-select-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.inventory-shell-v2 select option,
+.ui-v2-root select option {
+  background: #fff;
+  color: var(--platform-select-text);
+}
+
+/* Compact Payroll filters stay dense, but no longer look like browser-native controls. */
+.ui-v2-root :where(.ui-v2-payroll-compact-select, .compact-select) {
+  min-height: var(--platform-select-height-compact);
+  height: var(--platform-select-height-compact);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 520;
+}
+
+/* Search/filter rows use one common control height. */
+.ui-v2-root :where(
+  .ui-v2-filter-bar,
+  .ui-v2-payroll-rental-filterbar,
+  .ui-v2-payroll-register__toolbar,
+  .ui-v2-prs-assignment-filterbar
+) select:not([multiple]):not([size]) {
+  min-height: 36px;
+  height: 36px;
+}
+
+/* The timesheet day selector is intentionally a little denser than main filters. */
+.ui-v2-root .ui-v2-payroll-timesheet-command-strip select:not([multiple]):not([size]) {
+  min-height: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background-position: right 8px center;
+  padding-left: 9px;
+  padding-right: 29px;
+  font-size: 12px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Selects with an explicit wrapper-owned chevron must not draw a second arrow. */
+.ui-v2-root .ui-v2-select-wrap > select:not([multiple]):not([size]) {
+  background-image: none;
+  padding-right: 34px;
+}
+
+/* Preserve the shared invalid-state authority introduced in 1.0.8. */
+.inventory-shell-v2 select[aria-invalid="true"],
+.ui-v2-root select[aria-invalid="true"] {
+  border-color: #d92d20 !important;
+}

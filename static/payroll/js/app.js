@@ -60,10 +60,22 @@
   const companyTodayIso = String(settingsBootstrap.today || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(companyTodayIso)) throw new Error('Invalid company date context.');
   const periodMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const [companyTodayYear, companyTodayMonth] = companyTodayIso.split('-').map(Number);
-  if (!Number.isInteger(companyTodayYear) || companyTodayMonth < 1 || companyTodayMonth > 12) throw new Error('Invalid company date context.');
+  const [companyTodayYear, companyTodayMonth, companyTodayDay] = companyTodayIso.split('-').map(Number);
+  if (!Number.isInteger(companyTodayYear) || companyTodayMonth < 1 || companyTodayMonth > 12 || !Number.isInteger(companyTodayDay) || companyTodayDay < 1 || companyTodayDay > 31) throw new Error('Invalid company date context.');
   const companyCurrentPeriod = `${periodMonths[companyTodayMonth - 1]} ${companyTodayYear}`;
   const defaultInternalPeriod = attendanceBootstrap.period?.label || payrollBootstrap.run?.label || companyCurrentPeriod;
+
+  function defaultTimesheetDay(periodLabel) {
+    const [monthName, yearText] = String(periodLabel || '').trim().split(/\s+/);
+    const monthIndex = periodMonths.indexOf(monthName);
+    const year = Number(yearText);
+    if (monthIndex === companyTodayMonth - 1 && year === companyTodayYear) return companyTodayDay;
+    return 1;
+  }
+
+  function isCompanyToday(day, periodLabel) {
+    return Number(day) === companyTodayDay && String(periodLabel || '') === companyCurrentPeriod;
+  }
   const csrfToken = document.getElementById('payroll-csrf-token')?.dataset.token || '';
 
   async function appApi(url, { method = 'GET', body = null } = {}) {
@@ -761,7 +773,7 @@
     rentalTimesheetSupplier: 'All suppliers',
     rentalTimesheetSearch: '',
     rentalTimesheetSelected: new Set(),
-    rentalTimesheetBulkDay: 1,
+    rentalTimesheetBulkDay: defaultTimesheetDay(localStorage.getItem('payroll-ui-rental-timesheet-period') || defaultInternalPeriod),
     rentalTimesheetPage: 1,
     rentalTimesheetPageSize: Number(localStorage.getItem('payroll-ui-rental-timesheet-page-size') || 50),
     rentalTimesheetMobileWeek: 1,
@@ -785,7 +797,7 @@
     timesheetBranch: 'All branches',
     timesheetDepartment: 'All departments',
     timesheetSelected: new Set(),
-    timesheetBulkDay: 1,
+    timesheetBulkDay: defaultTimesheetDay(localStorage.getItem('payroll-ui-internal-timesheet-period') || defaultInternalPeriod),
     timesheetPage: 1,
     timesheetPageSize: Number(localStorage.getItem('payroll-ui-internal-timesheet-page-size') || 50),
     timesheetMobileWeek: 1,
@@ -2854,7 +2866,7 @@
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-timesheet-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of employees" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${employees.length} employees`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${employees.filter(employee=>state.timesheetSelected.has(employee.id)).length} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredEmployees.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
-          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="timesheetBulkDay" class="ui-v2-select ui-v2-payroll-compact-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day => `<option value="${day}" ${Number(state.timesheetBulkDay) === day ? 'selected' : ''}>${day} · ${weekdayShort(day)}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="A" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="L" ${selectedCount && editable ? '' : 'disabled'}>Leave</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="OFF" ${selectedCount && editable ? '' : 'disabled'}>Off</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="copy" ${selectedCount && editable && Number(state.timesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="workdays" ${selectedCount && editable ? '' : 'disabled'}>Fill workdays</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-timesheet-bulk-action="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
+          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="timesheetBulkDay" class="ui-v2-select ui-v2-payroll-compact-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day => `<option value="${day}" ${Number(state.timesheetBulkDay) === day ? 'selected' : ''}>${day} · ${weekdayShort(day)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="A" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="L" ${selectedCount && editable ? '' : 'disabled'}>Leave</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="OFF" ${selectedCount && editable ? '' : 'disabled'}>Off</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="copy" ${selectedCount && editable && Number(state.timesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="workdays" ${selectedCount && editable ? '' : 'disabled'}>Fill workdays</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-timesheet-bulk-action="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
         </div>
         ${employees.length ? timesheetAttendanceGrid(employees) : `<div class="ui-v2-payroll-table-empty"><strong>No employees match this attendance view.</strong><span>Change the search, branch or department filters.</span></div>`}
         <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredEmployees.length.toLocaleString()}</strong> employees <i></i> <strong>${(totals.absent + totals.leave + missingCount).toLocaleString()}</strong> controlled exceptions <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="timesheetPageSize"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-save>Save draft</button>' : ''}</div></div>
@@ -3259,7 +3271,7 @@
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-rental-ts-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of workers" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-rental-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredWorkers.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
-          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="rentalTimesheetBulkDay" class="ui-v2-select ui-v2-payroll-compact-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day=>`<option value="${day}" ${Number(state.rentalTimesheetBulkDay)===day?'selected':''}>${day} · ${weekdayShort(day,state.period)}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="A" ${selectedCount && editable ? '' : 'disabled'}>Sick absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="0" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="N" ${selectedCount && editable ? '' : 'disabled'}>No scope</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="copy" ${selectedCount && editable && Number(state.rentalTimesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-rental-ts-bulk="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
+          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="rentalTimesheetBulkDay" class="ui-v2-select ui-v2-payroll-compact-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day=>`<option value="${day}" ${Number(state.rentalTimesheetBulkDay)===day?'selected':''}>${day} · ${weekdayShort(day,state.period)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="A" ${selectedCount && editable ? '' : 'disabled'}>Sick absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="0" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="N" ${selectedCount && editable ? '' : 'disabled'}>No scope</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="copy" ${selectedCount && editable && Number(state.rentalTimesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-rental-ts-bulk="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
         </div>
         ${workers.length ? rentalTimesheetGrid(workers) : `<div class="ui-v2-payroll-table-empty"><strong>No rental workers overlap this project period.</strong><span>Assign workers to this project, change the supplier filter, or choose another project.</span></div>`}
         <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredWorkers.length.toLocaleString()}</strong> workers <i></i> <strong>${supplierCount.toLocaleString()}</strong> supplier${supplierCount===1?'':'s'} <i></i> <strong>${totals.missing.toLocaleString()}</strong> missing <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-save>Save draft</button>' : ''}</div></div>
@@ -6130,7 +6142,9 @@
       state.timesheetWorkspace='rental';
       localStorage.setItem('payroll-ui-timesheet-workspace','rental');
       state.rentalTimesheetProject=btn.dataset.openRentalTimesheetProject;
-      state.rentalTimesheetPeriod=btn.dataset.timesheetPeriod || state.rentalTimesheetPeriod || defaultInternalPeriod;
+      const nextRentalTimesheetPeriod=btn.dataset.timesheetPeriod || state.rentalTimesheetPeriod || defaultInternalPeriod;
+      if (nextRentalTimesheetPeriod !== state.rentalTimesheetPeriod) state.rentalTimesheetBulkDay=defaultTimesheetDay(nextRentalTimesheetPeriod);
+      state.rentalTimesheetPeriod=nextRentalTimesheetPeriod;
       state.period=state.rentalTimesheetPeriod;
       localStorage.setItem('payroll-ui-rental-timesheet-project',state.rentalTimesheetProject);
       localStorage.setItem('payroll-ui-rental-timesheet-period',state.rentalTimesheetPeriod);
@@ -7005,9 +7019,11 @@
             state.rentalTimesheetPage = 1;
             state.rentalTimesheetSelected.clear();
             state.rentalTimesheetPeriod = state.period;
+            state.rentalTimesheetBulkDay = defaultTimesheetDay(state.period);
             localStorage.setItem('payroll-ui-rental-timesheet-period', state.period);
           } else {
             state.internalTimesheetPeriod = state.period;
+            state.timesheetBulkDay = defaultTimesheetDay(state.period);
             localStorage.setItem('payroll-ui-internal-timesheet-period', state.period);
           }
         }

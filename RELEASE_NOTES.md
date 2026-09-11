@@ -1,3 +1,13 @@
+# SESCCO IMS 1.0.9
+
+## Unified dropdown controls and today-aware timesheet day
+
+- Standardized native select/dropdown controls across the Inventory and Payroll application shells with one shared premium control treatment: consistent chevron, border, radius, spacing, hover/focus/disabled states and compact timesheet geometry.
+- Kept native `<select>` semantics and keyboard/accessibility behavior while removing browser-default visual mismatches from Payroll filters, timesheet filters, Inventory forms and project/supplier controls.
+- Internal and Rental timesheet bulk-day selectors now initialize to the company-local current day whenever the viewed period is the current month. The current-day option is labelled `Today`.
+- Changing the timesheet period recalculates the preferred day: current month selects today; another month starts at day 1. Manually choosing a different day remains respected during ordinary rerenders.
+- Added a production verifier for the shared dropdown stylesheet and today-aware timesheet state. No database migration or business-data rewrite is required; deploy with `./scripts/deploy-production.sh`.
+
 # SESCCO IMS 1.0.8
 
 ## Required-field UX and session-message hardening

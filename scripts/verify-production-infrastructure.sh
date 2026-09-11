@@ -64,6 +64,8 @@ require_text .env.production.example 'RUN_STARTUP_TASKS=0' 'Production runtime m
 [[ -f static/platform/css/shell-switchers.css ]] || fail 'Shared platform shell CSS is missing.'
 [[ -f static/payroll/css/v2/index.css ]] || fail 'Payroll V2 CSS entrypoint is missing.'
 [[ -f static/payroll/js/app.js ]] || fail 'Payroll JS bundle is missing.'
+[[ -f static/platform/css/select-controls.css ]] || fail 'Shared select-control CSS is missing.'
+require_text scripts/deploy-production.sh '/static/platform/css/select-controls.css' 'Gateway smoke test must cover shared select-control CSS.'
 
 sha256sum -c merge/production-infrastructure-assets.sha256 >/dev/null \
   || fail 'A frozen Upgrade 11 production-infrastructure asset changed.'
