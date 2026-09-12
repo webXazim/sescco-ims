@@ -24,6 +24,7 @@ from apps.core.management import build_report
 from apps.documents.models import BusinessDocument, DocumentType
 from apps.documents.services.documents import finalize_business_document
 from apps.internal_payroll.models import (
+    AttendanceEntry,
     AttendancePeriod,
     AttendancePeriodStatus,
     BankExportChannel,
@@ -32,6 +33,7 @@ from apps.internal_payroll.models import (
     BankExportTemplate,
     CompanySalaryPaymentSettings,
     EmploymentStatus,
+    EmployeeOrganizationAssignment,
     EmployeePaymentProfile,
     InternalEmployee,
     InternalPayrollPolicy,
@@ -81,6 +83,7 @@ from apps.internal_payroll.services import (
     save_overtime_entries,
     start_salary_payment_batch,
     transition_attendance_period,
+    validate_period_for_submission,
     transition_payroll_adjustment,
     transition_payroll_run,
     update_company_salary_payment_settings,
@@ -96,6 +99,7 @@ from apps.rental_manpower.models import (
     RentalAdjustmentType,
     RentalRateType,
     RentalSettlementStatus,
+    RentalTimesheetEntry,
     RentalTimesheetPeriod,
     RentalTimesheetStatus,
     RentalWorker,
@@ -128,6 +132,7 @@ from apps.rental_manpower.services import (
     transition_project_settlements,
     transition_rental_adjustment,
     transition_timesheet,
+    validate_timesheet_for_submission,
 )
 
 
@@ -340,6 +345,7 @@ class Command(BaseCommand):
                 internal = self._seed_internal(company, membership, period_start, history_start, True)
                 rental = self._seed_rental(company, membership, period_start, history_start, True)
                 lifecycle = self._seed_lifecycle_scenarios(company, membership, period_start, history_start)
+                readiness = self._ensure_current_workflow_readiness(company, membership, period_start)
                 reports = self._verify_report_coverage(company, period_start, history_start, True)
                 documents = self._verify_document_coverage(company, history_start)
         except ValidationError as exc:
@@ -350,6 +356,10 @@ class Command(BaseCommand):
             f"{internal['employees']} payroll employees, {rental['workers']} settlement workers, "
             f"{lifecycle['records']} lifecycle test records, draft period {period_start:%Y-%m}."
         ))
+        if readiness:
+            self.stdout.write(self.style.SUCCESS(
+                "Current Draft workflow readiness verified: " + ", ".join(f"{name}={count}" for name, count in readiness.items())
+            ))
         if reports:
             self.stdout.write(self.style.SUCCESS(
                 "Report/WPS test coverage verified: " + ", ".join(f"{name}={count}" for name, count in reports.items())
@@ -782,7 +792,10 @@ class Command(BaseCommand):
             raise ValidationError({"seed": "Internal DEMO organization masters must exist before lifecycle fixtures are created."})
 
         today = timezone.localdate()
-        joining = min(previous_start, today - timedelta(days=90))
+        # Lifecycle fixtures belong to the live Draft test period. Keeping their
+        # employment start in the current period prevents them from retroactively
+        # entering the already-finalized DEMO history period.
+        joining = current_start
         employee_specs = (
             ("DEMO-190", "Demo Employee · On Leave", "leave"),
             ("DEMO-191", "Demo Employee · Inactive", "deactivate"),
@@ -1093,6 +1106,173 @@ class Command(BaseCommand):
             delete_unused_worker(actor_membership=actor, worker_id=deleted_worker.pk, confirmation=deleted_worker.worker_number, reason="TEST DATA 30-day worker recovery fixture")
 
         return {"records": employee_records + 22}
+
+    def _ensure_current_workflow_readiness(self, company, actor, current_start):
+        """Make the live DEMO Draft periods genuinely ready for workflow testing.
+
+        Lifecycle fixtures are created after the base 18/30-person attendance sheets so
+        they can exercise stop/termination/archive/delete behavior.  That ordering must
+        not leave the current Draft with newly-required blank employee/worker days.
+        This repair is deliberately DEMO-only, fills missing cells only, and preserves
+        any values a tester has already entered.
+        """
+        internal_period = AttendancePeriod.objects.for_company(company).filter(period_start=current_start).first()
+        internal_ready = 0
+        if internal_period is not None:
+            lifecycle_payroll = list(
+                InternalEmployee.objects.for_company(company)
+                .filter(employee_number__in=["DEMO-190", "DEMO-192"], deleted_at__isnull=True, archived_at__isnull=True)
+                .order_by("employee_number")
+            )
+            components = self._internal_components(company, actor)
+            overtime_policy = OvertimePolicy.objects.for_company(company).filter(code="DEMO-OT-300-15").first()
+            if overtime_policy is None:
+                raise ValidationError({"seed": "DEMO overtime policy is missing while preparing current workflow fixtures."})
+
+            basic_by_number = {"DEMO-190": D("3200"), "DEMO-192": D("2800")}
+            for employee in lifecycle_payroll:
+                # Repair 1.0.47-and-earlier lifecycle fixtures that were created with
+                # a historical joining date. They never owned historical attendance;
+                # keeping them current-period-only avoids contaminating closed history.
+                has_historical_attendance = AttendanceEntry.objects.for_company(company).filter(
+                    employee=employee, work_date__lt=current_start
+                ).exists()
+                if employee.joining_date < current_start and not has_historical_attendance:
+                    employee.joining_date = current_start
+                    employee.full_clean()
+                    employee.save(update_fields=("joining_date", "updated_at"))
+                    EmployeeOrganizationAssignment.objects.for_company(company).filter(
+                        employee=employee, effective_from__lt=current_start, effective_to__gte=current_start
+                    ).update(effective_from=current_start)
+                    EmployeeOrganizationAssignment.objects.for_company(company).filter(
+                        employee=employee, effective_from__lt=current_start, effective_to__isnull=True
+                    ).update(effective_from=current_start)
+
+                basic = basic_by_number[employee.employee_number]
+                has_structure = SalaryStructure.objects.for_company(company).filter(
+                    employee=employee, effective_from__lte=current_start
+                ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=current_start)).exists()
+                if not has_structure:
+                    assign_employee_salary_structure(
+                        actor_membership=actor,
+                        employee_id=employee.pk,
+                        effective_from=current_start,
+                        components=[
+                            {"component_id": components["basic"].pk, "amount": basic},
+                            {"component_id": components["house"].pk, "amount": (basic * D("0.20")).quantize(D("0.01"))},
+                            {"component_id": components["mobile"].pk, "amount": D("100")},
+                            {"component_id": components["food"].pk, "amount": D("300")},
+                            {"component_id": components["car"].pk, "amount": D("0")},
+                        ],
+                        overtime_policy_id=overtime_policy.pk,
+                        notes="TEST DATA lifecycle employee salary structure",
+                    )
+                if not EmployeePaymentProfile.objects.for_company(company).filter(employee=employee).exists():
+                    suffix = int(employee.employee_number.split("-")[-1])
+                    upsert_employee_payment_profile(
+                        actor_membership=actor,
+                        employee_id=employee.pk,
+                        values={
+                            "destination_type": PaymentDestination.IBAN,
+                            "account_holder_name": employee.full_name,
+                            "bank_name": "Demo Payroll Bank",
+                            "bank_code": "DEMO",
+                            "iban": _demo_iban(7000 + suffix),
+                            "wps_enabled": True,
+                            "is_active": True,
+                            "mark_verified": True,
+                        },
+                    )
+
+            if internal_period.status == AttendancePeriodStatus.DRAFT:
+                saved = set(
+                    AttendanceEntry.objects.for_company(company).filter(period=internal_period)
+                    .values_list("employee_id", "work_date")
+                )
+                missing_rows = []
+                for employee in lifecycle_payroll:
+                    end = min(employee.employment_end_date or internal_period.period_end, internal_period.period_end)
+                    work_date = max(employee.joining_date, internal_period.period_start)
+                    while work_date <= end:
+                        if (employee.pk, work_date) not in saved:
+                            if work_date.weekday() in {4, 5}:
+                                value = "OFF"
+                            elif employee.employee_number == "DEMO-190":
+                                value = "L"
+                            else:
+                                value = "8"
+                            missing_rows.append({
+                                "employee_id": employee.pk, "date": work_date, "value": value,
+                                "note": "TEST DATA lifecycle workflow readiness",
+                            })
+                        work_date += timedelta(days=1)
+                if missing_rows:
+                    save_attendance_entries(actor_membership=actor, period_start=current_start, entries=missing_rows)
+                internal_period.refresh_from_db()
+                validate_period_for_submission(period=internal_period)
+            internal_ready = len(lifecycle_payroll)
+
+        # Lifecycle rental assignments (transfer, worker termination and supplier
+        # termination) are also created after the base 30-worker sheet. Fill only
+        # missing assigned dates so every current DEMO project can be submitted.
+        rental_projects_ready = 0
+        rental_worker_days_added = 0
+        assignments = list(
+            WorkerAssignment.objects.for_company(company)
+            .select_related("project", "worker", "worker__supplier")
+            .filter(worker__worker_number__startswith="RDEMO-", cancelled_at__isnull=True, effective_from__lte=_month_end(current_start))
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=current_start))
+            .order_by("project__code", "worker__worker_number", "effective_from")
+        )
+        project_ids = []
+        seen_projects = set()
+        for assignment in assignments:
+            if assignment.project_id not in seen_projects and assignment.project.status == Project.Status.ACTIVE and not assignment.project.archived_at and not assignment.project.deleted_at:
+                seen_projects.add(assignment.project_id)
+                project_ids.append(assignment.project_id)
+
+        for project_id in project_ids:
+            project = Project.objects.for_company(company).get(pk=project_id)
+            period = RentalTimesheetPeriod.objects.for_company(company).filter(project=project, period_start=current_start).first()
+            if period is not None and period.status != RentalTimesheetStatus.DRAFT:
+                validate_timesheet_for_submission(period=period)
+                rental_projects_ready += 1
+                continue
+            project_assignments = [item for item in assignments if item.project_id == project_id]
+            saved = set()
+            if period is not None:
+                saved = set(RentalTimesheetEntry.objects.for_company(company).filter(period=period).values_list("worker_id", "work_date"))
+            rows = []
+            for assignment in project_assignments:
+                work_date = max(assignment.effective_from, current_start)
+                end = min(assignment.effective_to or _month_end(current_start), _month_end(current_start))
+                while work_date <= end:
+                    key = (assignment.worker_id, work_date)
+                    if key not in saved:
+                        rows.append({
+                            "worker_id": assignment.worker_id,
+                            "work_date": work_date,
+                            "value": "OFF" if work_date.weekday() in {4, 5} else "10",
+                            "note": "TEST DATA lifecycle workflow readiness",
+                        })
+                        saved.add(key)
+                    work_date += timedelta(days=1)
+            if rows:
+                period = save_timesheet_entries(
+                    actor_membership=actor, project_id=project.reference, period_start=current_start, entries=rows
+                )
+                rental_worker_days_added += len(rows)
+            elif period is None:
+                continue
+            period.refresh_from_db()
+            validate_timesheet_for_submission(period=period)
+            rental_projects_ready += 1
+
+        return {
+            "internal_lifecycle_employees": internal_ready,
+            "rental_projects": rental_projects_ready,
+            "rental_worker_days_added": rental_worker_days_added,
+        }
 
     def _verify_report_coverage(self, company, current_start, previous_start, complete_history):
         """Fail the seed if a supposedly complete DEMO tenant cannot exercise report generation."""

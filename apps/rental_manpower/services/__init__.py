@@ -42,6 +42,7 @@ __all__ = [
     "save_timesheet_entries",
     "save_timesheet_overtime",
     "transition_timesheet",
+    "validate_timesheet_for_submission",
     "calculate_project_settlements",
     "create_rental_adjustment",
     "record_supplier_payment",
@@ -52,7 +53,7 @@ __all__ = [
     "update_rental_adjustment",
 ]
 
-from .timesheets import save_entries as save_timesheet_entries, save_overtime as save_timesheet_overtime, transition_timesheet
+from .timesheets import save_entries as save_timesheet_entries, save_overtime as save_timesheet_overtime, transition_timesheet, validate_timesheet_for_submission
 
 from .settlements import (
     calculate_project_settlements, create_rental_adjustment, record_supplier_payment,

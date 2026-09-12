@@ -29,6 +29,9 @@ for text in (
     "def _seed_internal_period(",
     "def _seed_rental_period(",
     "def _seed_lifecycle_scenarios(",
+    "def _ensure_current_workflow_readiness(",
+    "validate_period_for_submission(period=internal_period)",
+    "validate_timesheet_for_submission(period=period)",
     "def _verify_report_coverage(",
     "def _verify_document_coverage(",
     "BusinessDocument",
@@ -97,6 +100,24 @@ for rel, text in (
 
 
 frontend = (ROOT / "static/payroll/js/app.js").read_text(encoding="utf-8")
+
+# The live Draft must be workflow-ready after lifecycle fixtures are introduced.
+for rel, text in (
+    (seed_rel, '"DEMO-190": D("3200")'),
+    (seed_rel, '"DEMO-192": D("2800")'),
+    (seed_rel, '"rental_worker_days_added"'),
+    ("apps/rental_manpower/services/timesheets.py", "def validate_timesheet_for_submission("),
+    ("apps/rental_manpower/services/timesheets.py", "A / N / L / OFF"),
+    ("static/payroll/js/app.js", "function preferredRentalProjectId("),
+    ("static/payroll/js/app.js", "A / L / S / H / OFF are valid explicit statuses; only blank required days block submission."),
+    ("static/payroll/js/app.js", "A / N / L / OFF are valid explicit statuses; only blank assigned worker-days block submission."),
+    ("static/payroll/js/app.js", "0 · Zero hours"),
+    ("static/payroll/js/app.js", "A · Absent"),
+):
+    require(rel, text)
+
+if "A · Sick absence" in frontend or "0 · Absent" in frontend:
+    fail("rental attendance legend has regressed to the old incorrect code labels")
 internal_create_start = frontend.find("'internal-employee': {")
 branch_template_start = frontend.find("'branch': {", internal_create_start)
 if internal_create_start < 0 or branch_template_start < 0:

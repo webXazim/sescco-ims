@@ -44,6 +44,19 @@ class RentalTimesheetTests(TestCase):
         with self.assertRaises(ValidationError):
             save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,1),'value':'8'}])
 
+    def test_explicit_status_codes_are_complete_and_workflow_revalidates(self):
+        values=['10','A','N','L','OFF']
+        entries=[
+            {'worker_id':self.worker.pk,'work_date':date(2026,8,day),'value':values[(day-1)%len(values)]}
+            for day in range(1,32)
+        ]
+        save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
+        period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='submit')
+        self.assertEqual(period.status,RentalTimesheetStatus.SUBMITTED)
+        RentalTimesheetEntry.objects.filter(period=period,worker=self.worker,work_date=date(2026,8,10)).delete()
+        with self.assertRaises(ValidationError):
+            transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='approve')
+
     def test_monthly_overtime_rejects_midmonth_rate_change(self):
         change_worker_rate(actor_membership=self.owner,worker_id=self.worker.pk,rate_type='Hourly',rate='16',effective_date=date(2026,8,15),reason='Revision')
         with self.assertRaises(ValidationError):

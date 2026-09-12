@@ -1,3 +1,14 @@
+# 1.0.48 — Workflow-ready Internal + Rental current-period seed
+
+- Fixes the seeded September Internal Attendance period being blocked at **Submit for Review** by 36 genuinely missing rows. The status letters were not the problem: `A`, `L`, `S`, `H` and `OFF` are valid explicit attendance values. The missing rows came from lifecycle fixtures created after the original 18-employee attendance grid (`DEMO-190` added 30 required days and `DEMO-192` added 6 employed days).
+- The DEMO seed now performs a final current-period readiness pass after lifecycle fixtures. It fills **only missing** required cells, preserves tester-entered attendance, validates the Draft with the same production submission authority, and provisions the current lifecycle employees with salary structures and verified synthetic WPS destinations so later Payroll Run / WPS testing is not blocked.
+- Repairs lifecycle fixtures created by 1.0.47 and earlier so `DEMO-190` / `DEMO-192` are current-period fixtures instead of retroactively entering already-finalized DEMO history. Fresh fixtures now start in the live Draft month.
+- Rental Manpower was already seeded with 30 `RDEMO-001…030` workers on `DEMO-DIRIYA`; the apparent empty state came from the UI defaulting to the newer lifecycle project `DEMO-YARD`. A new project chooser defaults to the usable non-archived project with the largest active rental workforce while preserving a valid user-selected project.
+- Completes current Rental Timesheet data **after** transfer/termination lifecycle fixtures are created. Missing assigned days for `RDEMO-090`, `RDEMO-092`, `RDEMO-093` and related current DEMO assignment segments are populated only where blank, so every seeded current DEMO project is ready for Draft → Submitted → Approved → Locked testing.
+- Adds a shared Rental Timesheet completeness validator and revalidates at Submit, Approve and Lock. `A` = Absent, `N` = No Scope, `L` = Leave and `OFF` are valid explicit statuses; only missing assigned worker-days block the workflow.
+- Corrects the Rental attendance legend (`0` is zero hours, not Absent; `A` is Absent, not Sick absence) and makes both Internal and Rental helper text explicitly distinguish valid status codes from blank/missing cells.
+- Adds regression coverage for mixed explicit status-code submission and approval-time Rental completeness revalidation. No database migration is required for this release.
+
 # 1.0.47 — Nullable-safe tenant reconciliation
 
 - Fixed the production reconciliation false positive that reported `rental_manpower.SupplierPayment.retry_of` as a cross-company reference when `retry_of` is legitimately NULL on an original supplier payment.

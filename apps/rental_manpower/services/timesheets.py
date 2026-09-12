@@ -18,7 +18,7 @@ from apps.core.services.audit import record_audit_event
 from apps.rental_manpower.models import (
     RentalAttendanceCode, RentalTimesheetEntry, RentalTimesheetOvertime,
     RentalTimesheetPeriod, RentalTimesheetStatus, RentalRateType, WorkerAssignment,
-    RentalWorkerStatus, SupplierStatus,
+    RentalWorker, RentalWorkerStatus, SupplierStatus,
 )
 
 
@@ -152,17 +152,42 @@ def save_overtime(*, actor_membership, project_id, period_start, worker_id, hour
 
 
 def _missing(period):
-    required=[]
-    assignments=WorkerAssignment.objects.for_company(period.company).filter(project=period.project,cancelled_at__isnull=True,effective_from__lte=period.period_end).filter(Q(effective_to__isnull=True)|Q(effective_to__gte=period.period_start))
+    required=set()
+    assignments=(WorkerAssignment.objects.for_company(period.company)
+                 .select_related('worker')
+                 .filter(project=period.project,cancelled_at__isnull=True,effective_from__lte=period.period_end)
+                 .filter(Q(effective_to__isnull=True)|Q(effective_to__gte=period.period_start)))
     saved=set(RentalTimesheetEntry.objects.filter(period=period).values_list('worker_id','work_date'))
     for a in assignments:
         start=max(a.effective_from,period.period_start); end=min(a.effective_to or period.period_end,period.period_end)
         d=start
         from datetime import timedelta
         while d<=end:
-            if (a.worker_id,d) not in saved: required.append((a.worker_id,d))
+            if (a.worker_id,d) not in saved: required.add((a.worker_id,d))
             d += timedelta(days=1)
-    return required
+    return sorted(required, key=lambda item: (item[1], str(item[0])))
+
+
+def validate_timesheet_for_submission(*, period: RentalTimesheetPeriod) -> None:
+    """Require one explicit value for every assigned worker-day.
+
+    Numeric 0-24 hour values and the explicit Rental Attendance status codes
+    A / N / L / OFF are all complete values. Only an actually missing row blocks
+    workflow submission, approval, or locking.
+    """
+    missing=_missing(period)
+    if not missing:
+        return
+    worker_ids={worker_id for worker_id,_work_date in missing[:10]}
+    worker_numbers=dict(RentalWorker.objects.for_company(period.company).filter(pk__in=worker_ids).values_list('pk','worker_number'))
+    first=[f"{worker_numbers.get(worker_id, str(worker_id))} · {work_date.isoformat()}" for worker_id,work_date in missing[:10]]
+    raise ValidationError({
+        "entries": (
+            "Timesheet is incomplete. Every assigned worker-day must contain hours or an explicit status code "
+            "(A / N / L / OFF). "
+            f"First missing rows: {', '.join(first)}"
+        )
+    })
 
 @transaction.atomic
 def transition_timesheet(*, actor_membership, project_id, period_start, action, reason='', request=None):
@@ -172,16 +197,17 @@ def transition_timesheet(*, actor_membership, project_id, period_start, action, 
     if action=='submit':
         _edit(actor_membership)
         if period.status!=RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft timesheets can be submitted.")
-        missing=_missing(period)
-        if missing: raise ValidationError({"entries":f"Timesheet has {len(missing)} missing assigned worker-day values."})
+        validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.SUBMITTED; period.submitted_at=now; period.submitted_by=actor_membership.user
     elif action=='approve':
         _approve(actor_membership)
         if period.status!=RentalTimesheetStatus.SUBMITTED: raise ValidationError("Only Submitted timesheets can be approved.")
+        validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.APPROVED; period.approved_at=now; period.approved_by=actor_membership.user
     elif action=='lock':
         _approve(actor_membership)
         if period.status!=RentalTimesheetStatus.APPROVED: raise ValidationError("Only Approved timesheets can be locked.")
+        validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.LOCKED; period.locked_at=now; period.locked_by=actor_membership.user
     elif action=='return':
         _approve(actor_membership)

@@ -912,6 +912,22 @@
     || (serverWorkspaces.includes('internal') ? 'internal' : (serverWorkspaces[0] || 'management'));
   const initialPeriod = initialWorkspace === 'rental' ? storedRentalWorkspacePeriod : initialWorkspace === 'management' ? storedManagementWorkspacePeriod : storedInternalWorkspacePeriod;
 
+  const rentalProjectCandidates = Array.isArray(rentalMaster.projects) ? rentalMaster.projects : [];
+  function preferredRentalProjectId(projects = rentalProjectCandidates, storedProjectId = '') {
+    const stored = projects.find(item => item?.id === storedProjectId && !item.deleted && !item.archived && item.status !== 'Completed');
+    if (stored) return stored.id;
+    const eligible = projects.filter(item => item && !item.deleted && !item.archived && item.status !== 'Completed');
+    const pool = eligible.length ? eligible : projects.filter(item => item && !item.deleted);
+    return [...pool].sort((left,right) => {
+      const workers = Number(right.rentalWorkers || 0) - Number(left.rentalWorkers || 0);
+      if (workers) return workers;
+      return String(left.code || left.name || '').localeCompare(String(right.code || right.name || ''));
+    })[0]?.id || '';
+  }
+  const storedRentalTimesheetProject = localStorage.getItem('payroll-ui-rental-timesheet-project') || '';
+  const storedRentalSettlementProject = localStorage.getItem('payroll-ui-rental-settlement-project') || '';
+  const initialRentalTimesheetProject = preferredRentalProjectId(rentalProjectCandidates, storedRentalTimesheetProject);
+  const initialRentalSettlementProject = preferredRentalProjectId(rentalProjectCandidates, storedRentalSettlementProject || storedRentalTimesheetProject);
 
   const state = {
     workspace: initialWorkspace,
@@ -1002,7 +1018,7 @@
     rentalTimesheetPeriod: localStorage.getItem('payroll-ui-rental-timesheet-period') || defaultInternalPeriod,
     timesheetTab: 'attendance',
     rentalTimesheetTab: 'daily',
-    rentalTimesheetProject: localStorage.getItem('payroll-ui-rental-timesheet-project') || (rentalMaster.projects || []).find(item => item.status === 'Active')?.id || (rentalMaster.projects || [])[0]?.id || '',
+    rentalTimesheetProject: initialRentalTimesheetProject,
     rentalTimesheetSupplier: 'All suppliers',
     rentalTimesheetSearch: '',
     rentalTimesheetSelected: new Set(),
@@ -1015,7 +1031,7 @@
     rentalOvertime: rentalOvertimeCache,
     rentalSettlementView: 'project',
     rentalSettlementTab: 'current',
-    rentalSettlementProject: localStorage.getItem('payroll-ui-rental-settlement-project') || localStorage.getItem('payroll-ui-rental-timesheet-project') || (rentalMaster.projects || []).find(item => item.status === 'Active')?.id || (rentalMaster.projects || [])[0]?.id || '',
+    rentalSettlementProject: initialRentalSettlementProject,
     rentalSettlementSupplier: localStorage.getItem('payroll-ui-rental-settlement-supplier') || 'All suppliers',
     rentalSettlementSearch: '',
     rentalSettlementStatus: 'All',
@@ -1116,7 +1132,7 @@
     salaryStructures: { ...(salarySetup.salaryStructures || {}) },
     salaryStructureHistory: { ...(salarySetup.salaryStructureHistory || {}) }
   };
-  if (!state.projects.some(item => item.id === state.rentalTimesheetProject)) state.rentalTimesheetProject = state.projects[0]?.id || '';
+  if (!state.projects.some(item => item.id === state.rentalTimesheetProject)) state.rentalTimesheetProject = preferredRentalProjectId(state.projects);
   if (!/^\w+ \d{4}$/.test(state.rentalTimesheetPeriod || '')) state.rentalTimesheetPeriod = defaultInternalPeriod;
 
   const icon = (name) => {
@@ -3334,7 +3350,7 @@
           <div class="ui-v2-payroll-timesheet-file-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-import>Import</button>' : ''}<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-export>Export</button></div>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-payroll-timesheet-fullscreen" data-timesheet-fullscreen aria-pressed="${state.timesheetFullscreen ? 'true' : 'false'}"><span>${icon(state.timesheetFullscreen ? 'collapse' : 'expand')}</span>${state.timesheetFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
         </div>
-        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-absent"></i>A · Absent</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-sick"></i>S · Sick</span><span><i class="is-holiday"></i>H · Holiday</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span></div><span>Enter 0–24 hours or A / L / S / H / OFF. Weekend values remain explicit.</span></div>
+        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-absent"></i>A · Absent</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-sick"></i>S · Sick</span><span><i class="is-holiday"></i>H · Holiday</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span></div><span>A / L / S / H / OFF are valid explicit statuses; only blank required days block submission. Enter 0–24 hours for worked days.</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-timesheet-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of employees" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${employees.length} employees`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${employees.filter(employee=>state.timesheetSelected.has(employee.id)).length} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredEmployees.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
@@ -3739,7 +3755,7 @@
           <div class="ui-v2-payroll-timesheet-file-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-import>Import</button>' : ''}<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-export>Export</button></div>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-payroll-timesheet-fullscreen" data-timesheet-fullscreen aria-pressed="${state.timesheetFullscreen ? 'true' : 'false'}"><span>${icon(state.timesheetFullscreen ? 'collapse' : 'expand')}</span>${state.timesheetFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
         </div>
-        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Absent</span><span><i class="is-absent"></i>A · Sick absence</span><span><i class="is-noscope"></i>N · No scope</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>Enter 0–24 hours or A / N / L / OFF. Effective assignment dates control editable project cells.</span></div>
+        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span><span><i class="is-absent"></i>A · Absent</span><span><i class="is-noscope"></i>N · No scope</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>A / N / L / OFF are valid explicit statuses; only blank assigned worker-days block submission. Enter 0–24 hours for worked days.</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-rental-ts-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of workers" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-rental-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredWorkers.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
@@ -3779,7 +3795,7 @@
   function rentalTimesheetsTemplate() {
     let project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     if (!project) {
-      state.rentalTimesheetProject = state.projects.find(item=>item.status !== 'Completed')?.id || '';
+      state.rentalTimesheetProject = preferredRentalProjectId(state.projects);
       project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     }
     ensureRentalTimesheet();

@@ -76,6 +76,25 @@ class AttendanceServiceTests(TestCase):
                 action="submit",
             )
 
+    def test_explicit_status_codes_are_complete_values_for_submission(self):
+        values = ["8", "A", "L", "S", "H", "OFF"]
+        rows = []
+        day = self.period_start
+        index = 0
+        while day.month == self.period_start.month:
+            rows.append({
+                "employee_id": str(self.employee.pk),
+                "date": day.isoformat(),
+                "value": values[index % len(values)],
+            })
+            day += timedelta(days=1)
+            index += 1
+        save_attendance_entries(actor_membership=self.officer, period_start=self.period_start, entries=rows)
+        period = transition_attendance_period(
+            actor_membership=self.officer, period_start=self.period_start, action="submit"
+        )
+        self.assertEqual(period.status, AttendancePeriodStatus.SUBMITTED)
+
     def test_submitted_period_is_not_editable(self):
         self._complete_month()
         transition_attendance_period(actor_membership=self.officer, period_start=self.period_start, action="submit")
