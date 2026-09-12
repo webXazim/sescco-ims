@@ -19,7 +19,7 @@ from apps.core.services.lifecycle import (
     require_lifecycle_action,
 )
 from apps.core.services.numbering import allocate_number
-from apps.core.trash import move_to_trash, restore_from_trash
+from apps.core.trash import cascade_to_trash, move_to_trash, restore_from_trash, restore_trash_cascade
 from apps.internal_payroll.models import (
     Branch,
     BranchKind,
@@ -368,11 +368,23 @@ def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, conf
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(branch)
+    cascade_employees = list(
+        InternalEmployee.objects.select_for_update()
+        .filter(
+            company=branch.company, deleted_at__isnull=True,
+            organization_assignments__branch=branch,
+            organization_assignments__effective_to__isnull=True,
+        )
+        .distinct()
+    )
     move_to_trash(branch, user=actor_membership.user, reason=reason)
+    cascaded = cascade_to_trash(
+        root=branch, children=cascade_employees, user=actor_membership.user, reason=reason
+    )
     record_lifecycle_action(
         instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch),
         reason=reason, audit_action="internal.branch.moved_to_trash",
-        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": cascaded, "cascade_mode": "soft_delete_children"},
         request=request,
     )
     return str(branch.pk)
@@ -383,9 +395,14 @@ def restore_branch_trash(*, actor_membership: CompanyMembership, branch_id, requ
     _require_internal_edit(actor_membership)
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=False)
     before = _model_snapshot(branch)
+    cascade_deleted_at = branch.deleted_at
+    cascade_purge_after = branch.purge_after
     if not restore_from_trash(branch):
         raise ValidationError({"record": "This Trash item has expired and can no longer be restored."})
-    record_audit_event(company=branch.company, area=AuditArea.INTERNAL, action="internal.branch.trash_restored", object_type="internal_payroll.Branch", object_id=branch.pk, object_label=str(branch), actor_membership=actor_membership, before=before, after=_model_snapshot(branch), request=request)
+    restored_children = restore_trash_cascade(
+        root=branch, deleted_at=cascade_deleted_at, purge_after=cascade_purge_after
+    )
+    record_audit_event(company=branch.company, area=AuditArea.INTERNAL, action="internal.branch.trash_restored", object_type="internal_payroll.Branch", object_id=branch.pk, object_label=str(branch), actor_membership=actor_membership, before=before, after=_model_snapshot(branch), metadata={"cascade_scope":"current_employees","restored_children":restored_children}, request=request)
     return branch
 
 
@@ -440,11 +457,23 @@ def delete_unused_department(*, actor_membership: CompanyMembership, department_
     department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(department)
+    cascade_employees = list(
+        InternalEmployee.objects.select_for_update()
+        .filter(
+            company=department.company, deleted_at__isnull=True,
+            organization_assignments__department=department,
+            organization_assignments__effective_to__isnull=True,
+        )
+        .distinct()
+    )
     move_to_trash(department, user=actor_membership.user, reason=reason)
+    cascaded = cascade_to_trash(
+        root=department, children=cascade_employees, user=actor_membership.user, reason=reason
+    )
     record_lifecycle_action(
         instance=department, decision=decision, actor_membership=actor_membership, before=before,
         after=_model_snapshot(department), reason=reason, audit_action="internal.department.moved_to_trash",
-        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": cascaded, "cascade_mode": "soft_delete_children"},
         request=request,
     )
     return str(department.pk)
@@ -455,9 +484,14 @@ def restore_department_trash(*, actor_membership: CompanyMembership, department_
     _require_internal_edit(actor_membership)
     department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company, deleted_at__isnull=False)
     before = _model_snapshot(department)
+    cascade_deleted_at = department.deleted_at
+    cascade_purge_after = department.purge_after
     if not restore_from_trash(department):
         raise ValidationError({"record": "This Trash item has expired and can no longer be restored."})
-    record_audit_event(company=department.company, area=AuditArea.INTERNAL, action="internal.department.trash_restored", object_type="internal_payroll.Department", object_id=department.pk, object_label=str(department), actor_membership=actor_membership, before=before, after=_model_snapshot(department), request=request)
+    restored_children = restore_trash_cascade(
+        root=department, deleted_at=cascade_deleted_at, purge_after=cascade_purge_after
+    )
+    record_audit_event(company=department.company, area=AuditArea.INTERNAL, action="internal.department.trash_restored", object_type="internal_payroll.Department", object_id=department.pk, object_label=str(department), actor_membership=actor_membership, before=before, after=_model_snapshot(department), metadata={"cascade_scope":"current_employees","restored_children":restored_children}, request=request)
     return department
 
 

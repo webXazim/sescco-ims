@@ -19,7 +19,7 @@ from apps.projects.contracts import ProjectStatus
 from apps.projects.models import Project
 from apps.rental_manpower.project_adapter import rental_project_for_company
 from apps.core.services.numbering import allocate_number
-from apps.core.trash import move_to_trash, restore_from_trash
+from apps.core.trash import cascade_to_trash, move_to_trash, restore_from_trash, restore_trash_cascade
 from apps.rental_manpower.models import (
     ManpowerSupplier,
     RentalWorker,
@@ -611,11 +611,19 @@ def delete_unused_supplier(*, actor_membership: CompanyMembership, supplier_id, 
     supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(supplier, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
     before = _snapshot(supplier)
+    cascade_workers = list(
+        RentalWorker.objects.select_for_update().filter(
+            company=supplier.company, supplier=supplier, deleted_at__isnull=True
+        )
+    )
     move_to_trash(supplier, user=actor_membership.user, reason=reason)
+    cascaded = cascade_to_trash(
+        root=supplier, children=cascade_workers, user=actor_membership.user, reason=reason
+    )
     record_lifecycle_action(
         instance=supplier, decision=decision, actor_membership=actor_membership, before=before,
         after=_snapshot(supplier), reason=reason, audit_action="rental.supplier.moved_to_trash",
-        metadata={"retention_days":30,"cascade_scope":"supplier_workers","affected_workers":supplier.workers.filter(deleted_at__isnull=True).count()},
+        metadata={"retention_days":30,"cascade_scope":"supplier_workers","affected_workers":cascaded,"cascade_mode":"soft_delete_children"},
         request=request,
     )
     return str(supplier.pk)
@@ -626,9 +634,14 @@ def restore_supplier_trash(*, actor_membership: CompanyMembership, supplier_id, 
     _require_rental_edit(actor_membership)
     supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company, deleted_at__isnull=False)
     before = _snapshot(supplier)
+    cascade_deleted_at = supplier.deleted_at
+    cascade_purge_after = supplier.purge_after
     if not restore_from_trash(supplier):
         raise ValidationError({"supplier": "This Trash item has expired and can no longer be restored."})
-    record_audit_event(company=supplier.company, area=AuditArea.RENTAL, action="rental.supplier.trash_restored", object_type="rental_manpower.ManpowerSupplier", object_id=supplier.pk, object_label=str(supplier), actor_membership=actor_membership, before=before, after=_snapshot(supplier), request=request)
+    restored_children = restore_trash_cascade(
+        root=supplier, deleted_at=cascade_deleted_at, purge_after=cascade_purge_after
+    )
+    record_audit_event(company=supplier.company, area=AuditArea.RENTAL, action="rental.supplier.trash_restored", object_type="rental_manpower.ManpowerSupplier", object_id=supplier.pk, object_label=str(supplier), actor_membership=actor_membership, before=before, after=_snapshot(supplier), metadata={"cascade_scope":"supplier_workers","restored_children":restored_children}, request=request)
     return supplier
 
 

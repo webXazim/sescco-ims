@@ -18,12 +18,13 @@ from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixi
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
-from apps.core.trash import TRASH_RETENTION_DAYS, active_trash, move_to_trash, restore_from_trash
+from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, move_to_trash, restore_from_trash
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
 from apps.explorer.models import SavedView, TablePreference
 from apps.projects.models import Project
 from apps.projects.selectors import active_projects
+from apps.projects.services import restore_project_trash
 
 from .forms import (
     MovementFilterForm,
@@ -1563,17 +1564,28 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
 
     def get_queryset(self):
         entries = []
+        cascade_stock_ids = active_cascade_child_ids(
+            company=self.request.company, child_type="inventory.StockItem"
+        )
+        cascade_location_ids = active_cascade_child_ids(
+            company=self.request.company, child_type="inventory.InventoryLocation"
+        )
         groups = (
             (
                 "stock",
                 active_trash(
                     StockItem.objects.for_company(self.request.company).select_related("location", "project", "deleted_by")
-                ),
+                ).exclude(pk__in=cascade_stock_ids),
             ),
             ("project", active_trash(Project.objects.for_company(self.request.company).select_related("deleted_by"))),
             ("unit", active_trash(Unit.objects.for_company(self.request.company).select_related("deleted_by"))),
             ("supplier", active_trash(Supplier.objects.for_company(self.request.company).select_related("deleted_by"))),
-            ("location", active_trash(InventoryLocation.objects.for_company(self.request.company).select_related("deleted_by", "project"))),
+            (
+                "location",
+                active_trash(
+                    InventoryLocation.objects.for_company(self.request.company).select_related("deleted_by", "project")
+                ).exclude(pk__in=cascade_location_ids),
+            ),
         )
         for kind, objects in groups:
             for item in objects:
@@ -1640,30 +1652,35 @@ class TrashRestoreView(InventoryAdminRequiredMixin, View):
             deleted_at__isnull=False,
             **lookup,
         )
-        project_before = None
+        cascade_child_type = {
+            "stock": "inventory.StockItem",
+            "location": "inventory.InventoryLocation",
+        }.get(kind)
+        if cascade_child_type and str(instance.pk) in active_cascade_child_ids(
+            company=request.company, child_type=cascade_child_type
+        ):
+            messages.error(
+                request,
+                "This record was deleted by a parent cascade. Restore the parent project so the full scope is restored safely.",
+            )
+            return redirect("inventory:trash")
+
         if kind == "project":
-            project_before = {
-                "status": instance.status,
-                "deleted_at": instance.deleted_at.isoformat() if instance.deleted_at else "",
-            }
-        if restore_from_trash(instance):
-            if kind == "project":
-                record_audit_event(
-                    company=instance.company,
-                    area=AuditArea.PROJECTS,
-                    action="project.restored_from_trash",
-                    object_type="projects.Project",
-                    object_id=instance.reference,
-                    object_label=str(instance),
-                    actor_membership=getattr(request, "company_membership", None),
-                    actor=request.user,
-                    before=project_before,
-                    after={
-                        "status": instance.status,
-                        "deleted_at": "",
-                    },
+            try:
+                restored = restore_project_trash(
+                    actor_membership=request.company_membership,
+                    project_id=instance.pk,
                     request=request,
                 )
+            except ValidationError:
+                restored = None
+            if restored:
+                messages.success(request, f"{restored} and its cascade-owned inventory records were restored.")
+            else:
+                messages.error(
+                    request, "The retention period has ended, so this record can no longer be restored."
+                )
+        elif restore_from_trash(instance):
             messages.success(request, f"{instance} was restored.")
         else:
             messages.error(

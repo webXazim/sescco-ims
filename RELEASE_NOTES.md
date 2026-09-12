@@ -1,3 +1,13 @@
+# 1.0.43 — Working Actions + recoverable cascade delete + E2E seed verification
+
+- Fixes the Payroll **Actions** dropdown regression on Branch / Office, Department and other lifecycle menus. The delegated controller correctly toggled the dropdown host, but a global CSS hardening rule still disabled pointer events on the menu itself; the open host now explicitly owns menu interactivity and the 1.0.43 assets are cache-busted.
+- Adds explicit 30-day cascade-recovery ownership with `core.TrashCascadeLink`. Parent Delete now soft-deletes the exact operational child masters in the same recovery window and parent Restore atomically restores only those children. Independently deleted children are never resurrected by a parent restore.
+- Branch / Office and Department Delete now soft-delete their current Internal Employee masters; Manpower Supplier Delete soft-deletes its Rental Worker masters; Project Delete soft-deletes its project Inventory Location and Stock Item masters. Effective-dated assignments, finalized payroll, attendance, settlements, stock movements, generated documents and audit evidence remain protected historical records.
+- De-duplicates cascade-owned employees/workers from the Payroll Delete recovery page so users restore the parent boundary once instead of restoring children independently. Inventory Trash similarly hides project-owned cascade children and restores a deleted Project through the project service so its inventory scope is recovered atomically.
+- Extends `--seed` lifecycle fixtures to execute real Branch, Department and Supplier cascades and verify child recovery deadlines. The full test seed now fails unless all Payroll report/WPS paths return data and every generated Payroll document type exists for the finalized DEMO history period.
+- Adds regression coverage for the parent/child delete window and project inventory cascade, updates retention authority/verification, and adds forward migration `core.0005_trash_cascade_link` without rewriting released migrations.
+- Hardens recovery ownership against stale-link edge cases: independently restoring a cascaded child releases the old parent ownership immediately, parent restore requires the original delete/purge window, and expired children retire cascade ownership before purge/tombstone retention. A later independent child delete can therefore never be resurrected or hidden by an older parent delete.
+
 # 1.0.42 — Complete DEMO testing + stop/termination lifecycle
 
 - Expands `--seed` into an idempotent end-to-end Payroll test dataset instead of only sample master rows. The seed now verifies Internal Payroll, Rental Manpower, management workforce cost, overtime, advances/adjustments, payments, transfers and WPS report output.

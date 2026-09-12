@@ -1,14 +1,14 @@
 {
-  "version": 3,
+  "version": 4,
   "product": "SESCCO MS",
   "principles": {
     "archive": "Archive is a reversible lifecycle boundary. For parent masters, operational child scope may inherit the archive state without rewriting permanent child/history rows.",
-    "delete_unused": "For selected operational masters, Delete means a 30-day reversible soft-delete. Parent masters may cascade the hidden/non-operational state to dependent current scope while preserving all historical rows.",
+    "delete_unused": "For selected operational masters, Delete means a 30-day reversible soft-delete. Parent masters soft-delete their owned/current child masters into the same recovery window while protected workflow/audit history remains immutable.",
     "workflow": "Operational transactions are closed, cancelled, reversed, released or superseded through their workflow; they are not archived/deleted as masters.",
     "immutable": "Audit, movement and finalized-document evidence is append-only or reversal-based and must never expose ordinary delete/archive actions.",
     "access": "System users and memberships are deactivated/reactivated so audit actor history remains resolvable.",
-    "trash": "Delete recovery is distinct from Archive. Deleted records are hidden from active selectors, recoverable for 30 days, and may retain protected tombstones after expiry when immutable history still references them.",
-    "cascade": "Branch/Office, Department, Manpower Supplier and Project are reversible lifecycle parents: Archive/Delete propagate operational visibility to their current dependent scope; restoring the parent restores only that inherited scope because child permanent state is not overwritten."
+    "trash": "Delete recovery is distinct from Archive. Deleted masters and cascade-owned child masters are hidden from active selectors and recoverable for 30 days. Cascade recovery metadata ensures parent restore revives only children deleted by that parent operation.",
+    "cascade": "Branch/Office and Department soft-delete their current employee masters; Manpower Supplier soft-deletes its worker masters; Project soft-deletes its project inventory location/stock masters. All cascade-owned children share the parent 30-day window and restore atomically with the parent. Independently deleted children are not resurrected."
   },
   "models": {
     "accounts.User": {
@@ -19,6 +19,9 @@
     },
     "core.AuditEvent": {
       "mode": "immutable_ledger"
+    },
+    "core.TrashCascadeLink": {
+      "mode": "cascade_recovery_state"
     },
     "core.Company": {
       "mode": "system_singleton_no_delete"

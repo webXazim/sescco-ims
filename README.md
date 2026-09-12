@@ -10,7 +10,7 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.42 — complete DEMO testing + stop/termination lifecycle**.
+Current packaged release: **SESCCO MS 1.0.43 — working lifecycle Actions, recoverable parent cascades, and complete Payroll E2E seed verification**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 

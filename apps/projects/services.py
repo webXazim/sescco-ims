@@ -11,7 +11,7 @@ from apps.accounts.models import CompanyMembership
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
-from apps.core.trash import move_to_trash, restore_from_trash
+from apps.core.trash import cascade_to_trash, move_to_trash, restore_from_trash, restore_trash_cascade
 
 from .models import Project
 
@@ -126,7 +126,24 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
     project = _project_for_membership(membership=actor_membership, identifier=project_id)
     decision = require_lifecycle_action(project, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = project_snapshot(project)
+    from apps.inventory.models import InventoryLocation, StockItem
+
+    cascade_children = list(
+        InventoryLocation.objects.select_for_update().filter(
+            company=project.company, project=project, deleted_at__isnull=True
+        )
+    )
+    cascade_children.extend(
+        list(
+            StockItem.objects.select_for_update().filter(
+                company=project.company, project=project, deleted_at__isnull=True
+            )
+        )
+    )
     move_to_trash(project, user=actor_membership.user, reason=reason)
+    cascaded = cascade_to_trash(
+        root=project, children=cascade_children, user=actor_membership.user, reason=reason
+    )
     record_lifecycle_action(
         instance=project,
         decision=decision,
@@ -138,6 +155,8 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
         metadata={
             "retention_days": 30,
             "cascade_scope": "project_operations",
+            "cascade_mode": "soft_delete_inventory_children",
+            "cascaded_inventory_masters": cascaded,
             "stock_records_with_balance": decision.evidence.get("quantity_bearing_stock", 0),
             "open_rental_assignments": decision.evidence.get("open_rental_assignments", 0),
         },
@@ -153,16 +172,21 @@ def restore_project_trash(*, actor_membership: CompanyMembership, project_id, re
     if not project.deleted_at:
         return project
     before = project_snapshot(project)
+    cascade_deleted_at = project.deleted_at
+    cascade_purge_after = project.purge_after
     if not restore_from_trash(project):
         from django.core.exceptions import ValidationError
         raise ValidationError({"project": "This Trash item has expired and can no longer be restored."})
+    restored_children = restore_trash_cascade(
+        root=project, deleted_at=cascade_deleted_at, purge_after=cascade_purge_after
+    )
     project.updated_by = actor_membership.user
     project.save(update_fields=("updated_by", "updated_at"))
     record_audit_event(
         company=project.company, area=AuditArea.PROJECTS, action="project.trash_restored",
         object_type="projects.Project", object_id=project.reference, object_label=str(project),
         actor_membership=actor_membership, before=before, after=project_snapshot(project),
-        metadata={"retention_days": 30, "cascade_scope": "project_operations"}, request=request,
+        metadata={"retention_days": 30, "cascade_scope": "project_operations", "restored_children": restored_children}, request=request,
     )
     return project
 

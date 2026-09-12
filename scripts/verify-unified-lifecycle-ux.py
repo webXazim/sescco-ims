@@ -75,6 +75,18 @@ require(
     ".ui-v2-payroll-master-detail__actions .ui-v2-lifecycle-menu > .ui-v2-prs-dropdown-menu",
     "bottom: calc(100% + 7px);",
 )
+require(
+    "static/payroll/css/v2/prs-final.css",
+    "Dropdown openness lives on the data-dropdown host",
+    "[data-dropdown]:not(.is-open) > [data-dropdown-menu]",
+    "[data-dropdown].is-open > [data-dropdown-menu] { pointer-events:auto; }",
+)
+require(
+    "static/payroll/css/v2/payroll-controls.css",
+    "1.0.43 — actionable lifecycle menus",
+    ".ui-v2-lifecycle-menu.is-open > [data-dropdown-menu]",
+    "pointer-events: auto;",
+)
 
 # Lifecycle navigation must use the concise user-facing labels requested for the
 # private SESCCO MS shell. Internal route/storage names may remain unchanged.

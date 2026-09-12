@@ -243,22 +243,106 @@ class InternalOrganizationServiceTests(TestCase):
         self.assertIsNone(branch.archived_at); self.assertTrue(branch.is_active)
         self.assertIsNone(department.archived_at); self.assertTrue(department.is_active)
 
-    def test_branch_department_delete_cascades_visibility_and_restores_safely(self):
+    def test_branch_delete_soft_deletes_current_employees_and_restores_exact_cascade(self):
         employee = self.create_employee()
-        self.assertEqual(delete_unused_branch(actor_membership=self.owner, branch_id=self.branch.pk, confirmation=self.branch.code, reason="Office removed"), str(self.branch.pk))
-        self.assertEqual(delete_unused_department(actor_membership=self.owner, department_id=self.department.pk, confirmation=self.department.code, reason="Department removed"), str(self.department.pk))
-        self.branch.refresh_from_db(); self.department.refresh_from_db(); employee.refresh_from_db()
-        self.assertIsNotNone(self.branch.deleted_at); self.assertIsNotNone(self.department.deleted_at)
-        self.assertIsNone(employee.deleted_at)
+        self.assertEqual(
+            delete_unused_branch(
+                actor_membership=self.owner, branch_id=self.branch.pk,
+                confirmation=self.branch.code, reason="Office removed",
+            ),
+            str(self.branch.pk),
+        )
+        self.branch.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNotNone(self.branch.deleted_at)
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertEqual(employee.deleted_at, self.branch.deleted_at)
+        self.assertEqual(employee.purge_after, self.branch.purge_after)
         self.assertEqual(EmployeeOrganizationAssignment.objects.filter(employee=employee).count(), 1)
         self.assertFalse(employees_for_company(company=self.company, deleted=False).filter(pk=employee.pk).exists())
         self.assertTrue(employees_for_company(company=self.company, deleted=True, archived=None).filter(pk=employee.pk).exists())
+
         restore_branch_trash(actor_membership=self.owner, branch_id=self.branch.pk)
-        restore_department_trash(actor_membership=self.owner, department_id=self.department.pk)
-        self.branch.refresh_from_db(); self.department.refresh_from_db(); employee.refresh_from_db()
-        self.assertIsNone(self.branch.deleted_at); self.assertIsNone(self.department.deleted_at)
+        self.branch.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNone(self.branch.deleted_at)
+        self.assertIsNone(employee.deleted_at)
         self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
         self.assertTrue(employees_for_company(company=self.company, deleted=False).filter(pk=employee.pk).exists())
+
+    def test_department_delete_soft_deletes_current_employees_and_restores_exact_cascade(self):
+        employee = self.create_employee()
+        self.assertEqual(
+            delete_unused_department(
+                actor_membership=self.owner, department_id=self.department.pk,
+                confirmation=self.department.code, reason="Department removed",
+            ),
+            str(self.department.pk),
+        )
+        self.department.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNotNone(self.department.deleted_at)
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertEqual(employee.deleted_at, self.department.deleted_at)
+        self.assertEqual(employee.purge_after, self.department.purge_after)
+        self.assertEqual(EmployeeOrganizationAssignment.objects.filter(employee=employee).count(), 1)
+
+        restore_department_trash(actor_membership=self.owner, department_id=self.department.pk)
+        self.department.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNone(self.department.deleted_at)
+        self.assertIsNone(employee.deleted_at)
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
+        self.assertTrue(employees_for_company(company=self.company, deleted=False).filter(pk=employee.pk).exists())
+
+    def test_parent_restore_does_not_resurrect_independently_deleted_employee(self):
+        employee = self.create_employee()
+        delete_unused_employee(
+            actor_membership=self.owner, employee_id=employee.pk,
+            confirmation=employee.employee_number, reason="Duplicate employee master",
+        )
+        employee.refresh_from_db()
+        employee_purge_after = employee.purge_after
+
+        delete_unused_branch(
+            actor_membership=self.owner, branch_id=self.branch.pk,
+            confirmation=self.branch.code, reason="Office removed",
+        )
+        restore_branch_trash(actor_membership=self.owner, branch_id=self.branch.pk)
+
+        employee.refresh_from_db()
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertEqual(employee.purge_after, employee_purge_after)
+
+    def test_parent_restore_never_resurrects_child_redeleted_after_independent_restore(self):
+        employee = self.create_employee()
+        delete_unused_branch(
+            actor_membership=self.owner, branch_id=self.branch.pk,
+            confirmation=self.branch.code, reason="Office removed",
+        )
+        self.branch.refresh_from_db(); employee.refresh_from_db()
+        original_parent_deleted_at = self.branch.deleted_at
+
+        # The child is deliberately recovered on its own, which releases the
+        # original parent-cascade ownership, then deleted again as a separate
+        # lifecycle event while the parent remains in Trash.
+        restore_employee_trash(actor_membership=self.owner, employee_id=employee.pk)
+        employee.refresh_from_db()
+        self.assertIsNone(employee.deleted_at)
+        delete_unused_employee(
+            actor_membership=self.owner, employee_id=employee.pk,
+            confirmation=employee.employee_number, reason="Separate duplicate cleanup",
+        )
+        employee.refresh_from_db()
+        if employee.deleted_at == original_parent_deleted_at:
+            # Make the independent window unambiguously distinct even on a DB
+            # backend with coarse timestamp precision.
+            independent_deleted_at = original_parent_deleted_at + timedelta(seconds=1)
+            employee.deleted_at = independent_deleted_at
+            employee.purge_after = independent_deleted_at + timedelta(days=30)
+            employee.save(update_fields=("deleted_at", "purge_after", "updated_at"))
+
+        restore_branch_trash(actor_membership=self.owner, branch_id=self.branch.pk)
+        self.branch.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNone(self.branch.deleted_at)
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertEqual(employee.deletion_reason, "Separate duplicate cleanup")
 
     def test_reactivate_employee_requires_current_active_organization_masters(self):
         employee = self.create_employee()

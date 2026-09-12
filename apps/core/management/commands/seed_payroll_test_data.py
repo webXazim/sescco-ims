@@ -21,7 +21,7 @@ from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company, DocumentBrandingMode
 from apps.core.management import build_report
-from apps.documents.models import DocumentType
+from apps.documents.models import BusinessDocument, DocumentType
 from apps.documents.services.documents import finalize_business_document
 from apps.internal_payroll.models import (
     AttendancePeriod,
@@ -67,8 +67,10 @@ from apps.internal_payroll.services import (
     delete_unused_employee,
     archive_branch,
     delete_unused_branch,
+    restore_branch_trash,
     archive_department,
     delete_unused_department,
+    restore_department_trash,
     create_overtime_policy,
     create_payroll_adjustment,
     create_salary_component,
@@ -113,6 +115,7 @@ from apps.rental_manpower.services import (
     change_worker_lifecycle,
     archive_supplier,
     delete_unused_supplier,
+    restore_supplier_trash,
     delete_unused_worker,
     calculate_project_settlements,
     create_project,
@@ -320,6 +323,7 @@ class Command(BaseCommand):
                 rental = self._seed_rental(company, membership, period_start, history_start, True)
                 lifecycle = self._seed_lifecycle_scenarios(company, membership, period_start, history_start)
                 reports = self._verify_report_coverage(company, period_start, history_start, True)
+                documents = self._verify_document_coverage(company, history_start)
         except ValidationError as exc:
             raise CommandError(f"Payroll test seed failed validation: {exc}") from exc
 
@@ -331,6 +335,10 @@ class Command(BaseCommand):
         if reports:
             self.stdout.write(self.style.SUCCESS(
                 "Report/WPS test coverage verified: " + ", ".join(f"{name}={count}" for name, count in reports.items())
+            ))
+        if documents:
+            self.stdout.write(self.style.SUCCESS(
+                "Final document generation verified: " + ", ".join(f"{name}={count}" for name, count in documents.items())
             ))
         self.stdout.write(self.style.SUCCESS(
             f"Closed end-to-end DEMO history is available for {history_start:%Y-%m}; "
@@ -815,11 +823,25 @@ class Command(BaseCommand):
                 actor_membership=actor, code="DEMO-BR-DEL", name="Demo Deleted Branch (TEST)",
                 location="Dammam", address="TEST DATA", manager_name="Demo Manager",
             )
+        if deleted_branch.deleted_at:
+            deleted_branch = restore_branch_trash(actor_membership=actor, branch_id=deleted_branch.pk)
+        branch_child = InternalEmployee.objects.for_company(company).filter(employee_number="DEMO-196").first()
+        if branch_child is None:
+            branch_child = create_employee(
+                actor_membership=actor, employee_number="DEMO-196", full_name="Demo Branch Cascade Child",
+                joining_date=joining, branch_id=deleted_branch.pk, department_id=department.pk,
+                position="Cascade Test Record", status=EmploymentStatus.ACTIVE,
+                national_id=_national_id("DEMO-LIFE-IQAMA-", 196), phone="+966522220196",
+                address="TEST DATA · Branch cascade child", reason="TEST DATA cascade seed",
+            )
         if not deleted_branch.deleted_at:
             delete_unused_branch(
                 actor_membership=actor, branch_id=deleted_branch.pk, confirmation=deleted_branch.code,
-                reason="TEST DATA branch 30-day recovery fixture",
+                reason="TEST DATA branch 30-day recovery cascade fixture",
             )
+        branch_child.refresh_from_db()
+        if not branch_child.deleted_at or branch_child.purge_after != deleted_branch.purge_after:
+            raise ValidationError({"seed": "Branch Trash cascade did not move its current employee into the same 30-day recovery window."})
 
         archived_department = Department.objects.for_company(company).filter(code="DEMO-DEP-ARCH").first()
         if archived_department is None:
@@ -836,11 +858,25 @@ class Command(BaseCommand):
                 actor_membership=actor, code="DEMO-DEP-DEL", name="Demo Deleted Department (TEST)",
                 notes="TEST DATA lifecycle fixture",
             )
+        if deleted_department.deleted_at:
+            deleted_department = restore_department_trash(actor_membership=actor, department_id=deleted_department.pk)
+        department_child = InternalEmployee.objects.for_company(company).filter(employee_number="DEMO-197").first()
+        if department_child is None:
+            department_child = create_employee(
+                actor_membership=actor, employee_number="DEMO-197", full_name="Demo Department Cascade Child",
+                joining_date=joining, branch_id=branch.pk, department_id=deleted_department.pk,
+                position="Cascade Test Record", status=EmploymentStatus.ACTIVE,
+                national_id=_national_id("DEMO-LIFE-IQAMA-", 197), phone="+966522220197",
+                address="TEST DATA · Department cascade child", reason="TEST DATA cascade seed",
+            )
         if not deleted_department.deleted_at:
             delete_unused_department(
                 actor_membership=actor, department_id=deleted_department.pk, confirmation=deleted_department.code,
-                reason="TEST DATA department 30-day recovery fixture",
+                reason="TEST DATA department 30-day recovery cascade fixture",
             )
+        department_child.refresh_from_db()
+        if not department_child.deleted_at or department_child.purge_after != deleted_department.purge_after:
+            raise ValidationError({"seed": "Department Trash cascade did not move its current employee into the same 30-day recovery window."})
 
         main_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-01").first()
         main_project = Project.objects.for_company(company).filter(code="DEMO-DIRIYA").first()
@@ -962,11 +998,24 @@ class Command(BaseCommand):
                 status=SupplierStatus.ACTIVE, contact_person="Demo Contact", phone="+966544440004",
                 email="deleted-supplier@example.invalid", address="TEST DATA", notes="TEST DATA delete fixture",
             )
+        if deleted_supplier.deleted_at:
+            deleted_supplier = restore_supplier_trash(actor_membership=actor, supplier_id=deleted_supplier.pk)
+        supplier_cascade_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-096").first()
+        if supplier_cascade_worker is None:
+            supplier_cascade_worker = create_worker(
+                actor_membership=actor, supplier_id=deleted_supplier.pk, worker_number="RDEMO-096",
+                full_name="Demo Supplier Cascade Worker", national_id=_national_id("DEMO-R-LIFE-", 96),
+                phone="+966533330096", status=RentalWorkerStatus.ACTIVE,
+                notes="TEST DATA · supplier delete cascade child",
+            )
         if not deleted_supplier.deleted_at:
             delete_unused_supplier(
                 actor_membership=actor, supplier_id=deleted_supplier.pk, confirmation=deleted_supplier.code,
-                reason="TEST DATA supplier 30-day recovery fixture",
+                reason="TEST DATA supplier 30-day recovery cascade fixture",
             )
+        supplier_cascade_worker.refresh_from_db()
+        if not supplier_cascade_worker.deleted_at or supplier_cascade_worker.purge_after != deleted_supplier.purge_after:
+            raise ValidationError({"seed": "Supplier Trash cascade did not move its workers into the same 30-day recovery window."})
 
         project_specs = (
             ("DEMO-HOLD", "Demo Project On Hold (TEST)", Project.Status.ON_HOLD, None),
@@ -1007,7 +1056,7 @@ class Command(BaseCommand):
         if not deleted_worker.deleted_at:
             delete_unused_worker(actor_membership=actor, worker_id=deleted_worker.pk, confirmation=deleted_worker.worker_number, reason="TEST DATA 30-day worker recovery fixture")
 
-        return {"records": employee_records + 19}
+        return {"records": employee_records + 22}
 
     def _verify_report_coverage(self, company, current_start, previous_start, complete_history):
         """Fail the seed if a supposedly complete DEMO tenant cannot exercise report generation."""
@@ -1039,6 +1088,21 @@ class Command(BaseCommand):
             if not rows:
                 raise ValidationError({"seed": f"DEMO report coverage is empty for {name} ({workspace}, {period:%Y-%m})."})
         return coverage
+
+    def _verify_document_coverage(self, company, period_start):
+        """Require every payroll printable document type in the closed DEMO period."""
+        coverage = {}
+        for document_type, _label in DocumentType.choices:
+            count = BusinessDocument.objects.for_company(company).filter(
+                document_type=document_type, period_start=period_start
+            ).count()
+            coverage[document_type] = count
+            if not count:
+                raise ValidationError({
+                    "seed": f"DEMO final document coverage is empty for {document_type} ({period_start:%Y-%m})."
+                })
+        return coverage
+
 
     def _seed_rental(self, company, actor, current_start, previous_start, make_history):
         supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-01").first()

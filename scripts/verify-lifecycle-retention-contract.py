@@ -59,6 +59,7 @@ if not isinstance(models, dict) or not models:
 
 allowed_modes = {
     "access_deactivate_only",
+    "cascade_recovery_state",
     "effective_dated_supersede_only",
     "employment_lifecycle_archive_delete_unused",
     "employment_lifecycle_archive_trash_30d",
@@ -92,6 +93,9 @@ trash_modes = {
 for label, expected in trash_modes.items():
     if models.get(label, {}).get("mode") != expected:
         fail(f"{label} must use the 30-day Trash retention mode")
+
+if models.get("core.TrashCascadeLink", {}).get("mode") != "cascade_recovery_state":
+    fail("TrashCascadeLink must be classified as internal cascade recovery state")
 
 actual = persisted_models()
 contracted = set(models)
@@ -161,7 +165,7 @@ trash_source = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in (
     "apps/projects/models.py",
     "apps/inventory/management/commands/purge_trash.py",
 ))
-for needle in ("TRASH_RETENTION_DAYS = 30", "deleted_at", "purge_after", "deletion_reason", "move_to_trash", "restore_from_trash"):
+for needle in ("TRASH_RETENTION_DAYS = 30", "deleted_at", "purge_after", "deletion_reason", "move_to_trash", "restore_from_trash", "release_cascade_child_ownership", "parent Trash recovery window is required"):
     if needle not in trash_source:
         fail(f"30-day Trash implementation is missing {needle!r}")
 
@@ -172,6 +176,7 @@ for needle in (
     "collector.fast_deletes",
     "purge_after=None",
     "protected historical tombstones",
+    "release_cascade_child_ownership(instance)",
 ):
     if needle not in purge_text:
         fail(f"Trash expiry must preserve related history; purge safety is missing {needle!r}")

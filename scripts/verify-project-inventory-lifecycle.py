@@ -65,6 +65,7 @@ require(
     "archive_previous_status",
     '"cascade_scope": "project_operations"',
     '"retention_days": 30',
+    "deleted_at=cascade_deleted_at, purge_after=cascade_purge_after",
 )
 require(
     "apps/projects/models.py",

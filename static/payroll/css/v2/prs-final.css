@@ -182,8 +182,11 @@
 .ui-v2-root :where(.status,.readiness) { max-width:100%; }
 .ui-v2-root :where(.status,.readiness) > span { flex:0 0 auto; }
 
-.ui-v2-root [data-dropdown-menu]:not(.is-open),
+/* Dropdown openness lives on the data-dropdown host.  Do not require the menu
+   element itself to carry .is-open: delegated/dynamic payroll menus toggle the host. */
+.ui-v2-root [data-dropdown]:not(.is-open) > [data-dropdown-menu],
 .ui-v2-root .menu:not(.is-open)[aria-hidden="true"] { pointer-events:none; }
+.ui-v2-root [data-dropdown].is-open > [data-dropdown-menu] { pointer-events:auto; }
 
 /* ---------- Drawer / modal hardening ---------- */
 .ui-v2-root .drawer,

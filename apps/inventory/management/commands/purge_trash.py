@@ -7,6 +7,7 @@ from apps.internal_payroll.models import Branch, Department, InternalEmployee
 from apps.inventory.models import InventoryLocation, StockItem, Supplier, Unit
 from apps.projects.models import Project
 from apps.rental_manpower.models import ManpowerSupplier, RentalWorker
+from apps.core.trash import release_cascade_child_ownership
 
 
 def _hard_delete_is_history_safe(instance) -> bool:
@@ -58,6 +59,10 @@ class Command(BaseCommand):
 
         for model in models:
             for instance in model.objects.filter(deleted_at__isnull=False, purge_after__lte=now):
+                # Cascade ownership belongs only to the original recoverable
+                # 30-day delete event.  Once that child expires, retire the
+                # link before retaining a tombstone or physically purging it.
+                release_cascade_child_ownership(instance)
                 if not _hard_delete_is_history_safe(instance):
                     # The 30-day recovery window is over, so this master stops
                     # appearing in Trash.  Keep the hidden tombstone itself so

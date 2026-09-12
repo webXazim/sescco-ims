@@ -17,6 +17,7 @@ for rel,text in [
 ("apps/rental_manpower/selectors/masters.py",'"supplierTerminated"'),
 ("apps/rental_manpower/selectors/masters.py","supplier__deleted_at__isnull=True"),
 ("apps/rental_manpower/selectors/masters.py","supplier__archived_at__isnull=True"),
+("apps/rental_manpower/services/masters.py","deleted_at=cascade_deleted_at, purge_after=cascade_purge_after"),
 ("apps/rental_manpower/services/assignments.py","Restore the worker's archived manpower supplier"),
 ]: req(rel,text)
 manifest=(ROOT/'merge/frozen-merge-migrations.sha256').read_text(encoding='utf-8')

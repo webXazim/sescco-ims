@@ -70,6 +70,6 @@
     "archive_trash_contract": "Archive and 30-day Delete are reversible lifecycle boundaries; protected historical evidence is never cascade-erased",
     "lifecycle_retention_contract": "merge/lifecycle-retention-contract.json",
     "lifecycle_retention_verifier": "scripts/verify-lifecycle-retention-contract.py",
-    "lifecycle_retention_coverage": "58 persisted SESCCO models explicitly classified by retention mode"
+    "lifecycle_retention_coverage": "59 persisted SESCCO models explicitly classified by retention mode"
   }
 }

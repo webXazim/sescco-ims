@@ -30,6 +30,8 @@ for text in (
     "def _seed_rental_period(",
     "def _seed_lifecycle_scenarios(",
     "def _verify_report_coverage(",
+    "def _verify_document_coverage(",
+    "BusinessDocument",
     "calculate_payroll_run",
     "prepare_salary_payment_batch",
     "export_salary_payment_batch",
@@ -64,9 +66,9 @@ for text in (
 
 # Lifecycle fixtures must exercise temporary stop, final termination, Archive and 30-day Delete.
 for text in (
-    "DEMO-190", "DEMO-191", "DEMO-192", "DEMO-193", "DEMO-194",
+    "DEMO-190", "DEMO-191", "DEMO-192", "DEMO-193", "DEMO-194", "DEMO-196", "DEMO-197",
     "DEMO-BR-ARCH", "DEMO-BR-DEL", "DEMO-DEP-ARCH", "DEMO-DEP-DEL",
-    "RDEMO-090", "RDEMO-091", "RDEMO-092", "RDEMO-093", "RDEMO-094", "RDEMO-095",
+    "RDEMO-090", "RDEMO-091", "RDEMO-092", "RDEMO-093", "RDEMO-094", "RDEMO-095", "RDEMO-096",
     "DEMO-SUP-INACTIVE", "DEMO-SUP-TERM", "DEMO-SUP-ARCH", "DEMO-SUP-DEL",
     "DEMO-HOLD", "DEMO-DONE", "DEMO-ARCH", "DEMO-DEL",
     'action="terminate"',
@@ -111,4 +113,13 @@ for forbidden in (
     if forbidden in (ROOT / "apps/rental_manpower/services/masters.py").read_text(encoding="utf-8") or forbidden in (ROOT / "apps/rental_manpower/lifecycle.py").read_text(encoding="utf-8"):
         fail(f"obsolete restrictive stop-activity rule returned: {forbidden}")
 
-print("Complete DEMO payroll/WPS/report/output + stop/termination seed contract verified.")
+for rel, text in (
+    ("apps/core/trash.py", "def cascade_to_trash("),
+    ("apps/core/trash.py", "def restore_trash_cascade("),
+    ("apps/internal_payroll/services/organization.py", '"cascade_mode": "soft_delete_children"'),
+    ("apps/rental_manpower/services/masters.py", '"cascade_mode":"soft_delete_children"'),
+    ("apps/projects/services.py", '"cascade_mode": "soft_delete_inventory_children"'),
+):
+    require(rel, text)
+
+print("Complete DEMO payroll/WPS/report/document + recoverable cascade + stop/termination seed contract verified.")

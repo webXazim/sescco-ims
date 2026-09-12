@@ -300,16 +300,20 @@ class RentalMasterServiceTests(TestCase):
         restored=restore_supplier_archive(actor_membership=self.owner, supplier_id=archived.pk)
         self.assertIsNone(restored.archived_at); self.assertEqual(restored.status, SupplierStatus.ACTIVE)
 
-    def test_supplier_delete_with_worker_history_is_recoverable(self):
+    def test_supplier_delete_with_worker_history_soft_deletes_and_restores_workers(self):
         worker=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-HIST2", full_name="History Worker Two")
         self.assertEqual(delete_unused_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, confirmation=self.supplier.code, reason="Supplier removed"), str(self.supplier.pk))
         self.supplier.refresh_from_db(); worker.refresh_from_db()
-        self.assertIsNotNone(self.supplier.deleted_at); self.assertIsNone(worker.deleted_at)
+        self.assertIsNotNone(self.supplier.deleted_at)
+        self.assertIsNotNone(worker.deleted_at)
+        self.assertEqual(worker.deleted_at, self.supplier.deleted_at)
+        self.assertEqual(worker.purge_after, self.supplier.purge_after)
         self.assertFalse(workers_for_company(company=self.company, deleted=False).filter(pk=worker.pk).exists())
         self.assertTrue(workers_for_company(company=self.company, deleted=True, archived=None).filter(pk=worker.pk).exists())
         restored=restore_supplier_trash(actor_membership=self.owner, supplier_id=self.supplier.pk)
         self.assertIsNone(restored.deleted_at)
         worker.refresh_from_db(); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
+        self.assertIsNone(worker.deleted_at)
         self.assertTrue(workers_for_company(company=self.company, deleted=False).filter(pk=worker.pk).exists())
 
     def test_worker_lifecycle_archive_restore_delete_unused(self):

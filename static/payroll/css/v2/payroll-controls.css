@@ -500,3 +500,15 @@
   top: auto;
   bottom: calc(100% + 7px);
 }
+
+
+/* 1.0.43 — actionable lifecycle menus.
+ * The global menu hardening previously disabled pointer events because the
+ * open state is stored on the dropdown host, not on the menu element itself.
+ * Keep lifecycle menus above sticky master cards and fully interactive.
+ */
+.ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu.is-open > [data-dropdown-menu] {
+  pointer-events: auto;
+  visibility: visible;
+  z-index: 220;
+}

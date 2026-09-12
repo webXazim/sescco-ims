@@ -26,6 +26,7 @@ for rel,text in [
  ("static/payroll/js/app.js","Delete with 30-day recovery"),
  ("static/payroll/js/app.js","Restore previous state"),
  ("apps/internal_payroll/services/organization.py",'"cascade_scope": "current_employees"'),
+ ("apps/internal_payroll/services/organization.py","deleted_at=cascade_deleted_at, purge_after=cascade_purge_after"),
  ("apps/internal_payroll/selectors/organization.py",'"cascadeLifecycle"'),
  ("apps/internal_payroll/selectors/organization.py","_inherited_deleted=Exists"),
  ("apps/internal_payroll/selectors/organization.py","_inherited_archived=Exists"),

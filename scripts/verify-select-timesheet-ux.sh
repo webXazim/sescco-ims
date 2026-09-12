@@ -19,7 +19,7 @@ reject_text() {
 require_text templates/base.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "payroll/css/v2/payroll-controls.css"
-require_text templates/payroll/app.html "?v=1.0.42"
+require_text templates/payroll/app.html "?v=1.0.43"
 
 # Shared file is intentionally cross-app only.
 require_text static/platform/css/select-controls.css "appearance: none;"

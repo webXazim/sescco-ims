@@ -232,6 +232,26 @@ class ProjectWorkspaceTests(TestCase):
         )
         self.assertRedirects(response, reverse("projects:list"))
         project.refresh_from_db(); stock.refresh_from_db()
+        location = project.inventory_location
+        location.refresh_from_db()
         self.assertIsNotNone(project.deleted_at)
+        self.assertIsNotNone(stock.deleted_at)
+        self.assertIsNotNone(location.deleted_at)
+        self.assertEqual(stock.deleted_at, project.deleted_at)
+        self.assertEqual(stock.purge_after, project.purge_after)
+        self.assertEqual(location.purge_after, project.purge_after)
         self.assertEqual(stock.current_quantity, Decimal("4"))
+        # Stock quantities/history are preserved while operational inventory masters are recoverably deleted.
         self.assertTrue(Project.objects.filter(pk=project.pk).exists())
+
+        trash = self.client.get(reverse("inventory:trash"))
+        self.assertContains(trash, project.code)
+        self.assertNotContains(trash, stock.material_name)
+        response = self.client.post(
+            reverse("inventory:trash_restore", args=["project", project.code])
+        )
+        self.assertRedirects(response, reverse("inventory:trash"))
+        project.refresh_from_db(); stock.refresh_from_db(); location.refresh_from_db()
+        self.assertIsNone(project.deleted_at)
+        self.assertIsNone(stock.deleted_at)
+        self.assertIsNone(location.deleted_at)
