@@ -18,6 +18,7 @@ from apps.core.services.audit import record_audit_event
 from apps.rental_manpower.models import (
     RentalAttendanceCode, RentalTimesheetEntry, RentalTimesheetOvertime,
     RentalTimesheetPeriod, RentalTimesheetStatus, RentalRateType, WorkerAssignment,
+    RentalWorkerStatus, SupplierStatus,
 )
 
 
@@ -43,9 +44,9 @@ def _decimal(value, field, *, maximum=None):
     return v
 
 
-def _period(*, company, project_id, period_start, create=False):
+def _period(*, company, project_id, period_start, create=False, require_active=False):
     start,end=month_bounds(period_start)
-    project=rental_project_for_company(company=company, identifier=project_id)
+    project=rental_project_for_company(company=company, identifier=project_id, require_active=require_active)
     qs=RentalTimesheetPeriod.objects.select_for_update().filter(company=company, project=project, period_start=start)
     obj=qs.first()
     if obj is None and create:
@@ -54,11 +55,43 @@ def _period(*, company, project_id, period_start, create=False):
     return project,obj
 
 
+def _assert_assignment_lifecycle(assignment, *, work_date=None):
+    worker = assignment.worker
+    supplier = worker.supplier
+    if worker.deleted_at or supplier.deleted_at:
+        raise ValidationError({"worker_id": "Restore the deleted worker/supplier lifecycle before editing timesheets."})
+    if worker.archived_at or supplier.archived_at:
+        raise ValidationError({"worker_id": "Restore the archived worker/supplier lifecycle before editing timesheets."})
+
+    # Temporary stop and termination are effective-dated operational boundaries.
+    # Historical draft corrections through the effective date remain possible; new
+    # activity after that date is blocked. When no work date is available (for
+    # example a monthly OT aggregate), stopped/terminated masters stay blocked.
+    if worker.status == RentalWorkerStatus.INACTIVE:
+        if work_date is None or not worker.inactive_on or work_date > worker.inactive_on:
+            raise ValidationError({"worker_id": "The rental worker is temporarily stopped for new timesheet activity."})
+    elif worker.status == RentalWorkerStatus.TERMINATED:
+        if work_date is None or not worker.terminated_on or work_date > worker.terminated_on:
+            raise ValidationError({"worker_id": "The rental worker relationship is terminated for new timesheet activity."})
+    elif worker.status != RentalWorkerStatus.ACTIVE:
+        raise ValidationError({"worker_id": "Only an active rental worker can receive new timesheet entries."})
+
+    if supplier.status == SupplierStatus.INACTIVE:
+        if work_date is None or not supplier.inactive_on or work_date > supplier.inactive_on:
+            raise ValidationError({"worker_id": "The manpower supplier is temporarily stopped for new timesheet activity."})
+    elif supplier.status == SupplierStatus.TERMINATED:
+        if work_date is None or not supplier.terminated_on or work_date > supplier.terminated_on:
+            raise ValidationError({"worker_id": "The manpower supplier relationship is terminated for new timesheet activity."})
+    elif supplier.status != SupplierStatus.ACTIVE:
+        raise ValidationError({"worker_id": "The manpower supplier is not active for new timesheet activity."})
+
+
 def _assignment(*, company, worker_id, project_id, work_date):
     obj=(WorkerAssignment.objects.for_company(company).select_related('worker','worker__supplier','project')
          .filter(worker_id=worker_id, project_id=project_id, cancelled_at__isnull=True, effective_from__lte=work_date)
          .filter(Q(effective_to__isnull=True)|Q(effective_to__gte=work_date)).order_by('-effective_from','-created_at').first())
     if obj is None: raise ValidationError({"worker_id": "Worker has no assignment to this project on the selected date."})
+    _assert_assignment_lifecycle(obj, work_date=work_date)
     return obj
 
 
@@ -69,7 +102,7 @@ def _entry_snapshot(a):
 @transaction.atomic
 def save_entries(*, actor_membership, project_id, period_start, entries, request=None):
     _edit(actor_membership); company=actor_membership.company
-    project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True)
+    project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True, require_active=True)
     if period.status != RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft rental timesheets can be edited.")
     changed=0
     for row in entries:
@@ -94,13 +127,15 @@ def save_entries(*, actor_membership, project_id, period_start, entries, request
 @transaction.atomic
 def save_overtime(*, actor_membership, project_id, period_start, worker_id, hours, rate=None, request=None):
     _edit(actor_membership); company=actor_membership.company
-    project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True)
+    project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True, require_active=True)
     if period.status != RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft rental timesheets can be edited.")
     h=_decimal(hours,'hours',maximum=744)
     if h == 0:
         RentalTimesheetOvertime.objects.filter(company=company,period=period,worker_id=worker_id).delete()
     else:
         assignments=list(WorkerAssignment.objects.for_company(company).select_related('worker','worker__supplier','project').filter(worker_id=worker_id,project=project,cancelled_at__isnull=True,effective_from__lte=period.period_end).filter(Q(effective_to__isnull=True)|Q(effective_to__gte=period.period_start)).order_by('effective_from'))
+        for assignment in assignments:
+            _assert_assignment_lifecycle(assignment, work_date=period.period_end)
         commercial={(a.rate_type,a.rate,a.trade) for a in assignments}
         if len(commercial)!=1: raise ValidationError({"hours":"Overtime cannot be entered as one monthly value when trade/rate changes inside the period. Split/correct the assignment or use daily overtime in a future adjustment workflow."})
         a=assignments[0]

@@ -26,7 +26,7 @@ class ManpowerSupplierLifecyclePolicy(LifecyclePolicy):
     def confirmation_token(self, instance): return instance.code
 
     def dependency_evidence(self, instance, action: LifecycleAction) -> Mapping[str, int]:
-        active_workers = instance.workers.filter(status=RentalWorkerStatus.ACTIVE, archived_at__isnull=True).count()
+        active_workers = instance.workers.filter(status=RentalWorkerStatus.ACTIVE, archived_at__isnull=True, deleted_at__isnull=True).count()
         if action in {LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE}:
             return {"active_workers": active_workers}
         if action is LifecycleAction.DELETE:
@@ -41,23 +41,23 @@ class ManpowerSupplierLifecyclePolicy(LifecyclePolicy):
     def blockers(self, instance, action: LifecycleAction, *, evidence: Mapping[str, int]):
         if action is LifecycleAction.ARCHIVE:
             if instance.archived_at: return (LifecycleBlocker(code="already_archived", field="supplier", message="This manpower supplier is already archived."),)
-            if instance.status != SupplierStatus.INACTIVE: return (LifecycleBlocker(code="supplier_still_active", field="supplier", message="Make the supplier inactive before archiving it."),)
-            if evidence.get("active_workers", 0): return (LifecycleBlocker(code="active_workers", field="supplier", label="Active workers", count=evidence["active_workers"], message="Deactivate or release active workers before archiving this supplier."),)
+            # Active workers inherit the supplier archive boundary; their own
+            # permanent worker state and assignment history are not rewritten.
             return ()
         if action is LifecycleAction.RESTORE:
             if not instance.archived_at: return (LifecycleBlocker(code="not_archived", field="supplier", message="This manpower supplier is not archived."),)
             return ()
         if action is LifecycleAction.DEACTIVATE:
             if instance.archived_at: return (LifecycleBlocker(code="archived", field="supplier", message="Restore this supplier before changing its active status."),)
+            if instance.status == SupplierStatus.TERMINATED: return (LifecycleBlocker(code="terminated", field="supplier", message="This manpower supplier is terminated. Start a new supplier relationship if business resumes."),)
             if instance.status == SupplierStatus.INACTIVE: return (LifecycleBlocker(code="already_inactive", field="supplier", message="This manpower supplier is already inactive."),)
-            if evidence.get("active_workers", 0): return (LifecycleBlocker(code="active_workers", field="supplier", label="Active workers", count=evidence["active_workers"], message="Deactivate or release active workers before making this supplier inactive."),)
+            # Temporary supplier stop is inherited by the worker register.
+            # Worker masters and assignment history stay untouched so reactivation can resume safely.
             return ()
         if action is LifecycleAction.DELETE:
-            if instance.status != SupplierStatus.INACTIVE:
-                return (LifecycleBlocker(code="supplier_still_active", field="supplier", message="Make the supplier inactive before moving it to Trash."),)
-            active_workers = instance.workers.filter(status=RentalWorkerStatus.ACTIVE, archived_at__isnull=True, deleted_at__isnull=True).count()
-            if active_workers:
-                return (LifecycleBlocker(code="active_workers", field="supplier", label="Active workers", count=active_workers, message="Deactivate or release active workers before moving this supplier to Trash."),)
+            # The supplier is the lifecycle parent for its worker register. Delete
+            # is a reversible 30-day boundary and does not require deactivating
+            # every worker first.
             return ()
         return ()
 
@@ -87,23 +87,23 @@ class RentalWorkerLifecyclePolicy(LifecyclePolicy):
     def blockers(self, instance, action: LifecycleAction, *, evidence: Mapping[str, int]):
         if action is LifecycleAction.ARCHIVE:
             if instance.archived_at: return (LifecycleBlocker(code="already_archived", field="worker", message="This rental worker is already archived."),)
-            if instance.status != RentalWorkerStatus.INACTIVE: return (LifecycleBlocker(code="worker_still_active", field="worker", message="Mark the worker inactive before archiving the record."),)
-            if evidence.get("open_assignments", 0): return (LifecycleBlocker(code="open_assignments", field="worker", label="Current or scheduled assignments", count=evidence["open_assignments"], message="Release or cancel current/scheduled assignments before archiving this worker."),)
+            # Archive suspends new operational use without rewriting assignment
+            # history or forcing an employment/status transition first.
             return ()
         if action is LifecycleAction.RESTORE:
             if not instance.archived_at: return (LifecycleBlocker(code="not_archived", field="worker", message="This rental worker is not archived."),)
             return ()
         if action is LifecycleAction.DEACTIVATE:
             if instance.archived_at: return (LifecycleBlocker(code="archived", field="worker", message="Restore this worker before changing worker status."),)
+            if instance.status == RentalWorkerStatus.TERMINATED: return (LifecycleBlocker(code="terminated", field="worker", message="This rental worker is terminated. Create a new onboarding record if the worker returns."),)
             if instance.status == RentalWorkerStatus.INACTIVE: return (LifecycleBlocker(code="already_inactive", field="worker", message="This rental worker is already inactive."),)
-            if evidence.get("open_assignments", 0): return (LifecycleBlocker(code="open_assignments", field="worker", label="Current or scheduled assignments", count=evidence["open_assignments"], message="Release or cancel current/scheduled assignments before making this worker inactive."),)
+            # Temporary worker stop does not rewrite the open assignment.
+            # Inactive status blocks new operational entries and can be safely reactivated later.
             return ()
         if action is LifecycleAction.DELETE:
-            if instance.status != RentalWorkerStatus.INACTIVE:
-                return (LifecycleBlocker(code="worker_still_active", field="worker", message="Mark the worker inactive before moving the record to Trash."),)
-            open_assignments = _open_assignment_count(instance)
-            if open_assignments:
-                return (LifecycleBlocker(code="open_assignments", field="worker", label="Current or scheduled assignments", count=open_assignments, message="Release or cancel current/scheduled assignments before moving this worker to Trash."),)
+            # Soft delete is independent of worker status and assignment history.
+            # Existing history remains protected and the master is recoverable for
+            # the configured retention window.
             return ()
         return ()
 

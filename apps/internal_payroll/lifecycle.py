@@ -38,6 +38,7 @@ class _OrganizationMasterLifecyclePolicy(LifecyclePolicy):
         current = instance.employee_assignments.filter(
             effective_to__isnull=True,
             employee__archived_at__isnull=True,
+            employee__deleted_at__isnull=True,
             employee__status__in=[EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE],
         ).count()
         if action in {LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE}:
@@ -56,12 +57,6 @@ class _OrganizationMasterLifecyclePolicy(LifecyclePolicy):
         if action is LifecycleAction.ARCHIVE:
             if instance.archived_at:
                 return (LifecycleBlocker(code="already_archived", field="record", message=f"This {self.master_label} is already archived."),)
-            if evidence.get("current_employees", 0):
-                return (LifecycleBlocker(
-                    code="current_employees", field="record", label="Current employees",
-                    count=evidence["current_employees"],
-                    message=f"Transfer or stop current employees before archiving this {self.master_label}.",
-                ),)
             return ()
         if action is LifecycleAction.RESTORE:
             if not instance.archived_at:
@@ -79,11 +74,9 @@ class _OrganizationMasterLifecyclePolicy(LifecyclePolicy):
                 ),)
             return ()
         if action is LifecycleAction.DELETE:
-            if evidence.get("current_employees", 0):
-                return (LifecycleBlocker(
-                    code="current_employees", field="record", label="Current employees", count=evidence["current_employees"],
-                    message=f"Transfer or stop current employees before moving this {self.master_label} to Trash.",
-                ),)
+            # Delete is a reversible parent lifecycle boundary. Current employees
+            # inherit the branch/department delete state without rewriting their
+            # permanent employee or payroll history.
             return ()
         return ()
 
@@ -168,14 +161,6 @@ class InternalEmployeeLifecyclePolicy(LifecyclePolicy):
                         message="This employee record is already archived.",
                     ),
                 )
-            if instance.status not in {EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED}:
-                return (
-                    LifecycleBlocker(
-                        code="employment_still_open",
-                        field="employee",
-                        message="Stop or terminate employment before archiving the employee record.",
-                    ),
-                )
             return ()
 
         if action is LifecycleAction.RESTORE:
@@ -217,14 +202,9 @@ class InternalEmployeeLifecyclePolicy(LifecyclePolicy):
             return ()
 
         if action is LifecycleAction.DELETE:
-            if instance.status not in {EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED}:
-                return (
-                    LifecycleBlocker(
-                        code="employment_still_open",
-                        field="employee",
-                        message="Deactivate or terminate the employee before moving the record to Trash.",
-                    ),
-                )
+            # Soft deletion is independent from employment status. Payroll and
+            # organization history remains protected while the employee master is
+            # hidden and recoverable for 30 days.
             return ()
 
         return ()

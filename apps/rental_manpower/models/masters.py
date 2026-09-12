@@ -11,12 +11,14 @@ from apps.core.models import CompanyOwnedModel
 class SupplierStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     INACTIVE = "inactive", "Inactive"
+    TERMINATED = "terminated", "Terminated"
 
 
 
 class RentalWorkerStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     INACTIVE = "inactive", "Inactive"
+    TERMINATED = "terminated", "Terminated"
 
 
 class ManpowerSupplier(CompanyOwnedModel):
@@ -38,6 +40,10 @@ class ManpowerSupplier(CompanyOwnedModel):
     payment_terms = models.CharField(max_length=160, blank=True)
     address = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    inactive_on = models.DateField(null=True, blank=True, db_index=True)
+    inactive_reason = models.CharField(max_length=300, blank=True)
+    terminated_on = models.DateField(null=True, blank=True, db_index=True)
+    termination_reason = models.CharField(max_length=300, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -71,6 +77,10 @@ class ManpowerSupplier(CompanyOwnedModel):
                 condition=Q(status__in=[value for value, _label in SupplierStatus.choices]),
                 name="rntl_sup_status_chk",
             ),
+            models.CheckConstraint(
+                condition=~Q(status=SupplierStatus.TERMINATED) | Q(terminated_on__isnull=False),
+                name="rntl_sup_terminated_date_chk",
+            ),
         ]
         indexes = [
             models.Index(fields=("company", "status", "name"), name="rntl_sup_status_name_idx"),
@@ -89,13 +99,21 @@ class ManpowerSupplier(CompanyOwnedModel):
         self.payment_terms = (self.payment_terms or "").strip()
         self.address = (self.address or "").strip()
         self.notes = (self.notes or "").strip()
+        self.inactive_reason = (self.inactive_reason or "").strip()
+        self.termination_reason = (self.termination_reason or "").strip()
         self.archived_reason = (self.archived_reason or "").strip()
-        if self.archived_at and self.status == SupplierStatus.ACTIVE:
-            raise ValidationError({"status": "An archived manpower supplier cannot be active."})
         if not self.code:
             raise ValidationError({"code": "Supplier code is required."})
         if not self.name:
             raise ValidationError({"name": "Supplier name is required."})
+        if self.status == SupplierStatus.ACTIVE and (self.inactive_on or self.inactive_reason):
+            raise ValidationError({"status": "Active suppliers cannot carry temporary-stop details."})
+        if self.status == SupplierStatus.TERMINATED and not self.terminated_on:
+            raise ValidationError({"terminated_on": "Termination date is required for a terminated supplier."})
+        if self.status != SupplierStatus.TERMINATED and (self.terminated_on or self.termination_reason):
+            raise ValidationError({"status": "Termination details are only valid for a terminated supplier."})
+        if self.status == SupplierStatus.TERMINATED and (self.inactive_on or self.inactive_reason):
+            raise ValidationError({"status": "Terminated suppliers cannot retain temporary-stop details."})
 
     def __str__(self) -> str:
         return f"{self.code} · {self.name}"
@@ -127,6 +145,8 @@ class RentalWorker(CompanyOwnedModel):
     notes = models.TextField(blank=True)
     inactive_on = models.DateField(null=True, blank=True, db_index=True)
     inactive_reason = models.CharField(max_length=300, blank=True)
+    terminated_on = models.DateField(null=True, blank=True, db_index=True)
+    termination_reason = models.CharField(max_length=300, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
     deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -157,6 +177,10 @@ class RentalWorker(CompanyOwnedModel):
                 condition=Q(status__in=[value for value, _label in RentalWorkerStatus.choices]),
                 name="rntl_wrk_status_chk",
             ),
+            models.CheckConstraint(
+                condition=~Q(status=RentalWorkerStatus.TERMINATED) | Q(terminated_on__isnull=False),
+                name="rntl_wrk_terminated_date_chk",
+            ),
         ]
         indexes = [
             models.Index(fields=("company", "status", "full_name"), name="rntl_wrk_status_name_idx"),
@@ -172,13 +196,18 @@ class RentalWorker(CompanyOwnedModel):
         self.phone = (self.phone or "").strip()
         self.notes = (self.notes or "").strip()
         self.inactive_reason = (self.inactive_reason or "").strip()
+        self.termination_reason = (self.termination_reason or "").strip()
         self.archived_reason = (self.archived_reason or "").strip()
-        if self.archived_at and self.status == RentalWorkerStatus.ACTIVE:
-            raise ValidationError({"status": "An archived rental worker cannot be active."})
         if self.status == RentalWorkerStatus.ACTIVE and self.inactive_on:
             raise ValidationError({"inactive_on": "An active rental worker cannot have an inactive effective date."})
         if self.status == RentalWorkerStatus.ACTIVE and self.inactive_reason:
             raise ValidationError({"inactive_reason": "An active rental worker cannot have an inactive reason."})
+        if self.status == RentalWorkerStatus.TERMINATED and not self.terminated_on:
+            raise ValidationError({"terminated_on": "Termination date is required for a terminated rental worker."})
+        if self.status == RentalWorkerStatus.TERMINATED and (self.inactive_on or self.inactive_reason):
+            raise ValidationError({"status": "Terminated rental workers cannot retain temporary-stop details."})
+        if self.status != RentalWorkerStatus.TERMINATED and (self.terminated_on or self.termination_reason):
+            raise ValidationError({"status": "Termination details are only valid for a terminated rental worker."})
         if not self.worker_number:
             raise ValidationError({"worker_number": "Worker number is required."})
         if not self.full_name:

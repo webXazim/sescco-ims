@@ -6,14 +6,16 @@ from django.test import TestCase
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditEvent, Company
-from apps.rental_manpower.models import ProjectStatus, RentalWorker, RentalWorkerStatus, SupplierStatus
+from apps.rental_manpower.models import ProjectStatus, RentalRateType, RentalWorker, RentalWorkerStatus, SupplierStatus, WorkerAssignment
+from apps.rental_manpower.selectors.masters import workers_for_company
 from apps.rental_manpower.services import (
     create_project,
+    assign_worker,
     create_supplier,
     create_worker,
     import_workers,
     update_supplier,
-    archive_supplier, restore_supplier_archive, delete_unused_supplier, change_worker_lifecycle, delete_unused_worker,
+    archive_supplier, restore_supplier_archive, restore_supplier_trash, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, restore_worker_trash, delete_unused_worker,
 )
 
 
@@ -94,23 +96,100 @@ class RentalMasterServiceTests(TestCase):
         with self.assertRaises(PermissionDenied):
             create_supplier(actor_membership=internal, code="SUP-X", name="Blocked Supplier")
 
-    def test_supplier_cannot_be_deactivated_with_active_workers(self):
-        create_worker(
+    def test_supplier_temporary_stop_is_not_blocked_by_active_workers(self):
+        worker = create_worker(
             actor_membership=self.owner,
             supplier_id=self.supplier.pk,
             worker_number="RW-A",
             full_name="Active Worker",
         )
+        stopped = change_supplier_lifecycle(
+            actor_membership=self.owner,
+            supplier_id=self.supplier.pk,
+            action="stop_activity",
+            reason="Temporary commercial stop",
+        )
+        self.assertEqual(stopped.status, SupplierStatus.INACTIVE)
+        self.assertIsNotNone(stopped.inactive_on)
+        self.assertEqual(stopped.inactive_reason, "Temporary commercial stop")
+        worker.refresh_from_db()
+        self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
+        resumed = change_supplier_lifecycle(
+            actor_membership=self.owner,
+            supplier_id=self.supplier.pk,
+            action="activate",
+            reason="Commercial activity resumed",
+        )
+        self.assertEqual(resumed.status, SupplierStatus.ACTIVE)
+
+    def test_worker_temporary_stop_keeps_assignment_and_can_resume(self):
+        project = create_project(
+            actor_membership=self.owner,
+            code="PRJ-STOP",
+            name="Stop Activity Project",
+            start_date=date(2026, 1, 1),
+        )
+        worker = create_worker(
+            actor_membership=self.owner,
+            supplier_id=self.supplier.pk,
+            worker_number="RW-STOP",
+            full_name="Temporary Stop Worker",
+        )
+        assignment = assign_worker(
+            actor_membership=self.owner,
+            worker_id=worker.pk,
+            project_id=project.reference,
+            trade="Helper",
+            rate_type=RentalRateType.HOURLY,
+            rate="10.00",
+            effective_date=date(2026, 1, 1),
+            reason="Initial assignment",
+        )
+        stopped = change_worker_lifecycle(
+            actor_membership=self.owner,
+            worker_id=worker.pk,
+            action="stop_activity",
+            effective_date=date(2026, 1, 10),
+            reason="Temporary activity stop",
+        )
+        self.assertEqual(stopped.status, RentalWorkerStatus.INACTIVE)
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.effective_to)
+        resumed = change_worker_lifecycle(
+            actor_membership=self.owner,
+            worker_id=worker.pk,
+            action="activate",
+            reason="Activity resumed",
+        )
+        self.assertEqual(resumed.status, RentalWorkerStatus.ACTIVE)
+        self.assertTrue(WorkerAssignment.objects.filter(pk=assignment.pk, effective_to__isnull=True).exists())
+
+    def test_supplier_termination_cascades_to_worker_and_is_final(self):
+        worker = create_worker(
+            actor_membership=self.owner,
+            supplier_id=self.supplier.pk,
+            worker_number="RW-TERM",
+            full_name="Terminated Worker",
+        )
+        terminated = change_supplier_lifecycle(
+            actor_membership=self.owner,
+            supplier_id=self.supplier.pk,
+            action="terminate",
+            effective_date=date(2026, 1, 15),
+            reason="Supplier agreement ended",
+        )
+        self.assertEqual(terminated.status, SupplierStatus.TERMINATED)
+        self.assertEqual(terminated.terminated_on, date(2026, 1, 15))
+        worker.refresh_from_db()
+        self.assertEqual(worker.status, RentalWorkerStatus.TERMINATED)
+        self.assertEqual(worker.terminated_on, date(2026, 1, 15))
         with self.assertRaises(ValidationError):
-            update_supplier(
+            change_supplier_lifecycle(
                 actor_membership=self.owner,
                 supplier_id=self.supplier.pk,
-                code=self.supplier.code,
-                name=self.supplier.name,
-                status="Inactive",
+                action="activate",
+                reason="Should not reopen terminated relationship",
             )
-        self.supplier.refresh_from_db()
-        self.assertEqual(self.supplier.status, SupplierStatus.ACTIVE)
 
     def test_completed_project_requires_end_date_and_valid_date_range(self):
         with self.assertRaises(ValidationError):
@@ -211,30 +290,36 @@ class RentalMasterServiceTests(TestCase):
         with self.assertRaises(ValidationError):
             import_workers(actor_membership=self.owner, rows=rows)
         self.assertEqual(RentalWorker.objects.for_company(self.company).count(), 0)
-    def test_supplier_archive_restore_delete_unused_policy(self):
-        self.supplier = update_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, code=self.supplier.code, name=self.supplier.name, status="Inactive")
-        archived=archive_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, reason="Contract ended")
-        self.assertIsNotNone(archived.archived_at)
-        restored=restore_supplier_archive(actor_membership=self.owner, supplier_id=archived.pk)
-        self.assertIsNone(restored.archived_at); self.assertEqual(restored.status, SupplierStatus.INACTIVE)
-        unused=create_supplier(actor_membership=self.owner, code="TMP-S", name="Temporary Supplier")
-        self.assertEqual(delete_unused_supplier(actor_membership=self.owner, supplier_id=unused.pk, confirmation="TMP-S"), str(unused.pk))
-
-    def test_supplier_delete_blocked_after_worker_history(self):
+    def test_supplier_archive_restore_preserves_status_and_cascades_worker_visibility(self):
         worker=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-HIST", full_name="History Worker")
-        with self.assertRaises(ValidationError):
-            delete_unused_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, confirmation=self.supplier.code)
+        archived=archive_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, reason="Contract ended")
+        self.assertIsNotNone(archived.archived_at); self.assertEqual(archived.status, SupplierStatus.ACTIVE)
+        worker.refresh_from_db(); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE); self.assertIsNone(worker.archived_at)
+        self.assertFalse(workers_for_company(company=self.company, archived=False).filter(pk=worker.pk).exists())
+        self.assertTrue(workers_for_company(company=self.company, archived=True).filter(pk=worker.pk).exists())
+        restored=restore_supplier_archive(actor_membership=self.owner, supplier_id=archived.pk)
+        self.assertIsNone(restored.archived_at); self.assertEqual(restored.status, SupplierStatus.ACTIVE)
+
+    def test_supplier_delete_with_worker_history_is_recoverable(self):
+        worker=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-HIST2", full_name="History Worker Two")
+        self.assertEqual(delete_unused_supplier(actor_membership=self.owner, supplier_id=self.supplier.pk, confirmation=self.supplier.code, reason="Supplier removed"), str(self.supplier.pk))
+        self.supplier.refresh_from_db(); worker.refresh_from_db()
+        self.assertIsNotNone(self.supplier.deleted_at); self.assertIsNone(worker.deleted_at)
+        self.assertFalse(workers_for_company(company=self.company, deleted=False).filter(pk=worker.pk).exists())
+        self.assertTrue(workers_for_company(company=self.company, deleted=True, archived=None).filter(pk=worker.pk).exists())
+        restored=restore_supplier_trash(actor_membership=self.owner, supplier_id=self.supplier.pk)
+        self.assertIsNone(restored.deleted_at)
+        worker.refresh_from_db(); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
+        self.assertTrue(workers_for_company(company=self.company, deleted=False).filter(pk=worker.pk).exists())
 
     def test_worker_lifecycle_archive_restore_delete_unused(self):
         worker=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-LIFE", full_name="Lifecycle Worker")
-        worker=change_worker_lifecycle(actor_membership=self.owner, worker_id=worker.pk, action="deactivate", effective_date=date(2026,1,2), reason="Left supplier pool")
-        self.assertEqual(worker.status, RentalWorkerStatus.INACTIVE); self.assertEqual(worker.inactive_on, date(2026,1,2))
         worker=change_worker_lifecycle(actor_membership=self.owner, worker_id=worker.pk, action="archive", reason="No longer supplied")
-        self.assertIsNotNone(worker.archived_at)
+        self.assertIsNotNone(worker.archived_at); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
         worker=change_worker_lifecycle(actor_membership=self.owner, worker_id=worker.pk, action="restore_archive", reason="Record needed again")
-        self.assertIsNone(worker.archived_at); self.assertEqual(worker.status, RentalWorkerStatus.INACTIVE)
-        worker=change_worker_lifecycle(actor_membership=self.owner, worker_id=worker.pk, action="activate", reason="Returned")
-        self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
-        unused=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-TMP", full_name="Unused Worker", status="Inactive")
-        self.assertEqual(delete_unused_worker(actor_membership=self.owner, worker_id=unused.pk, confirmation="RW-TMP"), str(unused.pk))
+        self.assertIsNone(worker.archived_at); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
+        self.assertEqual(delete_unused_worker(actor_membership=self.owner, worker_id=worker.pk, confirmation="RW-LIFE", reason="Duplicate"), str(worker.pk))
+        worker.refresh_from_db(); self.assertIsNotNone(worker.deleted_at)
+        worker=restore_worker_trash(actor_membership=self.owner, worker_id=worker.pk)
+        self.assertIsNone(worker.deleted_at); self.assertEqual(worker.status, RentalWorkerStatus.ACTIVE)
 

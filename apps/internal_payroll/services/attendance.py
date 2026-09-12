@@ -7,7 +7,7 @@ from typing import Iterable
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -23,6 +23,7 @@ from apps.internal_payroll.models import (
     AttendancePeriod,
     AttendancePeriodStatus,
     EmploymentStatus,
+    EmployeeOrganizationAssignment,
     InternalEmployee,
     SalaryStructure,
     SalaryStructureLine,
@@ -47,6 +48,37 @@ def _require_internal_approval(membership: CompanyMembership) -> None:
         raise PermissionDenied("Your role cannot access internal attendance and overtime.")
     if not membership_has_capability(membership, Capability.APPROVE):
         raise PermissionDenied("Your role cannot approve internal attendance and overtime.")
+
+
+def operational_internal_employees(*, company, for_update: bool = False):
+    """Employees currently eligible for Internal Payroll operations.
+
+    Branch/Office and Department lifecycle state cascades through the employee's
+    open organization assignment. Child employee rows are deliberately not
+    rewritten, so restoring the parent restores the exact previous workforce
+    state without accidental resurrection of independently archived/deleted
+    employees.
+    """
+
+    hidden_parent = (
+        EmployeeOrganizationAssignment.objects.for_company(company)
+        .filter(employee_id=OuterRef("pk"), effective_to__isnull=True)
+        .filter(
+            Q(branch__archived_at__isnull=False)
+            | Q(branch__deleted_at__isnull=False)
+            | Q(department__archived_at__isnull=False)
+            | Q(department__deleted_at__isnull=False)
+        )
+    )
+    queryset = InternalEmployee.objects.for_company(company)
+    if for_update:
+        queryset = queryset.select_for_update()
+    return (
+        queryset
+        .filter(deleted_at__isnull=True, archived_at__isnull=True)
+        .annotate(_organization_lifecycle_hidden=Exists(hidden_parent))
+        .filter(_organization_lifecycle_hidden=False)
+    )
 
 
 def _decimal(value: object, field: str, places: str = "0.01") -> Decimal:
@@ -133,8 +165,7 @@ def _get_or_create_period_locked(
 
 def employees_for_attendance_period(*, company, period: AttendancePeriod) -> list[InternalEmployee]:
     return list(
-        InternalEmployee.objects.select_for_update()
-        .for_company(company)
+        operational_internal_employees(company=company, for_update=True)
         .filter(joining_date__lte=period.period_end)
         .filter(Q(employment_end_date__isnull=True) | Q(employment_end_date__gte=period.period_start))
         .exclude(status=EmploymentStatus.INACTIVE)
@@ -185,7 +216,7 @@ def save_attendance_entries(
     employee_ids = {item.get("employee_id") for item in entries if item.get("employee_id")}
     employees = {
         str(item.pk): item
-        for item in InternalEmployee.objects.select_for_update().for_company(company).filter(pk__in=employee_ids)
+        for item in operational_internal_employees(company=company, for_update=True).filter(pk__in=employee_ids)
     }
     if len(employees) != len({str(item) for item in employee_ids}):
         raise ValidationError({"entries": "One or more employees do not belong to the active company."})
@@ -355,7 +386,7 @@ def save_overtime_entries(
     employee_ids = {item.get("employee_id") for item in entries if item.get("employee_id")}
     employees = {
         str(item.pk): item
-        for item in InternalEmployee.objects.select_for_update().for_company(company).filter(pk__in=employee_ids)
+        for item in operational_internal_employees(company=company, for_update=True).filter(pk__in=employee_ids)
     }
     if len(employees) != len({str(item) for item in employee_ids}):
         raise ValidationError({"entries": "One or more overtime employees do not belong to the active company."})
@@ -614,7 +645,7 @@ def import_attendance_rows(
     start, end = month_bounds(period_start)
     employees_by_number = {
         item.employee_number.upper(): item
-        for item in InternalEmployee.objects.select_for_update().for_company(company).filter(joining_date__lte=end)
+        for item in operational_internal_employees(company=company, for_update=True).filter(joining_date__lte=end)
     }
     staged: list[dict[str, object]] = []
     seen_employee_numbers: set[str] = set()

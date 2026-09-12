@@ -186,11 +186,12 @@ def supplier_detail_api(request: HttpRequest, supplier_id) -> JsonResponse:
 def supplier_lifecycle_api(request: HttpRequest, supplier_id) -> JsonResponse:
     try:
         body=json_body(request); action=str(body.get("action","")).strip().lower().replace("-","_")
+        effective=parse_optional_date(body.get("effective_date"), "effective_date")
         if action == "archive": supplier=archive_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
         elif action in {"restore","restore_archive"}: supplier=restore_supplier_archive(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
         elif action == "restore_trash": supplier=restore_supplier_trash(actor_membership=request.company_membership, supplier_id=supplier_id, request=request)
-        elif action in {"deactivate","inactive","activate","reactivate","active"}: supplier=change_supplier_lifecycle(actor_membership=request.company_membership, supplier_id=supplier_id, action=action, reason=str(body.get("reason", "")), request=request)
-        else: raise ValidationError({"action":"Supplier lifecycle action must be deactivate, activate, archive, restore archive, or restore trash."})
+        elif action in {"deactivate","inactive","activate","reactivate","active","terminate","terminated","stop_activity"}: supplier=change_supplier_lifecycle(actor_membership=request.company_membership, supplier_id=supplier_id, action=action, effective_date=effective, reason=str(body.get("reason", "")), request=request)
+        else: raise ValidationError({"action":"Supplier lifecycle action must be deactivate, activate, terminate, archive, restore archive, or restore trash."})
         supplier=suppliers_for_company(company=request.company, archived=None).get(pk=supplier.pk)
         return JsonResponse({"ok":True,"supplier":serialize_supplier(supplier)})
     except Exception as exc: return handle_api_error(exc)

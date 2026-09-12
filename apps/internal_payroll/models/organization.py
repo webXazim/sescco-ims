@@ -67,8 +67,6 @@ class Branch(CompanyOwnedModel):
             raise ValidationError({"code": "Branch code is required."})
         if not self.name:
             raise ValidationError({"name": "Branch name is required."})
-        if self.archived_at and self.is_active:
-            raise ValidationError({"is_active": "An archived branch or office cannot be active."})
 
     def __str__(self) -> str:
         return f"{self.code} · {self.name}"
@@ -116,8 +114,6 @@ class Department(CompanyOwnedModel):
             raise ValidationError({"code": "Department code is required."})
         if not self.name:
             raise ValidationError({"name": "Department name is required."})
-        if self.archived_at and self.is_active:
-            raise ValidationError({"is_active": "An archived department cannot be active."})
 
     def __str__(self) -> str:
         return f"{self.code} · {self.name}"
@@ -181,10 +177,6 @@ class InternalEmployee(CompanyOwnedModel):
                 condition=~Q(status=EmploymentStatus.TERMINATED) | Q(employment_end_date__isnull=False),
                 name="internal_employee_terminated_has_end",
             ),
-            models.CheckConstraint(
-                condition=Q(archived_at__isnull=True) | Q(status__in=[EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED]),
-                name="internal_employee_archive_requires_stopped_status",
-            ),
         ]
         indexes = [
             models.Index(fields=("company", "status", "full_name"), name="int_emp_company_status_idx"),
@@ -207,8 +199,6 @@ class InternalEmployee(CompanyOwnedModel):
             raise ValidationError({"employment_end_date": "Employment end date cannot be before the joining date."})
         if self.status == EmploymentStatus.TERMINATED and not self.employment_end_date:
             raise ValidationError({"employment_end_date": "Employment end date is required for a terminated employee."})
-        if self.archived_at and self.status not in {EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED}:
-            raise ValidationError({"status": "Only inactive or terminated employees can be archived."})
 
     def __str__(self) -> str:
         return f"{self.employee_number} · {self.full_name}"

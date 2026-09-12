@@ -47,6 +47,10 @@ class Project(models.Model):
     )
     manager_name = models.CharField(max_length=160, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    archive_previous_status = models.CharField(
+        max_length=20, choices=Status.choices, blank=True, editable=False,
+        help_text="Status preserved when the project is archived so restore is exact.",
+    )
     archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
     archived_reason = models.TextField(blank=True)
     notes = models.TextField(blank=True)
@@ -119,26 +123,23 @@ class Project(models.Model):
             )
         if self.status == self.Status.COMPLETED and original_status != self.Status.COMPLETED and not self.end_date:
             errors["end_date"] = "Set the actual end date before completing the project."
-        if self.pk and self.status in {self.Status.COMPLETED, self.Status.ARCHIVED}:
-            if (
-                original_status != self.status
-                and self.stock_items.filter(current_quantity__gt=0).exists()
-            ):
-                errors["status"] = (
-                    "A project can be completed or archived only after every stock balance is zero."
-                )
-            if original_status != self.status and hasattr(self, "rental_assignments"):
+        # Completion closes operational history and therefore still requires
+        # settlement of stock/assignment state. Archive is intentionally a
+        # reversible visibility boundary: stock and assignments stay intact and
+        # automatically become operational again if the project is restored.
+        if self.pk and self.status == self.Status.COMPLETED and original_status != self.Status.COMPLETED:
+            if self.stock_items.filter(current_quantity__gt=0).exists():
+                errors["status"] = "A project can be completed only after every stock balance is zero."
+            if hasattr(self, "rental_assignments"):
                 rental_rows = self.rental_assignments.filter(cancelled_at__isnull=True)
-                if self.status == self.Status.COMPLETED and self.end_date:
+                if self.end_date:
                     rental_rows = rental_rows.filter(
                         models.Q(effective_to__isnull=True) | models.Q(effective_to__gt=self.end_date)
                     )
                 else:
                     rental_rows = rental_rows.filter(effective_to__isnull=True)
                 if rental_rows.exists():
-                    errors["status"] = (
-                        "Release or transfer open rental manpower assignments before completing or archiving the project."
-                    )
+                    errors["status"] = "Release or transfer open rental manpower assignments before completing the project."
         if errors:
             raise ValidationError(errors)
 

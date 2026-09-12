@@ -59,12 +59,29 @@ require(
     "organization-lifecycle",
     "rental-master-lifecycle",
     "configuration-lifecycle",
-    "Move to Trash",
-    "Trash Bin",
-    "Archive Bin",
+    "Delete with 30-day recovery",
+    "archive:{title:'Archive'}, trash:{title:'Delete'}",
+    "const title = isTrash ? 'Delete' : 'Archive';",
     "Delete unused payment profile",
     "is-lifecycle-danger",
 )
+
+
+require(
+    "static/payroll/css/v2/payroll-controls.css",
+    "1.0.40 — lifecycle Actions menu visibility",
+    ".ui-v2-payroll-master-detail {",
+    "overflow: visible;",
+    ".ui-v2-payroll-master-detail__actions .ui-v2-lifecycle-menu > .ui-v2-prs-dropdown-menu",
+    "bottom: calc(100% + 7px);",
+)
+
+# Lifecycle navigation must use the concise user-facing labels requested for the
+# private SESCCO MS shell. Internal route/storage names may remain unchanged.
+app = text("static/payroll/js/app.js")
+for forbidden in ("Archive Bin", "Trash Bin", "Move to Trash"):
+    if forbidden in app:
+        fail(f"Payroll lifecycle UI still exposes legacy label: {forbidden}")
 
 # The drawer save gate must explicitly permit every lifecycle drawer type.
 app = text("static/payroll/js/app.js")

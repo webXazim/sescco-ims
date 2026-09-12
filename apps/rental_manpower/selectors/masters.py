@@ -106,12 +106,17 @@ def workers_for_company(*, company, query: str = "", status: str = "", supplier_
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
         Prefetch("rental_assignments", queryset=assignment_qs)
     )
-    if deleted is not None:
-        queryset = queryset.filter(deleted_at__isnull=not deleted)
+    # Supplier lifecycle is an inherited worker boundary. The worker master is not
+    # rewritten, which makes restore exact, but ordinary/Archive/Delete filters
+    # behave as a true cascade to the supplier's workers.
+    if deleted is False:
+        queryset = queryset.filter(deleted_at__isnull=True, supplier__deleted_at__isnull=True)
+    elif deleted is True:
+        queryset = queryset.filter(Q(deleted_at__isnull=False) | Q(supplier__deleted_at__isnull=False))
     if archived is True:
-        queryset = queryset.filter(archived_at__isnull=False)
+        queryset = queryset.filter(Q(archived_at__isnull=False) | Q(supplier__archived_at__isnull=False))
     elif archived is False:
-        queryset = queryset.filter(archived_at__isnull=True)
+        queryset = queryset.filter(archived_at__isnull=True, supplier__archived_at__isnull=True)
     if query.strip():
         q = query.strip()
         queryset = queryset.filter(
@@ -158,6 +163,10 @@ def serialize_supplier(supplier: ManpowerSupplier) -> dict[str, object]:
         "paymentTerms": supplier.payment_terms,
         "address": supplier.address,
         "notes": supplier.notes,
+        "inactiveOn": supplier.inactive_on.isoformat() if supplier.inactive_on else "",
+        "inactiveReason": supplier.inactive_reason,
+        "terminatedOn": supplier.terminated_on.isoformat() if supplier.terminated_on else "",
+        "terminationReason": supplier.termination_reason,
         "totalWorkers": total_workers,
         "activeWorkers": assigned_workers,
         "availableWorkers": max(0, active_workers - assigned_workers),
@@ -231,9 +240,28 @@ def _assignment_rate_label(assignment: WorkerAssignment | None, currency: str = 
 
 def serialize_worker(worker: RentalWorker) -> dict[str, object]:
     current, future, last = _worker_assignment_snapshot(worker)
-    master_active = worker.status == RentalWorkerStatus.ACTIVE and not worker.archived_at
-    if worker.archived_at:
+    supplier_archived = bool(worker.supplier.archived_at)
+    supplier_deleted = bool(worker.supplier.deleted_at)
+    supplier_inactive = worker.supplier.status == SupplierStatus.INACTIVE
+    supplier_terminated = worker.supplier.status == SupplierStatus.TERMINATED
+    effective_archived = bool(worker.archived_at or supplier_archived)
+    effective_deleted = bool(worker.deleted_at or supplier_deleted)
+    archive_sources = []
+    delete_sources = []
+    if supplier_archived:
+        archive_sources.append({"type": "supplier", "id": str(worker.supplier_id), "label": worker.supplier.name})
+    if supplier_deleted:
+        delete_sources.append({"type": "supplier", "id": str(worker.supplier_id), "label": worker.supplier.name})
+
+    master_active = worker.status == RentalWorkerStatus.ACTIVE and worker.supplier.status == SupplierStatus.ACTIVE and not effective_archived and not effective_deleted
+    if effective_deleted:
+        display_status = "Deleted"
+        reference = last
+    elif effective_archived:
         display_status = "Archived"
+        reference = last
+    elif worker.status == RentalWorkerStatus.TERMINATED or supplier_terminated:
+        display_status = "Terminated"
         reference = last
     elif not master_active:
         display_status = "Inactive"
@@ -258,10 +286,27 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         since = future.effective_from.isoformat()
     else:
         project_id = None
-        project_name = "Inactive" if display_status == "Inactive" else "Available / released"
+        if display_status == "Terminated":
+            project_name = "Terminated"
+        elif display_status == "Inactive":
+            project_name = "Inactive"
+        elif display_status in {"Archived", "Deleted"}:
+            project_name = display_status
+        else:
+            project_name = "Available / released"
         since = ""
         if last and last.effective_to:
             since = (last.effective_to + timedelta(days=1)).isoformat()
+
+    archived_at = worker.archived_at or (worker.supplier.archived_at if supplier_archived else None)
+    deleted_at = worker.deleted_at or (worker.supplier.deleted_at if supplier_deleted else None)
+    purge_after = worker.purge_after or (worker.supplier.purge_after if supplier_deleted else None)
+    archived_reason = worker.archived_reason if worker.archived_at else (
+        "Inherited from archived supplier" if supplier_archived else ""
+    )
+    deletion_reason = worker.deletion_reason if worker.deleted_at else (
+        "Inherited from deleted supplier" if supplier_deleted else ""
+    )
 
     return {
         "id": str(worker.id),
@@ -271,17 +316,25 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         "phone": worker.phone,
         "supplierId": str(worker.supplier_id),
         "supplier": worker.supplier.name,
-        "masterStatus": "Archived" if worker.archived_at else worker.get_status_display(),
-        "masterStatusValue": worker.status,
-        "archived": bool(worker.archived_at),
-        "archivedAt": worker.archived_at.isoformat() if worker.archived_at else None,
-        "archivedReason": worker.archived_reason,
-        "deleted": worker.deleted_at is not None,
-        "deletedAt": worker.deleted_at.isoformat() if worker.deleted_at else None,
-        "deletionReason": worker.deletion_reason,
-        "purgeAfter": worker.purge_after.isoformat() if worker.purge_after else None,
+        "masterStatus": "Deleted" if effective_deleted else ("Archived" if effective_archived else ("Terminated" if supplier_terminated else worker.get_status_display())),
+        "masterStatusValue": RentalWorkerStatus.TERMINATED if supplier_terminated else worker.status,
+        "archived": effective_archived,
+        "archivedOwn": bool(worker.archived_at),
+        "archivedAt": archived_at.isoformat() if archived_at else None,
+        "archivedReason": archived_reason,
+        "deleted": effective_deleted,
+        "deletedOwn": bool(worker.deleted_at),
+        "deletedAt": deleted_at.isoformat() if deleted_at else None,
+        "deletionReason": deletion_reason,
+        "purgeAfter": purge_after.isoformat() if purge_after else None,
+        "cascadeLifecycle": {"archiveSources": archive_sources, "deleteSources": delete_sources},
+        "supplierInactive": supplier_inactive,
+        "supplierTerminated": supplier_terminated,
+        "operationallyStopped": bool(worker.supplier.status != SupplierStatus.ACTIVE or worker.status != RentalWorkerStatus.ACTIVE or effective_archived or effective_deleted),
         "inactiveOn": worker.inactive_on.isoformat() if worker.inactive_on else "",
         "inactiveReason": worker.inactive_reason,
+        "terminatedOn": (worker.terminated_on or worker.supplier.terminated_on).isoformat() if (worker.terminated_on or worker.supplier.terminated_on) else "",
+        "terminationReason": worker.termination_reason or (f"Inherited from terminated supplier: {worker.supplier.termination_reason}" if supplier_terminated else ""),
         "status": display_status,
         "projectId": project_id,
         "project": project_name,

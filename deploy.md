@@ -467,3 +467,9 @@ docker system prune --volumes
 ```
 
 Those commands could destroy persistent data.
+## Complete DEMO test seed
+
+Use `./scripts/deploy-production.sh --seed` when this installation is intended to contain test records. The seed is idempotent and creates DEMO/RDEMO Internal Payroll and Rental Manpower data for attendance/timesheets, overtime, adjustments, payroll runs, supplier settlements, WPS export + result reconciliation, payments, reports, finalized output documents, transfer/rate changes, and lifecycle Stop/Termination/Archive/Delete scenarios.
+
+The finalized synthetic payroll uses a collision-safe historical month that excludes non-DEMO employment. If no safe month can be proven, deployment stops at the seed step instead of inserting real employees into a DEMO payroll run. Do not use `--seed` on an installation where visible DEMO test records are not wanted.
+

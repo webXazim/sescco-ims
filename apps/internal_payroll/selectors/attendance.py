@@ -20,7 +20,7 @@ from apps.internal_payroll.models import (
     SalaryStructure,
     SalaryStructureLine,
 )
-from apps.internal_payroll.services.attendance import month_bounds
+from apps.internal_payroll.services.attendance import month_bounds, operational_internal_employees
 
 
 def attendance_period_for_company(*, company: Company, period_start: date) -> AttendancePeriod | None:
@@ -62,7 +62,7 @@ def attendance_roster_for_company(*, company: Company, period_start: date) -> li
         .order_by("-effective_from", "-created_at")
     )
     return list(
-        InternalEmployee.objects.for_company(company)
+        operational_internal_employees(company=company)
         .filter(joining_date__lte=end)
         .filter(Q(employment_end_date__isnull=True) | Q(employment_end_date__gte=start))
         .exclude(status=EmploymentStatus.INACTIVE)

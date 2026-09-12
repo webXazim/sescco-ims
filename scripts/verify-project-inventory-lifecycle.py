@@ -62,14 +62,17 @@ require(
     "def restore_project_archive",
     "def trash_unused_project",
     "def restore_project_trash",
+    "archive_previous_status",
+    '"cascade_scope": "project_operations"',
     '"retention_days": 30',
 )
 require(
     "apps/projects/models.py",
     "archived_at = models.DateTimeField",
     "archived_reason = models.TextField",
+    "archive_previous_status = models.CharField",
     "Set the actual end date before completing the project.",
-    "Release or transfer open rental manpower assignments before completing or archiving the project.",
+    "Release or transfer open rental manpower assignments before completing the project.",
 )
 require(
     "apps/projects/views.py",
@@ -148,6 +151,7 @@ require("templates/projects/project_detail.html", "Archive", "Move to Trash for 
 
 for migration in (
     "apps/projects/migrations/0005_project_archive_metadata.py",
+    "apps/projects/migrations/0006_project_reversible_archive_state.py",
     "apps/inventory/migrations/0014_inventory_master_lifecycle.py",
 ):
     parse(migration)
@@ -165,4 +169,4 @@ require(
     "InventoryLocation",
 )
 
-print("Project + Inventory master lifecycle contract verified.")
+print("Project reversible cascade + Inventory master lifecycle contract verified.")

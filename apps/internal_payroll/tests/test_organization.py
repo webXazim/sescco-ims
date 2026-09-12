@@ -15,11 +15,13 @@ from apps.core.services.lifecycle import (
     lifecycle_capabilities,
 )
 from apps.internal_payroll.models import Branch, BranchKind, Department, EmployeeOrganizationAssignment, EmploymentStatus, InternalEmployee
+from apps.internal_payroll.selectors.organization import employees_for_company
 from apps.internal_payroll.services import (
     change_employee_organization,
     change_employee_lifecycle,
     archive_employee, archive_branch, archive_department,
     restore_employee_archive, restore_branch_archive, restore_department_archive,
+    restore_employee_trash, restore_branch_trash, restore_department_trash,
     delete_unused_employee, delete_unused_branch, delete_unused_department,
     create_branch,
     create_department,
@@ -194,6 +196,15 @@ class InternalOrganizationServiceTests(TestCase):
         self.assertEqual(employee.status, EmploymentStatus.ON_LEAVE)
 
 
+    def test_stop_activity_alias_sets_employee_inactive(self):
+        employee = self.create_employee()
+        employee = change_employee_lifecycle(
+            actor_membership=self.owner, employee_id=employee.pk, action="stop_activity",
+            reason="Temporary operational stop",
+        )
+        self.assertEqual(employee.status, EmploymentStatus.INACTIVE)
+        self.assertIsNone(employee.employment_end_date)
+
     def test_terminate_employee_sets_end_date_and_closes_current_assignment(self):
         employee = self.create_employee()
         end_date = date.today()
@@ -206,45 +217,48 @@ class InternalOrganizationServiceTests(TestCase):
         assignment = EmployeeOrganizationAssignment.objects.get(employee=employee)
         self.assertEqual(assignment.effective_to, end_date)
 
-    def test_archive_requires_stopped_employee_and_can_be_restored(self):
+    def test_active_employee_can_be_archived_and_restored_without_status_rewrite(self):
         employee = self.create_employee()
-        with self.assertRaises(ValidationError):
-            archive_employee(actor_membership=self.owner, employee_id=employee.pk, reason="File closed")
-        employee = change_employee_lifecycle(
-            actor_membership=self.owner, employee_id=employee.pk, action="deactivate", reason="Temporary stop",
-        )
-        employee = archive_employee(actor_membership=self.owner, employee_id=employee.pk, reason="No longer current")
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
+        employee = archive_employee(actor_membership=self.owner, employee_id=employee.pk, reason="File closed")
         self.assertIsNotNone(employee.archived_at)
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
         employee = restore_employee_archive(actor_membership=self.owner, employee_id=employee.pk, reason="Needed for review")
         self.assertIsNone(employee.archived_at)
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
 
-    def test_branch_and_department_archive_preserve_assignment_history(self):
+    def test_branch_and_department_archive_cascade_without_rewriting_assignment_history(self):
         employee = self.create_employee()
-        with self.assertRaises(ValidationError):
-            archive_branch(actor_membership=self.owner, branch_id=self.branch.pk, reason="Office closed")
-        with self.assertRaises(ValidationError):
-            archive_department(actor_membership=self.owner, department_id=self.department.pk, reason="Reorganization")
-        change_employee_lifecycle(actor_membership=self.owner, employee_id=employee.pk, action="deactivate", reason="Stopped")
         branch = archive_branch(actor_membership=self.owner, branch_id=self.branch.pk, reason="Office closed")
         department = archive_department(actor_membership=self.owner, department_id=self.department.pk, reason="Reorganization")
-        self.assertIsNotNone(branch.archived_at); self.assertFalse(branch.is_active)
-        self.assertIsNotNone(department.archived_at); self.assertFalse(department.is_active)
+        self.assertIsNotNone(branch.archived_at); self.assertTrue(branch.is_active)
+        self.assertIsNotNone(department.archived_at); self.assertTrue(department.is_active)
         self.assertEqual(EmployeeOrganizationAssignment.objects.filter(employee=employee).count(), 1)
+        employee.refresh_from_db()
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
+        self.assertFalse(employees_for_company(company=self.company, archived=False).filter(pk=employee.pk).exists())
+        self.assertTrue(employees_for_company(company=self.company, archived=True).filter(pk=employee.pk).exists())
         branch = restore_branch_archive(actor_membership=self.owner, branch_id=branch.pk)
         department = restore_department_archive(actor_membership=self.owner, department_id=department.pk)
-        self.assertIsNone(branch.archived_at); self.assertFalse(branch.is_active)
-        self.assertIsNone(department.archived_at); self.assertFalse(department.is_active)
+        self.assertIsNone(branch.archived_at); self.assertTrue(branch.is_active)
+        self.assertIsNone(department.archived_at); self.assertTrue(department.is_active)
 
-    def test_unused_branch_department_delete_and_referenced_delete_block(self):
-        unused_branch = create_branch(actor_membership=self.owner, code="TMP", name="Temporary", kind=BranchKind.OFFICE)
-        unused_department = create_department(actor_membership=self.owner, code="TMPD", name="Temporary Dept")
-        self.assertEqual(delete_unused_branch(actor_membership=self.owner, branch_id=unused_branch.pk, confirmation="TMP"), str(unused_branch.pk))
-        self.assertEqual(delete_unused_department(actor_membership=self.owner, department_id=unused_department.pk, confirmation="TMPD"), str(unused_department.pk))
-        self.create_employee()
-        with self.assertRaises(ValidationError):
-            delete_unused_branch(actor_membership=self.owner, branch_id=self.branch.pk, confirmation=self.branch.code)
-        with self.assertRaises(ValidationError):
-            delete_unused_department(actor_membership=self.owner, department_id=self.department.pk, confirmation=self.department.code)
+    def test_branch_department_delete_cascades_visibility_and_restores_safely(self):
+        employee = self.create_employee()
+        self.assertEqual(delete_unused_branch(actor_membership=self.owner, branch_id=self.branch.pk, confirmation=self.branch.code, reason="Office removed"), str(self.branch.pk))
+        self.assertEqual(delete_unused_department(actor_membership=self.owner, department_id=self.department.pk, confirmation=self.department.code, reason="Department removed"), str(self.department.pk))
+        self.branch.refresh_from_db(); self.department.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNotNone(self.branch.deleted_at); self.assertIsNotNone(self.department.deleted_at)
+        self.assertIsNone(employee.deleted_at)
+        self.assertEqual(EmployeeOrganizationAssignment.objects.filter(employee=employee).count(), 1)
+        self.assertFalse(employees_for_company(company=self.company, deleted=False).filter(pk=employee.pk).exists())
+        self.assertTrue(employees_for_company(company=self.company, deleted=True, archived=None).filter(pk=employee.pk).exists())
+        restore_branch_trash(actor_membership=self.owner, branch_id=self.branch.pk)
+        restore_department_trash(actor_membership=self.owner, department_id=self.department.pk)
+        self.branch.refresh_from_db(); self.department.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNone(self.branch.deleted_at); self.assertIsNone(self.department.deleted_at)
+        self.assertEqual(employee.status, EmploymentStatus.ACTIVE)
+        self.assertTrue(employees_for_company(company=self.company, deleted=False).filter(pk=employee.pk).exists())
 
     def test_reactivate_employee_requires_current_active_organization_masters(self):
         employee = self.create_employee()
@@ -256,7 +270,7 @@ class InternalOrganizationServiceTests(TestCase):
     def test_employee_uses_central_lifecycle_authority_and_audit_metadata(self):
         employee = self.create_employee()
         self.assertTrue(can_deactivate(employee))
-        self.assertFalse(can_archive(employee))
+        self.assertTrue(can_archive(employee))
         self.assertFalse(can_restore(employee))
         self.assertTrue(can_delete(employee))
         self.assertTrue(archive_reason_required(employee))
@@ -288,4 +302,9 @@ class InternalOrganizationServiceTests(TestCase):
             actor_membership=self.owner, employee_id=employee_id, confirmation=employee.employee_number, reason="Duplicate onboarding",
         )
         self.assertEqual(deleted, str(employee_id))
-        self.assertFalse(InternalEmployee.objects.filter(pk=employee_id).exists())
+        employee.refresh_from_db()
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertIsNotNone(employee.purge_after)
+        restored = restore_employee_trash(actor_membership=self.owner, employee_id=employee_id)
+        self.assertIsNone(restored.deleted_at)
+        self.assertEqual(restored.status, EmploymentStatus.ACTIVE)

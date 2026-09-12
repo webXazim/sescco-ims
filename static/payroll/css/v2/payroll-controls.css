@@ -479,3 +479,24 @@
     justify-self: start;
   }
 }
+
+
+/* 1.0.40 — lifecycle Actions menu visibility in organization master cards.
+ * Branch/office and department directory details are generic payroll panels,
+ * whose base style clips overflow. Their Actions menu is rendered in the
+ * footer, so a normal downward dropdown was fully clipped and appeared dead.
+ * Let the detail card expose the overlay and make footer lifecycle menus open
+ * upward; profile/header menus keep their normal downward placement.
+ */
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-master-detail {
+  overflow: visible;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-master-detail__actions .ui-v2-lifecycle-menu.is-open {
+  z-index: 140;
+}
+
+.ui-v2-root[data-area="payroll"] .ui-v2-payroll-master-detail__actions .ui-v2-lifecycle-menu > .ui-v2-prs-dropdown-menu {
+  top: auto;
+  bottom: calc(100% + 7px);
+}

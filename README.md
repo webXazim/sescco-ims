@@ -10,6 +10,8 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
+Current packaged release: **SESCCO MS 1.0.42 — complete DEMO testing + stop/termination lifecycle**.
+
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
 Core capabilities:
@@ -67,6 +69,14 @@ bash scripts/create-production-env.sh
 ./scripts/deploy-production.sh
 ./scripts/create-admin.sh
 ```
+
+For a testing deployment, `--seed` creates deterministic **DEMO-only** Payroll fixtures for complete workflow testing, including Internal Payroll, Rental Manpower, reports, WPS/export/reconciliation, payments, generated business documents, transfer/rate-change scenarios, and temporary-stop/termination/archive/delete lifecycle examples:
+
+```bash
+./scripts/deploy-production.sh --seed
+```
+
+`--seed` is idempotent. It intentionally creates visible DEMO/RDEMO records. The command chooses a collision-safe historical month before non-DEMO employment for its finalized synthetic payroll; if that cannot be proven safe, the seed aborts instead of mixing real employees into DEMO payroll history. Use it only where those test records are wanted.
 
 Docker publishes only `127.0.0.1:8087`. Route `ims.sescco.com` through the
 existing host reverse proxy using `deploy/host-nginx/ims.sescco.com.conf`.

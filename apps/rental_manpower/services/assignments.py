@@ -104,6 +104,14 @@ def _lock_worker(*, company, worker_id) -> RentalWorker:
         .select_related("supplier")
         .get(pk=worker_id, company=company)
     )
+    if worker.deleted_at:
+        raise ValidationError({"worker": "Restore the deleted rental worker before changing assignments."})
+    if worker.archived_at:
+        raise ValidationError({"worker": "Restore the archived rental worker before changing assignments."})
+    if worker.supplier.deleted_at:
+        raise ValidationError({"worker": "Restore the worker's deleted manpower supplier before changing assignments."})
+    if worker.supplier.archived_at:
+        raise ValidationError({"worker": "Restore the worker's archived manpower supplier before changing assignments."})
     if worker.status != RentalWorkerStatus.ACTIVE:
         raise ValidationError({"worker": "Only an active rental-worker master can be assigned."})
     if worker.supplier.status != SupplierStatus.ACTIVE:

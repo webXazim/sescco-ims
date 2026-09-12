@@ -36,7 +36,7 @@ When Rental Manpower is imported:
   scoped checks.
 - Project completion must account for both Inventory balances and open Rental assignments before
   the lifecycle transition is accepted.
-- Physical deletion remains forbidden once protected Inventory or Payroll history exists.
+- Archive/Delete may suspend the project with existing Inventory/Rental scope; protected history remains intact and prevents unsafe physical deletion.
 
 Django deploy checks intentionally fail if a second model named
 `rental_manpower.RentalProject` is installed.

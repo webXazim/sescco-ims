@@ -23,9 +23,9 @@ project without importing a second User, Company, Project, or deployment stack.
 - `/api/rental/...` never needs to expose the legacy integer Project PK.
 - New Rental assignments require an active, non-trashed shared Project.
 - Project work dates are validated through the shared project lifecycle contract.
-- Completion/archive cannot strand an open Rental assignment.
-- Moving a shared Project to Trash cannot strand an open Rental assignment.
-- Historical assignments/timesheets/settlements protect physical Project deletion.
+- Project completion still requires settled Inventory balances and Rental assignments.
+- Project Archive/Delete is a reversible lifecycle boundary: existing Rental assignments remain intact but project operations are suspended until restore or transfer/release.
+- Historical assignments/timesheets/settlements protect physical Project deletion and are never cascade-erased.
 
 ## Rental domains retained
 

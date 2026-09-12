@@ -130,17 +130,20 @@ class InternalOrganizationApiTests(TestCase):
         self.assertIn(str(self.branch.pk), {row["id"] for row in listing.json()["results"]})
         restored = self.client.post(lifecycle_url, data=json.dumps({"action":"restore_archive"}), content_type="application/json")
         self.assertEqual(restored.status_code, 200)
-        self.assertEqual(restored.json()["branch"]["status"], "Inactive")
+        self.assertEqual(restored.json()["branch"]["status"], "Active")
         unused = create_branch(actor_membership=self.membership, code="TMP", name="Temp Office")
         deleted = self.client.delete(reverse("internal_payroll:branch-detail-api", kwargs={"branch_id":unused.pk}), data=json.dumps({"confirmation":"TMP","reason":"Mistake"}), content_type="application/json")
         self.assertEqual(deleted.status_code, 200)
-        self.assertFalse(Branch.objects.filter(pk=unused.pk).exists())
+        unused.refresh_from_db()
+        self.assertIsNotNone(unused.deleted_at)
 
-    def test_department_delete_is_blocked_after_employee_assignment(self):
-        self._create_employee()
-        response = self.client.delete(reverse("internal_payroll:department-detail-api", kwargs={"department_id": self.department.pk}), data=json.dumps({"confirmation":self.department.code}), content_type="application/json")
-        self.assertEqual(response.status_code, 400)
-        self.assertTrue(Department.objects.filter(pk=self.department.pk).exists())
+    def test_department_delete_cascades_current_employee_visibility(self):
+        employee = self._create_employee()
+        response = self.client.delete(reverse("internal_payroll:department-detail-api", kwargs={"department_id": self.department.pk}), data=json.dumps({"confirmation":self.department.code,"reason":"Reorganization"}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.department.refresh_from_db(); employee.refresh_from_db()
+        self.assertIsNotNone(self.department.deleted_at)
+        self.assertIsNone(employee.deleted_at)
 
     def test_employee_lifecycle_termination_and_archive_filters(self):
         employee = self._create_employee()
@@ -190,5 +193,6 @@ class InternalOrganizationApiTests(TestCase):
             detail_url, data=json.dumps({"confirmation": employee.employee_number, "reason": "Duplicate onboarding"}), content_type="application/json"
         )
         self.assertEqual(deleted.status_code, 200)
-        self.assertFalse(InternalEmployee.objects.filter(pk=employee.pk).exists())
+        employee.refresh_from_db()
+        self.assertIsNotNone(employee.deleted_at)
 

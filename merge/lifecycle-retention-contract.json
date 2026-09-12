@@ -1,13 +1,14 @@
 {
-  "version": 2,
+  "version": 3,
   "product": "SESCCO MS",
   "principles": {
-    "archive": "Use for real master records that must leave current operations while historical references stay readable.",
-    "delete_unused": "For selected operational master records, Delete means soft-delete to the 30-day Trash Bin; permanent purge occurs only after the recovery window and only when relational protections allow it.",
+    "archive": "Archive is a reversible lifecycle boundary. For parent masters, operational child scope may inherit the archive state without rewriting permanent child/history rows.",
+    "delete_unused": "For selected operational masters, Delete means a 30-day reversible soft-delete. Parent masters may cascade the hidden/non-operational state to dependent current scope while preserving all historical rows.",
     "workflow": "Operational transactions are closed, cancelled, reversed, released or superseded through their workflow; they are not archived/deleted as masters.",
     "immutable": "Audit, movement and finalized-document evidence is append-only or reversal-based and must never expose ordinary delete/archive actions.",
     "access": "System users and memberships are deactivated/reactivated so audit actor history remains resolvable.",
-    "trash": "Trash is distinct from Archive. Trash records are hidden from active selectors, recoverable for 30 days, and may retain protected tombstones after expiry when immutable history still references them."
+    "trash": "Delete recovery is distinct from Archive. Deleted records are hidden from active selectors, recoverable for 30 days, and may retain protected tombstones after expiry when immutable history still references them.",
+    "cascade": "Branch/Office, Department, Manpower Supplier and Project are reversible lifecycle parents: Archive/Delete propagate operational visibility to their current dependent scope; restoring the parent restores only that inherited scope because child permanent state is not overwritten."
   },
   "models": {
     "accounts.User": {
@@ -29,7 +30,7 @@
       "mode": "system_singleton_no_delete"
     },
     "projects.Project": {
-      "mode": "master_archive_trash_30d"
+      "mode": "master_archive_trash_30d_reversible_cascade"
     },
     "inventory.Unit": {
       "mode": "master_archive_delete_unused"
@@ -80,10 +81,10 @@
       "mode": "workflow_record_no_delete"
     },
     "internal_payroll.Branch": {
-      "mode": "master_archive_trash_30d"
+      "mode": "master_archive_trash_30d_reversible_cascade"
     },
     "internal_payroll.Department": {
-      "mode": "master_archive_trash_30d"
+      "mode": "master_archive_trash_30d_reversible_cascade"
     },
     "internal_payroll.InternalEmployee": {
       "mode": "employment_lifecycle_archive_trash_30d"
@@ -146,7 +147,7 @@
       "mode": "workflow_record_no_delete"
     },
     "rental_manpower.ManpowerSupplier": {
-      "mode": "master_archive_trash_30d"
+      "mode": "master_archive_trash_30d_reversible_cascade"
     },
     "rental_manpower.RentalWorker": {
       "mode": "worker_lifecycle_archive_trash_30d"

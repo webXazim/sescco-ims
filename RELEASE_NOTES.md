@@ -1,3 +1,40 @@
+# 1.0.42 — Complete DEMO testing + stop/termination lifecycle
+
+- Expands `--seed` into an idempotent end-to-end Payroll test dataset instead of only sample master rows. The seed now verifies Internal Payroll, Rental Manpower, management workforce cost, overtime, advances/adjustments, payments, transfers and WPS report output.
+- Creates a collision-safe closed DEMO history month so approval, locked attendance/timesheets, payroll calculation, supplier settlements, payment workflows and finalized output documents can be exercised without mixing non-DEMO employees into the synthetic finalized payroll.
+- Exercises the full Internal salary-payment/WPS lifecycle: company payment settings, verified employee payment destinations, configurable WPS CSV template, batch preparation, export, processing, result import, Paid reconciliation, close, salary slips and salary-payment receipts.
+- Exercises Rental settlement output end to end: timesheet + overtime, approved adjustment, calculated/reviewed/approved settlement, paid supplier payment, supplier invoice, settlement document, payment receipt and closed settlement.
+- Seeds deterministic lifecycle records for Active, On Leave, temporary Stop, Terminated, Archived and 30-day Delete states, together with transfer/rate-change, On Hold and Completed project scenarios.
+- Adds explicit temporary **Stop activity** versus final **Termination** semantics for Internal Employees, Rental Workers and Manpower Suppliers. Temporary stop can be resumed and keeps history; termination is final for that employment/worker/supplier relationship and blocks new operational activity while retaining historical payroll, assignments, timesheets, settlements, payments and documents.
+- Supplier termination cascades termination through its current worker scope and safely closes/cancels editable assignment activity where possible. Protected submitted/approved/locked history is retained rather than rewritten.
+- Makes rental timesheet lifecycle checks effective-date aware so historical draft corrections through a stop/termination date remain possible while new activity after that date is blocked.
+- Adds `rental_manpower.0008_supplier_worker_termination` for supplier stop metadata plus supplier/worker termination dates/reasons and terminated status constraints; no previously released migration is rewritten.
+- Updates Supplier and Rental Workforce filters/profile actions for Terminated state and keeps termination out of ordinary master Edit flows. New Internal Employees are no longer created directly as Terminated; termination is an explicit lifecycle action.
+- Adds release verification for comprehensive DEMO coverage and stop/termination authority, and bumps Payroll frontend assets to `1.0.42`.
+
+# 1.0.41 — Reversible lifecycle cascade
+
+- Makes Archive and 30-day Delete intentionally less restrictive for the operational masters requested: Branch / Office, Department, Internal Employee, Manpower Supplier, Rental Worker and shared Project.
+- Branch / Office and Department lifecycle now cascades operational visibility to employees through the existing current effective-dated organization assignment. Employee rows, employment status and payroll history are not rewritten. Restoring the parent immediately restores only the inherited employee scope.
+- Internal employee and rental worker register filters now treat inherited parent lifecycle as a real cascade: ordinary lists exclude children whose current Branch / Department / Supplier is archived or deleted, while Archive/Delete views can surface that inherited state without rewriting the child master.
+- Manpower Supplier Archive/Delete now cascades to its worker operational scope without rewriting worker status or assignment history. Workers whose supplier is archived/deleted are rejected from new assignments, timesheet edits and new settlement adjustments until the supplier is restored.
+- Individual Internal Employees and Rental Workers may now be archived or soft-deleted while Active; Archive/Delete no longer forces a separate stop/inactive transition. Their historical payroll/assignment records remain intact.
+- Project Archive/Delete no longer requires zero stock or released Rental Manpower assignments. Existing project inventory and rental assignment scope becomes non-operational with the project and returns on restore. Project completion remains strict and still requires stock/assignment closeout.
+- Adds `Project.archive_previous_status` so project Archive/Restore returns to the exact prior Active / On Hold / Completed state instead of guessing a safe status.
+- Adds forward migrations `internal_payroll.0012_reversible_archive_lifecycle` and `projects.0006_project_reversible_archive_state`; no previously released migration is rewritten.
+- Keeps Delete recoverable for 30 days and deliberately avoids destructive database cascade. Protected payroll, attendance, assignment, settlement, inventory movement, finalized-document and audit evidence can never be erased merely because a parent master was deleted.
+- Updates Archive/Delete screens and Actions hints to describe the reversible cascade and removes old dependency-clearance guidance.
+
+# 1.0.40 — Organization Actions dropdown visibility + lifecycle label cleanup
+
+- Fixes the Branch / Office and Department directory **Actions** control that appeared unresponsive even though the delegated click handler was running: the dropdown was opening inside a generic payroll panel with `overflow: hidden`, so the entire menu was clipped.
+- Makes organization-master detail cards allow lifecycle overlays and opens their footer Actions menu upward, while keeping profile/header Actions menus in their existing placement.
+- Keeps the shared delegated dropdown controller and server-authoritative lifecycle handlers unchanged; this is a presentation/interaction repair rather than a lifecycle-rule change.
+- Renames the Payroll lifecycle navigation from **Archive Bin** to **Archive** and from **Trash Bin** to **Delete**.
+- Cleans the visible lifecycle copy so Delete is described as a **30-day recovery** operation instead of exposing the internal Trash/Bin terminology.
+- Archive and Delete remain separate operations. Deleted employee, branch/office, department, supplier, worker and project masters remain recoverable for 30 days; protected payroll, assignment, inventory and audit history is still retained.
+- Bumps Payroll frontend cache-busters to `1.0.40` so the repaired CSS/JS cannot be masked by a cached 1.0.39 asset.
+
 # 1.0.39 — Record lifecycle actions, 30-day Trash, and SESCCO MS shell branding
 
 - Fixes the dynamically rendered Payroll **Actions** dropdown by moving dropdown open/close behavior to a delegated document-level handler; profile Actions controls now work after route rendering and re-rendering.

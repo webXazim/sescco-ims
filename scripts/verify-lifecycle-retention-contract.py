@@ -68,6 +68,7 @@ allowed_modes = {
     "import_staging_retention",
     "master_archive_delete_unused",
     "master_archive_trash_30d",
+    "master_archive_trash_30d_reversible_cascade",
     "profile_delete_unused_or_deactivate",
     "system_singleton_no_delete",
     "user_preference_delete_ok",
@@ -81,11 +82,11 @@ for label, spec in models.items():
         fail(f"{label} has unknown retention mode {mode!r}")
 
 trash_modes = {
-    "projects.Project": "master_archive_trash_30d",
-    "internal_payroll.Branch": "master_archive_trash_30d",
-    "internal_payroll.Department": "master_archive_trash_30d",
+    "projects.Project": "master_archive_trash_30d_reversible_cascade",
+    "internal_payroll.Branch": "master_archive_trash_30d_reversible_cascade",
+    "internal_payroll.Department": "master_archive_trash_30d_reversible_cascade",
     "internal_payroll.InternalEmployee": "employment_lifecycle_archive_trash_30d",
-    "rental_manpower.ManpowerSupplier": "master_archive_trash_30d",
+    "rental_manpower.ManpowerSupplier": "master_archive_trash_30d_reversible_cascade",
     "rental_manpower.RentalWorker": "worker_lifecycle_archive_trash_30d",
 }
 for label, expected in trash_modes.items():
@@ -127,13 +128,30 @@ for needle in (
     "Create effective change",
     "Effective-dated history is retained",
     "Company policy is retained",
-    "Archive Bin",
-    "Trash Bin",
-    "Move to Trash",
+    "archive:{title:'Archive'}, trash:{title:'Delete'}",
+    "Delete with 30-day recovery",
     "restore_trash",
 ):
     if needle not in app_js:
         fail(f"Payroll UI retention guidance is missing: {needle}")
+
+
+cascade_sources = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in (
+    "apps/internal_payroll/selectors/organization.py",
+    "apps/internal_payroll/services/attendance.py",
+    "apps/rental_manpower/selectors/masters.py",
+    "apps/rental_manpower/services/assignments.py",
+    "apps/projects/services.py",
+))
+for needle in (
+    "cascadeLifecycle",
+    "operational_internal_employees",
+    "Inherited from archived supplier",
+    "archive_previous_status",
+    "cascade_scope",
+):
+    if needle not in cascade_sources:
+        fail(f"reversible parent lifecycle cascade is missing {needle!r}")
 
 
 trash_source = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in (

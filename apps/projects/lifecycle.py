@@ -19,7 +19,7 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
     """Master-data lifecycle for the shared Inventory / Rental project authority.
 
     Operational states (active, on hold, completed) remain project-domain workflow states.
-    Archive and Delete-unused are master-data lifecycle actions and therefore pass through
+    Archive and recoverable Delete are master-data lifecycle actions and therefore pass through
     the cross-module lifecycle authority.
     """
 
@@ -71,26 +71,9 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
                         message="This project is already archived.",
                     ),
                 )
-            if evidence.get("quantity_bearing_stock", 0):
-                return (
-                    LifecycleBlocker(
-                        code="stock_balance_exists",
-                        field="project",
-                        label="Stock records with balance",
-                        count=evidence["quantity_bearing_stock"],
-                        message="Transfer, use, or adjust all project stock to zero before archiving the project.",
-                    ),
-                )
-            if evidence.get("open_rental_assignments", 0):
-                return (
-                    LifecycleBlocker(
-                        code="open_rental_assignments",
-                        field="project",
-                        label="Open rental assignments",
-                        count=evidence["open_rental_assignments"],
-                        message="Release or transfer open Rental Manpower assignments before archiving the project.",
-                    ),
-                )
+            # Stock balances and open Rental Manpower assignments are evidence of
+            # cascade impact, not blockers. Archive is reversible and makes the
+            # project operationally unavailable without deleting those records.
             return ()
         if action is LifecycleAction.RESTORE:
             if instance.status != Project.Status.ARCHIVED and not instance.archived_at:
@@ -103,20 +86,12 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
                 )
             return ()
         if action is LifecycleAction.DELETE:
-            if evidence.get("quantity_bearing_stock", 0):
-                return (LifecycleBlocker(
-                    code="stock_balance_exists", field="project", label="Stock records with balance",
-                    count=evidence["quantity_bearing_stock"],
-                    message="Transfer, use, or adjust all project stock to zero before moving the project to Trash.",
-                ),)
-            if evidence.get("open_rental_assignments", 0):
-                return (LifecycleBlocker(
-                    code="open_rental_assignments", field="project", label="Open rental assignments",
-                    count=evidence["open_rental_assignments"],
-                    message="Release or transfer open Rental Manpower assignments before moving the project to Trash.",
-                ),)
+            # The 30-day delete is a reversible lifecycle boundary. Related stock,
+            # assignments, timesheets and audit history stay intact and inherit the
+            # project's hidden/non-operational state until restore.
             return ()
         return ()
+
 
 
 register_lifecycle_policy(Project, ProjectLifecyclePolicy())

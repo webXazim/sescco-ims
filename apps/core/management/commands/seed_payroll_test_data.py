@@ -20,6 +20,7 @@ from django.utils import timezone
 from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company, DocumentBrandingMode
+from apps.core.management import build_report
 from apps.documents.models import DocumentType
 from apps.documents.services.documents import finalize_business_document
 from apps.internal_payroll.models import (
@@ -61,6 +62,13 @@ from apps.internal_payroll.services import (
     create_branch,
     create_department,
     create_employee,
+    change_employee_lifecycle,
+    archive_employee,
+    delete_unused_employee,
+    archive_branch,
+    delete_unused_branch,
+    archive_department,
+    delete_unused_department,
     create_overtime_policy,
     create_payroll_adjustment,
     create_salary_component,
@@ -78,6 +86,7 @@ from apps.internal_payroll.services import (
     upsert_employee_payment_profile,
 )
 from apps.projects.models import Project
+from apps.projects.services import archive_project, trash_unused_project
 from apps.rental_manpower.models import (
     ManpowerSupplier,
     RentalAdjustment,
@@ -98,6 +107,13 @@ from apps.rental_manpower.models import (
 )
 from apps.rental_manpower.services import (
     assign_worker,
+    transfer_worker,
+    change_worker_rate,
+    change_supplier_lifecycle,
+    change_worker_lifecycle,
+    archive_supplier,
+    delete_unused_supplier,
+    delete_unused_worker,
     calculate_project_settlements,
     create_project,
     create_rental_adjustment,
@@ -293,30 +309,33 @@ class Command(BaseCommand):
         company = self._company(options["company_slug"])
         membership = self._owner(company)
         period_start = self._period(company, options["period"])
-        previous_start = _previous_month(period_start)
+        history_start = self._safe_history_period(company, period_start)
         clean_demo_company = self._demo_history_is_safe(company)
 
         self.stdout.write(self.style.WARNING("Seeding explicit TEST payroll data; DEMO/RDEMO records are not production payroll records."))
         try:
             with transaction.atomic():
                 self._seed_document_branding(company, clean_demo_company)
-                internal = self._seed_internal(company, membership, period_start, previous_start, clean_demo_company)
-                rental = self._seed_rental(company, membership, period_start, previous_start, clean_demo_company)
+                internal = self._seed_internal(company, membership, period_start, history_start, True)
+                rental = self._seed_rental(company, membership, period_start, history_start, True)
+                lifecycle = self._seed_lifecycle_scenarios(company, membership, period_start, history_start)
+                reports = self._verify_report_coverage(company, period_start, history_start, True)
         except ValidationError as exc:
             raise CommandError(f"Payroll test seed failed validation: {exc}") from exc
 
         self.stdout.write(self.style.SUCCESS(
             f"Payroll test seed complete for {company.slug}: "
-            f"{internal['employees']} internal employees, {rental['workers']} rental workers, "
-            f"draft period {period_start:%Y-%m}."
+            f"{internal['employees']} payroll employees, {rental['workers']} settlement workers, "
+            f"{lifecycle['records']} lifecycle test records, draft period {period_start:%Y-%m}."
         ))
-        if clean_demo_company:
-            self.stdout.write(self.style.SUCCESS(f"Closed end-to-end history is available for {previous_start:%Y-%m}."))
-        else:
-            self.stdout.write(self.style.WARNING(
-                "Closed-history generation was skipped because non-demo payroll masters exist. "
-                "Draft DEMO fixtures were still seeded without touching real payroll history."
+        if reports:
+            self.stdout.write(self.style.SUCCESS(
+                "Report/WPS test coverage verified: " + ", ".join(f"{name}={count}" for name, count in reports.items())
             ))
+        self.stdout.write(self.style.SUCCESS(
+            f"Closed end-to-end DEMO history is available for {history_start:%Y-%m}; "
+            "the seed chooses a collision-free period before non-DEMO employment begins."
+        ))
 
     def _company(self, slug: str) -> Company:
         qs = Company.objects.filter(
@@ -353,6 +372,59 @@ class Command(BaseCommand):
             return _month_start(raw)
         tz_name = getattr(getattr(company, "settings", None), "timezone", "Asia/Riyadh")
         return timezone.now().astimezone(ZoneInfo(tz_name)).date().replace(day=1)
+
+    def _safe_history_period(self, company: Company, current_start: date) -> date:
+        """Choose an idempotent closed DEMO period that cannot include real employees.
+
+        A complete seed must exercise approval, WPS, documents and reports.  We therefore
+        need one finalized payroll period even when the company already contains non-DEMO
+        masters.  The chosen month must be after all existing DEMO employee joining dates,
+        before the earliest non-DEMO employee joining date, and free from non-DEMO payroll/
+        attendance history.  A previously seeded DEMO-only run is deliberately reused.
+        """
+        real_join = (
+            InternalEmployee.objects.for_company(company)
+            .exclude(employee_number__startswith="DEMO-")
+            .exclude(joining_date__isnull=True)
+            .order_by("joining_date")
+            .values_list("joining_date", flat=True)
+            .first()
+        )
+        demo_latest_join = (
+            InternalEmployee.objects.for_company(company)
+            .filter(employee_number__startswith="DEMO-")
+            .order_by("-joining_date")
+            .values_list("joining_date", flat=True)
+            .first()
+        )
+        candidate = _previous_month(current_start)
+        for _ in range(600):
+            month_end = date(candidate.year, candidate.month, monthrange(candidate.year, candidate.month)[1])
+            if real_join and month_end >= real_join:
+                candidate = _previous_month(candidate)
+                continue
+            if demo_latest_join and candidate < demo_latest_join.replace(day=1):
+                break
+
+            run = PayrollRun.objects.for_company(company).filter(period_start=candidate).first()
+            if run is not None:
+                if not run.lines.exclude(employee_number__startswith="DEMO-").exists():
+                    return candidate
+                candidate = _previous_month(candidate)
+                continue
+
+            attendance = AttendancePeriod.objects.for_company(company).filter(period_start=candidate).first()
+            if attendance is not None:
+                if not attendance.entries.exclude(employee__employee_number__startswith="DEMO-").exists():
+                    return candidate
+                candidate = _previous_month(candidate)
+                continue
+            return candidate
+
+        raise CommandError(
+            "Unable to find a collision-free DEMO history month before existing non-DEMO employment. "
+            "Choose a dedicated test tenant or remove conflicting test masters before using --seed."
+        )
 
     def _demo_history_is_safe(self, company: Company) -> bool:
         real_internal = InternalEmployee.objects.for_company(company).exclude(employee_number__startswith="DEMO-").exists()
@@ -673,6 +745,300 @@ class Command(BaseCommand):
                 adjustment = transition_payroll_adjustment(actor_membership=actor, adjustment_id=adjustment.pk, action="submit")
             if adjustment.status == PayrollAdjustmentStatus.REVIEW:
                 transition_payroll_adjustment(actor_membership=actor, adjustment_id=adjustment.pk, action="approve")
+
+    def _seed_lifecycle_scenarios(self, company, actor, current_start, previous_start):
+        """Seed deterministic lifecycle/operations fixtures that are intentionally outside payroll calculations."""
+        from apps.internal_payroll.models import Branch, Department
+
+        branch = Branch.objects.for_company(company).filter(code="DEMO-HQ").first()
+        department = Department.objects.for_company(company).filter(code="DEMO-MGMT").first()
+        if branch is None or department is None:
+            raise ValidationError({"seed": "Internal DEMO organization masters must exist before lifecycle fixtures are created."})
+
+        today = timezone.localdate()
+        joining = min(previous_start, today - timedelta(days=90))
+        employee_specs = (
+            ("DEMO-190", "Demo Employee · On Leave", "leave"),
+            ("DEMO-191", "Demo Employee · Inactive", "deactivate"),
+            ("DEMO-192", "Demo Employee · Terminated", "terminate"),
+            ("DEMO-193", "Demo Employee · Archived", "archive"),
+            ("DEMO-194", "Demo Employee · Deleted", "delete"),
+        )
+        employee_records = 0
+        for offset, (number, name, target) in enumerate(employee_specs, start=90):
+            employee = InternalEmployee.objects.for_company(company).filter(employee_number=number).first()
+            if employee is None:
+                employee = create_employee(
+                    actor_membership=actor,
+                    employee_number=number,
+                    full_name=name,
+                    joining_date=joining,
+                    branch_id=branch.pk,
+                    department_id=department.pk,
+                    position="Lifecycle Test Record",
+                    status=EmploymentStatus.ACTIVE,
+                    national_id=_national_id("DEMO-LIFE-IQAMA-", offset),
+                    phone=f"+96652222{offset:04d}",
+                    address="TEST DATA · Lifecycle scenario",
+                    reason="TEST DATA lifecycle seed",
+                )
+            if employee.deleted_at:
+                employee_records += 1
+                continue
+            if target == "leave" and employee.status == EmploymentStatus.ACTIVE and not employee.archived_at:
+                change_employee_lifecycle(actor_membership=actor, employee_id=employee.pk, action="leave", reason="TEST DATA approved leave scenario")
+            elif target == "deactivate" and employee.status == EmploymentStatus.ACTIVE and not employee.archived_at:
+                change_employee_lifecycle(actor_membership=actor, employee_id=employee.pk, action="deactivate", reason="TEST DATA temporary stop scenario")
+            elif target == "terminate" and employee.status != EmploymentStatus.TERMINATED and not employee.archived_at:
+                stop_date = max(joining, min(today, current_start + timedelta(days=5)))
+                change_employee_lifecycle(actor_membership=actor, employee_id=employee.pk, action="terminate", effective_date=stop_date, reason="TEST DATA employment termination scenario")
+            elif target == "archive" and not employee.archived_at:
+                archive_employee(actor_membership=actor, employee_id=employee.pk, reason="TEST DATA archive scenario")
+            elif target == "delete":
+                delete_unused_employee(actor_membership=actor, employee_id=employee.pk, confirmation=employee.employee_number, reason="TEST DATA 30-day recovery scenario")
+            employee_records += 1
+
+        # Empty organization masters exercise Archive/Delete independently without
+        # contaminating the payroll employee register used by calculation fixtures.
+        archived_branch = Branch.objects.for_company(company).filter(code="DEMO-BR-ARCH").first()
+        if archived_branch is None:
+            archived_branch = create_branch(
+                actor_membership=actor, code="DEMO-BR-ARCH", name="Demo Archived Branch (TEST)",
+                location="Dammam", address="TEST DATA", manager_name="Demo Manager",
+            )
+        if not archived_branch.archived_at and not archived_branch.deleted_at:
+            archive_branch(actor_membership=actor, branch_id=archived_branch.pk, reason="TEST DATA branch archive fixture")
+
+        deleted_branch = Branch.objects.for_company(company).filter(code="DEMO-BR-DEL").first()
+        if deleted_branch is None:
+            deleted_branch = create_branch(
+                actor_membership=actor, code="DEMO-BR-DEL", name="Demo Deleted Branch (TEST)",
+                location="Dammam", address="TEST DATA", manager_name="Demo Manager",
+            )
+        if not deleted_branch.deleted_at:
+            delete_unused_branch(
+                actor_membership=actor, branch_id=deleted_branch.pk, confirmation=deleted_branch.code,
+                reason="TEST DATA branch 30-day recovery fixture",
+            )
+
+        archived_department = Department.objects.for_company(company).filter(code="DEMO-DEP-ARCH").first()
+        if archived_department is None:
+            archived_department = create_department(
+                actor_membership=actor, code="DEMO-DEP-ARCH", name="Demo Archived Department (TEST)",
+                notes="TEST DATA lifecycle fixture",
+            )
+        if not archived_department.archived_at and not archived_department.deleted_at:
+            archive_department(actor_membership=actor, department_id=archived_department.pk, reason="TEST DATA department archive fixture")
+
+        deleted_department = Department.objects.for_company(company).filter(code="DEMO-DEP-DEL").first()
+        if deleted_department is None:
+            deleted_department = create_department(
+                actor_membership=actor, code="DEMO-DEP-DEL", name="Demo Deleted Department (TEST)",
+                notes="TEST DATA lifecycle fixture",
+            )
+        if not deleted_department.deleted_at:
+            delete_unused_department(
+                actor_membership=actor, department_id=deleted_department.pk, confirmation=deleted_department.code,
+                reason="TEST DATA department 30-day recovery fixture",
+            )
+
+        main_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-01").first()
+        main_project = Project.objects.for_company(company).filter(code="DEMO-DIRIYA").first()
+        if main_supplier is None or main_project is None:
+            raise ValidationError({"seed": "Rental DEMO supplier/project must exist before lifecycle fixtures are created."})
+
+        secondary_project = Project.objects.for_company(company).filter(code="DEMO-YARD").first()
+        if secondary_project is None:
+            secondary_project = create_project(
+                actor_membership=actor,
+                code="DEMO-YARD",
+                name="Demo Logistics Yard (TEST)",
+                start_date=current_start,
+                status=Project.Status.ACTIVE,
+                client_name="Demo Internal Site",
+                location="Dammam",
+                manager_name="Demo Yard Manager",
+                notes="TEST DATA · transfer/rate-change report fixture",
+            )
+
+        transfer_fixture_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-090").first()
+        if transfer_fixture_worker is None:
+            transfer_fixture_worker = create_worker(
+                actor_membership=actor,
+                supplier_id=main_supplier.pk,
+                worker_number="RDEMO-090",
+                full_name="Demo Transfer Worker",
+                national_id=_national_id("DEMO-R-LIFE-", 90),
+                phone="+966533330090",
+                status=RentalWorkerStatus.ACTIVE,
+                notes="TEST DATA · assignment transfer/rate report fixture",
+            )
+        transfer_day = current_start + timedelta(days=1)
+        rate_day = transfer_day + timedelta(days=1)
+        transfer_assignments = WorkerAssignment.objects.for_company(company).filter(worker=transfer_fixture_worker, cancelled_at__isnull=True)
+        if not transfer_assignments.exists():
+            assign_worker(
+                actor_membership=actor,
+                worker_id=transfer_fixture_worker.pk,
+                project_id=main_project.reference,
+                trade="Helper",
+                rate_type=RentalRateType.HOURLY,
+                rate=D("10"),
+                effective_date=current_start,
+                reason="TEST DATA initial assignment",
+            )
+        if not transfer_assignments.filter(project=secondary_project, effective_from=transfer_day).exists():
+            transfer_worker(
+                actor_membership=actor,
+                worker_id=transfer_fixture_worker.pk,
+                project_id=secondary_project.reference,
+                trade="Helper",
+                rate_type=RentalRateType.HOURLY,
+                rate=D("10"),
+                effective_date=transfer_day,
+                reason="TEST DATA transfer report scenario",
+            )
+        if not WorkerAssignment.objects.for_company(company).filter(
+            worker=transfer_fixture_worker,
+            project=secondary_project,
+            effective_from=rate_day,
+            change_type="rate_change",
+            cancelled_at__isnull=True,
+        ).exists():
+            change_worker_rate(
+                actor_membership=actor,
+                worker_id=transfer_fixture_worker.pk,
+                rate_type=RentalRateType.HOURLY,
+                rate=D("11"),
+                effective_date=rate_day,
+                reason="TEST DATA rate-change report scenario",
+            )
+
+        inactive_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-091").first()
+        if inactive_worker is None:
+            inactive_worker = create_worker(actor_membership=actor, supplier_id=main_supplier.pk, worker_number="RDEMO-091", full_name="Demo Inactive Worker", national_id=_national_id("DEMO-R-LIFE-", 91), phone="+966533330091", status=RentalWorkerStatus.ACTIVE, notes="TEST DATA · inactive worker lifecycle")
+        if inactive_worker.status == RentalWorkerStatus.ACTIVE:
+            change_worker_lifecycle(actor_membership=actor, worker_id=inactive_worker.pk, action="deactivate", effective_date=min(today, current_start + timedelta(days=3)), reason="TEST DATA temporary worker stop")
+
+        terminated_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-092").first()
+        if terminated_worker is None:
+            terminated_worker = create_worker(actor_membership=actor, supplier_id=main_supplier.pk, worker_number="RDEMO-092", full_name="Demo Terminated Worker", national_id=_national_id("DEMO-R-LIFE-", 92), phone="+966533330092", status=RentalWorkerStatus.ACTIVE, notes="TEST DATA · terminated worker lifecycle")
+        if terminated_worker.status != RentalWorkerStatus.TERMINATED:
+            if not WorkerAssignment.objects.for_company(company).filter(worker=terminated_worker, cancelled_at__isnull=True, effective_to__isnull=True).exists():
+                assign_worker(actor_membership=actor, worker_id=terminated_worker.pk, project_id=secondary_project.reference, trade="Driver", rate_type=RentalRateType.HOURLY, rate=D("12"), effective_date=current_start, reason="TEST DATA worker termination assignment")
+            change_worker_lifecycle(actor_membership=actor, worker_id=terminated_worker.pk, action="terminate", effective_date=min(today, current_start + timedelta(days=4)), reason="TEST DATA worker contract ended")
+
+        inactive_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-INACTIVE").first()
+        if inactive_supplier is None:
+            inactive_supplier = create_supplier(actor_membership=actor, code="DEMO-SUP-INACTIVE", name="Demo Inactive Supplier (TEST)", status=SupplierStatus.ACTIVE, contact_person="Demo Contact", phone="+966544440001", email="inactive-supplier@example.invalid", payment_terms="30 days", address="TEST DATA", notes="TEST DATA · temporary supplier stop")
+        if inactive_supplier.status == SupplierStatus.ACTIVE:
+            change_supplier_lifecycle(actor_membership=actor, supplier_id=inactive_supplier.pk, action="deactivate", reason="TEST DATA temporary supplier stop")
+
+        terminated_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-TERM").first()
+        if terminated_supplier is None:
+            terminated_supplier = create_supplier(actor_membership=actor, code="DEMO-SUP-TERM", name="Demo Terminated Supplier (TEST)", status=SupplierStatus.ACTIVE, contact_person="Demo Terminated Contact", phone="+966544440002", email="terminated-supplier@example.invalid", payment_terms="30 days", address="TEST DATA", notes="TEST DATA · supplier termination cascade")
+        supplier_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-093").first()
+        if supplier_worker is None:
+            supplier_worker = create_worker(actor_membership=actor, supplier_id=terminated_supplier.pk, worker_number="RDEMO-093", full_name="Demo Supplier-Terminated Worker", national_id=_national_id("DEMO-R-LIFE-", 93), phone="+966533330093", status=RentalWorkerStatus.ACTIVE, notes="TEST DATA · supplier cascade termination")
+        if terminated_supplier.status != SupplierStatus.TERMINATED:
+            if not WorkerAssignment.objects.for_company(company).filter(worker=supplier_worker, cancelled_at__isnull=True, effective_to__isnull=True).exists():
+                assign_worker(actor_membership=actor, worker_id=supplier_worker.pk, project_id=secondary_project.reference, trade="Mason", rate_type=RentalRateType.HOURLY, rate=D("14"), effective_date=current_start, reason="TEST DATA supplier termination assignment")
+            change_supplier_lifecycle(actor_membership=actor, supplier_id=terminated_supplier.pk, action="terminate", effective_date=min(today, current_start + timedelta(days=6)), reason="TEST DATA supplier relationship terminated")
+
+        archived_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-ARCH").first()
+        if archived_supplier is None:
+            archived_supplier = create_supplier(
+                actor_membership=actor, code="DEMO-SUP-ARCH", name="Demo Archived Supplier (TEST)",
+                status=SupplierStatus.ACTIVE, contact_person="Demo Contact", phone="+966544440003",
+                email="archived-supplier@example.invalid", address="TEST DATA", notes="TEST DATA archive fixture",
+            )
+        if not archived_supplier.archived_at and not archived_supplier.deleted_at:
+            archive_supplier(actor_membership=actor, supplier_id=archived_supplier.pk, reason="TEST DATA supplier archive fixture")
+
+        deleted_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-DEL").first()
+        if deleted_supplier is None:
+            deleted_supplier = create_supplier(
+                actor_membership=actor, code="DEMO-SUP-DEL", name="Demo Deleted Supplier (TEST)",
+                status=SupplierStatus.ACTIVE, contact_person="Demo Contact", phone="+966544440004",
+                email="deleted-supplier@example.invalid", address="TEST DATA", notes="TEST DATA delete fixture",
+            )
+        if not deleted_supplier.deleted_at:
+            delete_unused_supplier(
+                actor_membership=actor, supplier_id=deleted_supplier.pk, confirmation=deleted_supplier.code,
+                reason="TEST DATA supplier 30-day recovery fixture",
+            )
+
+        project_specs = (
+            ("DEMO-HOLD", "Demo Project On Hold (TEST)", Project.Status.ON_HOLD, None),
+            ("DEMO-DONE", "Demo Completed Project (TEST)", Project.Status.COMPLETED, min(today, current_start)),
+            ("DEMO-ARCH", "Demo Archived Project (TEST)", Project.Status.ACTIVE, None),
+            ("DEMO-DEL", "Demo Deleted Project (TEST)", Project.Status.ACTIVE, None),
+        )
+        lifecycle_projects = {}
+        for code, name, status, end_date in project_specs:
+            project = Project.objects.for_company(company).filter(code=code).first()
+            if project is None:
+                start_date = min(previous_start, end_date or current_start)
+                project = create_project(
+                    actor_membership=actor, code=code, name=name, start_date=start_date, end_date=end_date,
+                    status=status, client_name="Demo Client", location="Dammam", manager_name="Demo Manager",
+                    notes="TEST DATA project lifecycle fixture",
+                )
+            lifecycle_projects[code] = project
+        project = lifecycle_projects["DEMO-ARCH"]
+        if not project.archived_at and not project.deleted_at:
+            archive_project(actor_membership=actor, project_id=project.reference, reason="TEST DATA project archive fixture")
+        project = lifecycle_projects["DEMO-DEL"]
+        if not project.deleted_at:
+            trash_unused_project(
+                actor_membership=actor, project_id=project.reference, confirmation=project.code,
+                reason="TEST DATA project 30-day recovery fixture",
+            )
+
+        archived_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-094").first()
+        if archived_worker is None:
+            archived_worker = create_worker(actor_membership=actor, supplier_id=main_supplier.pk, worker_number="RDEMO-094", full_name="Demo Archived Worker", national_id=_national_id("DEMO-R-LIFE-", 94), phone="+966533330094", status=RentalWorkerStatus.ACTIVE, notes="TEST DATA · archive page fixture")
+        if not archived_worker.archived_at:
+            change_worker_lifecycle(actor_membership=actor, worker_id=archived_worker.pk, action="archive", reason="TEST DATA archive page fixture")
+
+        deleted_worker = RentalWorker.objects.for_company(company).filter(worker_number="RDEMO-095").first()
+        if deleted_worker is None:
+            deleted_worker = create_worker(actor_membership=actor, supplier_id=main_supplier.pk, worker_number="RDEMO-095", full_name="Demo Deleted Worker", national_id=_national_id("DEMO-R-LIFE-", 95), phone="+966533330095", status=RentalWorkerStatus.ACTIVE, notes="TEST DATA · delete recovery page fixture")
+        if not deleted_worker.deleted_at:
+            delete_unused_worker(actor_membership=actor, worker_id=deleted_worker.pk, confirmation=deleted_worker.worker_number, reason="TEST DATA 30-day worker recovery fixture")
+
+        return {"records": employee_records + 19}
+
+    def _verify_report_coverage(self, company, current_start, previous_start, complete_history):
+        """Fail the seed if a supposedly complete DEMO tenant cannot exercise report generation."""
+        cases = []
+        if complete_history:
+            cases.extend([
+                ("workforce-cost", "management", previous_start),
+                ("internal-payroll", "internal", previous_start),
+                ("internal-overtime", "internal", previous_start, "overtime"),
+                ("internal-adjustments", "internal", previous_start, "advances"),
+                ("internal-payments", "internal", previous_start, "payments"),
+                ("rental-project-cost", "rental", previous_start),
+                ("supplier-cost", "rental", previous_start),
+                ("rental-overtime", "rental", previous_start, "overtime"),
+                ("rental-adjustments", "rental", previous_start, "advances"),
+                ("rental-payments", "rental", previous_start, "payments"),
+            ])
+        cases.extend([
+            ("wps", "internal", current_start),
+            ("transfers", "rental", current_start),
+        ])
+        coverage = {}
+        for item in cases:
+            name, workspace, period = item[:3]
+            report_type = item[3] if len(item) > 3 else name
+            report = build_report(company=company, report_type=report_type, period_start=period, workspace=workspace)
+            rows = list(report.get("rows") or [])
+            coverage[name] = len(rows)
+            if not rows:
+                raise ValidationError({"seed": f"DEMO report coverage is empty for {name} ({workspace}, {period:%Y-%m})."})
+        return coverage
 
     def _seed_rental(self, company, actor, current_start, previous_start, make_history):
         supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-01").first()

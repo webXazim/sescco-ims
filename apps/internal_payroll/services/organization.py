@@ -323,12 +323,19 @@ def archive_branch(*, actor_membership: CompanyMembership, branch_id, reason: st
         return branch
     decision = require_lifecycle_action(branch, LifecycleAction.ARCHIVE, reason=reason)
     before = _model_snapshot(branch)
-    branch.is_active = False
+    # Keep the branch's own Active/Inactive state intact. Archive is an
+    # independent reversible lifecycle boundary; current employees inherit it
+    # operationally through their current organization assignment.
     branch.archived_at = timezone.now()
     branch.archived_reason = (reason or "").strip()
     branch.full_clean()
-    branch.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
-    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archived", request=request)
+    branch.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=branch, decision=decision, actor_membership=actor_membership, before=before,
+        after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archived",
+        metadata={"cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        request=request,
+    )
     return branch
 
 
@@ -343,16 +350,20 @@ def restore_branch_archive(*, actor_membership: CompanyMembership, branch_id, re
     previous_reason = branch.archived_reason
     branch.archived_at = None
     branch.archived_reason = ""
-    branch.is_active = False
     branch.full_clean()
-    branch.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
-    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    branch.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=branch, decision=decision, actor_membership=actor_membership, before=before,
+        after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archive_restored",
+        metadata={"previous_archive_reason": previous_reason, "restored_active_state": branch.is_active, "cascade_scope": "current_employees"},
+        request=request,
+    )
     return branch
 
 
 @transaction.atomic
 def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
-    """Move a stopped branch/office to the 30-day Trash without erasing history."""
+    """Soft-delete a branch/office for 30 days; current employees inherit the boundary."""
     _require_internal_edit(actor_membership)
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
@@ -360,7 +371,9 @@ def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, conf
     move_to_trash(branch, user=actor_membership.user, reason=reason)
     record_lifecycle_action(
         instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch),
-        reason=reason, audit_action="internal.branch.moved_to_trash", metadata={"retention_days": 30}, request=request,
+        reason=reason, audit_action="internal.branch.moved_to_trash",
+        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        request=request,
     )
     return str(branch.pk)
 
@@ -384,12 +397,18 @@ def archive_department(*, actor_membership: CompanyMembership, department_id, re
         return department
     decision = require_lifecycle_action(department, LifecycleAction.ARCHIVE, reason=reason)
     before = _model_snapshot(department)
-    department.is_active = False
+    # Preserve the department's own Active/Inactive state; current employees
+    # inherit the archive state from their open organization assignment.
     department.archived_at = timezone.now()
     department.archived_reason = (reason or "").strip()
     department.full_clean()
-    department.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
-    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.archived", request=request)
+    department.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=department, decision=decision, actor_membership=actor_membership, before=before,
+        after=_model_snapshot(department), reason=reason, audit_action="internal.department.archived",
+        metadata={"cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        request=request,
+    )
     return department
 
 
@@ -403,10 +422,14 @@ def restore_department_archive(*, actor_membership: CompanyMembership, departmen
     before = _model_snapshot(department); previous_reason = department.archived_reason
     department.archived_at = None
     department.archived_reason = ""
-    department.is_active = False
     department.full_clean()
-    department.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
-    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    department.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=department, decision=decision, actor_membership=actor_membership, before=before,
+        after=_model_snapshot(department), reason=reason, audit_action="internal.department.archive_restored",
+        metadata={"previous_archive_reason": previous_reason, "restored_active_state": department.is_active, "cascade_scope": "current_employees"},
+        request=request,
+    )
     return department
 
 
@@ -418,7 +441,12 @@ def delete_unused_department(*, actor_membership: CompanyMembership, department_
     decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(department)
     move_to_trash(department, user=actor_membership.user, reason=reason)
-    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.moved_to_trash", metadata={"retention_days":30}, request=request)
+    record_lifecycle_action(
+        instance=department, decision=decision, actor_membership=actor_membership, before=before,
+        after=_model_snapshot(department), reason=reason, audit_action="internal.department.moved_to_trash",
+        metadata={"retention_days": 30, "cascade_scope": "current_employees", "affected_employees": decision.evidence.get("current_employees", 0)},
+        request=request,
+    )
     return str(department.pk)
 
 
@@ -668,6 +696,7 @@ def change_employee_lifecycle(
         "on_leave": EmploymentStatus.ON_LEAVE,
         "deactivate": EmploymentStatus.INACTIVE,
         "inactive": EmploymentStatus.INACTIVE,
+        "stop_activity": EmploymentStatus.INACTIVE,
         "terminate": EmploymentStatus.TERMINATED,
         "terminated": EmploymentStatus.TERMINATED,
     }
@@ -820,7 +849,7 @@ def restore_employee_archive(
 def delete_unused_employee(
     *, actor_membership: CompanyMembership, employee_id, confirmation: str, reason: str = "", request: HttpRequest | None = None,
 ) -> str:
-    """Move a stopped employee master to the 30-day Trash; never erase payroll history."""
+    """Move an employee master into 30-day recoverable Delete; never erase payroll history."""
     _require_internal_edit(actor_membership)
     employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(employee, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)

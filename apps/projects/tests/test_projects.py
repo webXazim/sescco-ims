@@ -159,6 +159,26 @@ class ProjectWorkspaceTests(TestCase):
         with self.assertRaises(ValidationError):
             project.save()
 
+
+    def test_project_archive_with_stock_preserves_exact_status_for_restore(self):
+        from apps.inventory.models import StockItem, Unit
+        from apps.projects.services import archive_project, restore_project_archive
+        from apps.accounts.models import CompanyMembership
+
+        project = Project.objects.create(company=self.company, code="LIFE-04", name="Reversible Project", status=Project.Status.ON_HOLD)
+        unit = Unit.objects.get(normalized_name="piece")
+        StockItem.objects.create(
+            project=project, material_name="Stored Cable", supplier_name="Supplier",
+            supplier_phone="0500000999", unit=unit, current_quantity=Decimal("2"),
+        )
+        membership = CompanyMembership.objects.get(company=self.company, user=self.admin)
+        project = archive_project(actor_membership=membership, project_id=project.pk, reason="Pause master")
+        self.assertEqual(project.status, Project.Status.ARCHIVED)
+        self.assertEqual(project.archive_previous_status, Project.Status.ON_HOLD)
+        project = restore_project_archive(actor_membership=membership, project_id=project.pk)
+        self.assertEqual(project.status, Project.Status.ON_HOLD)
+        self.assertEqual(project.archive_previous_status, "")
+
     def test_project_lifecycle_requires_inventory_management_authority(self):
         project = Project.objects.create(company=self.company, code="LIFE-02", name="Lifecycle Controls")
         status_url = reverse("projects:status", kwargs={"code": project.code})
@@ -187,30 +207,31 @@ class ProjectWorkspaceTests(TestCase):
         project.refresh_from_db()
         self.assertIsNotNone(project.deleted_at)
 
-    def test_project_with_inventory_history_cannot_be_deleted(self):
+    def test_project_with_inventory_history_can_be_soft_deleted_without_erasing_stock(self):
         from apps.inventory.models import StockItem, Unit
 
         project = Project.objects.create(company=self.company, code="LIFE-03", name="Protected Project")
         unit = Unit.objects.get(normalized_name="piece")
-        StockItem.objects.create(
+        stock = StockItem.objects.create(
             project=project,
             material_name="Cable",
             supplier_name="Cable Supplier",
             supplier_phone="0500000222",
             unit=unit,
+            current_quantity=Decimal("4"),
         )
         self.client.force_login(self.admin)
 
         response = self.client.post(
             reverse("projects:delete", kwargs={"code": project.code}),
             {
-                "confirmation": f"DELETE {project.code}",
+                "confirmation": project.code,
                 "reason": "Project cancelled",
                 "acknowledge": "yes",
             },
         )
-        self.assertEqual(response.status_code, 409)
-        self.assertContains(response, "Archive it instead of deleting it", status_code=409)
-        project.refresh_from_db()
-        self.assertIsNone(project.deleted_at)
+        self.assertRedirects(response, reverse("projects:list"))
+        project.refresh_from_db(); stock.refresh_from_db()
+        self.assertIsNotNone(project.deleted_at)
+        self.assertEqual(stock.current_quantity, Decimal("4"))
         self.assertTrue(Project.objects.filter(pk=project.pk).exists())

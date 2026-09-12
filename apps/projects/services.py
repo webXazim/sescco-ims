@@ -41,6 +41,7 @@ def project_snapshot(project: Project) -> dict[str, object]:
         "code": project.code,
         "name": project.name,
         "status": project.status,
+        "archive_previous_status": project.archive_previous_status,
         "archived_at": project.archived_at.isoformat() if project.archived_at else "",
         "archived_reason": project.archived_reason,
         "end_date": project.end_date.isoformat() if project.end_date else "",
@@ -56,12 +57,13 @@ def archive_project(*, actor_membership: CompanyMembership, project_id, reason: 
         return project
     decision = require_lifecycle_action(project, LifecycleAction.ARCHIVE, reason=reason)
     before = project_snapshot(project)
+    project.archive_previous_status = project.status if project.status != Project.Status.ARCHIVED else project.archive_previous_status
     project.status = Project.Status.ARCHIVED
     project.archived_at = timezone.now()
     project.archived_reason = (reason or "").strip()
     project.updated_by = actor_membership.user
     project.full_clean()
-    project.save(update_fields=("status", "archived_at", "archived_reason", "updated_by", "updated_at"))
+    project.save(update_fields=("status", "archive_previous_status", "archived_at", "archived_reason", "updated_by", "updated_at"))
     record_lifecycle_action(
         instance=project,
         decision=decision,
@@ -70,6 +72,12 @@ def archive_project(*, actor_membership: CompanyMembership, project_id, reason: 
         after=project_snapshot(project),
         reason=reason,
         audit_action="project.archived",
+        metadata={
+            "cascade_scope": "project_operations",
+            "stock_records_with_balance": decision.evidence.get("quantity_bearing_stock", 0),
+            "open_rental_assignments": decision.evidence.get("open_rental_assignments", 0),
+            "previous_status": project.archive_previous_status,
+        },
         request=request,
     )
     return project
@@ -84,13 +92,16 @@ def restore_project_archive(*, actor_membership: CompanyMembership, project_id, 
     decision = require_lifecycle_action(project, LifecycleAction.RESTORE)
     before = project_snapshot(project)
     previous_reason = project.archived_reason
+    restored_status = project.archive_previous_status
+    if restored_status not in {Project.Status.ACTIVE, Project.Status.ON_HOLD, Project.Status.COMPLETED}:
+        restored_status = Project.Status.COMPLETED if project.end_date else Project.Status.ON_HOLD
     project.archived_at = None
     project.archived_reason = ""
-    # Restore to a safe non-operational state. The user explicitly resumes/reactivates later.
-    project.status = Project.Status.COMPLETED if project.end_date else Project.Status.ON_HOLD
+    project.status = restored_status
+    project.archive_previous_status = ""
     project.updated_by = actor_membership.user
     project.full_clean()
-    project.save(update_fields=("status", "archived_at", "archived_reason", "updated_by", "updated_at"))
+    project.save(update_fields=("status", "archive_previous_status", "archived_at", "archived_reason", "updated_by", "updated_at"))
     record_lifecycle_action(
         instance=project,
         decision=decision,
@@ -99,7 +110,11 @@ def restore_project_archive(*, actor_membership: CompanyMembership, project_id, 
         after=project_snapshot(project),
         reason=reason,
         audit_action="project.archive_restored",
-        metadata={"previous_archive_reason": previous_reason, "restored_status": project.status},
+        metadata={
+            "previous_archive_reason": previous_reason,
+            "restored_status": project.status,
+            "cascade_scope": "project_operations",
+        },
         request=request,
     )
     return project
@@ -120,7 +135,12 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
         after=project_snapshot(project),
         reason=reason,
         audit_action="project.moved_to_trash",
-        metadata={"retention_days": 30},
+        metadata={
+            "retention_days": 30,
+            "cascade_scope": "project_operations",
+            "stock_records_with_balance": decision.evidence.get("quantity_bearing_stock", 0),
+            "open_rental_assignments": decision.evidence.get("open_rental_assignments", 0),
+        },
         request=request,
     )
     return project
@@ -142,7 +162,7 @@ def restore_project_trash(*, actor_membership: CompanyMembership, project_id, re
         company=project.company, area=AuditArea.PROJECTS, action="project.trash_restored",
         object_type="projects.Project", object_id=project.reference, object_label=str(project),
         actor_membership=actor_membership, before=before, after=project_snapshot(project),
-        metadata={"retention_days": 30}, request=request,
+        metadata={"retention_days": 30, "cascade_scope": "project_operations"}, request=request,
     )
     return project
 

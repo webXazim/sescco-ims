@@ -10,7 +10,7 @@ for arg in "$@"; do
       cat <<'EOF'
 Usage: scripts/deploy-production.sh [--seed]
 
-  --seed  Seed idempotent DEMO payroll fixtures after migrations.
+  --seed  Seed complete idempotent DEMO Payroll/WPS/report/lifecycle fixtures after migrations.
           Optional: IMS_SEED_COMPANY_SLUG=<slug> IMS_SEED_PERIOD=YYYY-MM
 EOF
       exit 0

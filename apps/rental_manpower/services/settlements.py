@@ -140,7 +140,11 @@ def create_rental_adjustment(
     if not reason:
         raise ValidationError({"reason": "A clear adjustment reason is required."})
     worker = RentalWorker.objects.select_for_update().for_company(company).select_related("supplier").get(pk=worker_id)
-    project = rental_project_for_company(company=company, identifier=project_id, for_update=True)
+    if worker.deleted_at or worker.supplier.deleted_at:
+        raise ValidationError({"worker": "Restore the deleted worker/supplier lifecycle before adding adjustments."})
+    if worker.archived_at or worker.supplier.archived_at:
+        raise ValidationError({"worker": "Restore the archived worker/supplier lifecycle before adding adjustments."})
+    project = rental_project_for_company(company=company, identifier=project_id, for_update=True, require_active=True)
     assignment = _assignment_on_date(company=company, worker_id=worker.pk, project_id=project.pk, when=transaction_date)
     snap = _adjustment_snapshot(assignment)
     adjustment = RentalAdjustment(

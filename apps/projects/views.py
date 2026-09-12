@@ -259,7 +259,7 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         return {
             "page_key": "projects",
             "page_title": "Delete project",
-            "page_subtitle": "Move the project to the 30-day Trash Bin without erasing protected Inventory or Rental Manpower history.",
+            "page_subtitle": "Delete the project with a 30-day recovery window without erasing protected Inventory or Rental Manpower history.",
             "record_label": str(project),
             "record_type": "Project",
             "confirmation_phrase": decision.confirmation_token,
@@ -269,8 +269,8 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             "delete_blockers": decision.blockers,
             "effects": (
                 "The project master is hidden from current operational selectors immediately.",
-                "Positive stock balances and open Rental Manpower assignments must be cleared first; historical Inventory and Rental records remain protected.",
-                "The deleted project remains recoverable from Trash for 30 days.",
+                "Project inventory locations and current Rental Manpower assignment scope follow the deleted project automatically while historical records remain protected.",
+                "The deleted project remains recoverable from Delete for 30 days and restores its previous operational scope safely.",
             ),
         }
 
@@ -305,7 +305,7 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         except ValidationError as exc:
             context.update(form_error=exc.messages[0], reason=request.POST.get("reason", ""))
             return render(request, self.template_name, context, status=409)
-        messages.success(request, f"Project {code} was moved to Trash for 30 days.")
+        messages.success(request, f"Project {code} was deleted with a 30-day recovery window.")
         return redirect("projects:list")
 
 

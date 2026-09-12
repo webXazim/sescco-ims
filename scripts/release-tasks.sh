@@ -26,7 +26,7 @@ run_manage migrate --noinput
 run_manage verify_company_settings_schema
 
 if (( seed_requested )); then
-  info "Seeding idempotent DEMO payroll test data"
+  info "Seeding complete idempotent DEMO Payroll/WPS/report/lifecycle test data"
   seed_args=()
   if [[ -n "${IMS_SEED_COMPANY_SLUG:-}" ]]; then
     seed_args+=(--company-slug "${IMS_SEED_COMPANY_SLUG}")
