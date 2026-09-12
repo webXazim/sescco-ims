@@ -371,6 +371,8 @@ def payment_readiness(*, company, run: PayrollRun, channel: str, template: BankE
         if channel == BankExportChannel.WPS or "national_id" in template_columns:
             if not line.employee.national_id:
                 blockers.append("National ID / Iqama is required by the selected payment channel/template.")
+        if "employee_address" in template_columns and not line.employee.address:
+            blockers.append("Employee address is required by the selected payment export template.")
         if channel == BankExportChannel.WPS and profile and not profile.wps_enabled:
             blockers.append("Employee payment profile is not enabled for WPS.")
         if needs_wps_breakdown:
@@ -428,6 +430,7 @@ def _batch_snapshot_payload(batch: SalaryPaymentBatch) -> dict[str, object]:
                 "employee_number": row.employee_number,
                 "employee_name": row.employee_name,
                 "national_id": row.national_id,
+                "employee_address": row.employee_address,
                 "destination_type": row.destination_type,
                 "account_holder_name": row.account_holder_name,
                 "bank_name": row.bank_name,
@@ -536,6 +539,7 @@ def prepare_salary_payment_batch(
             employee_number=line.employee_number,
             employee_name=line.employee_name,
             national_id=line.employee.national_id,
+            employee_address=line.employee.address,
             destination_type=profile.destination_type,
             account_holder_name=profile.account_holder_name,
             bank_name=profile.bank_name,
@@ -576,6 +580,7 @@ def _export_value(batch: SalaryPaymentBatch, row: SalaryPaymentRow, key: str) ->
         "employee_number": row.employee_number,
         "employee_name": row.employee_name,
         "national_id": row.national_id,
+        "employee_address": row.employee_address,
         "bank_name": row.bank_name,
         "bank_code": row.bank_code,
         "iban": row.iban,

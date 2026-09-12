@@ -93,6 +93,7 @@ class InternalEmployee(CompanyOwnedModel):
     full_name = models.CharField(max_length=200)
     national_id = models.CharField(max_length=50, blank=True)
     phone = models.CharField(max_length=40, blank=True)
+    address = models.CharField(max_length=300, blank=True)
     joining_date = models.DateField()
     employment_end_date = models.DateField(null=True, blank=True)
     status = models.CharField(
@@ -138,6 +139,7 @@ class InternalEmployee(CompanyOwnedModel):
         self.full_name = self.full_name.strip()
         self.national_id = self.national_id.strip()
         self.phone = self.phone.strip()
+        self.address = self.address.strip()
         if not self.employee_number:
             raise ValidationError({"employee_number": "Employee number is required."})
         if not self.full_name:

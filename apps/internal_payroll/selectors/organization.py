@@ -53,6 +53,7 @@ def employees_for_company(
             | Q(full_name__icontains=query)
             | Q(national_id__icontains=query)
             | Q(phone__icontains=query)
+            | Q(address__icontains=query)
             | Q(organization_assignments__position__icontains=query)
             | Q(organization_assignments__branch__code__icontains=query)
             | Q(organization_assignments__branch__name__icontains=query)
@@ -133,6 +134,7 @@ def serialize_employee(employee: InternalEmployee) -> dict[str, object]:
         "status": employee.get_status_display(),
         "nationalId": employee.national_id,
         "phone": employee.phone,
+        "address": employee.address,
         # Owned by the salary and payment domains.
         "paymentMethod": "Not set",
         "wps": "Needs setup",

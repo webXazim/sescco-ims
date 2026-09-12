@@ -323,6 +323,54 @@ class SalaryPaymentServiceTests(TestCase):
         self.assertEqual(row.status, SalaryPaymentRowStatus.PAID)
         self.assertEqual(row.transaction_reference, "TRACE-1")
 
+
+    def test_wps_export_supports_source_layout_without_internal_employee_number(self):
+        self.employee.address = "TEST employee address, Dammam"
+        self.employee.save(update_fields=("address", "updated_at"))
+        self._payment_profile()
+        update_company_salary_payment_settings(
+            actor_membership=self.officer,
+            values={
+                "employer_identifier": "EMPLOYER-001",
+                "employer_bank_name": "Payroll Bank",
+                "employer_bank_code": "PB01",
+                "employer_iban": SAUDI_TEST_IBAN,
+            },
+        )
+        template = create_bank_export_template(
+            actor_membership=self.officer,
+            code="WPS-SOURCE-LAYOUT",
+            name="Source payroll WPS layout",
+            channel=BankExportChannel.WPS,
+            delimiter="comma",
+            encoding="utf-8",
+            include_header=True,
+            columns=[
+                "bank_code", "iban", "net_salary", "transaction_reference", "employee_name",
+                "national_id", "employee_address", "basic_salary", "housing_allowance",
+                "other_earnings", "deductions",
+            ],
+            headers=[
+                "Bank", "Account Number", "Total Salary", "Transaction Reference", "Employee Name",
+                "National ID/Iqama ID", "Employee Address", "Basic Salary", "Housing Allowance",
+                "Other Earnings", "Deductions",
+            ],
+        )
+        batch = prepare_salary_payment_batch(
+            actor_membership=self.officer,
+            period_start=self.period_start,
+            channel=BankExportChannel.WPS,
+            template_id=template.pk,
+        )
+        _batch, content, _filename, _content_type = export_salary_payment_batch(
+            actor_membership=self.finance, batch_id=batch.pk
+        )
+        decoded = content.decode("utf-8")
+        self.assertTrue(decoded.startswith(
+            "Bank,Account Number,Total Salary,Transaction Reference,Employee Name,National ID/Iqama ID,Employee Address,Basic Salary,Housing Allowance,Other Earnings,Deductions\n"
+        ))
+        self.assertIn("TEST employee address, Dammam", decoded)
+
     def test_wps_readiness_uses_explicit_company_and_employee_configuration(self):
         self._payment_profile()
         update_company_salary_payment_settings(

@@ -185,6 +185,7 @@ EXPORT_FIELD_LABELS: dict[str, str] = {
     "employee_number": "Employee ID",
     "employee_name": "Employee name",
     "national_id": "National ID / Iqama",
+    "employee_address": "Employee address",
     "bank_name": "Bank name",
     "bank_code": "Bank code",
     "iban": "IBAN",
@@ -258,8 +259,11 @@ class BankExportTemplate(CompanyOwnedModel):
                 raise ValidationError({"columns": f"Export field {key} is duplicated."})
             seen.add(key)
             normalized.append(key)
-        if "employee_number" not in seen or "net_salary" not in seen:
-            raise ValidationError({"columns": "Employee ID and Net salary are required in every payment export."})
+        # Bank/WPS layouts are bank-owned contracts. Some valid Saudi payroll files
+        # identify rows by IBAN + national ID and deliberately omit our internal
+        # employee number, so only the payable amount is universally mandatory.
+        if "net_salary" not in seen:
+            raise ValidationError({"columns": "Net salary is required in every payment export."})
         self.columns = normalized
         if not self.headers:
             self.headers = [EXPORT_FIELD_LABELS[key] for key in normalized]
@@ -425,6 +429,7 @@ class SalaryPaymentRow(CompanyOwnedModel):
     employee_number = models.CharField(max_length=40)
     employee_name = models.CharField(max_length=200)
     national_id = models.CharField(max_length=50)
+    employee_address = models.CharField(max_length=300, blank=True)
     destination_type = models.CharField(max_length=20, choices=PaymentDestination.choices)
     account_holder_name = models.CharField(max_length=200)
     bank_name = models.CharField(max_length=160)
@@ -479,6 +484,7 @@ class SalaryPaymentRow(CompanyOwnedModel):
         self.employee_number = self.employee_number.strip().upper()
         self.employee_name = self.employee_name.strip()
         self.national_id = self.national_id.strip().upper()
+        self.employee_address = self.employee_address.strip()
         self.account_holder_name = self.account_holder_name.strip()
         self.bank_name = self.bank_name.strip()
         self.bank_code = self.bank_code.strip().upper()

@@ -60,6 +60,67 @@ def _money(value: Decimal | None) -> str:
     return f"{Decimal(value or 0):.2f}"
 
 
+_ONES = ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen")
+_TENS = ("", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety")
+
+
+def _integer_words(value: int) -> str:
+    if value < 0:
+        return "Minus " + _integer_words(-value)
+    if value < 20:
+        return _ONES[value]
+    if value < 100:
+        return _TENS[value // 10] + ((" " + _ONES[value % 10]) if value % 10 else "")
+    if value < 1000:
+        return _ONES[value // 100] + " Hundred" + ((" " + _integer_words(value % 100)) if value % 100 else "")
+    for divisor, label in ((1_000_000_000, "Billion"), (1_000_000, "Million"), (1000, "Thousand")):
+        if value >= divisor:
+            return _integer_words(value // divisor) + f" {label}" + ((" " + _integer_words(value % divisor)) if value % divisor else "")
+    return str(value)
+
+
+def _amount_in_words(value: str | Decimal, currency: str) -> str:
+    amount = Decimal(str(value)).quantize(Decimal("0.01"))
+    whole = int(amount)
+    fraction = int((amount - Decimal(whole)) * 100)
+    currency = (currency or "SAR").upper()
+    major = {"SAR": ("Saudi Riyal", "Saudi Riyals"), "AED": ("UAE Dirham", "UAE Dirhams"), "USD": ("US Dollar", "US Dollars")}.get(currency, (currency, currency))
+    minor = {"SAR": ("Halala", "Halalas"), "AED": ("Fils", "Fils"), "USD": ("Cent", "Cents")}.get(currency, ("Cent", "Cents"))
+    words = f"{_integer_words(whole)} {major[0] if whole == 1 else major[1]}"
+    if fraction:
+        words += f" and {_integer_words(fraction)} {minor[0] if fraction == 1 else minor[1]}"
+    return words + " Only"
+
+
+def _salary_payment_snapshot(line: PayrollRunLine) -> dict[str, Any]:
+    row = line.payment_rows.filter(claim_active=True).select_related("batch").order_by("-batch__prepared_at").first()
+    if row is not None:
+        return {
+            "paid_by": "Bank",
+            "status": row.status,
+            "channel": row.batch.channel,
+            "transaction_reference": row.transaction_reference,
+            "paid_at": row.paid_at.isoformat() if row.paid_at else None,
+            "bank_name": row.bank_name,
+            "destination_type": row.destination_type,
+        }
+    try:
+        profile = line.employee.payment_profile
+    except Exception:
+        profile = None
+    if profile and profile.is_active:
+        return {
+            "paid_by": "Bank",
+            "status": "pending",
+            "channel": "",
+            "transaction_reference": "",
+            "paid_at": None,
+            "bank_name": profile.bank_name,
+            "destination_type": profile.destination_type,
+        }
+    return {"paid_by": "", "status": "not_configured", "channel": "", "transaction_reference": "", "paid_at": None, "bank_name": "", "destination_type": ""}
+
+
 def _hours(value: Decimal | None) -> str:
     return f"{Decimal(value or 0):.2f}"
 
@@ -127,6 +188,9 @@ def _salary_slip_snapshot(line: PayrollRunLine) -> tuple[dict[str, Any], str, st
             "department_code": line.department_code,
             "department": line.department_name,
             "position": line.position,
+            "national_id": line.employee.national_id,
+            "address": line.employee.address,
+            "phone": line.employee.phone,
         },
         "attendance": {
             "regular_hours": _hours(line.regular_hours),
@@ -150,6 +214,7 @@ def _salary_slip_snapshot(line: PayrollRunLine) -> tuple[dict[str, Any], str, st
             "total": _money(line.total_deductions),
         },
         "net": _money(line.net),
+        "payment": _salary_payment_snapshot(line),
         "components": components,
         "adjustments": adjustments,
         "payroll_snapshot_fingerprint": run.snapshot_fingerprint,
@@ -365,7 +430,7 @@ def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[s
 
 def _load_source(*, company, document_type: str, source_id, invoice: dict[str, Any] | None = None):
     if document_type == DocumentType.SALARY_SLIP:
-        source = PayrollRunLine.objects.for_company(company).select_related("run", "employee").prefetch_related("components", "adjustments").get(pk=source_id)
+        source = PayrollRunLine.objects.for_company(company).select_related("run", "employee").prefetch_related("components", "adjustments", "payment_rows__batch").get(pk=source_id)
         return DocumentWorkspace.INTERNAL, source, _salary_slip_snapshot(source)
     if document_type == DocumentType.INTERNAL_TIMESHEET:
         source = AttendancePeriod.objects.for_company(company).prefetch_related("entries__employee", "overtime_entries__employee").get(pk=source_id)
@@ -425,7 +490,20 @@ def finalize_business_document(
         "currency": getattr(company_settings, "currency_code", "SAR"),
         "country": getattr(company_settings, "country_code", "SA"),
         "timezone": getattr(company_settings, "timezone", "Asia/Riyadh"),
+        "commercial_registration": getattr(company_settings, "commercial_registration", ""),
+        "vat_number": getattr(company_settings, "vat_number", ""),
+        "address": getattr(company_settings, "document_address", ""),
+        "email": getattr(company_settings, "document_email", ""),
+        "phone": getattr(company_settings, "document_phone", ""),
+        "website": getattr(company_settings, "website", ""),
+        "branding": {
+            "logo": getattr(getattr(company_settings, "document_logo", None), "name", "") or "",
+            "letterhead": getattr(getattr(company_settings, "document_letterhead", None), "name", "") or "",
+            "watermark": getattr(getattr(company_settings, "document_watermark", None), "name", "") or "",
+        },
     }
+    if normalized_type == DocumentType.SALARY_SLIP:
+        snapshot["net_in_words"] = _amount_in_words(snapshot["net"], snapshot["issuer"]["currency"])
     source_model = source._meta.label_lower
     existing = BusinessDocument.objects.for_company(company).filter(
         document_type=normalized_type,

@@ -2,6 +2,14 @@
 set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
+seed_requested=0
+for arg in "$@"; do
+  case "$arg" in
+    --seed) seed_requested=1 ;;
+    *) fatal "Unknown release-task option: $arg" ;;
+  esac
+done
+
 require_environment
 
 run_manage() {
@@ -15,6 +23,18 @@ run_manage makemigrations --check --dry-run
 info "Reviewing and applying database migrations"
 run_manage migrate --plan
 run_manage migrate --noinput
+
+if (( seed_requested )); then
+  info "Seeding idempotent DEMO payroll test data"
+  seed_args=()
+  if [[ -n "${IMS_SEED_COMPANY_SLUG:-}" ]]; then
+    seed_args+=(--company-slug "${IMS_SEED_COMPANY_SLUG}")
+  fi
+  if [[ -n "${IMS_SEED_PERIOD:-}" ]]; then
+    seed_args+=(--period "${IMS_SEED_PERIOD}")
+  fi
+  run_manage seed_payroll_test_data "${seed_args[@]}"
+fi
 
 info "Verifying merged company/access boundaries"
 run_manage merge_access_report --fail-on-errors >/dev/null

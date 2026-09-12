@@ -13,6 +13,7 @@ from apps.accounts.models import User
 from apps.core.models import Company
 from apps.documents.models import BusinessDocument, DocumentType, DocumentWorkspace
 from apps.documents.services import verify_document_snapshot
+from apps.documents.services.documents import _amount_in_words
 
 
 def snapshot_hash(value) -> str:
@@ -63,3 +64,9 @@ class BusinessDocumentIntegrityTests(TestCase):
             BusinessDocument.objects.filter(pk=self.document.pk).update(title="Changed")
         with self.assertRaises(NotSupportedError):
             BusinessDocument.objects.filter(pk=self.document.pk).delete()
+
+
+class SalarySlipReferenceOutputTests(TestCase):
+    def test_amount_in_words_matches_salary_slip_business_output(self):
+        self.assertEqual(_amount_in_words("2415.00", "SAR"), "Two Thousand Four Hundred Fifteen Saudi Riyals Only")
+        self.assertEqual(_amount_in_words("100.50", "SAR"), "One Hundred Saudi Riyals and Fifty Halalas Only")

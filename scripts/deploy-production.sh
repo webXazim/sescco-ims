@@ -2,6 +2,23 @@
 set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
+seed_requested=0
+for arg in "$@"; do
+  case "$arg" in
+    --seed) seed_requested=1 ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: scripts/deploy-production.sh [--seed]
+
+  --seed  Seed idempotent DEMO payroll fixtures after migrations.
+          Optional: IMS_SEED_COMPANY_SLUG=<slug> IMS_SEED_PERIOD=YYYY-MM
+EOF
+      exit 0
+      ;;
+    *) fatal "Unknown deploy option: $arg" ;;
+  esac
+done
+
 require_environment
 require_command curl
 lock_dir="${PROJECT_ROOT}/.deploy-lock"
@@ -30,7 +47,11 @@ fi
 # follow the documented expand/backfill/constrain policy and remain compatible
 # with the previous release during this short cutover window.
 info "Preparing the release before replacing the web container"
-bash "${PROJECT_ROOT}/scripts/release-tasks.sh"
+release_args=()
+if (( seed_requested )); then
+  release_args+=(--seed)
+fi
+bash "${PROJECT_ROOT}/scripts/release-tasks.sh" "${release_args[@]}"
 
 info "Starting or updating the merged web service"
 compose up -d ims_web

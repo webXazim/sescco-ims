@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from calendar import month_name
+from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -221,6 +222,17 @@ def payroll_app(request):
         "timezone": company_settings_row.timezone,
         "currency": company_settings_row.currency_code,
         "country": company_settings_row.country_code,
+        "commercialRegistration": company_settings_row.commercial_registration,
+        "vatNumber": company_settings_row.vat_number,
+        "documentAddress": company_settings_row.document_address,
+        "documentEmail": company_settings_row.document_email,
+        "documentPhone": company_settings_row.document_phone,
+        "website": company_settings_row.website,
+        "documentAssets": {
+            "logo": {"configured": bool(company_settings_row.document_logo), "url": "/api/settings/document-assets/logo/file/" if company_settings_row.document_logo else "", "filename": Path(company_settings_row.document_logo.name).name if company_settings_row.document_logo else ""},
+            "letterhead": {"configured": bool(company_settings_row.document_letterhead), "url": "/api/settings/document-assets/letterhead/file/" if company_settings_row.document_letterhead else "", "filename": Path(company_settings_row.document_letterhead.name).name if company_settings_row.document_letterhead else ""},
+            "watermark": {"configured": bool(company_settings_row.document_watermark), "url": "/api/settings/document-assets/watermark/file/" if company_settings_row.document_watermark else "", "filename": Path(company_settings_row.document_watermark.name).name if company_settings_row.document_watermark else ""},
+        },
         "today": timezone.localdate().isoformat(),
         "canManage": membership_has_capability(membership, Capability.MANAGE_SETTINGS),
     }

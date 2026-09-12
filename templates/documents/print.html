@@ -6,14 +6,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ document.document_number }} — {{ document.title }}</title>
   <style>
-    @page { size: A4; margin: 13mm; }
+    @page { size: A4; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; color: #111; background: #ececec; font-family: Arial, Helvetica, sans-serif; font-size: 11px; }
     .toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; background: #111; color: #fff; }
     .toolbar button { border: 1px solid #555; background: #fff; color: #111; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 700; }
-    .paper { width: 210mm; min-height: 297mm; margin: 18px auto; padding: 18mm 15mm; background: #fff; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    .paper { position:relative; width: 210mm; min-height: 297mm; margin: 18px auto; padding: 18mm 15mm; background: #fff; box-shadow: 0 8px 28px rgba(0,0,0,.12); overflow:hidden; }
+    .paper--letterhead { padding: 38mm 18mm 27mm; }
+    .paper > :not(.document-letterhead-bg):not(.document-watermark-bg) { position:relative; z-index:1; }
+    .document-letterhead-bg { position:absolute; z-index:0; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+    .document-watermark-bg { position:absolute; z-index:0; left:20%; top:32%; width:60%; max-height:42%; object-fit:contain; opacity:.075; pointer-events:none; }
+    .issuer-heading { display:flex; align-items:flex-start; gap:12px; }
+    .issuer-logo { width:60px; height:60px; object-fit:contain; }
     header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 12px; border-bottom: 2px solid #111; }
     header h1 { margin: 0; font-size: 18px; } header p { margin: 4px 0 0; color: #666; }
+    .issuer-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 3px 12px; color: #666; font-size: 9px; }
+    .issuer-meta span { white-space: nowrap; }
     .doc-no { text-align: right; } .doc-no strong { display: block; font-size: 13px; }
     .title { margin: 24px 0 16px; } .title h2 { margin: 0 0 4px; font-size: 20px; } .title span { color: #666; }
     .meta { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin: 14px 0 18px; }
@@ -22,27 +30,64 @@
     th, td { border-bottom: 1px solid #ddd; padding: 7px 6px; text-align: left; vertical-align: top; }
     th { background: #f5f5f5; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
     .num { text-align: right; white-space: nowrap; }
+    .pay-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+    .pay-grid h3 { margin:8px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+    .pay-grid table { margin-top:4px; }
     .totals { margin-left: auto; width: 310px; border-top: 2px solid #111; }
     .totals div { display:flex; justify-content:space-between; padding:6px 0; } .totals .net { font-size:14px; font-weight:700; border-top:1px solid #bbb; }
+    .salary-in-words { margin-top:14px; padding:10px 12px; border:1px solid #ddd; background:rgba(255,255,255,.88); } .salary-in-words span { display:block; color:#777; font-size:9px; text-transform:uppercase; margin-bottom:4px; } .salary-in-words strong { font-size:11px; }
+    .salary-payment-method { display:grid; grid-template-columns:auto repeat(3,auto) 1fr; gap:10px; align-items:center; margin-top:10px; padding:9px 12px; border:1px solid #ddd; background:rgba(255,255,255,.88); } .salary-payment-method .choice { display:inline-flex; gap:5px; align-items:center; } .salary-payment-method .box { width:11px; height:11px; border:1px solid #444; display:inline-grid; place-items:center; font-size:9px; line-height:1; } .salary-payment-method .reference { text-align:right; color:#666; font-size:9px; }
+    .salary-signatures { margin-top:58px; display:grid; grid-template-columns:1fr 1fr; gap:90px; } .salary-signatures div { padding-top:8px; border-top:1px solid #333; color:#555; }
     .signature { margin-top: 45px; display:grid; grid-template-columns:repeat(3,1fr); gap:24px; } .signature div { padding-top:20px; border-top:1px solid #777; color:#555; }
     footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #ddd; color: #777; font-size: 9px; display:flex; justify-content:space-between; gap:20px; }
     .integrity { font-family: monospace; word-break: break-all; }
-    @media print { body { background:#fff; } .toolbar { display:none; } .paper { margin:0; width:auto; min-height:0; padding:0; box-shadow:none; } }
+    @media print { * { -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { background:#fff; } .toolbar { display:none; } .paper { margin:0; width:210mm; min-height:297mm; padding:18mm 15mm; box-shadow:none; overflow:visible; } .paper--letterhead { padding:38mm 18mm 27mm; } .document-letterhead-bg, .document-watermark-bg { position:fixed; } }
   </style>
 </head>
 <body>
   <div class="toolbar"><span>{{ document.document_number }} · Final immutable snapshot</span><button type="button" onclick="window.print()">Print / Save PDF</button></div>
-  <main class="paper">
-    <header>
-      <div><h1>{{ snapshot.issuer.legal_name|default:snapshot.issuer.name }}</h1><p>Payroll & Workforce Management</p></div>
+  <main class="paper{% if snapshot.issuer.branding.letterhead %} paper--letterhead{% endif %}">
+    {% if snapshot.issuer.branding.letterhead %}<img class="document-letterhead-bg" src="{% url 'documents:document-asset' document.id 'letterhead' %}" alt="">{% endif %}
+    {% if snapshot.issuer.branding.watermark %}<img class="document-watermark-bg" src="{% url 'documents:document-asset' document.id 'watermark' %}" alt="">{% endif %}
+    <header{% if snapshot.issuer.branding.letterhead %} style="border-bottom:0;padding-bottom:4px;justify-content:flex-end"{% endif %}>
+      {% if not snapshot.issuer.branding.letterhead %}<div class="issuer-heading">
+        {% if snapshot.issuer.branding.logo %}<img class="issuer-logo" src="{% url 'documents:document-asset' document.id 'logo' %}" alt="Company logo">{% endif %}
+        <div>
+        <h1>{{ snapshot.issuer.legal_name|default:snapshot.issuer.name }}</h1>
+        <p>Payroll & Workforce Management</p>
+        {% if snapshot.issuer.commercial_registration or snapshot.issuer.vat_number or snapshot.issuer.address or snapshot.issuer.email or snapshot.issuer.phone or snapshot.issuer.website %}
+          <div class="issuer-meta">
+            {% if snapshot.issuer.commercial_registration %}<span>CR: {{ snapshot.issuer.commercial_registration }}</span>{% endif %}
+            {% if snapshot.issuer.vat_number %}<span>VAT: {{ snapshot.issuer.vat_number }}</span>{% endif %}
+            {% if snapshot.issuer.address %}<span>{{ snapshot.issuer.address }}</span>{% endif %}
+            {% if snapshot.issuer.email %}<span>{{ snapshot.issuer.email }}</span>{% endif %}
+            {% if snapshot.issuer.phone %}<span>{{ snapshot.issuer.phone }}</span>{% endif %}
+            {% if snapshot.issuer.website %}<span>{{ snapshot.issuer.website }}</span>{% endif %}
+          </div>
+        {% endif %}
+        </div>
+      </div>{% endif %}
       <div class="doc-no"><span>{{ document.get_document_type_display }}</span><strong>{{ document.document_number }}</strong></div>
     </header>
     <section class="title"><h2>{{ document.title }}</h2><span>{% if document.period_start %}{{ document.period_start|date:"F Y" }} · {% endif %}Finalized {{ document.finalized_at|date:"d M Y H:i" }}</span></section>
 
     {% if document.document_type == 'salary_slip' %}
-      <div class="meta"><div><span>Employee ID</span><strong>{{ snapshot.employee.number }}</strong></div><div><span>Employee</span><strong>{{ snapshot.employee.name }}</strong></div><div><span>Branch</span><strong>{{ snapshot.employee.branch|default:"—" }}</strong></div><div><span>Position</span><strong>{{ snapshot.employee.position|default:"—" }}</strong></div></div>
-      <table><thead><tr><th>Earning</th><th class="num">Amount ({{ snapshot.issuer.currency|default:"SAR" }})</th></tr></thead><tbody><tr><td>Basic</td><td class="num">{{ snapshot.earnings.basic }}</td></tr><tr><td>Allowances</td><td class="num">{{ snapshot.earnings.allowances }}</td></tr><tr><td>Overtime</td><td class="num">{{ snapshot.earnings.overtime }}</td></tr><tr><td>Other earnings</td><td class="num">{{ snapshot.earnings.other_earnings }}</td></tr></tbody></table>
-      <div class="totals"><div><span>Gross</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.earnings.gross }}</strong></div><div><span>Advance recovery</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.deductions.advance_recovery }}</strong></div><div><span>Other deductions</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.deductions.other_deductions }}</strong></div><div class="net"><span>Net Pay</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.net }}</strong></div></div>
+      <div class="meta"><div><span>Employee ID</span><strong>{{ snapshot.employee.number }}</strong></div><div><span>Employee</span><strong>{{ snapshot.employee.name }}</strong></div><div><span>Branch / Department</span><strong>{{ snapshot.employee.branch|default:"—" }}{% if snapshot.employee.department %} · {{ snapshot.employee.department }}{% endif %}</strong></div><div><span>Position</span><strong>{{ snapshot.employee.position|default:"—" }}</strong></div></div>
+      {% if snapshot.employee.national_id or snapshot.employee.address %}<div class="meta"><div><span>National ID / Iqama</span><strong>{{ snapshot.employee.national_id|default:"—" }}</strong></div><div style="grid-column: span 3"><span>Employee Address</span><strong>{{ snapshot.employee.address|default:"—" }}</strong></div></div>{% endif %}
+      <div class="pay-grid">
+        <section><h3>Earnings</h3><table><thead><tr><th>Description</th><th class="num">Amount ({{ snapshot.issuer.currency|default:"SAR" }})</th></tr></thead><tbody>
+          {% for row in snapshot.components %}{% if row.category == 'earning' %}<tr><td>{{ row.name }}</td><td class="num">{{ row.amount }}</td></tr>{% endif %}{% endfor %}
+          {% if snapshot.earnings.overtime != '0.00' %}<tr><td>Overtime</td><td class="num">{{ snapshot.earnings.overtime }}</td></tr>{% endif %}
+          {% for row in snapshot.adjustments %}{% if row.effect == 'earning' %}<tr><td>{{ row.label }}{% if row.reference %} · {{ row.reference }}{% endif %}</td><td class="num">{{ row.amount }}</td></tr>{% endif %}{% endfor %}
+        </tbody></table></section>
+        <section><h3>Deductions</h3><table><thead><tr><th>Description</th><th class="num">Amount ({{ snapshot.issuer.currency|default:"SAR" }})</th></tr></thead><tbody>
+          {% for row in snapshot.components %}{% if row.category == 'deduction' %}<tr><td>{{ row.name }}</td><td class="num">{{ row.amount }}</td></tr>{% endif %}{% endfor %}
+          {% for row in snapshot.adjustments %}{% if row.effect == 'deduction' or row.effect == 'advance_recovery' %}<tr><td>{{ row.label }}{% if row.reference %} · {{ row.reference }}{% endif %}</td><td class="num">{{ row.amount }}</td></tr>{% endif %}{% endfor %}
+        </tbody></table></section>
+      </div>
+      <div class="totals"><div><span>Gross</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.earnings.gross }}</strong></div><div><span>Total deductions</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.deductions.total }}</strong></div><div class="net"><span>Net Payable</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.net }}</strong></div></div>
+      <div class="salary-in-words"><span>Salary in Words</span><strong>{{ snapshot.net_in_words }}</strong></div>
+      <div class="salary-payment-method"><strong>Salary Paid By:</strong><span class="choice"><i class="box">{% if snapshot.payment.paid_by == 'Cash' %}✓{% endif %}</i>Cash</span><span class="choice"><i class="box">{% if snapshot.payment.paid_by == 'Bank' %}✓{% endif %}</i>Bank</span><span class="choice"><i class="box">{% if snapshot.payment.paid_by == 'Cheque' %}✓{% endif %}</i>Cheque</span><span class="reference">{% if snapshot.payment.transaction_reference %}Ref: {{ snapshot.payment.transaction_reference }}{% elif snapshot.payment.status == 'pending' %}Payment pending{% endif %}</span></div>
     {% elif document.document_type == 'internal_timesheet' %}
       <div class="meta"><div><span>Period</span><strong>{{ document.period_start|date:"F Y" }}</strong></div><div><span>Revision</span><strong>{{ snapshot.attendance_revision }}</strong></div><div><span>Status</span><strong>Locked</strong></div><div><span>Entries</span><strong>{{ snapshot.entries|length }}</strong></div></div>
       <table><thead><tr><th>Employee</th><th>Date</th><th class="num">Hours</th><th>Status</th><th>Note</th></tr></thead><tbody>{% for row in snapshot.entries %}<tr><td>{{ row.employee_number }} · {{ row.employee_name }}</td><td>{{ row.date }}</td><td class="num">{{ row.hours }}</td><td>{{ row.code|default:"Work" }}</td><td>{{ row.note|default:"" }}</td></tr>{% endfor %}</tbody></table>
@@ -61,7 +106,11 @@
       <table><thead><tr><th>Settlement</th><th>Project</th><th>Period</th><th class="num">Allocated Amount</th></tr></thead><tbody>{% for row in snapshot.allocations %}<tr><td>{{ row.settlement_number }}</td><td>{{ row.project_code }} · {{ row.project_name }}</td><td>{{ row.period_start }}</td><td class="num">{{ snapshot.issuer.currency|default:"SAR" }} {{ row.amount }}</td></tr>{% endfor %}</tbody></table>
     {% endif %}
 
-    <div class="signature"><div>Prepared / Finalized By</div><div>Finance / Accounts</div><div>Authorized Signatory</div></div>
+    {% if document.document_type == 'salary_slip' %}
+      <div class="salary-signatures"><div>Employee Signature</div><div>Manager / Authorized Signatory</div></div>
+    {% else %}
+      <div class="signature"><div>Prepared / Finalized By</div><div>Finance / Accounts</div><div>Authorized Signatory</div></div>
+    {% endif %}
     <footer><span>Historical document snapshot. Source record: {{ document.source_reference|default:document.source_model }}</span><span class="integrity">SHA-256 {{ document.snapshot_fingerprint }}</span></footer>
   </main>
 </body>

@@ -78,6 +78,15 @@
   }
   const csrfToken = document.getElementById('payroll-csrf-token')?.dataset.token || '';
 
+  async function appUpload(url, file) {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch(url, {method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','X-CSRFToken':csrfToken},body:form});
+    let payload={}; try{payload=await response.json();}catch{throw new Error('The server returned an invalid response.');}
+    if(!response.ok||payload.ok===false){const errors=payload.errors||{};const first=Object.values(errors).flat().find(Boolean);throw new Error(first||`Request failed (${response.status}).`);}
+    return payload;
+  }
+
   async function appApi(url, { method = 'GET', body = null } = {}) {
     const options = { method, credentials: 'same-origin', headers: { 'Accept': 'application/json' } };
     if (body !== null) {
@@ -862,6 +871,13 @@
       currency: settingsBootstrap.currency || 'SAR',
       timezone: settingsBootstrap.timezone || 'Asia/Riyadh',
       country: settingsBootstrap.country || 'SA',
+      commercialRegistration: settingsBootstrap.commercialRegistration || '',
+      vatNumber: settingsBootstrap.vatNumber || '',
+      documentAddress: settingsBootstrap.documentAddress || '',
+      documentEmail: settingsBootstrap.documentEmail || '',
+      documentPhone: settingsBootstrap.documentPhone || '',
+      website: settingsBootstrap.website || '',
+      documentAssets: settingsBootstrap.documentAssets || {},
       today: companyTodayIso
     },
     canManage: Boolean(settingsBootstrap.canManage)
@@ -6154,9 +6170,13 @@
       return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">WPS & salary payments</span><h2>Employer payment configuration</h2><p>Company payment identity and configured WPS export layouts used by the server-side salary payment workflow.</p></div><div class="payment-head-actions"><button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button><button class="btn btn--secondary" data-route-link="wps">Open WPS Workspace</button></div></div><div class="settings-list settings-list--two"><div class="settings-summary-row"><span><strong>Employer identifier</strong><small>Used only by templates that require it.</small></span><strong>${escapeHtml(paymentSettings.employerIdentifier||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer bank</strong><small>${escapeHtml(paymentSettings.employerBankCode||'No bank code')}</small></span><strong>${escapeHtml(paymentSettings.employerBankName||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer IBAN</strong><small>Encrypted at rest.</small></span><strong class="mono-cell">${escapeHtml(paymentSettings.employerIbanMasked||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Bank customer reference</strong><small>Optional bank-specific identifier.</small></span><strong>${escapeHtml(paymentSettings.bankCustomerReference||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Active WPS templates</strong><small>Export layouts are company-defined.</small></span><strong>${activeWpsTemplates.length}</strong></div></div></section>`;
     }
     if(state.settingsTab==='access') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Access</span><h2>Workspace authorization</h2><p>Company-scoped Django memberships enforce workspace and action permissions on the server.</p></div><button class="btn btn--secondary" data-route-link="access-roles">Open Access & Roles</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Current role</strong><small>Resolved from the active company membership.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div><div class="settings-summary-row"><span><strong>Operational separation</strong><small>Internal Company and Rental Manpower keep separate masters, calculations and payment workflows.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Management workspace</strong><small>Aggregates controlled records without owning operational writes.</small></span><strong>Read-only</strong></div></div><div class="settings-policy-note"><span>${icon('info')}</span><p>Access changes are applied through company membership controls and audited server-side. Browser state never grants permissions.</p></div></section>`;
-    if(state.settingsTab==='documents') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Documents</span><h2>Final document controls</h2><p>Document numbering and finalization are controlled by transaction-safe Django services.</p></div><button class="btn btn--secondary" data-route-link="documents">Open Documents</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Number allocation</strong><small>Company-scoped server sequence.</small></span><strong>Server controlled</strong></div><div class="settings-summary-row"><span><strong>Final records</strong><small>Source and issuer values are snapshotted at finalization.</small></span><strong>Immutable</strong></div><div class="settings-summary-row"><span><strong>Integrity</strong><small>Final snapshots carry a SHA-256 fingerprint checked before printing.</small></span><strong>Verified</strong></div></div></section>`;
+    if(state.settingsTab==='documents') {
+      const assets=general.documentAssets||{};
+      const assetCard=(kind,label,help,accept='image/png,image/jpeg,image/webp')=>{const asset=assets[kind]||{};return `<div class="document-branding-card"><div class="document-branding-preview document-branding-preview--${kind}">${asset.configured?`<img src="${escapeHtml(asset.url||'')}?v=${encodeURIComponent(String(asset.filename||''))}" alt="${escapeHtml(label)} preview">`:`<span>${escapeHtml(kind==='logo'?'LOGO':kind==='letterhead'?'A4':'WM')}</span>`}</div><div class="document-branding-copy"><span class="eyebrow">${escapeHtml(label)}</span><h3>${asset.configured?escapeHtml(asset.filename||'Configured image'):'Not configured'}</h3><p>${escapeHtml(help)}</p><div class="document-branding-actions">${state.systemSettings.canManage?`<label class="btn btn--secondary btn--sm">${asset.configured?'Replace':'Upload'}<input hidden type="file" accept="${accept}" data-document-asset-input="${kind}"></label>${asset.configured?`<button class="btn btn--ghost btn--sm" data-document-asset-remove="${kind}">Remove</button>`:''}`:'<span class="status status--neutral"><span></span>Read only</span>'}</div></div></div>`};
+      return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Documents</span><h2>Final document controls & branding</h2><p>Upload private company branding for finalized salary slips, receipts and manpower documents. Existing finalized documents keep the exact branding file snapshotted when they were created.</p></div><button class="btn btn--secondary" data-route-link="documents">Open Documents</button></div><div class="document-branding-grid">${assetCard('logo','Company logo','Used in the standard document header when no full-page letterhead is configured.')}${assetCard('letterhead','A4 letterhead background','Upload a flattened high-resolution PNG/JPEG/WebP of the approved A4 letterhead. It prints behind the document content.')}${assetCard('watermark','Watermark','Optional transparent or white-background mark positioned behind document content.')}</div><div class="settings-list settings-list--separated"><div class="settings-summary-row"><span><strong>Number allocation</strong><small>Company-scoped server sequence.</small></span><strong>Server controlled</strong></div><div class="settings-summary-row"><span><strong>Final records</strong><small>Source, issuer and branding-storage identity are snapshotted at finalization.</small></span><strong>Immutable</strong></div><div class="settings-summary-row"><span><strong>Integrity</strong><small>Final snapshots carry a SHA-256 fingerprint checked before printing.</small></span><strong>Verified</strong></div></div></section>`;
+    }
     if(state.settingsTab==='workflow') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Workflow</span><h2>Approval & audit controls</h2><p>Financial lifecycle rules are enforced by the owning Django services and database constraints.</p></div></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Internal payroll</strong><small>Calculation, Finance Review, approval and payment are separate controlled states.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Rental settlement</strong><small>Locked timesheets feed reviewed/approved immutable settlement snapshots.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Payments</strong><small>Payment results, retries and reversals never rewrite approved financial snapshots.</small></span><strong>Audited</strong></div><div class="settings-summary-row"><span><strong>Audit trail</strong><small>Security and financial lifecycle events are append-only through the application layer.</small></span><strong>Enabled</strong></div></div></section>`;
-    return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">General</span><h2>Company settings</h2><p>Company identity and locale values are stored in Django and audited when changed.</p></div></div><div class="settings-list">${settingsInputRow('companyName','Company name',general.companyName,'Operational display name.','maxlength="200" autocomplete="organization"')}${settingsInputRow('legalName','Legal name',general.legalName,'Legal entity name used for future finalized documents.','maxlength="250" autocomplete="organization"')}<div class="settings-summary-row"><span><strong>Current role</strong><small>Only authorized company roles may change these settings.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div>${settingsInputRow('timezone','Timezone',general.timezone,'IANA timezone, for example Asia/Riyadh.','autocomplete="off"')}${settingsInputRow('currency','Currency',general.currency,'ISO 4217 currency code.','maxlength="3" autocomplete="off"')}${settingsInputRow('country','Country',general.country,'ISO 3166-1 alpha-2 country code.','maxlength="2" autocomplete="off"')}</div>${state.systemSettings.canManage?'':'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Your company role has read-only access to these settings.</p></div>'}</section>`;
+    return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">General</span><h2>Company settings</h2><p>Company identity, legal print details and locale values are stored in Django and audited when changed.</p></div></div><div class="settings-list">${settingsInputRow('companyName','Company name',general.companyName,'Operational display name.','maxlength="200" autocomplete="organization"')}${settingsInputRow('legalName','Legal name',general.legalName,'Legal entity name used on finalized payroll documents.','maxlength="250" autocomplete="organization"')}${settingsInputRow('commercialRegistration','Commercial registration',general.commercialRegistration,'Printed on finalized payroll and manpower documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('vatNumber','VAT number',general.vatNumber,'Company VAT identity for branded documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('documentAddress','Document address',general.documentAddress,'Registered/company address shown on final documents.','maxlength="400" autocomplete="street-address"')}${settingsInputRow('documentEmail','Document email',general.documentEmail,'Contact email shown on final documents.','maxlength="254" type="email" autocomplete="email"')}${settingsInputRow('documentPhone','Document phone',general.documentPhone,'Contact number shown on final documents.','maxlength="40" autocomplete="tel"')}${settingsInputRow('website','Website',general.website,'Website shown on final documents.','maxlength="300" type="url" autocomplete="url"')}<div class="settings-summary-row"><span><strong>Current role</strong><small>Only authorized company roles may change these settings.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div>${settingsInputRow('timezone','Timezone',general.timezone,'IANA timezone, for example Asia/Riyadh.','autocomplete="off"')}${settingsInputRow('currency','Currency',general.currency,'ISO 4217 currency code.','maxlength="3" autocomplete="off"')}${settingsInputRow('country','Country',general.country,'ISO 3166-1 alpha-2 country code.','maxlength="2" autocomplete="off"')}</div>${state.systemSettings.canManage?'':'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Your company role has read-only access to these settings.</p></div>'}</section>`;
   }
 
   function settingsTemplate() {
@@ -6170,14 +6190,23 @@
     if(!state.systemSettings.canManage) return;
     const field=name=>document.querySelector(`[data-company-setting="${name}"]`)?.value?.trim() || '';
     try {
-      const payload=await appApi('/api/settings/',{method:'PATCH',body:{companyName:field('companyName'),legalName:field('legalName'),timezone:field('timezone'),currency:field('currency').toUpperCase(),country:field('country').toUpperCase()}});
+      const payload=await appApi('/api/settings/',{method:'PATCH',body:{companyName:field('companyName'),legalName:field('legalName'),commercialRegistration:field('commercialRegistration'),vatNumber:field('vatNumber'),documentAddress:field('documentAddress'),documentEmail:field('documentEmail'),documentPhone:field('documentPhone'),website:field('website'),timezone:field('timezone'),currency:field('currency').toUpperCase(),country:field('country').toUpperCase()}});
       const updated=payload.settings || {};
-      state.systemSettings.general={companyName:updated.companyName||state.systemSettings.general.companyName,legalName:updated.legalName||'',timezone:updated.timezone||'',currency:updated.currency||'',country:updated.country||'',today:updated.today||state.systemSettings.general.today};
+      state.systemSettings.general={companyName:updated.companyName||state.systemSettings.general.companyName,legalName:updated.legalName||'',commercialRegistration:updated.commercialRegistration||'',vatNumber:updated.vatNumber||'',documentAddress:updated.documentAddress||'',documentEmail:updated.documentEmail||'',documentPhone:updated.documentPhone||'',website:updated.website||'',documentAssets:updated.documentAssets||state.systemSettings.general.documentAssets||{},timezone:updated.timezone||'',currency:updated.currency||'',country:updated.country||'',today:updated.today||state.systemSettings.general.today};
       serverAccess.company_name=state.systemSettings.general.companyName;
       renderWorkspaceShell();
       renderRoute();
       showToast('Company settings saved','Company identity and locale settings were updated and audited.');
     } catch(error) { showToast('Settings not saved',error.message); }
+  }
+
+  async function uploadDocumentBrandingAsset(kind,file){
+    if(!file)return;
+    try{const payload=await appUpload(`/api/settings/document-assets/${encodeURIComponent(kind)}/`,file);const updated=payload.settings||{};state.systemSettings.general.documentAssets=updated.documentAssets||{};renderRoute();showToast('Branding asset saved',`${kind[0].toUpperCase()+kind.slice(1)} will be used by newly finalized documents.`);}catch(error){showToast('Branding asset not saved',error.message);}
+  }
+
+  async function removeDocumentBrandingAsset(kind){
+    try{const payload=await appApi(`/api/settings/document-assets/${encodeURIComponent(kind)}/`,{method:'DELETE',body:{}});state.systemSettings.general.documentAssets=payload.settings?.documentAssets||{};renderRoute();showToast('Branding asset removed',`New documents will no longer use the ${kind}. Previously finalized documents keep their historical branding snapshot.`);}catch(error){showToast('Branding asset not removed',error.message);}
   }
 
   function placeholderTemplate(route) {
@@ -6454,6 +6483,8 @@
     document.querySelectorAll('[data-report-print]').forEach(btn=>btn.addEventListener('click',printCurrentReport));
     document.querySelectorAll('[data-settings-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.settingsTab=btn.dataset.settingsTab;localStorage.setItem('payroll-ui-settings-tab',state.settingsTab);renderRoute();}));
     document.querySelectorAll('[data-settings-save]').forEach(btn=>btn.addEventListener('click',saveSettingsFromPage));
+    document.querySelectorAll('[data-document-asset-input]').forEach(input=>input.addEventListener('change',()=>uploadDocumentBrandingAsset(input.dataset.documentAssetInput,input.files?.[0])));
+    document.querySelectorAll('[data-document-asset-remove]').forEach(btn=>btn.addEventListener('click',()=>removeDocumentBrandingAsset(btn.dataset.documentAssetRemove)));
     document.querySelectorAll('[data-document-tab]').forEach(btn => btn.addEventListener('click', () => { state.documentTab=btn.dataset.documentTab; localStorage.setItem('payroll-ui-document-tab',state.documentTab); renderRoute(); }));
     const documentSearch=document.getElementById('documentSearch'); bindPayrollSearch(documentSearch,value=>{state.documentSearch=value;});
     const documentPeriod=document.getElementById('documentPeriodFilter'); if(documentPeriod) documentPeriod.addEventListener('change',()=>{state.documentPeriodFilter=documentPeriod.value;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();});
@@ -7550,7 +7581,7 @@
             namedField('Employee ID (auto if blank)', 'employee-id', draft['employee-id'] || ''), namedField('Full name', 'employee-name', draft['employee-name'] || ''), namedField('Position', 'employee-position', draft['employee-position'] || ''), namedSelectOptions('Department', 'employee-department', departmentOptions, draft['employee-department'] || contextDepartment?.id || departmentOptions[0]?.value || ''), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="department">+ New department</button><span class="field-hint">Create a reusable department master without leaving employee onboarding.</span></div>`
           ]],
           ['Employment & organization', 'Internal employees belong to a company branch/office and department. Construction projects are not used as the employee master location.', [
-            namedField('Joining date', 'employee-joining', draft['employee-joining'] || '', 'date'), namedSelectOptions('Branch / Office', 'employee-branch', branchOptions, draft['employee-branch'] || state.drawerContext?.branchId || branchOptions[0]?.value || ''), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="branch">+ New branch / office</button><span class="field-hint">Newly created office returns selected in this employee form.</span></div>`, namedSelectFieldValue('Status', 'employee-status', ['Active','On Leave','Inactive','Terminated'], draft['employee-status'] || 'Active'), namedField('National ID / Iqama', 'employee-national-id', draft['employee-national-id'] || ''), namedField('Phone', 'employee-phone', draft['employee-phone'] || ''), namedField('Employment end date', 'employee-end-date', draft['employee-end-date'] || '', 'date')
+            namedField('Joining date', 'employee-joining', draft['employee-joining'] || '', 'date'), namedSelectOptions('Branch / Office', 'employee-branch', branchOptions, draft['employee-branch'] || state.drawerContext?.branchId || branchOptions[0]?.value || ''), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="branch">+ New branch / office</button><span class="field-hint">Newly created office returns selected in this employee form.</span></div>`, namedSelectFieldValue('Status', 'employee-status', ['Active','On Leave','Inactive','Terminated'], draft['employee-status'] || 'Active'), namedField('National ID / Iqama', 'employee-national-id', draft['employee-national-id'] || ''), namedField('Phone', 'employee-phone', draft['employee-phone'] || ''), namedField('Address', 'employee-address', draft['employee-address'] || ''), namedField('Employment end date', 'employee-end-date', draft['employee-end-date'] || '', 'date')
           ]]
         ]);
       }
@@ -7988,6 +8019,7 @@
         namedSelectFieldValue('Status','employee-status',['Active','On Leave','Inactive','Terminated'],employee.status || 'Active'),
         namedField('National ID / Iqama','employee-national-id',employee.nationalId || ''),
         namedField('Phone','employee-phone',employee.phone || ''),
+        namedField('Address','employee-address',employee.address || ''),
         namedField('Employment end date','employee-end-date',employee.employmentEnd || '','date')
       ]]
     ]);
@@ -8787,7 +8819,7 @@
             employee_number:get('employee-id'),
             full_name:name, position:get('employee-position'), department_id:department.id, branch_id:branch.id,
             joining_date:get('employee-joining'), status:get('employee-status') || 'Active',
-            national_id:get('employee-national-id'), phone:get('employee-phone'), employment_end_date:get('employee-end-date')
+            national_id:get('employee-national-id'), phone:get('employee-phone'), address:get('employee-address'), employment_end_date:get('employee-end-date')
           }
         });
         const employee=payload.employee;
@@ -8807,7 +8839,7 @@
         drawerSave.disabled = true;
         const payload=await appApi(`/api/internal/employees/${employee.id}/`, {method:'PATCH',body:{
           employee_number:get('employee-id'), full_name:get('employee-name'), joining_date:get('employee-joining'),
-          status:get('employee-status'), national_id:get('employee-national-id'), phone:get('employee-phone'), employment_end_date:get('employee-end-date')
+          status:get('employee-status'), national_id:get('employee-national-id'), phone:get('employee-phone'), address:get('employee-address'), employment_end_date:get('employee-end-date')
         }});
         replaceStateRecord(state.employees,payload.employee); closeDrawer(); renderRoute();
         showToast('Employee updated', `${payload.employee.name}'s master details were saved.`);

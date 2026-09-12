@@ -64,7 +64,7 @@ class DepartmentAdmin(ReadOnlyDomainAdmin):
 class InternalEmployeeAdmin(ReadOnlyDomainAdmin):
     list_display = ("employee_number", "full_name", "company", "status", "joining_date", "employment_end_date", "updated_at")
     list_filter = ("status",)
-    search_fields = ("employee_number", "full_name", "national_id", "phone")
+    search_fields = ("employee_number", "full_name", "national_id", "phone", "address")
 
 
 @admin.register(EmployeeOrganizationAssignment)

@@ -187,6 +187,7 @@ def employees_api(request: HttpRequest) -> JsonResponse:
             status=str(body.get("status", "Active")),
             national_id=str(body.get("national_id", "")),
             phone=str(body.get("phone", "")),
+            address=str(body.get("address", "")),
             employment_end_date=_optional_date(body.get("employment_end_date"), "employment_end_date"),
             request=request,
         )
@@ -219,6 +220,7 @@ def employee_detail_api(request: HttpRequest, employee_id) -> JsonResponse:
             status=str(body.get("status", employee.status)),
             national_id=str(body.get("national_id", employee.national_id)),
             phone=str(body.get("phone", employee.phone)),
+            address=str(body.get("address", employee.address)),
             employment_end_date=_optional_date(
                 body.get("employment_end_date", employee.employment_end_date.isoformat() if employee.employment_end_date else None),
                 "employment_end_date",

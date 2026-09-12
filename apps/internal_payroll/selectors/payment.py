@@ -73,6 +73,7 @@ def serialize_payment_row(row: SalaryPaymentRow) -> dict[str, object]:
         "employeeCode": row.employee_number,
         "name": row.employee_name,
         "nationalId": row.national_id,
+        "address": row.employee_address,
         "destinationType": row.destination_type,
         "bank": row.bank_name,
         "bankCode": row.bank_code,

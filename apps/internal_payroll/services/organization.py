@@ -298,6 +298,7 @@ def create_employee(
     status: str = EmploymentStatus.ACTIVE,
     national_id: str = "",
     phone: str = "",
+    address: str = "",
     employment_end_date=None,
     reason: str = "Employee onboarding",
     request: HttpRequest | None = None,
@@ -314,6 +315,7 @@ def create_employee(
         full_name=full_name,
         national_id=national_id,
         phone=phone,
+        address=address,
         joining_date=joining_date,
         employment_end_date=employment_end_date,
         status=_normalize_status(status),
@@ -359,6 +361,7 @@ def update_employee(
     status: str,
     national_id: str = "",
     phone: str = "",
+    address: str = "",
     employment_end_date=None,
     request: HttpRequest | None = None,
 ) -> InternalEmployee:
@@ -372,6 +375,7 @@ def update_employee(
     employee.full_name = full_name
     employee.national_id = national_id
     employee.phone = phone
+    employee.address = address
     employee.joining_date = joining_date
     employee.employment_end_date = employment_end_date
     employee.status = _normalize_status(status)

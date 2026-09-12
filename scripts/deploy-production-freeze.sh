@@ -8,4 +8,4 @@ bash "${ROOT}/scripts/verify-production-freeze.sh"
 # Compatibility wrapper retained for operators that already use the Upgrade 12
 # command. The canonical deployment script now performs the same freeze check
 # itself before preflight, backup, release tasks and live smoke checks.
-exec bash "${ROOT}/scripts/deploy-production.sh"
+exec bash "${ROOT}/scripts/deploy-production.sh" "$@"

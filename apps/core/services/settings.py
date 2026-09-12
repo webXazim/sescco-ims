@@ -18,6 +18,12 @@ def update_company_settings(
     country_code: str,
     company_name: str | None = None,
     legal_name: str | None = None,
+    commercial_registration: str | None = None,
+    vat_number: str | None = None,
+    document_address: str | None = None,
+    document_email: str | None = None,
+    document_phone: str | None = None,
+    website: str | None = None,
     request=None,
 ) -> CompanySettings:
     if not membership_has_capability(actor_membership, Capability.MANAGE_SETTINGS):
@@ -54,6 +60,12 @@ def update_company_settings(
         "timezone": settings.timezone,
         "currency_code": settings.currency_code,
         "country_code": settings.country_code,
+        "commercial_registration": settings.commercial_registration,
+        "vat_number": settings.vat_number,
+        "document_address": settings.document_address,
+        "document_email": settings.document_email,
+        "document_phone": settings.document_phone,
+        "website": settings.website,
     }
 
     company.name = next_name
@@ -61,6 +73,18 @@ def update_company_settings(
     settings.timezone = timezone
     settings.currency_code = currency_code
     settings.country_code = country_code
+    if commercial_registration is not None:
+        settings.commercial_registration = commercial_registration
+    if vat_number is not None:
+        settings.vat_number = vat_number
+    if document_address is not None:
+        settings.document_address = document_address
+    if document_email is not None:
+        settings.document_email = document_email
+    if document_phone is not None:
+        settings.document_phone = document_phone
+    if website is not None:
+        settings.website = website
 
     company.full_clean(exclude=("slug",))
     settings.full_clean()
@@ -70,11 +94,20 @@ def update_company_settings(
         before["timezone"] != settings.timezone
         or before["currency_code"] != settings.currency_code
         or before["country_code"] != settings.country_code
+        or before["commercial_registration"] != settings.commercial_registration
+        or before["vat_number"] != settings.vat_number
+        or before["document_address"] != settings.document_address
+        or before["document_email"] != settings.document_email
+        or before["document_phone"] != settings.document_phone
+        or before["website"] != settings.website
     )
     if company_changed:
         company.save(update_fields=("name", "legal_name", "updated_at"))
     if settings_changed:
-        settings.save(update_fields=("timezone", "currency_code", "country_code", "updated_at"))
+        settings.save(update_fields=(
+            "timezone", "currency_code", "country_code", "commercial_registration", "vat_number",
+            "document_address", "document_email", "document_phone", "website", "updated_at",
+        ))
 
     # Keep the request membership/company object coherent after the locked copies are saved.
     actor_membership.company.name = company.name
@@ -87,6 +120,12 @@ def update_company_settings(
         cached_settings.timezone = settings.timezone
         cached_settings.currency_code = settings.currency_code
         cached_settings.country_code = settings.country_code
+        cached_settings.commercial_registration = settings.commercial_registration
+        cached_settings.vat_number = settings.vat_number
+        cached_settings.document_address = settings.document_address
+        cached_settings.document_email = settings.document_email
+        cached_settings.document_phone = settings.document_phone
+        cached_settings.website = settings.website
 
     after = {
         "company_name": company.name,
@@ -94,6 +133,12 @@ def update_company_settings(
         "timezone": settings.timezone,
         "currency_code": settings.currency_code,
         "country_code": settings.country_code,
+        "commercial_registration": settings.commercial_registration,
+        "vat_number": settings.vat_number,
+        "document_address": settings.document_address,
+        "document_email": settings.document_email,
+        "document_phone": settings.document_phone,
+        "website": settings.website,
     }
     if before != after:
         record_audit_event(
