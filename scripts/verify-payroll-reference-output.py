@@ -34,7 +34,7 @@ for rel, text in [
     ("apps/core/models/settings.py", "document_logo = models.FileField"),
     ("apps/core/models/settings.py", "document_letterhead = models.FileField"),
     ("apps/core/models/settings.py", "document_watermark = models.FileField"),
-    ("apps/core/migrations/0003_company_document_branding.py", "Full-page letterhead"),
+    ("apps/core/migrations/0004_company_document_branding_lineage_repair.py", "Full-page letterhead"),
     ("apps/core/settings_api.py", "company_branding_asset_api"),
     ("apps/core/settings_api.py", "Upload a PNG, JPEG or WebP image."),
     ("apps/core/services/settings.py", "must not delete the previous file"),

@@ -1,3 +1,14 @@
+# 1.0.38 — Immutable branding-migration lineage repair
+
+- Repairs the production failure `column core_company_settings.document_branding_mode does not exist` seen after migrations completed and the `--seed` phase started.
+- Restores `core.0003_company_document_branding` to the exact migration that originally shipped and may already be recorded as applied in production; previously released migrations are no longer rewritten.
+- Adds forward-only `core.0004_company_document_branding_lineage_repair`, which idempotently adds the missing branding-mode database column when needed and safely accepts databases where it already exists.
+- Reconciles both known database lineages by preserving/widening branding file columns to 180 characters, enough for SESCCO branding storage keys.
+- Restores the 12 MB branding upload-size validator while keeping the current logo / letterhead / watermark storage layout and extension checks.
+- The repair preserves existing company settings and existing branding file references; it does not delete or rewrite uploaded branding assets.
+- Adds a frozen migration-lineage verifier so an already-released migration cannot be silently edited again.
+- Adds a post-migration physical-schema gate before `--seed`, so migration-recorder/schema divergence fails with a direct release error instead of an ORM traceback.
+
 # 1.0.37 — Branding migration-state repair
 
 - Fixes the production pre-deployment `makemigrations --check --dry-run` failure introduced by a serialization-shape mismatch in the company document-branding file-extension validator.

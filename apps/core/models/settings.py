@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.core.exceptions import ValidationError
@@ -26,12 +27,25 @@ def company_watermark_upload_to(instance, filename: str) -> str:
     return _branding_upload_path(instance, filename, "watermark")
 
 
+def document_branding_upload_to(instance, filename: str) -> str:
+    """Historical upload callable retained for immutable core.0003 imports."""
+    suffix = f".{filename.rsplit('.', 1)[-1].lower()}" if "." in (filename or "") else ".bin"
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        suffix = ".bin"
+    return f"company-document-assets/{instance.company_id}/{uuid.uuid4().hex}{suffix}"
+
+
 class DocumentBrandingMode(models.TextChoices):
     STANDARD = "standard", "Standard header"
     LETTERHEAD = "letterhead", "Full-page letterhead"
 
 
 _BRAND_EXTENSIONS = FileExtensionValidator(allowed_extensions=["png", "jpg", "jpeg", "webp"])
+
+
+def validate_document_branding_size(value) -> None:
+    if value and getattr(value, "size", 0) > 12 * 1024 * 1024:
+        raise ValidationError("Document branding images must be 12 MB or smaller.")
 
 
 class CompanySettings(UUIDTimeStampedModel):
@@ -54,9 +68,18 @@ class CompanySettings(UUIDTimeStampedModel):
     document_branding_mode = models.CharField(
         max_length=16, choices=DocumentBrandingMode.choices, default=DocumentBrandingMode.STANDARD
     )
-    document_logo = models.FileField(upload_to=company_logo_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
-    document_letterhead = models.FileField(upload_to=company_letterhead_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
-    document_watermark = models.FileField(upload_to=company_watermark_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
+    document_logo = models.FileField(
+        upload_to=company_logo_upload_to, blank=True, max_length=180,
+        validators=[_BRAND_EXTENSIONS, validate_document_branding_size],
+    )
+    document_letterhead = models.FileField(
+        upload_to=company_letterhead_upload_to, blank=True, max_length=180,
+        validators=[_BRAND_EXTENSIONS, validate_document_branding_size],
+    )
+    document_watermark = models.FileField(
+        upload_to=company_watermark_upload_to, blank=True, max_length=180,
+        validators=[_BRAND_EXTENSIONS, validate_document_branding_size],
+    )
 
     class Meta:
         db_table = "core_company_settings"

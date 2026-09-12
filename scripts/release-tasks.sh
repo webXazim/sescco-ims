@@ -23,6 +23,7 @@ run_manage makemigrations --check --dry-run
 info "Reviewing and applying database migrations"
 run_manage migrate --plan
 run_manage migrate --noinput
+run_manage verify_company_settings_schema
 
 if (( seed_requested )); then
   info "Seeding idempotent DEMO payroll test data"

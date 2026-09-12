@@ -24,6 +24,7 @@ bash "${PROJECT_ROOT}/scripts/verify-platform-shell.sh"
 
 info "Verifying SESCCO MS single-company product contract"
 python3 "${PROJECT_ROOT}/scripts/verify-single-company-branding.py"
+python3 "${PROJECT_ROOT}/scripts/verify-branding-migration-lineage.py"
 
 info "Verifying project-wide required-field UX"
 bash "${PROJECT_ROOT}/scripts/verify-form-validation.sh"

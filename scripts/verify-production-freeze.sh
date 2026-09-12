@@ -26,6 +26,7 @@ python3 scripts/verify-secondary-configuration-lifecycle.py
 python3 scripts/verify-unified-lifecycle-ux.py
 python3 scripts/verify-lifecycle-retention-contract.py
 python3 scripts/verify-single-company-branding.py
+python3 scripts/verify-branding-migration-lineage.py
 
 [[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
 sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \
