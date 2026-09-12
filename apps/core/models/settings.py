@@ -31,7 +31,7 @@ class DocumentBrandingMode(models.TextChoices):
     LETTERHEAD = "letterhead", "Full-page letterhead"
 
 
-_BRAND_EXTENSIONS = FileExtensionValidator(["png", "jpg", "jpeg", "webp"])
+_BRAND_EXTENSIONS = FileExtensionValidator(allowed_extensions=["png", "jpg", "jpeg", "webp"])
 
 
 class CompanySettings(UUIDTimeStampedModel):

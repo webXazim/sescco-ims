@@ -1,3 +1,11 @@
+# 1.0.37 — Branding migration-state repair
+
+- Fixes the production pre-deployment `makemigrations --check --dry-run` failure introduced by a serialization-shape mismatch in the company document-branding file-extension validator.
+- Makes the live `CompanySettings` model use the same keyword-form `FileExtensionValidator(allowed_extensions=...)` constructor already frozen in migration `core.0003_company_document_branding`.
+- Prevents Django from proposing the schema-no-op `0004_alter_companysettings_document_letterhead_and_more` migration for logo, letterhead and watermark fields.
+- Does not add or apply a new database migration and does not modify existing company branding data.
+- The `security.W021` HSTS preload message remains a non-blocking deployment warning; this patch does not opt the domain into browser preload policy automatically.
+
 # 1.0.36 — Lifecycle retention governance
 
 - Adds a machine-readable lifecycle/retention contract covering all 58 persisted SESCCO MS models so every new model must declare how it may leave active use.
