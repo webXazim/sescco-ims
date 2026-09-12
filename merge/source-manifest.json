@@ -45,8 +45,8 @@
     "payroll_frontend_route": "/app/payroll/",
     "payroll_frontend_static_namespace": "static/payroll/",
     "inventory_frontend_static_namespace": "static/css/ + static/js/",
-    "payroll_frontend_source_parity": "frozen PRS JS + 52 CSS files byte-for-byte",
-    "platform_shell": "shared business + module switchers across Inventory and Payroll",
+    "payroll_frontend_source_parity": "frozen PRS CSS namespace + production-integrated Payroll JS shell",
+    "platform_shell": "SESCCO MS single-company shell + authorized module switching across Inventory and Payroll",
     "platform_shell_static_namespace": "static/platform/",
     "production_release_runner": "scripts/release-tasks.sh",
     "backup_encryption_binding": "payroll_field_key_fingerprint_sha256",
@@ -60,6 +60,16 @@
     "preservation_gate": "protected legacy IMS row counts and pre-existing field-data SHA-256 fingerprints unchanged across migration rehearsal",
     "production_deploy_entrypoint": "scripts/deploy-production.sh",
     "production_freeze_compatibility_wrapper": "scripts/deploy-production-freeze.sh",
-    "deployment_freeze_verification": "scripts/deploy-production.sh verifies merge/production-freeze.sha256 before preflight"
+    "deployment_freeze_verification": "scripts/deploy-production.sh verifies merge/production-freeze.sha256 before preflight",
+    "deployment_mode": "private_single_company",
+    "product_identity": "SESCCO MS \u2014 Management System",
+    "lifecycle_authority": "apps.core.services.lifecycle + module policy registry",
+    "internal_organization_lifecycle": "Branch / Office + Department archive/restore/delete-unused via central lifecycle authority",
+    "rental_master_lifecycle": "Manpower Supplier + Rental Worker deactivate/archive/restore/delete-unused via central lifecycle authority",
+    "project_inventory_lifecycle": "Projects + Inventory Unit/Supplier/StockItem/Office Location archive/restore/delete-unused via central lifecycle authority",
+    "archive_trash_contract": "Archive preserves valid history; Trash is restricted to unused erroneous masters with 30-day recovery",
+    "lifecycle_retention_contract": "merge/lifecycle-retention-contract.json",
+    "lifecycle_retention_verifier": "scripts/verify-lifecycle-retention-contract.py",
+    "lifecycle_retention_coverage": "58 persisted SESCCO models explicitly classified by retention mode"
   }
 }

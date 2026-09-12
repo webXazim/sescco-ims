@@ -7,7 +7,7 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.rental_manpower.services import create_supplier
+from apps.rental_manpower.services import create_supplier, create_worker
 
 
 class RentalMasterApiTests(TestCase):
@@ -255,3 +255,19 @@ class RentalAssignmentApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()["ok"])
+    def test_supplier_and_worker_lifecycle_endpoints(self):
+        supplier = create_supplier(actor_membership=self.membership, code="SUP-L", name="Lifecycle Supplier", status="Inactive")
+        url=reverse("rental_manpower:supplier-lifecycle-api", kwargs={"supplier_id":supplier.pk})
+        response=self.client.post(url, data=json.dumps({"action":"archive","reason":"Closed"}), content_type="application/json")
+        self.assertEqual(response.status_code,200); self.assertTrue(response.json()["supplier"]["archived"])
+        response=self.client.post(url, data=json.dumps({"action":"restore_archive"}), content_type="application/json")
+        self.assertEqual(response.status_code,200); self.assertEqual(response.json()["supplier"]["status"],"Inactive")
+
+        active_supplier=create_supplier(actor_membership=self.membership, code="SUP-W", name="Worker Supplier")
+        worker=create_worker(actor_membership=self.membership, supplier_id=active_supplier.pk, worker_number="RW-L", full_name="Lifecycle Worker")
+        wurl=reverse("rental_manpower:worker-lifecycle-api", kwargs={"worker_id":worker.pk})
+        response=self.client.post(wurl, data=json.dumps({"action":"deactivate","effective_date":"2026-01-01","reason":"Stopped"}), content_type="application/json")
+        self.assertEqual(response.status_code,200); self.assertEqual(response.json()["worker"]["status"],"Inactive")
+        response=self.client.post(wurl, data=json.dumps({"action":"archive","reason":"Ended"}), content_type="application/json")
+        self.assertEqual(response.status_code,200); self.assertTrue(response.json()["worker"]["archived"])
+

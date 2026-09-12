@@ -1,0 +1,46 @@
+/* SESCCO MS lifecycle UX contract for server-rendered management pages. */
+.lifecycle-card .card-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+.lifecycle-card .form-section-title { margin: 0 0 5px; }
+.lifecycle-card .row-actions { margin-left: auto; flex: 0 0 auto; }
+.lifecycle-card .row-actions form,
+.lifecycle-actions form { margin: 0; }
+.lifecycle-actions .row-action-danger { margin-top: 1px; }
+.lifecycle-actions .row-action-disabled small { white-space: normal; }
+
+.delete-confirm-grid .card { align-self: start; }
+.delete-confirm-grid .card-body { padding-top: 16px; }
+.delete-confirm-grid .effect-list { margin: 10px 0 0; padding-left: 19px; }
+.delete-confirm-grid .effect-list li + li { margin-top: 7px; }
+.delete-confirm-grid .confirm-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  gap: 9px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.delete-confirm-grid .confirm-check input { margin-top: 2px; }
+
+.lifecycle-policy-note {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.lifecycle-policy-note strong { color: var(--text); font-size: 11px; }
+
+@media (max-width: 760px) {
+  .lifecycle-card .card-head { display: grid; }
+  .lifecycle-card .row-actions,
+  .lifecycle-card .row-actions > summary { width: 100%; }
+  .lifecycle-card .row-actions > summary { justify-content: center; }
+}

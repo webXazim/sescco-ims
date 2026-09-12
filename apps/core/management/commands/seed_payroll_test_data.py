@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import base64
 import csv
 import io
 import os
+import struct
+import zlib
 from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
@@ -18,7 +19,7 @@ from django.utils import timezone
 
 from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
-from apps.core.models import Company
+from apps.core.models import Company, DocumentBrandingMode
 from apps.documents.models import DocumentType
 from apps.documents.services.documents import finalize_business_document
 from apps.internal_payroll.models import (
@@ -112,9 +113,6 @@ from apps.rental_manpower.services import (
 
 
 D = Decimal
-
-# 1x1 neutral PNG used only to exercise private branding upload/snapshot plumbing in TEST seed data.
-DEMO_BRANDING_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlW9WQAAAAASUVORK5CYII=")
 
 INTERNAL_EMPLOYEES = (
     ("DEMO-101", "Mehrab Wahid", "General Manager", "MGMT", D("15000")),
@@ -251,6 +249,36 @@ def _national_id(prefix: str, index: int) -> str:
     return f"{prefix}{index:06d}"
 
 
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+
+
+def _demo_brand_png(width: int, height: int, *, letterhead: bool = False, watermark: bool = False) -> bytes:
+    """Generate a dependency-free DEMO PNG so --seed exercises branding storage/printing."""
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)
+        for x in range(width):
+            if letterhead:
+                top = y < max(5, height // 18)
+                bottom = y >= height - max(5, height // 24)
+                accent = x < max(6, width // 30) and y < max(18, height // 8)
+                value = 32 if (top or bottom or accent) else 255
+                alpha = 255
+            elif watermark:
+                cx, cy = width // 2, height // 2
+                ring = abs(((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 - min(width, height) * 0.30) < 3
+                value = 110 if ring or abs(x - y) < 2 or abs((width - x) - y) < 2 else 255
+                alpha = 110 if value < 255 else 0
+            else:
+                value = 30 if x < width // 3 or y < height // 5 else 245
+                alpha = 255
+            rows.extend((value, value, value, alpha))
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return signature + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + _png_chunk(b"IEND", b"")
+
+
 class Command(BaseCommand):
     help = (
         "Seed deterministic TEST payroll fixtures for Internal Company and Rental Manpower. "
@@ -271,7 +299,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING("Seeding explicit TEST payroll data; DEMO/RDEMO records are not production payroll records."))
         try:
             with transaction.atomic():
-                self._seed_company_document_identity(company)
+                self._seed_document_branding(company, clean_demo_company)
                 internal = self._seed_internal(company, membership, period_start, previous_start, clean_demo_company)
                 rental = self._seed_rental(company, membership, period_start, previous_start, clean_demo_company)
         except ValidationError as exc:
@@ -331,27 +359,37 @@ class Command(BaseCommand):
         real_rental = RentalWorker.objects.for_company(company).exclude(worker_number__startswith="RDEMO-").exists()
         return not real_internal and not real_rental
 
-    def _seed_company_document_identity(self, company):
+    def _seed_document_branding(self, company: Company, clean_demo_company: bool) -> None:
+        if not clean_demo_company:
+            return
         settings = company.settings
-        changed = []
-        if not settings.commercial_registration:
-            settings.commercial_registration = "DEMO-CR-000001"; changed.append("commercial_registration")
-        if not settings.vat_number:
-            settings.vat_number = "DEMO-VAT-000001"; changed.append("vat_number")
-        if not settings.document_address:
-            settings.document_address = "TEST DATA · King Fahad Road, Dammam, Saudi Arabia"; changed.append("document_address")
-        if not settings.document_email:
-            settings.document_email = "payroll-demo@example.com"; changed.append("document_email")
-        if not settings.document_phone:
-            settings.document_phone = "+966500000000"; changed.append("document_phone")
-        if not settings.website:
-            settings.website = "https://example.com"; changed.append("website")
-        for field_name, file_name in (("document_logo", "demo-logo.png"), ("document_letterhead", "demo-letterhead.png"), ("document_watermark", "demo-watermark.png")):
-            field = getattr(settings, field_name)
-            if not field:
-                field.save(file_name, ContentFile(DEMO_BRANDING_PNG), save=False); changed.append(field_name)
-        if changed:
-            settings.save(update_fields=tuple(changed) + ("updated_at",))
+        update_fields = []
+        identity_defaults = {
+            "commercial_registration": "DEMO-CR-2050192960",
+            "vat_number": "DEMO-VAT-312429950100003",
+            "document_address": "TEST DATA · King Fahad Road, Dammam, Saudi Arabia",
+            "document_email": "demo-payroll@example.invalid",
+            "document_phone": "+966500000000",
+            "website": "https://example.invalid",
+        }
+        for field_name, value in identity_defaults.items():
+            if not getattr(settings, field_name):
+                setattr(settings, field_name, value)
+                update_fields.append(field_name)
+        if not settings.document_logo:
+            settings.document_logo.save("DEMO-logo.png", ContentFile(_demo_brand_png(160, 80), name="DEMO-logo.png"), save=False)
+            update_fields.append("document_logo")
+        if not settings.document_letterhead:
+            settings.document_letterhead.save("DEMO-letterhead.png", ContentFile(_demo_brand_png(420, 594, letterhead=True), name="DEMO-letterhead.png"), save=False)
+            update_fields.append("document_letterhead")
+        if not settings.document_watermark:
+            settings.document_watermark.save("DEMO-watermark.png", ContentFile(_demo_brand_png(220, 220, watermark=True), name="DEMO-watermark.png"), save=False)
+            update_fields.append("document_watermark")
+        if settings.document_branding_mode != DocumentBrandingMode.LETTERHEAD:
+            settings.document_branding_mode = DocumentBrandingMode.LETTERHEAD
+            update_fields.append("document_branding_mode")
+        if update_fields:
+            settings.save(update_fields=tuple(dict.fromkeys(update_fields + ["updated_at"])))
 
     def _seed_internal(self, company, actor, current_start, previous_start, make_history):
         branch = company.internal_branches.filter(code="DEMO-HQ").first() if hasattr(company, "internal_branches") else None

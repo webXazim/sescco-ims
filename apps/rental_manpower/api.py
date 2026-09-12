@@ -47,6 +47,7 @@ from apps.rental_manpower.services import (
     update_project,
     update_supplier,
     update_worker,
+    archive_supplier, restore_supplier_archive, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, delete_unused_worker,
     calculate_project_settlements,
     create_rental_adjustment,
     record_supplier_payment,
@@ -98,6 +99,13 @@ def _status_query(value: str, allowed: set[str], field: str = "status") -> str:
         raise ValidationError({field: "Unknown status filter."})
     return normalized
 
+def _archived_query(value: str) -> bool | None:
+    normalized=(value or "").strip().lower()
+    if normalized in {"", "current", "false", "0", "no"}: return False
+    if normalized in {"archived", "true", "1", "yes"}: return True
+    if normalized == "all": return None
+    raise ValidationError({"archived":"Archived filter must be current, archived, or all."})
+
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.RENTAL)
@@ -115,7 +123,7 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
                 "projects": "active_project_count",
             }
             controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
-            rows = suppliers_for_company(company=request.company, query=request.GET.get("q", ""), status=status)
+            rows = suppliers_for_company(company=request.company, query=request.GET.get("q", ""), status=status, archived=_archived_query(request.GET.get("archived", "")))
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_supplier)
             return JsonResponse({"ok": True, "results": results, "meta": meta})
@@ -141,11 +149,14 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.RENTAL)
 def supplier_detail_api(request: HttpRequest, supplier_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id=delete_unused_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request)
+            return JsonResponse({"ok":True,"deletedSupplierId":deleted_id})
         current = ManpowerSupplier.objects.for_company(request.company).get(pk=supplier_id)
         supplier = update_supplier(
             actor_membership=request.company_membership,
@@ -167,6 +178,20 @@ def supplier_detail_api(request: HttpRequest, supplier_id) -> JsonResponse:
         return JsonResponse({"ok": True, "supplier": serialize_supplier(supplier)})
     except Exception as exc:
         return handle_api_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.RENTAL)
+def supplier_lifecycle_api(request: HttpRequest, supplier_id) -> JsonResponse:
+    try:
+        body=json_body(request); action=str(body.get("action","")).strip().lower().replace("-","_")
+        if action == "archive": supplier=archive_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"restore","restore_archive"}: supplier=restore_supplier_archive(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"deactivate","inactive","activate","reactivate","active"}: supplier=change_supplier_lifecycle(actor_membership=request.company_membership, supplier_id=supplier_id, action=action, reason=str(body.get("reason", "")), request=request)
+        else: raise ValidationError({"action":"Supplier lifecycle action must be deactivate, activate, archive, or restore."})
+        supplier=suppliers_for_company(company=request.company, archived=None).get(pk=supplier.pk)
+        return JsonResponse({"ok":True,"supplier":serialize_supplier(supplier)})
+    except Exception as exc: return handle_api_error(exc)
 
 
 @require_http_methods(["GET", "POST"])
@@ -256,6 +281,7 @@ def workers_api(request: HttpRequest) -> JsonResponse:
                 query=request.GET.get("q", ""),
                 status=status,
                 supplier_id=supplier_id,
+                archived=_archived_query(request.GET.get("archived", "")),
             )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_worker)
@@ -278,11 +304,14 @@ def workers_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.RENTAL)
 def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id=delete_unused_worker(actor_membership=request.company_membership, worker_id=worker_id, confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request)
+            return JsonResponse({"ok":True,"deletedWorkerId":deleted_id})
         current = RentalWorker.objects.for_company(request.company).select_related("supplier").get(pk=worker_id)
         worker = update_worker(
             actor_membership=request.company_membership,
@@ -300,6 +329,18 @@ def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
         return JsonResponse({"ok": True, "worker": serialize_worker(worker)})
     except Exception as exc:
         return handle_api_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.RENTAL)
+def worker_lifecycle_api(request: HttpRequest, worker_id) -> JsonResponse:
+    try:
+        body=json_body(request); action=str(body.get("action", "")).strip()
+        effective=parse_optional_date(body.get("effective_date"), "effective_date")
+        worker=change_worker_lifecycle(actor_membership=request.company_membership, worker_id=worker_id, action=action, effective_date=effective, reason=str(body.get("reason", "")), request=request)
+        worker=workers_for_company(company=request.company, archived=None).get(pk=worker.pk)
+        return JsonResponse({"ok":True,"worker":serialize_worker(worker)})
+    except Exception as exc: return handle_api_error(exc)
 
 
 @require_http_methods(["POST"])

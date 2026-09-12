@@ -470,8 +470,10 @@ def release_worker(
     if release_to == ReleaseDisposition.INACTIVE:
         prior_worker_status = worker.status
         worker.status = RentalWorkerStatus.INACTIVE
+        worker.inactive_on = effective_date
+        worker.inactive_reason = (reason or "Released from project").strip()
         worker.full_clean()
-        worker.save(update_fields=("status", "updated_at"))
+        worker.save(update_fields=("status", "inactive_on", "inactive_reason", "updated_at"))
         record_audit_event(
             company=company,
             area=AuditArea.RENTAL,

@@ -63,6 +63,10 @@ def serialize_export_template(template: BankExportTemplate) -> dict[str, object]
         "headers": list(template.headers),
         "resultColumns": dict(template.result_columns),
         "active": template.is_active,
+        "status": "Archived" if template.archived_at else ("Active" if template.is_active else "Inactive"),
+        "archived": bool(template.archived_at),
+        "archivedAt": template.archived_at.isoformat() if template.archived_at else None,
+        "archivedReason": template.archived_reason,
     }
 
 
@@ -174,12 +178,12 @@ def salary_payment_context(*, company, period_start: date, membership=None, bank
     for batch in batches:
         batch.payment_rows = rows_by_batch.get(str(batch.pk), [])
     settings_row = CompanySalaryPaymentSettings.objects.for_company(company).first()
-    active_bank_template = next((item for item in templates if item.is_active and item.channel == BankExportChannel.BANK_CSV and (bank_template_id is None or str(item.pk) == str(bank_template_id))), None)
+    active_bank_template = next((item for item in templates if item.is_active and not item.archived_at and item.channel == BankExportChannel.BANK_CSV and (bank_template_id is None or str(item.pk) == str(bank_template_id))), None)
     if active_bank_template is None and bank_template_id is None:
-        active_bank_template = next((item for item in templates if item.is_active and item.channel == BankExportChannel.BANK_CSV), None)
-    active_wps_template = next((item for item in templates if item.is_active and item.channel == BankExportChannel.WPS and (wps_template_id is None or str(item.pk) == str(wps_template_id))), None)
+        active_bank_template = next((item for item in templates if item.is_active and not item.archived_at and item.channel == BankExportChannel.BANK_CSV), None)
+    active_wps_template = next((item for item in templates if item.is_active and not item.archived_at and item.channel == BankExportChannel.WPS and (wps_template_id is None or str(item.pk) == str(wps_template_id))), None)
     if active_wps_template is None and wps_template_id is None:
-        active_wps_template = next((item for item in templates if item.is_active and item.channel == BankExportChannel.WPS), None)
+        active_wps_template = next((item for item in templates if item.is_active and not item.archived_at and item.channel == BankExportChannel.WPS), None)
     return {
         "period": f"{start:%Y-%m}",
         "payrollStatus": run.status if run else None,

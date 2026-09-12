@@ -81,6 +81,7 @@ curl --fail --silent --show-error \
 info "Verifying Inventory and Payroll static assets through the gateway"
 for asset in \
   /static/css/styles.css \
+  /static/platform/brand-sescco-mark.webp \
   /static/platform/css/shell-switchers.css \
   /static/platform/css/inventory-shell.css \
   /static/platform/css/payroll-shell-fixes.css \

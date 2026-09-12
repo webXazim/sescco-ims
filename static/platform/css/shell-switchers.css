@@ -1,4 +1,4 @@
-/* Shared company / business-area controls used by Inventory and Payroll.
+/* Shared company/module controls used by Inventory and Payroll. In SESCCO MS single-company mode only the module control is rendered.
    These controls intentionally read as part of the navigation rail, not as cards. */
 .platform-switchers {
   display: grid;

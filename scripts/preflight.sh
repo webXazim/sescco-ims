@@ -22,6 +22,9 @@ bash "${PROJECT_ROOT}/scripts/verify-payroll-frontend.sh"
 info "Verifying unified platform shell"
 bash "${PROJECT_ROOT}/scripts/verify-platform-shell.sh"
 
+info "Verifying SESCCO MS single-company product contract"
+python3 "${PROJECT_ROOT}/scripts/verify-single-company-branding.py"
+
 info "Verifying project-wide required-field UX"
 bash "${PROJECT_ROOT}/scripts/verify-form-validation.sh"
 
@@ -72,6 +75,11 @@ permissions="$(stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FI
 if [[ "${permissions}" != "600" && "${permissions}" != "640" ]]; then
   printf 'WARNING: Set restrictive permissions with: chmod 600 %q\n' "${ENV_FILE}" >&2
 fi
+
+single_company_mode="$(read_env_value SINGLE_COMPANY_MODE | tr '[:upper:]' '[:lower:]')"
+single_company_mode="${single_company_mode:-true}"
+[[ "${single_company_mode}" == "true" || "${single_company_mode}" == "1" ]] \
+  || fatal "Production SESCCO MS requires SINGLE_COMPANY_MODE=true."
 
 trusted_proxies="$(read_env_value DJANGO_TRUSTED_PROXY_IPS)"
 [[ -n "${trusted_proxies}" ]] \

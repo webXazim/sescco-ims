@@ -7,6 +7,7 @@ from .attendance import (
 )
 from .organization import (
     Branch,
+    BranchKind,
     Department,
     EmployeeOrganizationAssignment,
     EmploymentStatus,
@@ -42,6 +43,7 @@ __all__ = [
     "AttendancePeriod",
     "AttendancePeriodStatus",
     "Branch",
+    "BranchKind",
     "Department",
     "EmployeeOrganizationAssignment",
     "EmploymentStatus",

@@ -1,0 +1,155 @@
+@layer ui-v2-components {
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu > .ui-v2-prs-dropdown-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 7px);
+    z-index: 120;
+    display: none;
+    min-width: 270px;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu.is-open > .ui-v2-prs-dropdown-menu {
+    display: block;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item {
+    min-height: 42px;
+    align-items: flex-start;
+    padding: 7px 9px;
+    line-height: 1.25;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item > svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    margin-top: 2px;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__copy strong {
+    color: var(--ui-v2-text);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__copy small {
+    color: var(--ui-v2-text-muted);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item--danger,
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item--danger strong {
+    color: var(--ui-v2-danger, #b42318);
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item:disabled,
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu .ui-v2-menu__item[aria-disabled="true"] {
+    opacity: .48;
+    cursor: not-allowed;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu__trigger {
+    min-width: 88px;
+    justify-content: center;
+    gap: 7px;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu__trigger > svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-panel {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 12px 13px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: var(--ui-v2-radius-md);
+    background: var(--ui-v2-surface-subtle, #f8f9fa);
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-panel > strong {
+    color: var(--ui-v2-text);
+    font-size: 12.5px;
+    font-weight: 680;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-panel > span,
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-panel > p {
+    margin: 0;
+    color: var(--ui-v2-text-muted);
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-panel--danger {
+    border-color: rgba(180,35,24,.24);
+    background: rgba(180,35,24,.045);
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-error {
+    display: grid;
+    gap: 5px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(180,35,24,.25);
+    border-radius: var(--ui-v2-radius-md);
+    background: rgba(180,35,24,.055);
+    color: var(--ui-v2-danger, #b42318);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-error strong { font-weight: 700; }
+
+  .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-inline-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid var(--ui-v2-border);
+    border-radius: 999px;
+    color: var(--ui-v2-text-muted);
+    font-size: 10px;
+    font-weight: 620;
+  }
+
+  @media (max-width: 760px) {
+    .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu { width: 100%; }
+    .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu__trigger { width: 100%; }
+    .ui-v2-root[data-area="payroll"] .ui-v2-lifecycle-menu > .ui-v2-prs-dropdown-menu {
+      left: 0;
+      right: 0;
+      min-width: 0;
+      width: 100%;
+    }
+  }
+}
+
+@layer ui-v2-components {
+  .ui-v2-root[data-area="payroll"] #drawerSave.is-lifecycle-danger {
+    border-color: var(--ui-v2-danger-border, #f1a5a0);
+    background: var(--ui-v2-danger, #b42318);
+    color: #fff;
+  }
+  .ui-v2-root[data-area="payroll"] #drawerSave.is-lifecycle-danger:hover {
+    filter: brightness(.96);
+  }
+}

@@ -14,6 +14,7 @@ from apps.accounts.permissions import membership_can_edit
 from apps.accounts.roles import Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
+from apps.core.services.lifecycle import LifecycleAction, require_lifecycle_action, record_lifecycle_action
 from apps.projects.contracts import ProjectStatus
 from apps.projects.models import Project
 from apps.rental_manpower.project_adapter import rental_project_for_company
@@ -83,6 +84,8 @@ def _snapshot(obj: Any) -> dict[str, object]:
             "payment_terms": obj.payment_terms,
             "address": obj.address,
             "notes": obj.notes,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
         }
     if isinstance(obj, Project):
         return {
@@ -105,6 +108,10 @@ def _snapshot(obj: Any) -> dict[str, object]:
             "supplier_id": str(obj.supplier_id),
             "status": obj.status,
             "notes": obj.notes,
+            "inactive_on": obj.inactive_on.isoformat() if obj.inactive_on else None,
+            "inactive_reason": obj.inactive_reason,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
         }
     raise TypeError(f"Unsupported rental master snapshot: {type(obj)!r}")
 
@@ -184,6 +191,8 @@ def update_supplier(
     supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
     before = _snapshot(supplier)
     next_status = _supplier_status(status)
+    if supplier.archived_at:
+        raise ValidationError({"supplier": "Restore the archived supplier before editing it."})
     if supplier.status == SupplierStatus.ACTIVE and next_status == SupplierStatus.INACTIVE:
         if RentalWorker.objects.for_company(supplier.company).filter(supplier=supplier, status=RentalWorkerStatus.ACTIVE).exists():
             raise ValidationError("Deactivate active rental workers before making this supplier inactive.")
@@ -346,6 +355,119 @@ def update_project(
     return project
 
 
+@transaction.atomic
+def change_supplier_lifecycle(*, actor_membership: CompanyMembership, supplier_id, action: str, reason: str = "", request: HttpRequest | None = None) -> ManpowerSupplier:
+    _require_rental_edit(actor_membership)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
+    normalized=(action or "").strip().lower().replace("-","_").replace(" ","_")
+    before=_snapshot(supplier)
+    if normalized in {"inactive","deactivate"}:
+        decision=require_lifecycle_action(supplier, LifecycleAction.DEACTIVATE, reason=reason)
+        supplier.status=SupplierStatus.INACTIVE
+        audit_action="rental.supplier.deactivated"
+    elif normalized in {"active","activate","reactivate"}:
+        if supplier.archived_at: raise ValidationError({"supplier":"Restore the archived supplier before activating it."})
+        if supplier.status == SupplierStatus.ACTIVE: raise ValidationError({"status":"This manpower supplier is already active."})
+        supplier.status=SupplierStatus.ACTIVE; decision=None; audit_action="rental.supplier.reactivated"
+    else:
+        raise ValidationError({"action":"Supplier lifecycle action must be deactivate or activate."})
+    supplier.full_clean(); supplier.save(update_fields=("status","updated_at"))
+    after=_snapshot(supplier)
+    if decision is not None:
+        record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after=after, reason=reason, audit_action=audit_action, request=request)
+    else:
+        record_audit_event(company=supplier.company, area=AuditArea.RENTAL, action=audit_action, object_type="rental_manpower.ManpowerSupplier", object_id=supplier.pk, object_label=str(supplier), actor_membership=actor_membership, before=before, after=after, metadata={"reason":(reason or "").strip()}, request=request)
+    return supplier
+
+
+@transaction.atomic
+def archive_supplier(*, actor_membership: CompanyMembership, supplier_id, reason: str, request: HttpRequest | None = None) -> ManpowerSupplier:
+    _require_rental_edit(actor_membership)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
+    decision = require_lifecycle_action(supplier, LifecycleAction.ARCHIVE, reason=reason)
+    before = _snapshot(supplier)
+    supplier.status = SupplierStatus.INACTIVE
+    supplier.archived_at = timezone.now()
+    supplier.archived_reason = (reason or "").strip()
+    supplier.full_clean(); supplier.save(update_fields=("status","archived_at","archived_reason","updated_at"))
+    record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(supplier), reason=reason, audit_action="rental.supplier.archived", request=request)
+    return supplier
+
+
+@transaction.atomic
+def restore_supplier_archive(*, actor_membership: CompanyMembership, supplier_id, reason: str = "", request: HttpRequest | None = None) -> ManpowerSupplier:
+    _require_rental_edit(actor_membership)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
+    decision = require_lifecycle_action(supplier, LifecycleAction.RESTORE, reason=reason)
+    before = _snapshot(supplier); previous_reason=supplier.archived_reason
+    supplier.archived_at=None; supplier.archived_reason=""; supplier.status=SupplierStatus.INACTIVE
+    supplier.full_clean(); supplier.save(update_fields=("archived_at","archived_reason","status","updated_at"))
+    record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(supplier), reason=reason, audit_action="rental.supplier.archive_restored", metadata={"previous_archive_reason":previous_reason,"restored_status":"inactive"}, request=request)
+    return supplier
+
+
+@transaction.atomic
+def delete_unused_supplier(*, actor_membership: CompanyMembership, supplier_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_rental_edit(actor_membership)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
+    decision = require_lifecycle_action(supplier, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
+    before=_snapshot(supplier); object_id=str(supplier.pk); label=str(supplier)
+    supplier.delete()
+    record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after={"deleted":True}, reason=reason, audit_action="rental.supplier.deleted_unused", object_id=object_id, object_label=label, request=request)
+    return object_id
+
+
+@transaction.atomic
+def change_worker_lifecycle(*, actor_membership: CompanyMembership, worker_id, action: str, effective_date=None, reason: str = "", request: HttpRequest | None = None) -> RentalWorker:
+    _require_rental_edit(actor_membership)
+    worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company)
+    normalized=(action or "").strip().lower().replace("-","_").replace(" ","_")
+    before=_snapshot(worker)
+    if normalized in {"inactive","deactivate"}:
+        decision=require_lifecycle_action(worker, LifecycleAction.DEACTIVATE, reason=reason)
+        stop_date=effective_date or timezone.localdate()
+        if stop_date > timezone.localdate(): raise ValidationError({"effective_date":"Worker stop date cannot be in the future."})
+        worker.status=RentalWorkerStatus.INACTIVE; worker.inactive_on=stop_date; worker.inactive_reason=(reason or "").strip()
+        audit_action="rental.worker.deactivated"
+    elif normalized in {"active","activate","reactivate"}:
+        if worker.archived_at: raise ValidationError({"worker":"Restore the archived worker before reactivating it."})
+        if worker.status == RentalWorkerStatus.ACTIVE: raise ValidationError({"status":"This rental worker is already active."})
+        if worker.supplier.archived_at or worker.supplier.status != SupplierStatus.ACTIVE: raise ValidationError({"supplier":"Reactivate the worker only after the manpower supplier is current and active."})
+        if WorkerAssignment.objects.for_company(worker.company).filter(worker=worker, cancelled_at__isnull=True, effective_to__isnull=True).exists(): raise ValidationError({"worker":"Resolve the open assignment before reactivating this worker."})
+        worker.status=RentalWorkerStatus.ACTIVE; worker.inactive_on=None; worker.inactive_reason=""
+        decision=None; audit_action="rental.worker.reactivated"
+    elif normalized == "archive":
+        decision=require_lifecycle_action(worker, LifecycleAction.ARCHIVE, reason=reason)
+        worker.archived_at=timezone.now(); worker.archived_reason=(reason or "").strip(); audit_action="rental.worker.archived"
+    elif normalized in {"restore","restore_archive"}:
+        decision=require_lifecycle_action(worker, LifecycleAction.RESTORE, reason=reason)
+        previous=worker.archived_reason; worker.archived_at=None; worker.archived_reason=""; worker.status=RentalWorkerStatus.INACTIVE
+        if not worker.inactive_on: worker.inactive_on=timezone.localdate()
+        if not worker.inactive_reason: worker.inactive_reason="Restored from archive; remains inactive"
+        audit_action="rental.worker.archive_restored"
+    else:
+        raise ValidationError({"action":"Worker lifecycle action must be deactivate, activate, archive, or restore."})
+    worker.full_clean(); worker.save()
+    after=_snapshot(worker)
+    if decision is not None:
+        metadata={"restored_status":"inactive"} if normalized in {"restore","restore_archive"} else {}
+        record_lifecycle_action(instance=worker, decision=decision, actor_membership=actor_membership, before=before, after=after, reason=reason, audit_action=audit_action, metadata=metadata, request=request)
+    else:
+        record_audit_event(company=worker.company, area=AuditArea.RENTAL, action=audit_action, object_type="rental_manpower.RentalWorker", object_id=worker.pk, object_label=str(worker), actor_membership=actor_membership, before=before, after=after, metadata={"reason":(reason or "").strip()}, request=request)
+    return worker
+
+
+@transaction.atomic
+def delete_unused_worker(*, actor_membership: CompanyMembership, worker_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_rental_edit(actor_membership)
+    worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company)
+    decision=require_lifecycle_action(worker, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
+    before=_snapshot(worker); object_id=str(worker.pk); label=str(worker)
+    worker.delete()
+    record_lifecycle_action(instance=worker, decision=decision, actor_membership=actor_membership, before=before, after={"deleted":True}, reason=reason, audit_action="rental.worker.deleted_unused", object_id=object_id, object_label=label, request=request)
+    return object_id
+
+
 MAX_WORKER_IMPORT_ROWS = 5000
 
 
@@ -359,6 +481,8 @@ def _resolve_supplier(*, company, supplier_id=None, supplier_code: str = "", for
         supplier = queryset.get(code=supplier_code.strip().upper())
     else:
         raise ValidationError({"supplier": "A managed manpower supplier is required."})
+    if supplier.archived_at:
+        raise ValidationError({"supplier": "Choose a current manpower supplier; this supplier is archived."})
     if supplier.status != SupplierStatus.ACTIVE:
         raise ValidationError({"supplier": "Choose an active manpower supplier."})
     return supplier
@@ -427,6 +551,8 @@ def update_worker(
     _require_rental_edit(actor_membership)
     worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company)
     before = _snapshot(worker)
+    if worker.archived_at:
+        raise ValidationError({"worker": "Restore the archived worker before editing it."})
     if supplier_id and str(supplier_id) != str(worker.supplier_id):
         raise ValidationError({"supplier": "Worker supplier ownership cannot be changed through a master edit."})
     supplier = ManpowerSupplier.objects.for_company(worker.company).select_for_update().get(pk=worker.supplier_id)
@@ -445,6 +571,12 @@ def update_worker(
     worker.phone = phone
     worker.supplier = supplier
     worker.status = next_status
+    if next_status == RentalWorkerStatus.ACTIVE:
+        worker.inactive_on = None
+        worker.inactive_reason = ""
+    elif worker.status != before.get("status") and not worker.inactive_on:
+        worker.inactive_on = timezone.localdate()
+        worker.inactive_reason = "Master status changed to inactive"
     worker.notes = notes
     worker.full_clean()
     try:

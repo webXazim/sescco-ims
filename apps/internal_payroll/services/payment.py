@@ -10,6 +10,7 @@ from typing import Any
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -18,6 +19,7 @@ from apps.accounts.permissions import membership_can_edit, membership_can_worksp
 from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
+from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
 from apps.core.services.numbering import allocate_number
 from apps.internal_payroll.models import (
     BankExportChannel,
@@ -78,6 +80,16 @@ def _profile_audit(profile: EmployeePaymentProfile) -> dict[str, object]:
         "wps_enabled": profile.wps_enabled,
         "is_active": profile.is_active,
         "verified_at": profile.verified_at.isoformat() if profile.verified_at else None,
+    }
+
+
+def _template_audit(template: BankExportTemplate) -> dict[str, object]:
+    return {
+        "code": template.code, "name": template.name, "channel": template.channel,
+        "delimiter": template.delimiter, "encoding": template.encoding, "include_header": template.include_header,
+        "columns": list(template.columns), "headers": list(template.headers), "result_columns": dict(template.result_columns),
+        "is_active": template.is_active, "archived_at": template.archived_at.isoformat() if template.archived_at else None,
+        "archived_reason": template.archived_reason,
     }
 
 
@@ -237,12 +249,14 @@ def update_bank_export_template(
     _require_internal_edit(actor_membership)
     company = actor_membership.company
     template = BankExportTemplate.objects.select_for_update().for_company(company).get(pk=template_id)
-    before = {"code": template.code, "name": template.name, "channel": template.channel, "delimiter": template.delimiter, "encoding": template.encoding, "include_header": template.include_header, "columns": list(template.columns), "headers": list(template.headers), "result_columns": dict(template.result_columns), "active": template.is_active}
+    if template.archived_at:
+        raise ValidationError({"template": "Restore the archived bank/WPS export template before editing it."})
+    before = _template_audit(template)
     for field in ("code", "name", "channel", "delimiter", "encoding", "include_header", "columns", "headers", "result_columns", "is_active"):
         if field in values:
             setattr(template, field, values[field])
     template.save()
-    after = {"code": template.code, "name": template.name, "channel": template.channel, "delimiter": template.delimiter, "encoding": template.encoding, "include_header": template.include_header, "columns": list(template.columns), "headers": list(template.headers), "result_columns": dict(template.result_columns), "active": template.is_active}
+    after = _template_audit(template)
     record_audit_event(
         company=company,
         area=AuditArea.INTERNAL,
@@ -305,11 +319,72 @@ def _wps_breakdown(line: PayrollRunLine) -> tuple[dict[str, Decimal], list[str]]
     return result, blockers
 
 
+@transaction.atomic
+def archive_bank_export_template(*, actor_membership: CompanyMembership, template_id, reason: str, request: HttpRequest | None = None) -> BankExportTemplate:
+    _require_internal_edit(actor_membership)
+    template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
+    if template.archived_at:
+        return template
+    decision = require_lifecycle_action(template, LifecycleAction.ARCHIVE, reason=reason)
+    before = _template_audit(template)
+    template.is_active = False
+    template.archived_at = timezone.now()
+    template.archived_reason = (reason or "").strip()
+    template.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(instance=template, decision=decision, actor_membership=actor_membership, before=before, after=_template_audit(template), reason=reason, audit_action="internal.bank_export_template.archived", request=request)
+    return template
+
+
+@transaction.atomic
+def restore_bank_export_template_archive(*, actor_membership: CompanyMembership, template_id, reason: str = "", request: HttpRequest | None = None) -> BankExportTemplate:
+    _require_internal_edit(actor_membership)
+    template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
+    if not template.archived_at:
+        return template
+    decision = require_lifecycle_action(template, LifecycleAction.RESTORE)
+    before = _template_audit(template); previous_reason = template.archived_reason
+    template.archived_at = None
+    template.archived_reason = ""
+    template.is_active = False
+    template.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
+    record_lifecycle_action(instance=template, decision=decision, actor_membership=actor_membership, before=before, after=_template_audit(template), reason=reason, audit_action="internal.bank_export_template.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    return template
+
+
+@transaction.atomic
+def delete_unused_bank_export_template(*, actor_membership: CompanyMembership, template_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
+    decision = require_lifecycle_action(template, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _template_audit(template); object_id = str(template.pk); object_label = str(template)
+    try:
+        template.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"template": "This export template is referenced by protected salary-payment history. Archive it instead."}) from exc
+    record_lifecycle_action(instance=template, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.bank_export_template.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
+    return object_id
+
+
+@transaction.atomic
+def delete_unused_employee_payment_profile(*, actor_membership: CompanyMembership, employee_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    profile = EmployeePaymentProfile.objects.select_for_update().select_related("employee").for_company(actor_membership.company).get(employee_id=employee_id)
+    decision = require_lifecycle_action(profile, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _profile_audit(profile); object_id = str(profile.pk); object_label = f"{profile.employee.employee_number} · salary payment profile"
+    try:
+        profile.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"payment_profile": "This payment profile is referenced by protected salary-payment history. Make it inactive instead."}) from exc
+    record_lifecycle_action(instance=profile, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.employee_payment_profile.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-profile-only"}, request=request)
+    return object_id
+
+
+
 def payment_readiness(*, company, run: PayrollRun, channel: str, template: BankExportTemplate | None = None) -> dict[str, object]:
     if channel not in BankExportChannel.values:
         raise ValidationError({"channel": "Unsupported salary payment channel."})
     if template is not None:
-        if template.company_id != company.pk or not template.is_active:
+        if template.company_id != company.pk or not template.is_active or template.archived_at:
             raise ValidationError({"template": "Choose an active company export template."})
         if template.channel != channel:
             raise ValidationError({"template": "Export template channel does not match the payment channel."})
@@ -473,7 +548,7 @@ def prepare_salary_payment_batch(
     run = PayrollRun.objects.select_for_update().for_company(company).get(pk=run.pk)
     if run.status != PayrollRunStatus.APPROVED:
         raise ValidationError({"payroll": "Only an Approved payroll run can create a new salary payment batch."})
-    template = BankExportTemplate.objects.select_for_update().for_company(company).get(pk=template_id, is_active=True)
+    template = BankExportTemplate.objects.select_for_update().for_company(company).get(pk=template_id, is_active=True, archived_at__isnull=True)
     if template.channel != channel:
         raise ValidationError({"template": "Export template channel does not match the requested payment channel."})
     readiness = payment_readiness(company=company, run=run, channel=channel, template=template)

@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Tags, Warning, register
+from django.db import DatabaseError, connection
 
 
 @register(Tags.security, deploy=True)
@@ -64,6 +65,35 @@ def inventory_deployment_checks(app_configs, **kwargs):
                 id="inventory.W001",
             )
         )
+
+    if settings.SINGLE_COMPANY_MODE:
+        try:
+            if "core_company" in connection.introspection.table_names():
+                from apps.core.models import Company
+
+                active_companies = Company.objects.filter(is_active=True)
+                active_count = active_companies.count()
+                if active_count != 1:
+                    issues.append(
+                        Error(
+                            "SESCCO MS single-company mode requires exactly one active company.",
+                            hint=f"Found {active_count} active companies. Deactivate legacy tenants before production cutover.",
+                            id="platform.E301",
+                        )
+                    )
+                elif settings.PRIMARY_COMPANY_SLUG and not active_companies.filter(slug=settings.PRIMARY_COMPANY_SLUG).exists():
+                    issues.append(
+                        Error(
+                            "PRIMARY_COMPANY_SLUG does not identify the active company.",
+                            hint=f"Configured slug: {settings.PRIMARY_COMPANY_SLUG}",
+                            id="platform.E302",
+                        )
+                    )
+        except DatabaseError:
+            # The pre-migration deployment check may run before core_company exists
+            # or while an empty database is being initialized. The same check is
+            # run again after migrations and after live cutover.
+            pass
 
     payroll_assets = (
         settings.BASE_DIR / "static" / "payroll" / "js" / "app.js",

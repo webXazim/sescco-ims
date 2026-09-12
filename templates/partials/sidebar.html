@@ -1,9 +1,10 @@
+{% load static %}
 <aside class="sidebar inventory-sidebar" id="inventorySidebar" aria-label="Inventory navigation">
   <div class="brand inventory-sidebar__brand">
-    <a class="brand-mark inventory-brand-mark" href="{% url 'core:dashboard' %}" aria-label="Inventory home">{{ ACTIVE_COMPANY.name|default:APP_NAME|slice:':1'|upper }}</a>
+    <a class="brand-mark inventory-brand-mark" href="{% url 'core:dashboard' %}" aria-label="SESCCO MS home"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="" aria-hidden="true"></a>
     <a class="brand-copy inventory-brand-copy" href="{% url 'core:dashboard' %}">
-      <div class="brand-name">{{ ACTIVE_COMPANY.name|default:APP_NAME }}</div>
-      <div class="brand-sub">Inventory Management</div>
+      <div class="brand-name">{{ APP_NAME }}</div>
+      <div class="brand-sub">{{ APP_SUBTITLE }}</div>
     </a>
     <button class="inventory-sidebar__collapse" type="button" data-inventory-sidebar-collapse aria-label="Collapse navigation" title="Collapse navigation">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -48,6 +49,9 @@
       <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v10a6 6 0 0 0 12 0V4"/></svg><span>Units</span>
       </a>
+      <a class="nav-link {% if page_key == 'locations' %}active{% endif %}" href="{% url 'inventory:locations' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6c0 4.5 6 12 6 12s6-7.5 6-12a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg><span>Locations</span>
+      </a>
       <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7a5 5 0 0 1 9-2M17 17a5 5 0 0 1-9 2M7 7v4h4M17 17v-4h-4"/></svg><span>Suppliers</span>
       </a>
@@ -82,7 +86,7 @@
       <div class="platform-account__menu" role="menu" aria-label="Account menu">
         <div class="platform-account__identity">
           <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
-          <span><strong>{{ request.user.display_name }}</strong><small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }} · {{ ACTIVE_COMPANY.name }}</small></span>
+          <span><strong>{{ request.user.display_name }}</strong><small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }}</small></span>
         </div>
         <div class="platform-account__separator" aria-hidden="true"></div>
         <form method="post" action="{% url 'accounts:logout' %}" class="platform-account__form">

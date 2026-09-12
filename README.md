@@ -1,3 +1,7 @@
+# SESCCO MS
+
+Private Management System for SESCCO. Production runs in single-company mode while retaining company-scoped database boundaries for authorization and historical integrity.
+
 # IMS + Payroll Operations Platform
 
 Private Django operations platform combining Inventory Management and Payroll Management for a contracting company. The

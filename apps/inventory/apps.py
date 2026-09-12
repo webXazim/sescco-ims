@@ -8,3 +8,4 @@ class InventoryConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa: F401
+        from . import lifecycle  # noqa: F401

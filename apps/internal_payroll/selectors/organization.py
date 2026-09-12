@@ -3,11 +3,14 @@ from __future__ import annotations
 from django.db.models import Prefetch, Q, QuerySet
 
 from apps.core.models import Company
+from apps.core.services.lifecycle import lifecycle_capabilities
 from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, InternalEmployee
 
 
-def branches_for_company(*, company: Company, query: str = "", active: bool | None = None) -> QuerySet[Branch]:
+def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False) -> QuerySet[Branch]:
     rows = Branch.objects.for_company(company)
+    if archived is not None:
+        rows = rows.filter(archived_at__isnull=not archived)
     if active is not None:
         rows = rows.filter(is_active=active)
     query = query.strip()
@@ -22,8 +25,10 @@ def branches_for_company(*, company: Company, query: str = "", active: bool | No
     return rows.order_by("code", "name")
 
 
-def departments_for_company(*, company: Company, query: str = "", active: bool | None = None) -> QuerySet[Department]:
+def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False) -> QuerySet[Department]:
     rows = Department.objects.for_company(company)
+    if archived is not None:
+        rows = rows.filter(archived_at__isnull=not archived)
     if active is not None:
         rows = rows.filter(is_active=active)
     query = query.strip()
@@ -39,6 +44,7 @@ def employees_for_company(
     status: str = "",
     branch_id=None,
     department_id=None,
+    archived: bool | None = None,
 ) -> QuerySet[InternalEmployee]:
     assignment_history = EmployeeOrganizationAssignment.objects.for_company(company).select_related(
         "branch", "department"
@@ -46,6 +52,8 @@ def employees_for_company(
     rows = InternalEmployee.objects.for_company(company).prefetch_related(
         Prefetch("organization_assignments", queryset=assignment_history, to_attr="organization_history")
     )
+    if archived is not None:
+        rows = rows.filter(archived_at__isnull=not archived)
     query = query.strip()
     if query:
         rows = rows.filter(
@@ -80,7 +88,12 @@ def serialize_branch(branch: Branch) -> dict[str, object]:
         "location": branch.location,
         "address": branch.address,
         "manager": branch.manager_name,
-        "status": "Active" if branch.is_active else "Inactive",
+        "type": branch.get_kind_display(),
+        "kind": branch.kind,
+        "status": "Archived" if branch.archived_at else ("Active" if branch.is_active else "Inactive"),
+        "archived": branch.archived_at is not None,
+        "archivedAt": branch.archived_at.isoformat() if branch.archived_at else None,
+        "archivedReason": branch.archived_reason,
     }
 
 
@@ -90,7 +103,10 @@ def serialize_department(department: Department) -> dict[str, object]:
         "code": department.code,
         "name": department.name,
         "notes": department.notes,
-        "status": "Active" if department.is_active else "Inactive",
+        "status": "Archived" if department.archived_at else ("Active" if department.is_active else "Inactive"),
+        "archived": department.archived_at is not None,
+        "archivedAt": department.archived_at.isoformat() if department.archived_at else None,
+        "archivedReason": department.archived_reason,
     }
 
 
@@ -132,6 +148,9 @@ def serialize_employee(employee: InternalEmployee) -> dict[str, object]:
         "joining": employee.joining_date.isoformat(),
         "employmentEnd": employee.employment_end_date.isoformat() if employee.employment_end_date else None,
         "status": employee.get_status_display(),
+        "archived": employee.archived_at is not None,
+        "archivedAt": employee.archived_at.isoformat() if employee.archived_at else None,
+        "archivedReason": employee.archived_reason,
         "nationalId": employee.national_id,
         "phone": employee.phone,
         "address": employee.address,
@@ -142,9 +161,19 @@ def serialize_employee(employee: InternalEmployee) -> dict[str, object]:
     }
 
 
+
+def serialize_employee_lifecycle(employee: InternalEmployee) -> dict[str, object]:
+    """Return policy-derived capabilities for one employee profile/action surface.
+
+    This is deliberately separate from ``serialize_employee`` so register/list endpoints do not
+    execute history-blocker queries per row.
+    """
+
+    return lifecycle_capabilities(employee)
+
 def internal_master_context(*, company: Company) -> dict[str, object]:
-    branches = list(branches_for_company(company=company))
-    departments = list(departments_for_company(company=company))
+    branches = list(branches_for_company(company=company, archived=None))
+    departments = list(departments_for_company(company=company, archived=None))
     employees = list(employees_for_company(company=company))
     histories = {
         str(employee.pk): [serialize_assignment(item) for item in _history_for_employee(employee)]

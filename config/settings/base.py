@@ -98,6 +98,13 @@ CSRF_COOKIE_SAMESITE = "Lax"
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
-APP_NAME = env("APP_NAME", "Project Inventory")
-APP_SUBTITLE = env("APP_SUBTITLE", "Contracting operations")
+APP_NAME = env("APP_NAME", "SESCCO MS")
+APP_SUBTITLE = env("APP_SUBTITLE", "Management System")
 APP_VERSION = env("APP_VERSION", "dev")
+
+# SESCCO MS is a private, single-company deployment. We retain the Company and
+# CompanyMembership data model as a security/scoping boundary, but the normal UI
+# does not expose tenant switching. Set SINGLE_COMPANY_MODE=false only for legacy
+# migration/rehearsal tests that intentionally exercise the old multi-company path.
+SINGLE_COMPANY_MODE = env_bool("SINGLE_COMPANY_MODE", True)
+PRIMARY_COMPANY_SLUG = env("PRIMARY_COMPANY_SLUG", "").strip()

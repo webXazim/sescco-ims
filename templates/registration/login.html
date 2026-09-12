@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Sign in · {{ APP_NAME }}</title>
+  <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
 </head>
@@ -12,24 +13,24 @@
 <main class="login-page">
   <section class="login-showcase">
     <div class="login-brand">
-      <div class="brand-mark">IM</div>
-      <div><div class="brand-name">{{ APP_NAME }}</div><div class="brand-sub">Private contracting inventory</div></div>
+      <div class="brand-mark brand-mark--image"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt=""></div>
+      <div><div class="brand-name">{{ APP_NAME }}</div><div class="brand-sub">{{ APP_SUBTITLE }}</div></div>
     </div>
     <div class="login-copy">
-      <h1>Know what each project has, instantly.</h1>
-      <p>Receive, use, search, filter and export project stock without losing the simple workflow your team already knows.</p>
+      <h1>One private system for company operations.</h1>
+      <p>Manage inventory, internal payroll and rental manpower with controlled access, complete history and production-ready workflows.</p>
     </div>
     <div class="login-preview">
-      <div class="preview-cell"><div class="preview-value">Fast</div><div class="preview-label">Project stock entry</div></div>
-      <div class="preview-cell"><div class="preview-value">Exact</div><div class="preview-label">Filtered exports</div></div>
-      <div class="preview-cell"><div class="preview-value">Safe</div><div class="preview-label">Private access</div></div>
+      <div class="preview-cell"><div class="preview-value">Inventory</div><div class="preview-label">Projects · stock · movements</div></div>
+      <div class="preview-cell"><div class="preview-value">Payroll</div><div class="preview-label">Internal · rental manpower</div></div>
+      <div class="preview-cell"><div class="preview-value">Private</div><div class="preview-label">SESCCO access only</div></div>
     </div>
   </section>
   <section class="login-panel">
     <div class="login-box">
-      <div class="brand-mark login-box-mark">IM</div>
+      <div class="brand-mark login-box-mark brand-mark--image"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="SESCCO"></div>
       <h2>Welcome back</h2>
-      <p>Sign in to manage project inventory.</p>
+      <p>Sign in to SESCCO MS.</p>
       {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors|striptags }}</div>{% endif %}
       <form method="post" novalidate>
         {% csrf_token %}

@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 
-from apps.inventory.models import StockItem, Supplier, Unit
+from apps.inventory.models import InventoryLocation, StockItem, Supplier, Unit
 from apps.projects.models import Project
 
 
@@ -13,7 +13,7 @@ class Command(BaseCommand):
         now = timezone.now()
         deleted = 0
         protected = 0
-        for model in (StockItem, Supplier, Unit, Project):
+        for model in (StockItem, Supplier, Unit, InventoryLocation, Project):
             for instance in model.objects.filter(deleted_at__isnull=False, purge_after__lte=now):
                 try:
                     instance.delete()

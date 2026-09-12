@@ -18,10 +18,13 @@ from apps.internal_payroll.models import (
     SalaryPaymentRowStatus,
 )
 from apps.internal_payroll.services import (
+    archive_bank_export_template,
     assign_employee_salary_structure,
     calculate_payroll_run,
     close_salary_payment_batch,
     create_bank_export_template,
+    delete_unused_bank_export_template,
+    delete_unused_employee_payment_profile,
     create_branch,
     create_department,
     create_employee,
@@ -30,6 +33,7 @@ from apps.internal_payroll.services import (
     import_salary_payment_results,
     payment_readiness,
     prepare_salary_payment_batch,
+    restore_bank_export_template_archive,
     retry_salary_payment_row,
     save_attendance_entries,
     start_salary_payment_batch,
@@ -152,6 +156,45 @@ class SalaryPaymentServiceTests(TestCase):
             include_header=True,
             columns=["employee_number", "employee_name", "iban", "net_salary"],
         )
+
+
+    def test_export_template_archive_restore_and_delete_unused(self):
+        template = self._bank_template()
+        archived = archive_bank_export_template(actor_membership=self.officer, template_id=template.pk, reason="Bank layout retired")
+        self.assertIsNotNone(archived.archived_at)
+        self.assertFalse(archived.is_active)
+        restored = restore_bank_export_template_archive(actor_membership=self.officer, template_id=template.pk)
+        self.assertIsNone(restored.archived_at)
+        self.assertFalse(restored.is_active)
+        deleted_id = delete_unused_bank_export_template(actor_membership=self.officer, template_id=template.pk, confirmation=template.code)
+        self.assertEqual(deleted_id, str(template.pk))
+
+    def test_used_export_template_cannot_be_deleted(self):
+        self._payment_profile()
+        template = self._bank_template()
+        prepare_salary_payment_batch(
+            actor_membership=self.finance, period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV, template_id=template.pk,
+        )
+        with self.assertRaises(ValidationError):
+            delete_unused_bank_export_template(actor_membership=self.officer, template_id=template.pk, confirmation=template.code)
+
+    def test_unused_payment_profile_can_be_deleted_but_used_profile_is_protected(self):
+        profile = self._payment_profile()
+        deleted_id = delete_unused_employee_payment_profile(
+            actor_membership=self.officer, employee_id=self.employee.pk, confirmation=self.employee.employee_number,
+        )
+        self.assertEqual(deleted_id, str(profile.pk))
+        self._payment_profile()
+        template = self._bank_template()
+        prepare_salary_payment_batch(
+            actor_membership=self.finance, period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV, template_id=template.pk,
+        )
+        with self.assertRaises(ValidationError):
+            delete_unused_employee_payment_profile(
+                actor_membership=self.officer, employee_id=self.employee.pk, confirmation=self.employee.employee_number,
+            )
 
     def test_payment_destination_is_encrypted_at_rest(self):
         profile = self._payment_profile()

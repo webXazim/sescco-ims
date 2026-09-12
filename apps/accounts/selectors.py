@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.db.models import QuerySet
 
 from .models import CompanyMembership, User
@@ -18,6 +19,13 @@ def active_memberships_for_user(user: User) -> QuerySet[CompanyMembership]:
 
 def resolve_membership(user: User, company_id: str | None = None) -> CompanyMembership | None:
     memberships = active_memberships_for_user(user)
+    if settings.SINGLE_COMPANY_MODE:
+        primary_slug = settings.PRIMARY_COMPANY_SLUG
+        if primary_slug:
+            memberships = memberships.filter(company__slug=primary_slug)
+        # In single-company mode the session can never steer the request into a
+        # different tenant. Production checks guarantee that this is unambiguous.
+        return memberships.first()
     if company_id:
         membership = memberships.filter(company_id=company_id).first()
         if membership is not None:

@@ -120,8 +120,8 @@ class CompanyMembershipAdmin(admin.ModelAdmin):
         return False
 
 
-admin.site.site_header = "Operations Platform Administration"
-admin.site.site_title = "Operations Platform Admin"
+admin.site.site_header = "SESCCO MS Administration"
+admin.site.site_title = "SESCCO MS Admin"
 admin.site.index_title = "System administration"
 admin.site.site_url = "/app/"
 admin.site.empty_value_display = "—"

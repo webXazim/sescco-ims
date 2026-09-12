@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.http import HttpRequest
@@ -49,6 +50,8 @@ def create_company_membership(
 
 
 def activate_company(request: HttpRequest, company_id) -> CompanyMembership:
+    if settings.SINGLE_COMPANY_MODE:
+        raise PermissionDenied("Company switching is disabled in SESCCO MS single-company mode.")
     membership = active_memberships_for_user(request.user).filter(company_id=company_id).first()
     if membership is None:
         raise PermissionDenied("You do not have access to that company.")

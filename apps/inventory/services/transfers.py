@@ -76,12 +76,9 @@ def _destination_item(
             raise InventoryOperationError("Matching destination stock uses a different unit.")
         if exact.deleted_at:
             raise InactiveStockError("Matching destination stock is currently in Trash.")
-        if exact.status == StockItem.Status.ARCHIVED:
-            exact.status = StockItem.Status.ACTIVE
-            exact.updated_by = user
-            exact.save(
-                _inventory_service=True,
-                update_fields=["status", "updated_by", "updated_at"],
+        if exact.status == StockItem.Status.ARCHIVED or exact.archived_at:
+            raise InactiveStockError(
+                "Matching destination stock is archived. Restore the stock record before transferring into it."
             )
         return exact
 

@@ -218,6 +218,8 @@ class BankExportTemplate(CompanyOwnedModel):
     headers = models.JSONField(default=list)
     result_columns = models.JSONField(default=dict)
     is_active = models.BooleanField(default=True, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "internal_bank_export_template"
@@ -238,11 +240,17 @@ class BankExportTemplate(CompanyOwnedModel):
                 name="int_bank_template_encoding_valid",
             ),
         ]
-        indexes = [models.Index(fields=("company", "channel", "is_active"), name="int_bank_template_active_idx")]
+        indexes = [
+            models.Index(fields=("company", "channel", "is_active"), name="int_bank_template_active_idx"),
+            models.Index(fields=("company", "channel", "archived_at"), name="int_bank_template_archive_idx"),
+        ]
 
     def clean(self) -> None:
         self.code = self.code.strip().upper()
         self.name = self.name.strip()
+        self.archived_reason = self.archived_reason.strip()
+        if self.archived_at and self.is_active:
+            raise ValidationError({"is_active": "An archived bank/WPS export template cannot be active."})
         if not self.code:
             raise ValidationError({"code": "Template code is required."})
         if not self.name:

@@ -9,12 +9,18 @@ from apps.accounts.roles import AccessRole
 from apps.core.models import AuditEvent, Company
 from apps.internal_payroll.models import SalaryStructure, SalaryStructureLine
 from apps.internal_payroll.services import (
+    archive_overtime_policy,
+    archive_salary_component,
     assign_employee_salary_structure,
     create_branch,
     create_department,
     create_employee,
     create_overtime_policy,
     create_salary_component,
+    delete_unused_overtime_policy,
+    delete_unused_salary_component,
+    restore_overtime_policy_archive,
+    restore_salary_component_archive,
     update_overtime_policy,
     update_salary_component,
 )
@@ -225,6 +231,43 @@ class SalarySetupServiceTests(TestCase):
                 divisor="240",
                 multiplier="1.5",
             )
+
+
+    def test_secondary_configuration_archive_restore_and_delete_unused(self):
+        component = create_salary_component(
+            actor_membership=self.owner, code="TEMP", name="Temporary Allowance",
+            category="Earning", recurrence="Variable", calculation="Manual Amount", wps_mapping="Other Earnings",
+        )
+        archived = archive_salary_component(actor_membership=self.owner, component_id=component.pk, reason="No longer used")
+        self.assertIsNotNone(archived.archived_at)
+        self.assertFalse(archived.is_active)
+        with self.assertRaises(ValidationError):
+            update_salary_component(
+                actor_membership=self.owner, component_id=component.pk, code="TEMP", name="Temporary Allowance",
+                category="Earning", recurrence="Variable", calculation="Manual Amount", wps_mapping="Other Earnings",
+            )
+        restored = restore_salary_component_archive(actor_membership=self.owner, component_id=component.pk)
+        self.assertIsNone(restored.archived_at)
+        self.assertFalse(restored.is_active)
+        deleted_id = delete_unused_salary_component(actor_membership=self.owner, component_id=component.pk, confirmation="TEMP")
+        self.assertEqual(deleted_id, str(component.pk))
+
+    def test_used_salary_configuration_must_be_archived_not_deleted(self):
+        self._assign()
+        with self.assertRaises(ValidationError):
+            delete_unused_salary_component(actor_membership=self.owner, component_id=self.housing.pk, confirmation=self.housing.code)
+        with self.assertRaises(ValidationError):
+            delete_unused_overtime_policy(actor_membership=self.owner, policy_id=self.policy.pk, confirmation=self.policy.code)
+
+    def test_active_overtime_dependency_blocks_base_component_archive(self):
+        with self.assertRaises(ValidationError):
+            archive_salary_component(actor_membership=self.owner, component_id=self.basic.pk, reason="Retire old base")
+        archived_policy = archive_overtime_policy(actor_membership=self.owner, policy_id=self.policy.pk, reason="Replace OT formula")
+        self.assertIsNotNone(archived_policy.archived_at)
+        restored = restore_overtime_policy_archive(actor_membership=self.owner, policy_id=self.policy.pk)
+        self.assertFalse(restored.is_active)
+        archived_component = archive_salary_component(actor_membership=self.owner, component_id=self.basic.pk, reason="Retire old base")
+        self.assertIsNotNone(archived_component.archived_at)
 
     def test_reviewer_cannot_modify_salary_setup(self):
         reviewer_user = User.objects.create_user(username="salary-reviewer")

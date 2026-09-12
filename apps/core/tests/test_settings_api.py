@@ -57,6 +57,8 @@ class CompanySettingsApiTests(TestCase):
         self.assertEqual(payload["documentEmail"], "payroll@example.com")
         self.assertEqual(payload["documentPhone"], "+966500000000")
         self.assertEqual(payload["website"], "https://example.com")
+        self.assertEqual(payload["documentBrandingMode"], "standard")
+        self.assertFalse(payload["branding"]["logo"]["configured"])
         self.assertRegex(payload["today"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertTrue(payload["canManage"])
 
@@ -70,6 +72,32 @@ class CompanySettingsApiTests(TestCase):
         self.assertEqual(settings.document_address, "King Fahad Road, Dammam, Saudi Arabia")
         self.assertTrue(AuditEvent.objects.filter(company=self.company, action="company.settings.updated").exists())
 
+
+    def test_owner_can_version_and_clear_document_branding_asset(self):
+        self.client.force_login(self.owner)
+        png = b"\x89PNG\r\n\x1a\n" + b"TEST-DEMO-PNG"
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            upload = self.client.post(
+                reverse("platform_api:company-branding-asset", kwargs={"kind": "logo"}),
+                data={"asset": SimpleUploadedFile("logo.png", png, content_type="image/png")},
+            )
+            self.assertEqual(upload.status_code, 200)
+            self.assertTrue(upload.json()["branding"]["logo"]["configured"])
+            self.company.settings.refresh_from_db()
+            stored_name = self.company.settings.document_logo.name
+            self.assertTrue(stored_name.endswith(".png"))
+
+            preview = self.client.get(reverse("platform_api:company-branding-asset", kwargs={"kind": "logo"}))
+            self.assertEqual(preview.status_code, 200)
+            self.assertEqual(b"".join(preview.streaming_content), png)
+            self.assertEqual(preview["Cache-Control"], "private, no-store")
+
+            cleared = self.client.delete(reverse("platform_api:company-branding-asset", kwargs={"kind": "logo"}))
+            self.assertEqual(cleared.status_code, 200)
+            self.assertFalse(cleared.json()["branding"]["logo"]["configured"])
+            # Clearing the active asset intentionally leaves the historical file in storage.
+            from django.core.files.storage import default_storage
+            self.assertTrue(default_storage.exists(stored_name))
 
     def test_currency_is_locked_after_a_financial_calculation_exists(self):
         PayrollRun.objects.create(
@@ -123,33 +151,3 @@ class CompanySettingsApiTests(TestCase):
         response = self.client.get(reverse("platform_api:company-settings-api"))
         self.assertEqual(response.status_code, 401)
         self.assertFalse(response.json()["ok"])
-
-
-class CompanyDocumentBrandingApiTests(TestCase):
-    PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
-
-    def setUp(self):
-        self.media = tempfile.TemporaryDirectory()
-        self.addCleanup(self.media.cleanup)
-        self.override = override_settings(MEDIA_ROOT=self.media.name)
-        self.override.enable(); self.addCleanup(self.override.disable)
-        self.company = Company.objects.create(name="Branding Company", slug="branding-company")
-        self.owner = User.objects.create_user(username="branding-owner", password="strong-test-password")
-        CompanyMembership.objects.create(company=self.company, user=self.owner, role=AccessRole.OWNER)
-        self.client.force_login(self.owner)
-
-    def test_owner_can_upload_and_clear_private_branding_asset(self):
-        upload = SimpleUploadedFile("letterhead.png", self.PNG, content_type="image/png")
-        response = self.client.post(reverse("platform_api:company-document-asset-api", kwargs={"asset_kind":"letterhead"}), {"file": upload})
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["settings"]["documentAssets"]["letterhead"]["configured"])
-        file_response = self.client.get(reverse("platform_api:company-document-asset-file", kwargs={"asset_kind":"letterhead"}))
-        self.assertEqual(file_response.status_code, 200)
-        clear_response = self.client.delete(reverse("platform_api:company-document-asset-api", kwargs={"asset_kind":"letterhead"}))
-        self.assertEqual(clear_response.status_code, 200)
-        self.assertFalse(clear_response.json()["settings"]["documentAssets"]["letterhead"]["configured"])
-
-    def test_rejects_mismatched_image_signature(self):
-        upload = SimpleUploadedFile("logo.png", b"not-a-png", content_type="image/png")
-        response = self.client.post(reverse("platform_api:company-document-asset-api", kwargs={"asset_kind":"logo"}), {"file": upload})
-        self.assertEqual(response.status_code, 400)

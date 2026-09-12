@@ -29,6 +29,8 @@ class Unit(models.Model):
     symbol = models.CharField(max_length=20)
     normalized_symbol = models.CharField(max_length=20, editable=False)
     is_active = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_reason = models.TextField(blank=True)
     deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
     purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
     deletion_reason = models.TextField(blank=True)
@@ -91,6 +93,8 @@ class Supplier(models.Model):
     location = models.CharField(max_length=180, blank=True)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_reason = models.TextField(blank=True)
     deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
     purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
     deletion_reason = models.TextField(blank=True)
@@ -162,6 +166,18 @@ class InventoryLocation(models.Model):
         related_name="inventory_location",
     )
     is_active = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_reason = models.TextField(blank=True)
+    deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
+    deletion_reason = models.TextField(blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="inventory_locations_deleted",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -208,7 +224,7 @@ class InventoryLocation(models.Model):
 
     @property
     def accepts_stock_activity(self) -> bool:
-        if not self.is_active:
+        if not self.is_active or self.archived_at or self.deleted_at:
             return False
         if self.location_type == self.Type.PROJECT:
             return bool(self.project and self.project.accepts_stock_activity)
@@ -293,6 +309,8 @@ class StockItem(models.Model):
     latest_addition_date = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_reason = models.TextField(blank=True)
     deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
     purge_after = models.DateTimeField(blank=True, null=True, db_index=True)
     deletion_reason = models.TextField(blank=True)

@@ -5,7 +5,6 @@ from apps.core.management.commands.seed_payroll_test_data import (
     RENTAL_WORKERS,
     WPS_HEADERS,
     _demo_iban,
-    DEMO_BRANDING_PNG,
 )
 from apps.internal_payroll.models import iban_is_valid
 
@@ -28,8 +27,3 @@ class PayrollSeedContractTests(SimpleTestCase):
         values = {_demo_iban(index) for index in range(1, 20)}
         self.assertEqual(len(values), 19)
         self.assertTrue(all(value.startswith("SA") and iban_is_valid(value) for value in values))
-
-
-    def test_seed_includes_safe_synthetic_document_branding_fixture(self):
-        self.assertTrue(DEMO_BRANDING_PNG.startswith(b"\x89PNG"))
-        self.assertLess(len(DEMO_BRANDING_PNG), 1024)

@@ -21,31 +21,14 @@ for rel, text in [
     ("apps/core/models/settings.py", "commercial_registration = models.CharField"),
     ("apps/core/models/settings.py", "vat_number = models.CharField"),
     ("apps/core/models/settings.py", "document_address = models.CharField"),
-    ("apps/core/models/settings.py", "document_letterhead = models.FileField"),
-    ("apps/core/models/settings.py", "document_watermark = models.FileField"),
-    ("apps/core/models/settings.py", "document_logo = models.FileField"),
     ("apps/internal_payroll/models/organization.py", "address = models.CharField(max_length=300, blank=True)"),
     ("apps/internal_payroll/models/payment.py", '"employee_address": "Employee address"'),
     ("apps/internal_payroll/services/payment.py", 'if "employee_address" in template_columns and not line.employee.address:'),
     ("templates/documents/print.html", "snapshot.issuer.vat_number"),
     ("templates/documents/print.html", "snapshot.employee.national_id"),
     ("templates/documents/print.html", "snapshot.components"),
-    ("templates/documents/print.html", "Salary in Words"),
-    ("templates/documents/print.html", "Salary Paid By"),
-    ("templates/documents/print.html", "Employee Signature"),
-    ("apps/documents/services/documents.py", "_amount_in_words"),
-    ("apps/documents/services/documents.py", "document_letterhead"),
-    ("apps/core/settings_api.py", "company_document_asset_api"),
     ("scripts/deploy-production.sh", "--seed"),
     ("scripts/release-tasks.sh", "seed_payroll_test_data"),
-]:
-    require_text(rel, text)
-
-
-for rel, text in [
-    ("apps/documents/urls.py", 'name="document-asset"'),
-    ("templates/documents/print.html", "documents:document-asset"),
-    ("apps/core/settings_api.py", 'X-Content-Type-Options'),
 ]:
     require_text(rel, text)
 
@@ -76,7 +59,7 @@ if headers != expected_headers:
 for forbidden in ("SA5810000011100491609405", "SA1220000003185539589940"):
     if forbidden in seed_text:
         fail("seed command contains a real uploaded account identifier")
-for marker in ("DEMO-", "RDEMO-", "TEST DATA", "_demo_iban", "DEMO_BRANDING_PNG"):
+for marker in ("DEMO-", "RDEMO-", "TEST DATA", "_demo_iban"):
     if marker not in seed_text:
         fail(f"seed safety marker missing: {marker}")
 

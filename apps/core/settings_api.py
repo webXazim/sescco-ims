@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import mimetypes
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse, Http404, HttpRequest, JsonResponse
+from django.http import FileResponse, HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.urls import reverse
 from django.utils import timezone
@@ -15,9 +14,7 @@ from apps.accounts.api_permissions import api_company_required
 from apps.accounts.permissions import membership_has_capability
 from apps.accounts.roles import Capability
 from apps.core.selectors.settings import company_settings
-from apps.core.services.settings import update_company_settings
-from apps.core.models import AuditArea
-from apps.core.services.audit import record_audit_event
+from apps.core.services.settings import update_company_brand_asset, update_company_settings
 
 
 def _errors(exc: ValidationError) -> dict[str, list[str]]:
@@ -34,35 +31,47 @@ def _text(body: dict, key: str, default: str) -> str:
     return value.strip()
 
 
-ASSET_FIELDS = {
+_BRAND_ASSET_FIELDS = {
     "logo": "document_logo",
     "letterhead": "document_letterhead",
     "watermark": "document_watermark",
 }
+_BRAND_MAX_BYTES = {"logo": 2 * 1024 * 1024, "letterhead": 8 * 1024 * 1024, "watermark": 4 * 1024 * 1024}
 
 
-def _asset_payload(request: HttpRequest, settings, kind: str) -> dict[str, object]:
-    field_name = ASSET_FIELDS[kind]
-    file_field = getattr(settings, field_name)
-    configured = bool(file_field and file_field.name)
-    return {
-        "configured": configured,
-        "filename": Path(file_field.name).name if configured else "",
-        "url": reverse("platform_api:company-document-asset-file", kwargs={"asset_kind": kind}) if configured else "",
-    }
+def _branding_payload(request: HttpRequest, settings) -> dict[str, object]:
+    payload: dict[str, object] = {"mode": settings.document_branding_mode}
+    for kind, field_name in _BRAND_ASSET_FIELDS.items():
+        field = getattr(settings, field_name)
+        payload[kind] = {
+            "configured": bool(field and field.name),
+            "url": reverse("platform_api:company-branding-asset", kwargs={"kind": kind}) if field and field.name else "",
+        }
+    return payload
 
 
-def _validate_image_signature(uploaded) -> None:
-    name = (uploaded.name or "").lower()
+def _validated_image(uploaded, kind: str):
+    if uploaded is None:
+        raise ValidationError({"asset": "Choose an image to upload."})
+    if uploaded.size <= 0 or uploaded.size > _BRAND_MAX_BYTES[kind]:
+        raise ValidationError({"asset": f"{kind.title()} image exceeds the allowed size."})
     head = uploaded.read(16)
     uploaded.seek(0)
-    valid = (
-        (name.endswith(".png") and head.startswith(b"\x89PNG\r\n\x1a\n"))
-        or (name.endswith((".jpg", ".jpeg")) and head.startswith(b"\xff\xd8\xff"))
-        or (name.endswith(".webp") and head[:4] == b"RIFF" and head[8:12] == b"WEBP")
-    )
-    if not valid:
-        raise ValidationError({"file": "Upload a valid PNG, JPEG, or WebP image."})
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected = "image/png"
+        ext = ".png"
+    elif head.startswith(b"\xff\xd8\xff"):
+        detected = "image/jpeg"
+        ext = ".jpg"
+    elif len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        detected = "image/webp"
+        ext = ".webp"
+    else:
+        raise ValidationError({"asset": "Upload a PNG, JPEG or WebP image."})
+    if not uploaded.name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        uploaded.name = f"{kind}{ext}"
+    uploaded.content_type = detected
+    return uploaded, detected
 
 
 def _serialize(request: HttpRequest, settings=None) -> dict[str, object]:
@@ -80,7 +89,8 @@ def _serialize(request: HttpRequest, settings=None) -> dict[str, object]:
         "documentEmail": settings.document_email,
         "documentPhone": settings.document_phone,
         "website": settings.website,
-        "documentAssets": {kind: _asset_payload(request, settings, kind) for kind in ASSET_FIELDS},
+        "documentBrandingMode": settings.document_branding_mode,
+        "branding": _branding_payload(request, settings),
         "today": company_today,
         "canManage": membership_has_capability(request.company_membership, Capability.MANAGE_SETTINGS),
     }
@@ -110,6 +120,7 @@ def company_settings_api(request: HttpRequest) -> JsonResponse:
             document_email=_text(body, "documentEmail", current.document_email),
             document_phone=_text(body, "documentPhone", current.document_phone),
             website=_text(body, "website", current.website),
+            document_branding_mode=_text(body, "documentBrandingMode", current.document_branding_mode),
             request=request,
         )
         return JsonResponse({"ok": True, "settings": _serialize(request, updated_settings)})
@@ -121,57 +132,34 @@ def company_settings_api(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"ok": False, "errors": _errors(exc)}, status=400)
 
 
-@require_http_methods(["POST", "DELETE"])
+@require_http_methods(["GET", "POST", "DELETE"])
 @api_company_required
-def company_document_asset_api(request: HttpRequest, asset_kind: str) -> JsonResponse:
+def company_branding_asset_api(request: HttpRequest, kind: str):
+    kind = str(kind).strip().lower()
+    field_name = _BRAND_ASSET_FIELDS.get(kind)
+    if field_name is None:
+        return JsonResponse({"ok": False, "errors": {"kind": ["Unsupported branding asset."]}}, status=404)
     try:
-        if asset_kind not in ASSET_FIELDS:
-            raise ValidationError({"asset": "Unsupported document branding asset."})
-        if not membership_has_capability(request.company_membership, Capability.MANAGE_SETTINGS):
-            raise PermissionDenied("Your role cannot manage company settings.")
-        settings = company_settings(request.company)
-        field_name = ASSET_FIELDS[asset_kind]
-        field = getattr(settings, field_name)
-        before_name = field.name if field else ""
-        if request.method == "POST":
-            uploaded = request.FILES.get("file")
-            if uploaded is None:
-                raise ValidationError({"file": "Choose an image to upload."})
-            _validate_image_signature(uploaded)
-            setattr(settings, field_name, uploaded)
-            settings.save(update_fields=(field_name, "updated_at"))
-            action = "company.document_asset.updated"
+        current = company_settings(request.company)
+        if request.method == "GET":
+            field = getattr(current, field_name)
+            if not field or not field.name:
+                return JsonResponse({"ok": False, "errors": {"asset": ["Branding asset is not configured."]}}, status=404)
+            response = FileResponse(field.open("rb"), content_type=mimetypes.guess_type(field.name)[0] or "application/octet-stream")
+            response["Cache-Control"] = "private, no-store"
+            response["X-Content-Type-Options"] = "nosniff"
+            return response
+        if request.method == "DELETE":
+            updated = update_company_brand_asset(
+                actor_membership=request.company_membership, kind=kind, clear=True, request=request
+            )
         else:
-            setattr(settings, field_name, "")
-            settings.save(update_fields=(field_name, "updated_at"))
-            action = "company.document_asset.cleared"
-        record_audit_event(
-            company=request.company, area=AuditArea.CORE, action=action,
-            object_type="CompanySettings", object_id=settings.pk, object_label=f"{asset_kind} branding",
-            actor_membership=request.company_membership,
-            before={"asset_kind": asset_kind, "storage_name": before_name},
-            after={"asset_kind": asset_kind, "storage_name": getattr(settings, field_name).name if getattr(settings, field_name) else ""},
-            request=request,
-        )
-        return JsonResponse({"ok": True, "settings": _serialize(request, settings)})
-    except (PermissionDenied, ValidationError) as exc:
-        if isinstance(exc, PermissionDenied):
-            return JsonResponse({"ok": False, "errors": {"__all__": [str(exc)]}}, status=403)
+            uploaded, _detected = _validated_image(request.FILES.get("asset"), kind)
+            updated = update_company_brand_asset(
+                actor_membership=request.company_membership, kind=kind, uploaded_file=uploaded, request=request
+            )
+        return JsonResponse({"ok": True, "branding": _branding_payload(request, updated)})
+    except PermissionDenied as exc:
+        return JsonResponse({"ok": False, "errors": {"__all__": [str(exc)]}}, status=403)
+    except ValidationError as exc:
         return JsonResponse({"ok": False, "errors": _errors(exc)}, status=400)
-
-
-@require_http_methods(["GET"])
-@api_company_required
-def company_document_asset_file(request: HttpRequest, asset_kind: str):
-    if asset_kind not in ASSET_FIELDS:
-        raise Http404
-    settings = company_settings(request.company)
-    file_field = getattr(settings, ASSET_FIELDS[asset_kind])
-    if not file_field or not file_field.name:
-        raise Http404
-    content_type = mimetypes.guess_type(file_field.name)[0] or "application/octet-stream"
-    response = FileResponse(file_field.open("rb"), content_type=content_type)
-    response["Content-Disposition"] = f'inline; filename="{Path(file_field.name).name}"'
-    response["Cache-Control"] = "private, max-age=300"
-    response["X-Content-Type-Options"] = "nosniff"
-    return response

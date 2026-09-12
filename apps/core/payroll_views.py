@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from calendar import month_name
-from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.middleware.csrf import get_token
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.context import access_context_for_request
@@ -228,10 +228,12 @@ def payroll_app(request):
         "documentEmail": company_settings_row.document_email,
         "documentPhone": company_settings_row.document_phone,
         "website": company_settings_row.website,
-        "documentAssets": {
-            "logo": {"configured": bool(company_settings_row.document_logo), "url": "/api/settings/document-assets/logo/file/" if company_settings_row.document_logo else "", "filename": Path(company_settings_row.document_logo.name).name if company_settings_row.document_logo else ""},
-            "letterhead": {"configured": bool(company_settings_row.document_letterhead), "url": "/api/settings/document-assets/letterhead/file/" if company_settings_row.document_letterhead else "", "filename": Path(company_settings_row.document_letterhead.name).name if company_settings_row.document_letterhead else ""},
-            "watermark": {"configured": bool(company_settings_row.document_watermark), "url": "/api/settings/document-assets/watermark/file/" if company_settings_row.document_watermark else "", "filename": Path(company_settings_row.document_watermark.name).name if company_settings_row.document_watermark else ""},
+        "documentBrandingMode": company_settings_row.document_branding_mode,
+        "branding": {
+            "mode": company_settings_row.document_branding_mode,
+            "logo": {"configured": bool(company_settings_row.document_logo), "url": reverse("platform_api:company-branding-asset", kwargs={"kind": "logo"}) if company_settings_row.document_logo else ""},
+            "letterhead": {"configured": bool(company_settings_row.document_letterhead), "url": reverse("platform_api:company-branding-asset", kwargs={"kind": "letterhead"}) if company_settings_row.document_letterhead else ""},
+            "watermark": {"configured": bool(company_settings_row.document_watermark), "url": reverse("platform_api:company-branding-asset", kwargs={"kind": "watermark"}) if company_settings_row.document_watermark else ""},
         },
         "today": timezone.localdate().isoformat(),
         "canManage": membership_has_capability(membership, Capability.MANAGE_SETTINGS),

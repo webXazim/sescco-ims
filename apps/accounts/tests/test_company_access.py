@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import CompanyMembership
@@ -34,12 +34,14 @@ class CompanyContextTests(TestCase):
         self.assertEqual(response.wsgi_request.company_membership, self.membership)
         self.assertEqual(self.client.session[ACTIVE_COMPANY_SESSION_KEY], str(self.company.id))
 
+    @override_settings(SINGLE_COMPANY_MODE=False)
     def test_company_switch_rejects_company_without_membership(self):
         other_company = Company.objects.create(name="Other Company", slug="other-company")
         self.client.force_login(self.user)
         response = self.client.post(reverse("accounts:activate-company", args=[other_company.id]))
         self.assertEqual(response.status_code, 403)
 
+    @override_settings(SINGLE_COMPANY_MODE=False)
     def test_company_switch_sets_session_for_authorized_company(self):
         second_company = Company.objects.create(name="Second Company", slug="second-company")
         CompanyMembership.objects.create(
@@ -51,6 +53,24 @@ class CompanyContextTests(TestCase):
         response = self.client.post(reverse("accounts:activate-company", args=[second_company.id]))
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.client.session[ACTIVE_COMPANY_SESSION_KEY], str(second_company.id))
+
+
+    def test_single_company_mode_ignores_session_company_switching(self):
+        other_company = Company.objects.create(name="Other Company", slug="other-company")
+        CompanyMembership.objects.create(company=other_company, user=self.user, role=AccessRole.INVENTORY_MANAGER)
+        self.client.force_login(self.user)
+        session = self.client.session
+        session[ACTIVE_COMPANY_SESSION_KEY] = str(other_company.id)
+        session.save()
+        response = self.client.get(reverse("core:dashboard"))
+        self.assertEqual(response.wsgi_request.company, self.company)
+
+    def test_single_company_mode_rejects_activate_company_endpoint(self):
+        second_company = Company.objects.create(name="Second Company", slug="second-company")
+        CompanyMembership.objects.create(company=second_company, user=self.user, role=AccessRole.INVENTORY_MANAGER)
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("accounts:activate-company", args=[second_company.id]))
+        self.assertEqual(response.status_code, 403)
 
     def test_inactive_membership_is_not_selected(self):
         self.membership.is_active = False

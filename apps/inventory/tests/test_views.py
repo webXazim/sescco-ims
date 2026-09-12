@@ -476,7 +476,7 @@ class InventoryWorkspaceTests(TestCase):
         item = self.add_item_stock("5").movement.stock_item
         response = self.client.post(
             reverse("inventory:status", kwargs={"reference": item.reference}),
-            {"action": "archive"},
+            {"action": "archive", "reason": "No longer used"},
         )
         self.assertRedirects(
             response, reverse("inventory:detail", kwargs={"reference": item.reference})
@@ -487,10 +487,11 @@ class InventoryWorkspaceTests(TestCase):
     def test_zero_balance_record_can_be_archived_and_reactivated(self):
         item = self.create_item()
         status_url = reverse("inventory:status", kwargs={"reference": item.reference})
-        self.client.post(status_url, {"action": "archive"})
+        self.client.force_login(self.admin)
+        self.client.post(status_url, {"action": "archive", "reason": "No longer used"})
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ARCHIVED)
-        self.client.post(status_url, {"action": "reactivate"})
+        self.client.post(status_url, {"action": "restore"})
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ACTIVE)
 
@@ -500,7 +501,7 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             delete_url,
             {
-                "confirmation": f"DELETE {unused.material_name}",
+                "confirmation": str(unused.reference)[:8].upper(),
                 "reason": "Duplicate record",
                 "acknowledge": "yes",
             },
@@ -512,7 +513,7 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             delete_url,
             {
-                "confirmation": f"DELETE {unused.material_name}",
+                "confirmation": str(unused.reference)[:8].upper(),
                 "reason": "Duplicate record",
                 "acknowledge": "yes",
             },
@@ -527,14 +528,15 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             reverse("inventory:delete", kwargs={"reference": protected.reference}),
             {
-                "confirmation": f"DELETE {protected.material_name}",
+                "confirmation": str(protected.reference)[:8].upper(),
                 "reason": "Entered twice",
                 "acknowledge": "yes",
             },
         )
-        self.assertRedirects(response, reverse("inventory:list"))
+        self.assertEqual(response.status_code, 409)
+        self.assertContains(response, "Archive it instead of deleting it", status_code=409)
         protected.refresh_from_db()
-        self.assertIsNotNone(protected.deleted_at)
+        self.assertIsNone(protected.deleted_at)
         self.assertTrue(StockItem.objects.filter(pk=protected.pk).exists())
 
     def test_stock_tables_use_role_aware_action_dropdowns(self):
@@ -563,37 +565,41 @@ class InventoryWorkspaceTests(TestCase):
             reverse("inventory:delete", kwargs={"reference": item.reference}),
         )
         self.assertContains(admin_response, "Archive record")
-        self.assertContains(admin_response, "Move to Trash")
+        self.assertContains(admin_response, "Delete unused")
 
         self.client.post(
             reverse("inventory:status", kwargs={"reference": item.reference}),
-            {"action": "archive"},
+            {"action": "archive", "reason": "No longer used"},
         )
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ARCHIVED)
 
     def test_archive_workspace_lists_all_record_types_and_can_restore(self):
         stock_item = self.create_item()
+        self.client.force_login(self.admin)
         self.client.post(
             reverse("inventory:status", kwargs={"reference": stock_item.reference}),
-            {"action": "archive"},
+            {"action": "archive", "reason": "No longer used"},
         )
         archived_project = Project.objects.create(
             company=self.company,
             code="ARCHIVE-01",
             name="Archived project",
             status=Project.Status.ARCHIVED,
+            archived_at=timezone.now(),
+            archived_reason="Historical project",
         )
-        archived_unit = Unit.objects.create(company=self.company, name="Archived crate", symbol="acr", is_active=False)
+        archived_unit = Unit.objects.create(company=self.company, name="Archived crate", symbol="acr", is_active=False, archived_at=timezone.now(), archived_reason="Historical unit")
         archived_supplier = Supplier.objects.create(
             company=self.company,
-            name="Archived supplier", phone="0500000999", is_active=False
+            name="Archived supplier", phone="0500000999", is_active=False,
+            archived_at=timezone.now(), archived_reason="Historical supplier"
         )
 
         stock_response = self.client.get(reverse("inventory:archive"))
         self.assertContains(stock_response, "Archive")
         self.assertContains(stock_response, "Portland Cement")
-        self.assertContains(stock_response, "Reactivate record")
+        self.assertContains(stock_response, "Restore")
         self.assertContains(stock_response, reverse("inventory:archive"))
 
         project_response = self.client.get(reverse("inventory:archive"), {"kind": "projects"})
@@ -605,7 +611,7 @@ class InventoryWorkspaceTests(TestCase):
 
         response = self.client.post(
             reverse("inventory:status", kwargs={"reference": stock_item.reference}),
-            {"action": "reactivate"},
+            {"action": "restore"},
         )
         self.assertRedirects(
             response,
@@ -618,18 +624,20 @@ class InventoryWorkspaceTests(TestCase):
         unit = Unit.objects.create(company=self.company, name="Pallet", symbol="plt")
         supplier = Supplier.objects.create(company=self.company, name="Unused Vendor", phone="0500000111")
 
-        self.client.post(
-            reverse("inventory:unit_status", kwargs={"pk": unit.pk}),
-            {"action": "archive"},
+        self.assertEqual(
+            self.client.post(
+                reverse("inventory:unit_status", kwargs={"pk": unit.pk}),
+                {"action": "archive", "reason": "No longer used"},
+            ).status_code,
+            403,
         )
-        self.client.post(
-            reverse("inventory:supplier_status", kwargs={"pk": supplier.pk}),
-            {"action": "archive"},
+        self.assertEqual(
+            self.client.post(
+                reverse("inventory:supplier_status", kwargs={"pk": supplier.pk}),
+                {"action": "archive", "reason": "No longer used"},
+            ).status_code,
+            403,
         )
-        unit.refresh_from_db()
-        supplier.refresh_from_db()
-        self.assertFalse(unit.is_active)
-        self.assertFalse(supplier.is_active)
 
         self.assertEqual(
             self.client.post(reverse("inventory:unit_delete", kwargs={"pk": unit.pk})).status_code,
@@ -643,11 +651,26 @@ class InventoryWorkspaceTests(TestCase):
         )
 
         self.client.force_login(self.admin)
+        self.client.post(
+            reverse("inventory:unit_status", kwargs={"pk": unit.pk}),
+            {"action": "archive", "reason": "No longer used"},
+        )
+        self.client.post(
+            reverse("inventory:supplier_status", kwargs={"pk": supplier.pk}),
+            {"action": "archive", "reason": "No longer used"},
+        )
+        unit.refresh_from_db()
+        supplier.refresh_from_db()
+        self.assertFalse(unit.is_active)
+        self.assertFalse(supplier.is_active)
+        self.assertIsNotNone(unit.archived_at)
+        self.assertIsNotNone(supplier.archived_at)
+
         self.assertRedirects(
             self.client.post(
                 reverse("inventory:unit_delete", kwargs={"pk": unit.pk}),
                 {
-                    "confirmation": f"DELETE {unit.name}",
+                    "confirmation": unit.symbol,
                     "reason": "Duplicate",
                     "acknowledge": "yes",
                 },
@@ -658,7 +681,7 @@ class InventoryWorkspaceTests(TestCase):
             self.client.post(
                 reverse("inventory:supplier_delete", kwargs={"pk": supplier.pk}),
                 {
-                    "confirmation": f"DELETE {supplier.name}",
+                    "confirmation": supplier.name,
                     "reason": "Duplicate",
                     "acknowledge": "yes",
                 },
@@ -677,7 +700,7 @@ class InventoryWorkspaceTests(TestCase):
         unit_response = self.client.post(
             reverse("inventory:unit_delete", kwargs={"pk": item.unit_id}),
             {
-                "confirmation": f"DELETE {item.unit.name}",
+                "confirmation": item.unit.symbol,
                 "reason": "Retire unit",
                 "acknowledge": "yes",
             },
@@ -685,38 +708,32 @@ class InventoryWorkspaceTests(TestCase):
         supplier_response = self.client.post(
             reverse("inventory:supplier_delete", kwargs={"pk": self.supplier.pk}),
             {
-                "confirmation": f"DELETE {self.supplier.name}",
+                "confirmation": self.supplier.name,
                 "reason": "Retire supplier",
                 "acknowledge": "yes",
             },
         )
 
-        self.assertRedirects(
-            unit_response,
-            reverse("inventory:units"),
-        )
-        self.assertRedirects(
-            supplier_response,
-            reverse("inventory:suppliers"),
-        )
+        self.assertEqual(unit_response.status_code, 409)
+        self.assertEqual(supplier_response.status_code, 409)
         self.assertTrue(Unit.objects.filter(pk=item.unit_id).exists())
         self.assertTrue(Supplier.objects.filter(pk=self.supplier.pk).exists())
         item.unit.refresh_from_db()
         self.supplier.refresh_from_db()
-        self.assertIsNotNone(item.unit.deleted_at)
-        self.assertIsNotNone(self.supplier.deleted_at)
+        self.assertIsNone(item.unit.deleted_at)
+        self.assertIsNone(self.supplier.deleted_at)
 
     def test_trash_requires_detailed_confirmation_and_can_restore_before_expiry(self):
-        item = self.add_item_stock().movement.stock_item
+        item = self.create_item()
         self.client.force_login(self.admin)
         delete_url = reverse("inventory:delete", kwargs={"reference": item.reference})
 
         confirmation = self.client.get(delete_url)
-        self.assertContains(confirmation, f"DELETE {item.material_name}")
-        self.assertContains(confirmation, "Protected activity entries retained")
+        self.assertContains(confirmation, str(item.reference)[:8].upper())
+        self.assertContains(confirmation, "unused stock identity")
         self.assertEqual(
             self.client.post(
-                delete_url, {"confirmation": f"DELETE {item.material_name}"}
+                delete_url, {"confirmation": str(item.reference)[:8].upper()}
             ).status_code,
             400,
         )
@@ -724,7 +741,7 @@ class InventoryWorkspaceTests(TestCase):
         self.client.post(
             delete_url,
             {
-                "confirmation": f"DELETE {item.material_name}",
+                "confirmation": str(item.reference)[:8].upper(),
                 "reason": "Duplicate purchase entry",
                 "acknowledge": "yes",
             },

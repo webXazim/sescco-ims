@@ -1,6 +1,5 @@
-from django.core.validators import FileExtensionValidator
 from django.db import migrations, models
-
+import django.core.validators
 import apps.core.models.settings
 
 
@@ -10,12 +9,20 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name="companysettings",
+            name="document_branding_mode",
+            field=models.CharField(
+                choices=[("standard", "Standard header"), ("letterhead", "Full-page letterhead")],
+                default="standard",
+                max_length=16,
+            ),
+        ),
+        migrations.AddField(
+            model_name="companysettings",
             name="document_logo",
             field=models.FileField(
                 blank=True,
-                max_length=180,
-                upload_to=apps.core.models.settings.document_branding_upload_to,
-                validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), apps.core.models.settings.validate_document_branding_size],
+                upload_to=apps.core.models.settings.company_logo_upload_to,
+                validators=[django.core.validators.FileExtensionValidator(allowed_extensions=["png", "jpg", "jpeg", "webp"])],
             ),
         ),
         migrations.AddField(
@@ -23,9 +30,8 @@ class Migration(migrations.Migration):
             name="document_letterhead",
             field=models.FileField(
                 blank=True,
-                max_length=180,
-                upload_to=apps.core.models.settings.document_branding_upload_to,
-                validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), apps.core.models.settings.validate_document_branding_size],
+                upload_to=apps.core.models.settings.company_letterhead_upload_to,
+                validators=[django.core.validators.FileExtensionValidator(allowed_extensions=["png", "jpg", "jpeg", "webp"])],
             ),
         ),
         migrations.AddField(
@@ -33,9 +39,8 @@ class Migration(migrations.Migration):
             name="document_watermark",
             field=models.FileField(
                 blank=True,
-                max_length=180,
-                upload_to=apps.core.models.settings.document_branding_upload_to,
-                validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), apps.core.models.settings.validate_document_branding_size],
+                upload_to=apps.core.models.settings.company_watermark_upload_to,
+                validators=[django.core.validators.FileExtensionValidator(allowed_extensions=["png", "jpg", "jpeg", "webp"])],
             ),
         ),
     ]

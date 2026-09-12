@@ -48,22 +48,22 @@ class ReadOnlyDomainAdmin(ActiveCompanyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Branch)
 class BranchAdmin(ReadOnlyDomainAdmin):
-    list_display = ("code", "name", "company", "location", "is_active", "updated_at")
-    list_filter = ("is_active",)
+    list_display = ("code", "name", "kind", "company", "location", "is_active", "archived_at", "updated_at")
+    list_filter = ("kind", "is_active", "archived_at")
     search_fields = ("code", "name", "location", "manager_name")
 
 
 @admin.register(Department)
 class DepartmentAdmin(ReadOnlyDomainAdmin):
-    list_display = ("code", "name", "company", "is_active", "updated_at")
-    list_filter = ("is_active",)
+    list_display = ("code", "name", "company", "is_active", "archived_at", "updated_at")
+    list_filter = ("is_active", "archived_at")
     search_fields = ("code", "name", "notes")
 
 
 @admin.register(InternalEmployee)
 class InternalEmployeeAdmin(ReadOnlyDomainAdmin):
-    list_display = ("employee_number", "full_name", "company", "status", "joining_date", "employment_end_date", "updated_at")
-    list_filter = ("status",)
+    list_display = ("employee_number", "full_name", "company", "status", "joining_date", "employment_end_date", "archived_at", "updated_at")
+    list_filter = ("status", "archived_at")
     search_fields = ("employee_number", "full_name", "national_id", "phone", "address")
 
 
@@ -77,15 +77,15 @@ class EmployeeOrganizationAssignmentAdmin(ReadOnlyDomainAdmin):
 
 @admin.register(SalaryComponent)
 class SalaryComponentAdmin(ReadOnlyDomainAdmin):
-    list_display = ("code", "name", "company", "category", "recurrence", "wps_mapping", "is_active", "updated_at")
-    list_filter = ("category", "recurrence", "wps_mapping", "is_active")
+    list_display = ("code", "name", "company", "category", "recurrence", "wps_mapping", "is_active", "archived_at", "updated_at")
+    list_filter = ("category", "recurrence", "wps_mapping", "is_active", "archived_at")
     search_fields = ("code", "name", "notes")
 
 
 @admin.register(OvertimePolicy)
 class OvertimePolicyAdmin(ReadOnlyDomainAdmin):
-    list_display = ("code", "name", "company", "base_component", "divisor", "multiplier", "is_active", "updated_at")
-    list_filter = ("is_active",)
+    list_display = ("code", "name", "company", "base_component", "divisor", "multiplier", "is_active", "archived_at", "updated_at")
+    list_filter = ("is_active", "archived_at")
     search_fields = ("code", "name", "base_component__code", "base_component__name")
     list_select_related = ("company", "base_component")
 
@@ -197,8 +197,8 @@ class CompanySalaryPaymentSettingsAdmin(ReadOnlyDomainAdmin):
 
 @admin.register(BankExportTemplate)
 class BankExportTemplateAdmin(ReadOnlyDomainAdmin):
-    list_display = ("code", "name", "company", "channel", "delimiter", "encoding", "is_active", "updated_at")
-    list_filter = ("channel", "delimiter", "encoding", "is_active")
+    list_display = ("code", "name", "company", "channel", "delimiter", "encoding", "is_active", "archived_at", "updated_at")
+    list_filter = ("channel", "delimiter", "encoding", "is_active", "archived_at")
     search_fields = ("code", "name")
     list_select_related = ("company",)
 

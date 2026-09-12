@@ -5,7 +5,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light" />
-  <title>{{ current_company.name }} · Payroll</title>
+  <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}" />
+  <title>Payroll · {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{% static 'payroll/css/tokens.css' %}" />
   <link rel="stylesheet" href="{% static 'payroll/css/base.css' %}" />
   <link rel="stylesheet" href="{% static 'payroll/css/layout.css' %}" />
@@ -18,7 +19,7 @@
   <link rel="stylesheet" href="{% static 'platform/css/payroll-shell-fixes.css' %}" />
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}" />
   <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}" />
-  <link rel="stylesheet" href="{% static 'payroll/css/v2/payroll-controls.css' %}?v=1.0.25" />
+  <link rel="stylesheet" href="{% static 'payroll/css/v2/payroll-controls.css' %}?v=1.0.36" />
 </head>
 <body class="ui-v2-root" data-area="payroll" data-ui-v2-rollout="production-freeze" data-ui-v2-version="merge-10">
   <div class="ui-v2-app-shell" id="app" data-collapsed="false" data-mobile-open="false" style="--ui-v2-sidebar-runtime: 236px;">
@@ -26,10 +27,10 @@
 
     <aside class="ui-v2-sidebar" id="sidebar" aria-label="Payroll navigation">
       <div class="ui-v2-sidebar__brand">
-        <a class="ui-v2-brand-mark" href="#/overview" aria-label="Payroll home">{{ current_company.name|slice:":1"|upper }}</a>
+        <a class="ui-v2-brand-mark" href="#/overview" aria-label="SESCCO MS home"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="" aria-hidden="true"></a>
         <a class="ui-v2-sidebar__brand-copy ui-v2-prs-brand-copy" href="#/overview">
-          <strong>{{ current_company.name }}</strong>
-          <span>Payroll Management</span>
+          <strong>{{ APP_NAME }}</strong>
+          <span>{{ APP_SUBTITLE }}</span>
         </a>
         <button class="ui-v2-sidebar__collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse navigation">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -125,7 +126,7 @@
             <span class="ui-v2-account-menu__section-label">Personal account</span>
             <div class="ui-v2-prs-account-identity">
               <span class="ui-v2-account__avatar">{{ account_initials }}</span>
-              <span><strong>{{ account_display_name }}</strong><small id="accountMenuRoleLabel">{{ current_membership.get_role_display }} · {{ current_company.name }}</small></span>
+              <span><strong>{{ account_display_name }}</strong><small id="accountMenuRoleLabel">{{ current_membership.get_role_display }}</small></span>
             </div>
             <a class="ui-v2-prs-account-menu-item" href="#/settings" data-account-settings role="menuitem">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5zM19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.97a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.03 4.2l.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15z"/></svg>
@@ -253,6 +254,6 @@
   <meta id="payroll-csrf-token" data-token="{{ csrf_token }}">
   <script src="{% static 'platform/js/form-validation.js' %}"></script>
   <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
-  <script src="{% static 'payroll/js/app.js' %}"></script>
+  <script src="{% static 'payroll/js/app.js' %}?v=1.0.36"></script>
 </body>
 </html>

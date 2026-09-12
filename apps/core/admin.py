@@ -27,12 +27,7 @@ class CompanyAdmin(ReadOnlyPlatformAdmin):
 class CompanySettingsAdmin(ReadOnlyPlatformAdmin):
     list_display = ("company", "timezone", "currency_code", "country_code", "updated_at")
     search_fields = ("company__name", "company__legal_name", "company__slug")
-    readonly_fields = (
-        "id", "company", "timezone", "currency_code", "country_code",
-        "commercial_registration", "vat_number", "document_address", "document_email",
-        "document_phone", "website", "document_logo", "document_letterhead", "document_watermark",
-        "created_at", "updated_at",
-    )
+    readonly_fields = ("id", "company", "timezone", "currency_code", "country_code", "created_at", "updated_at")
 
 
 @admin.register(NumberSequence)

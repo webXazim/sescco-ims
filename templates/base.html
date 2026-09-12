@@ -5,11 +5,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ page_title|default:APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
+  <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/lifecycle-actions.css' %}?v=1.0.36">
   {% block extra_head %}{% endblock %}
 </head>
 <body class="inventory-shell-v2" data-page="{{ page_key }}">

@@ -5,7 +5,39 @@
   <div class="head-actions"><a class="btn" href="{% url 'projects:edit' project.code %}">Edit project</a>{% url 'data_exchange:project_inventory_export' project.code 'xlsx' as xlsx_url %}{% url 'data_exchange:project_inventory_export' project.code 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=project_source_query xlsx_url=xlsx_url csv_url=csv_url %}{% if project.accepts_stock_activity %}<a class="btn" href="{% url 'core:remove_stock' %}?project={{ project.code }}">Use stock</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}?project={{ project.code }}">Add stock</a>{% endif %}</div>
 </div>
 {% if not project.accepts_stock_activity %}<div class="alert alert-warning">This project is {{ project.get_status_display|lower }}. Its inventory and history remain visible, but new stock activity is blocked.</div>{% endif %}
-<section class="card section-gap"><div class="card-head"><div><h2 class="card-title">Project lifecycle</h2><div class="card-meta">This is the shared Inventory + Payroll project authority. Close stock and workforce activity before final completion.</div></div><div class="head-actions">{% if has_stock_to_closeout %}<a class="btn btn-primary btn-sm" href="{% url 'inventory:transfer_create' %}?closeout={{ project.code }}">Transfer remaining stock</a>{% endif %}{% if can_complete_project %}<form method="post" action="{% url 'projects:status' project.code %}" data-confirm="Complete this zero-balance project? New stock and rental assignments will stop.">{% csrf_token %}<input type="hidden" name="action" value="complete"><button class="btn btn-primary btn-sm" type="submit">Complete project</button></form>{% elif needs_completion_date %}<a class="btn btn-sm" href="{% url 'projects:edit' project.code %}">Set actual end date</a>{% endif %}{% if can_hold_project %}<form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="hold"><button class="btn btn-sm" type="submit">Put on hold</button></form>{% endif %}{% if project.status != 'active' %}<form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="btn btn-sm" type="submit">Reactivate project</button></form>{% endif %}{% if can_archive_project %}<form method="post" action="{% url 'projects:status' project.code %}" data-confirm="Archive this zero-balance project? New stock and rental assignments will stop.">{% csrf_token %}<input type="hidden" name="action" value="archive"><button class="btn btn-sm" type="submit">Archive project</button></form>{% endif %}{% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="btn btn-danger btn-sm" href="{% url 'projects:delete' project.code %}">Move to Trash</a>{% endif %}</div></div>{% if has_stock_to_closeout %}<div class="card-body"><p class="micro">Allocate every remaining balance as New, Used, No value, or Lost before completion.</p></div>{% endif %}</section>
+<section class="card section-gap">
+  <div class="card-head">
+    <div><h2 class="card-title">Project lifecycle</h2><div class="card-meta">Operational status and archival are separate. Historical Inventory and Rental Manpower records are never deleted.</div></div>
+    {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<div class="head-actions">
+      {% if has_stock_to_closeout %}<a class="btn btn-primary btn-sm" href="{% url 'inventory:transfer_create' %}?closeout={{ project.code }}">Transfer remaining stock</a>{% endif %}
+      {% if needs_completion_date and project.status != 'archived' %}<a class="btn btn-sm" href="{% url 'projects:edit' project.code %}">Set actual end date</a>{% endif %}
+      <details class="row-actions lifecycle-actions" data-row-actions>
+        <summary class="btn btn-sm row-actions-trigger" aria-label="Project actions"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
+        <div class="row-actions-menu">
+          <div class="row-actions-head"><span>Project lifecycle</span><strong>{{ project.code }} · {{ project.name }}</strong></div>
+          <a class="row-action-option" href="{% url 'projects:edit' project.code %}"><span>Edit project</span><small>Update current project master details</small></a>
+          {% if project.status != 'archived' %}
+            {% if can_complete_project %}<form method="post" action="{% url 'projects:status' project.code %}" data-confirm="Complete this zero-balance project? New stock and rental assignments will stop.">{% csrf_token %}<input type="hidden" name="action" value="complete"><button class="row-action-option" type="submit"><span>Complete project</span><small>Close normal Inventory and Rental operations</small></button></form>{% endif %}
+            {% if can_hold_project %}<form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="hold"><button class="row-action-option" type="submit"><span>Put on hold</span><small>Temporarily stop new operational activity</small></button></form>{% endif %}
+            {% if project.status != 'active' %}<form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="reactivate"><button class="row-action-option" type="submit"><span>Reactivate project</span><small>Return the project to active operations</small></button></form>{% endif %}
+          {% endif %}
+          <div class="row-action-divider"></div>
+          {% if project.status == 'archived' %}
+            <form method="post" action="{% url 'projects:status' project.code %}">{% csrf_token %}<input type="hidden" name="action" value="restore"><button class="row-action-option" type="submit"><span>Restore from archive</span><small>Restore safely; operational status remains controlled</small></button></form>
+          {% elif project_archive_decision.allowed %}
+            <a class="row-action-option" href="{% url 'projects:status' project.code %}?action=archive"><span>Archive project</span><small>Preserve history and remove from normal operations</small></a>
+          {% else %}
+            <div class="row-action-option row-action-disabled" aria-disabled="true" title="{{ project_archive_decision.blockers.0.message }}"><span>Archive project</span><small>{{ project_archive_decision.blockers.0.message }}</small></div>
+          {% endif %}
+          <div class="row-action-divider"></div>
+          <a class="row-action-option row-action-danger" href="{% url 'projects:delete' project.code %}"><span>Delete unused project</span><small>Only if no Inventory or Rental history exists</small></a>
+        </div>
+      </details>
+    </div>{% endif %}
+  </div>
+  {% if has_stock_to_closeout %}<div class="card-body"><p class="micro">Allocate every remaining balance as New, Used, No value, or Lost before completion or archive.</p></div>{% endif %}
+  {% if project.archived_at %}<div class="card-body"><p class="micro"><strong>Archived {{ project.archived_at|date:'d M Y, H:i' }}</strong>{% if project.archived_reason %} · {{ project.archived_reason }}{% endif %}</p></div>{% endif %}
+</section>
 <section class="card section-gap">
   <div class="detail-hero"><div><span class="tag">{{ project.code }}</span><h2 class="detail-title">{{ project.name }}</h2><div class="detail-desc">{% if project.notes %}{{ project.notes }}{% else %}No project notes have been added.{% endif %}</div></div><div class="hero-balance"><div class="hero-label">Stock records</div><div class="hero-value">{{ project.stock_record_count }}</div><div class="micro">{{ project.low_stock_count }} need attention</div></div></div>
   <div class="detail-meta">

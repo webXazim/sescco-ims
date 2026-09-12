@@ -17,6 +17,7 @@ from django.views.generic import DetailView, ListView, UpdateView
 from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
+from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS, active_trash, move_to_trash, restore_from_trash
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
@@ -57,6 +58,20 @@ from .selectors import (
     stock_movements,
 )
 from .services.matching import find_stock_matches
+from .services.lifecycle import (
+    archive_location,
+    archive_stock_item,
+    archive_supplier,
+    archive_unit,
+    restore_location,
+    restore_stock_item,
+    restore_supplier,
+    restore_unit,
+    trash_unused_location,
+    trash_unused_stock_item,
+    trash_unused_supplier,
+    trash_unused_unit,
+)
 from .services.stock import (
     InventoryOperationError,
     add_stock,
@@ -535,72 +550,110 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
-class StockItemStatusView(InventoryWorkspaceMixin, View):
+class StockItemStatusView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/archive_confirm.html"
+
+    def get(self, request, reference):
+        item = get_object_or_404(
+            StockItem.objects.for_company(request.company).select_related("location", "project", "unit"),
+            reference=reference,
+            deleted_at__isnull=True,
+        )
+        if request.GET.get("action", "").strip() != "archive":
+            return redirect("inventory:detail", reference=item.reference)
+        decision = lifecycle_decision(item, LifecycleAction.ARCHIVE)
+        return render(request, self.template_name, {
+            "page_key": "stock-detail",
+            "page_title": "Archive stock record",
+            "page_subtitle": "Archive preserves the stock identity and permanent movement history while removing it from active operations.",
+            "record_label": str(item),
+            "record_type": "Stock record",
+            "archive_allowed": decision.allowed,
+            "archive_blockers": decision.blockers,
+            "cancel_url": reverse("inventory:detail", kwargs={"reference": item.reference}),
+        })
+
     def post(self, request, reference):
-        stock_item = get_object_or_404(stock_items(request.company), reference=reference)
+        item = get_object_or_404(
+            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+        )
         action = request.POST.get("action", "").strip()
-        target_status = {
-            "archive": StockItem.Status.ARCHIVED,
-            "reactivate": StockItem.Status.ACTIVE,
-        }.get(action)
-        if not target_status:
-            messages.error(request, "Choose a valid stock-record action.")
-            return redirect("inventory:detail", reference=stock_item.reference)
         try:
-            updated = set_stock_item_status(
-                stock_item=stock_item, user=request.user, status=target_status
-            )
-        except InventoryOperationError as exc:
+            if action == "archive":
+                archive_stock_item(
+                    actor_membership=request.company_membership,
+                    stock_item_id=item.pk,
+                    reason=request.POST.get("reason", ""),
+                    request=request,
+                )
+                messages.success(request, "Stock record was archived.")
+            elif action in {"reactivate", "restore"}:
+                restore_stock_item(
+                    actor_membership=request.company_membership,
+                    stock_item_id=item.pk,
+                    request=request,
+                )
+                messages.success(request, "Stock record was restored to active inventory.")
+            else:
+                messages.error(request, "Choose a valid stock-record lifecycle action.")
+        except ValidationError as exc:
             messages.error(request, _operation_error_message(exc))
-        else:
-            verb = "reactivated" if updated.status == StockItem.Status.ACTIVE else "archived"
-            messages.success(request, f"Stock record was {verb}.")
-        return redirect("inventory:detail", reference=stock_item.reference)
+        return redirect("inventory:detail", reference=item.reference)
 
 
 class StockItemDeleteView(InventoryAdminRequiredMixin, View):
     template_name = "inventory/delete_confirm.html"
 
     def _context(self, stock_item):
-        phrase = f"DELETE {stock_item.material_name}"
+        decision = lifecycle_decision(stock_item, LifecycleAction.DELETE)
         return {
             "page_key": "inventory",
-            "page_title": "Move stock record to Trash",
-            "page_subtitle": "Review the exact effect before removing it from the workspace.",
+            "page_title": "Delete unused stock record",
+            "page_subtitle": "Delete is reserved for an erroneous stock identity that has never acquired operational history.",
             "record_label": str(stock_item),
             "record_type": "Stock record",
-            "confirmation_phrase": phrase,
+            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:detail", kwargs={"reference": stock_item.reference}),
+            "delete_allowed": decision.allowed,
+            "delete_blockers": decision.blockers,
             "effects": (
                 f"Current balance: {stock_item.quantity_display}",
-                f"Estimated stock value: {stock_item.stock_value or 0}",
-                f"Protected activity entries retained: {stock_item.movements.count()}",
-                f"Attachments retained: {stock_item.documents.count()}",
-                (
-                    "The record disappears from inventory, search, low-stock alerts, "
-                    "activity, and totals."
-                ),
-                "Its audit history remains protected and returns if the record is restored.",
+                f"Movement entries: {stock_item.movements.count()}",
+                f"Attachments: {stock_item.documents.count()}",
+                "Any balance, movement, import, transfer, or attachment history blocks deletion and requires Archive instead.",
+                "An unused deleted record remains recoverable from Trash for 30 days.",
             ),
         }
 
     def get(self, request, reference):
-        stock_item = get_object_or_404(StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True)
+        stock_item = get_object_or_404(
+            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+        )
         return render(request, self.template_name, self._context(stock_item))
 
     def post(self, request, reference):
-        stock_item = get_object_or_404(StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True)
+        stock_item = get_object_or_404(
+            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+        )
         context = self._context(stock_item)
-        if (
-            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
-            or not request.POST.get("acknowledge")
-            or not request.POST.get("reason", "").strip()
-        ):
-            context["form_error"] = "Enter the exact phrase, a reason, and confirm the effect."
-            context["reason"] = request.POST.get("reason", "")
+        if not context["delete_allowed"]:
+            context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This stock record cannot be deleted."
+            return render(request, self.template_name, context, status=409)
+        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
+            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
             return render(request, self.template_name, context, status=400)
-        move_to_trash(stock_item, user=request.user, reason=request.POST["reason"])
+        try:
+            trash_unused_stock_item(
+                actor_membership=request.company_membership,
+                stock_item_id=stock_item.pk,
+                confirmation=request.POST.get("confirmation", ""),
+                reason=request.POST.get("reason", ""),
+                request=request,
+            )
+        except ValidationError as exc:
+            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=409)
         messages.success(request, f"{stock_item.material_name} was moved to Trash for 30 days.")
         return redirect("inventory:list")
 
@@ -660,14 +713,11 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
                 bool(set(self.request.GET.keys()) - {"movement_page"})
                 or not history_form.is_valid()
             ),
-            can_archive=(
-                self.object.status == StockItem.Status.ACTIVE and self.object.current_quantity == 0
-            ),
-            can_reactivate=(
-                self.object.status == StockItem.Status.ARCHIVED
-                and self.object.location.accepts_stock_activity
-                and self.object.unit.is_active
-            ),
+            stock_archive_decision=lifecycle_decision(self.object, LifecycleAction.ARCHIVE),
+            stock_restore_decision=lifecycle_decision(self.object, LifecycleAction.RESTORE),
+            stock_delete_decision=lifecycle_decision(self.object, LifecycleAction.DELETE),
+            can_archive=lifecycle_decision(self.object, LifecycleAction.ARCHIVE).allowed,
+            can_reactivate=lifecycle_decision(self.object, LifecycleAction.RESTORE).allowed,
             history_source_query=_source_query(self.request),
             import_rows=self.object.import_rows.select_related("job").filter(status="imported")[:5],
         )
@@ -908,11 +958,23 @@ class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
     paginate_by = 50
 
     def dispatch(self, request, *args, **kwargs):
-        self.office = get_object_or_404(
-            InventoryLocation,
-            location_type=InventoryLocation.Type.OFFICE,
-            is_active=True,
+        self.office_locations = (
+            InventoryLocation.objects.for_company(request.company)
+            .filter(
+                location_type=InventoryLocation.Type.OFFICE,
+                is_active=True,
+                archived_at__isnull=True,
+                deleted_at__isnull=True,
+            )
+            .order_by("code")
         )
+        selected_code = request.GET.get("location", "").strip()
+        if selected_code:
+            self.office = get_object_or_404(self.office_locations, code=selected_code)
+        else:
+            self.office = self.office_locations.first()
+            if self.office is None:
+                raise Http404("No active office inventory location is configured.")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -928,6 +990,7 @@ class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
             page_title=self.office.name,
             page_subtitle="Office-held new, used, and no-value stock.",
             office=self.office,
+            office_locations=self.office_locations,
             search_query=self.request.GET.get("q", ""),
         )
         return context
@@ -952,7 +1015,9 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             return closeout_project.inventory_location
         value = (request.GET.get("source") or request.POST.get("source_location") or "").strip()
         if value and value.isdigit():
-            return InventoryLocation.objects.for_company(request.company).select_related("project").filter(pk=int(value)).first()
+            return InventoryLocation.objects.for_company(request.company).select_related("project").filter(
+                pk=int(value), is_active=True, archived_at__isnull=True, deleted_at__isnull=True
+            ).first()
         return None
 
     def get(self, request):
@@ -1061,7 +1126,7 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             "form": form,
             "source": source,
             "source_locations": InventoryLocation.objects.for_company(self.request.company).select_related("project")
-            .filter(is_active=True)
+            .filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
             .order_by("location_type", "code"),
             "closeout_project": closeout_project,
         }
@@ -1414,7 +1479,7 @@ class LowStockListView(StockItemListView):
 
 class ArchiveListView(InventoryWorkspaceMixin, View):
     template_name = "inventory/archive_list.html"
-    kinds = {"stock", "projects", "units", "suppliers"}
+    kinds = {"stock", "projects", "units", "suppliers", "locations"}
 
     def get(self, request):
         kind = request.GET.get("kind", "stock").strip()
@@ -1426,13 +1491,15 @@ class ArchiveListView(InventoryWorkspaceMixin, View):
         archived_projects = Project.objects.for_company(self.request.company).filter(
             status=Project.Status.ARCHIVED, deleted_at__isnull=True
         )
-        archived_units = Unit.objects.for_company(self.request.company).filter(is_active=False, deleted_at__isnull=True)
-        archived_suppliers = Supplier.objects.for_company(self.request.company).filter(is_active=False, deleted_at__isnull=True)
+        archived_units = Unit.objects.for_company(self.request.company).filter(archived_at__isnull=False, deleted_at__isnull=True)
+        archived_suppliers = Supplier.objects.for_company(self.request.company).filter(archived_at__isnull=False, deleted_at__isnull=True)
+        archived_locations = InventoryLocation.objects.for_company(self.request.company).select_related("project").filter(archived_at__isnull=False, deleted_at__isnull=True)
         counts = {
             "stock": archived_stock.count(),
             "projects": archived_projects.count(),
             "units": archived_units.count(),
             "suppliers": archived_suppliers.count(),
+            "locations": archived_locations.count(),
         }
 
         if kind == "stock":
@@ -1453,6 +1520,11 @@ class ArchiveListView(InventoryWorkspaceMixin, View):
             if query:
                 objects = objects.filter(Q(name__icontains=query) | Q(symbol__icontains=query))
             objects = objects.order_by("name")
+        elif kind == "locations":
+            objects = archived_locations
+            if query:
+                objects = objects.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(project__name__icontains=query))
+            objects = objects.order_by("location_type", "code")
         else:
             objects = archived_suppliers
             if query:
@@ -1501,6 +1573,7 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
             ("project", active_trash(Project.objects.for_company(self.request.company).select_related("deleted_by"))),
             ("unit", active_trash(Unit.objects.for_company(self.request.company).select_related("deleted_by"))),
             ("supplier", active_trash(Supplier.objects.for_company(self.request.company).select_related("deleted_by"))),
+            ("location", active_trash(InventoryLocation.objects.for_company(self.request.company).select_related("deleted_by", "project"))),
         )
         for kind, objects in groups:
             for item in objects:
@@ -1514,8 +1587,10 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
                     identifier, label, detail = item.code, item.code, item.name
                 elif kind == "unit":
                     identifier, label, detail = str(item.pk), item.name, item.symbol
-                else:
+                elif kind == "supplier":
                     identifier, label, detail = str(item.pk), item.name, item.phone
+                else:
+                    identifier, label, detail = str(item.pk), item.code, item.name
                 entries.append(
                     {
                         "kind": kind,
@@ -1556,6 +1631,7 @@ class TrashRestoreView(InventoryAdminRequiredMixin, View):
             "project": (Project, {"code": identifier}),
             "unit": (Unit, {"pk": identifier}),
             "supplier": (Supplier, {"pk": identifier}),
+            "location": (InventoryLocation, {"pk": identifier}),
         }.get(kind, (None, None))
         if model is None:
             raise Http404
@@ -1614,9 +1690,16 @@ class UnitListCreateView(InventoryWorkspaceMixin, View):
 
     def _context(self, form):
         query = self.request.GET.get("q", "").strip()
+        status = self.request.GET.get("status", "active").strip().lower()
+        if status not in {"active", "archived", "all"}:
+            status = "active"
         units = Unit.objects.for_company(self.request.company).filter(deleted_at__isnull=True).annotate(
             stock_count=Count("stock_items")
         )
+        if status == "active":
+            units = units.filter(archived_at__isnull=True, is_active=True)
+        elif status == "archived":
+            units = units.filter(archived_at__isnull=False)
         if query:
             units = units.filter(Q(name__icontains=query) | Q(symbol__icontains=query))
         return {
@@ -1626,6 +1709,7 @@ class UnitListCreateView(InventoryWorkspaceMixin, View):
             "form": form,
             "units": units.order_by("name"),
             "search_query": query,
+            "current_status": status,
         }
 
 
@@ -1659,23 +1743,36 @@ class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
-class UnitStatusView(InventoryWorkspaceMixin, View):
+class UnitStatusView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/archive_confirm.html"
+
+    def get(self, request, pk):
+        unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        if request.GET.get("action", "").strip() != "archive":
+            return redirect("inventory:unit_edit", pk=unit.pk)
+        decision = lifecycle_decision(unit, LifecycleAction.ARCHIVE)
+        return render(request, self.template_name, {
+            "page_key": "units", "page_title": "Archive unit",
+            "page_subtitle": "Archive keeps historical stock and import references while removing the unit from new stock entry.",
+            "record_label": str(unit), "record_type": "Unit",
+            "archive_allowed": decision.allowed, "archive_blockers": decision.blockers,
+            "cancel_url": reverse("inventory:unit_edit", kwargs={"pk": unit.pk}),
+        })
+
     def post(self, request, pk):
         unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         action = request.POST.get("action", "").strip()
-        if action not in {"archive", "reactivate"}:
-            messages.error(request, "Choose a valid unit lifecycle action.")
-            return redirect("inventory:unit_edit", pk=unit.pk)
-        unit.is_active = action == "reactivate"
         try:
-            unit.save()
+            if action == "archive":
+                archive_unit(actor_membership=request.company_membership, unit_id=unit.pk, reason=request.POST.get("reason", ""), request=request)
+                messages.success(request, f"Unit {unit.name} was archived.")
+            elif action in {"reactivate", "restore"}:
+                restore_unit(actor_membership=request.company_membership, unit_id=unit.pk, request=request)
+                messages.success(request, f"Unit {unit.name} was restored.")
+            else:
+                messages.error(request, "Choose a valid unit lifecycle action.")
         except ValidationError as exc:
             messages.error(request, _operation_error_message(exc))
-        else:
-            messages.success(
-                request,
-                f"Unit {unit.name} was {'reactivated' if unit.is_active else 'archived'}.",
-            )
         return redirect("inventory:unit_edit", pk=unit.pk)
 
 
@@ -1683,44 +1780,41 @@ class UnitDeleteView(InventoryAdminRequiredMixin, View):
     template_name = "inventory/delete_confirm.html"
 
     def _context(self, unit):
+        decision = lifecycle_decision(unit, LifecycleAction.DELETE)
         return {
-            "page_key": "units",
-            "page_title": "Move unit to Trash",
-            "page_subtitle": "Review where this unit is used before continuing.",
-            "record_label": str(unit),
-            "record_type": "Unit",
-            "confirmation_phrase": f"DELETE {unit.name}",
+            "page_key": "units", "page_title": "Delete unused unit",
+            "page_subtitle": "Delete is only for a unit created by mistake and never referenced by stock or imports.",
+            "record_label": str(unit), "record_type": "Unit",
+            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:unit_edit", kwargs={"pk": unit.pk}),
+            "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
             "effects": (
                 f"Stock records using this unit: {unit.stock_items.count()}",
                 f"Import jobs using this unit: {unit.import_jobs.count()}",
-                "The unit is removed from management and new stock-entry choices.",
-                "Existing stock and audit history remain intact.",
+                "Referenced units are retained and must be archived instead.",
+                "An unused deleted unit remains recoverable from Trash for 30 days.",
             ),
         }
 
     def get(self, request, pk):
-        return render(
-            request,
-            self.template_name,
-            self._context(get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)),
-        )
+        unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        return render(request, self.template_name, self._context(unit))
 
     def post(self, request, pk):
         unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         context = self._context(unit)
-        if (
-            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
-            or not request.POST.get("acknowledge")
-            or not request.POST.get("reason", "").strip()
-        ):
-            context.update(
-                form_error="Enter the exact phrase, a reason, and confirm the effect.",
-                reason=request.POST.get("reason", ""),
-            )
+        if not context["delete_allowed"]:
+            context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This unit cannot be deleted."
+            return render(request, self.template_name, context, status=409)
+        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
+            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
             return render(request, self.template_name, context, status=400)
-        move_to_trash(unit, user=request.user, reason=request.POST["reason"])
+        try:
+            trash_unused_unit(actor_membership=request.company_membership, unit_id=unit.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+        except ValidationError as exc:
+            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=409)
         messages.success(request, f"{unit.name} was moved to Trash for 30 days.")
         return redirect("inventory:units")
 
@@ -1743,7 +1837,14 @@ class SupplierListCreateView(InventoryWorkspaceMixin, View):
 
     def _context(self, form):
         query = self.request.GET.get("q", "").strip()
+        status = self.request.GET.get("status", "active").strip().lower()
+        if status not in {"active", "archived", "all"}:
+            status = "active"
         suppliers = Supplier.objects.for_company(self.request.company).filter(deleted_at__isnull=True)
+        if status == "active":
+            suppliers = suppliers.filter(archived_at__isnull=True, is_active=True)
+        elif status == "archived":
+            suppliers = suppliers.filter(archived_at__isnull=False)
         if query:
             suppliers = suppliers.filter(
                 Q(name__icontains=query)
@@ -1759,6 +1860,7 @@ class SupplierListCreateView(InventoryWorkspaceMixin, View):
             "form": form,
             "suppliers": suppliers.order_by("name", "phone"),
             "search_query": query,
+            "current_status": status,
         }
 
 
@@ -1792,19 +1894,36 @@ class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
-class SupplierStatusView(InventoryWorkspaceMixin, View):
+class SupplierStatusView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/archive_confirm.html"
+
+    def get(self, request, pk):
+        supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        if request.GET.get("action", "").strip() != "archive":
+            return redirect("inventory:supplier_edit", pk=supplier.pk)
+        decision = lifecycle_decision(supplier, LifecycleAction.ARCHIVE)
+        return render(request, self.template_name, {
+            "page_key": "suppliers", "page_title": "Archive supplier",
+            "page_subtitle": "Archive removes the supplier from new stock entry while keeping copied supplier identity in all historical Inventory records.",
+            "record_label": str(supplier), "record_type": "Material supplier",
+            "archive_allowed": decision.allowed, "archive_blockers": decision.blockers,
+            "cancel_url": reverse("inventory:supplier_edit", kwargs={"pk": supplier.pk}),
+        })
+
     def post(self, request, pk):
         supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         action = request.POST.get("action", "").strip()
-        if action not in {"archive", "reactivate"}:
-            messages.error(request, "Choose a valid supplier lifecycle action.")
-            return redirect("inventory:supplier_edit", pk=supplier.pk)
-        supplier.is_active = action == "reactivate"
-        supplier.save()
-        messages.success(
-            request,
-            f"Supplier {supplier.name} was {'reactivated' if supplier.is_active else 'archived'}.",
-        )
+        try:
+            if action == "archive":
+                archive_supplier(actor_membership=request.company_membership, supplier_id=supplier.pk, reason=request.POST.get("reason", ""), request=request)
+                messages.success(request, f"Supplier {supplier.name} was archived.")
+            elif action in {"reactivate", "restore"}:
+                restore_supplier(actor_membership=request.company_membership, supplier_id=supplier.pk, request=request)
+                messages.success(request, f"Supplier {supplier.name} was restored.")
+            else:
+                messages.error(request, "Choose a valid supplier lifecycle action.")
+        except ValidationError as exc:
+            messages.error(request, _operation_error_message(exc))
         return redirect("inventory:supplier_edit", pk=supplier.pk)
 
 
@@ -1812,49 +1931,148 @@ class SupplierDeleteView(InventoryAdminRequiredMixin, View):
     template_name = "inventory/delete_confirm.html"
 
     def _context(self, supplier):
+        decision = lifecycle_decision(supplier, LifecycleAction.DELETE)
         stock_count = StockItem.objects.for_company(self.request.company).filter(
             normalized_supplier_name=supplier.normalized_name,
             normalized_supplier_phone=supplier.normalized_phone,
         ).count()
         return {
-            "page_key": "suppliers",
-            "page_title": "Move supplier to Trash",
-            "page_subtitle": "Review where this supplier identity appears before continuing.",
-            "record_label": str(supplier),
-            "record_type": "Supplier",
-            "confirmation_phrase": f"DELETE {supplier.name}",
+            "page_key": "suppliers", "page_title": "Delete unused supplier",
+            "page_subtitle": "Delete is only for a supplier created by mistake and never copied into Inventory history.",
+            "record_label": str(supplier), "record_type": "Material supplier",
+            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:supplier_edit", kwargs={"pk": supplier.pk}),
+            "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
             "effects": (
                 f"Stock records containing this supplier identity: {stock_count}",
-                "The supplier is removed from management and new stock-entry choices.",
-                "Copied supplier details and historical activity remain intact.",
+                "Suppliers already used by stock must be archived, never deleted.",
+                "An unused deleted supplier remains recoverable from Trash for 30 days.",
             ),
         }
 
     def get(self, request, pk):
-        return render(
-            request,
-            self.template_name,
-            self._context(get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)),
-        )
+        supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        return render(request, self.template_name, self._context(supplier))
 
     def post(self, request, pk):
         supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         context = self._context(supplier)
-        if (
-            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
-            or not request.POST.get("acknowledge")
-            or not request.POST.get("reason", "").strip()
-        ):
-            context.update(
-                form_error="Enter the exact phrase, a reason, and confirm the effect.",
-                reason=request.POST.get("reason", ""),
-            )
+        if not context["delete_allowed"]:
+            context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This supplier cannot be deleted."
+            return render(request, self.template_name, context, status=409)
+        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
+            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
             return render(request, self.template_name, context, status=400)
-        move_to_trash(supplier, user=request.user, reason=request.POST["reason"])
+        try:
+            trash_unused_supplier(actor_membership=request.company_membership, supplier_id=supplier.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+        except ValidationError as exc:
+            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=409)
         messages.success(request, f"{supplier.name} was moved to Trash for 30 days.")
         return redirect("inventory:suppliers")
+
+
+class InventoryLocationListView(InventoryWorkspaceMixin, View):
+    template_name = "inventory/location_list.html"
+
+    def get(self, request):
+        query = request.GET.get("q", "").strip()
+        status = request.GET.get("status", "active").strip().lower()
+        if status not in {"active", "archived", "all"}:
+            status = "active"
+        locations = InventoryLocation.objects.for_company(request.company).select_related("project").filter(deleted_at__isnull=True)
+        if status == "active":
+            locations = locations.filter(archived_at__isnull=True, is_active=True)
+        elif status == "archived":
+            locations = locations.filter(archived_at__isnull=False)
+        if query:
+            locations = locations.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(project__name__icontains=query))
+        return render(request, self.template_name, {
+            "page_key": "locations",
+            "page_title": "Inventory locations",
+            "page_subtitle": "Project locations follow their Project lifecycle; office locations can be archived independently when stock is cleared.",
+            "locations": locations.order_by("location_type", "code"),
+            "search_query": query,
+            "current_status": status,
+        })
+
+
+class InventoryLocationStatusView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/archive_confirm.html"
+
+    def get(self, request, pk):
+        location = get_object_or_404(InventoryLocation.objects.for_company(request.company).select_related("project"), pk=pk, deleted_at__isnull=True)
+        if request.GET.get("action", "").strip() != "archive":
+            return redirect("inventory:locations")
+        decision = lifecycle_decision(location, LifecycleAction.ARCHIVE)
+        return render(request, self.template_name, {
+            "page_key": "locations", "page_title": "Archive inventory location",
+            "page_subtitle": "Archive stops new stock activity at this office location without removing historical movements or transfers.",
+            "record_label": str(location), "record_type": "Inventory location",
+            "archive_allowed": decision.allowed, "archive_blockers": decision.blockers,
+            "cancel_url": reverse("inventory:locations"),
+        })
+
+    def post(self, request, pk):
+        location = get_object_or_404(InventoryLocation.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        action = request.POST.get("action", "").strip()
+        try:
+            if action == "archive":
+                archive_location(actor_membership=request.company_membership, location_id=location.pk, reason=request.POST.get("reason", ""), request=request)
+                messages.success(request, f"Location {location.code} was archived.")
+            elif action in {"restore", "reactivate"}:
+                restore_location(actor_membership=request.company_membership, location_id=location.pk, request=request)
+                messages.success(request, f"Location {location.code} was restored.")
+            else:
+                messages.error(request, "Choose a valid location lifecycle action.")
+        except ValidationError as exc:
+            messages.error(request, _operation_error_message(exc))
+        return redirect("inventory:locations")
+
+
+class InventoryLocationDeleteView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/delete_confirm.html"
+
+    def _context(self, location):
+        decision = lifecycle_decision(location, LifecycleAction.DELETE)
+        return {
+            "page_key": "locations", "page_title": "Delete unused inventory location",
+            "page_subtitle": "Only an unused office location created by mistake can be deleted. Project locations follow the Project lifecycle.",
+            "record_label": str(location), "record_type": "Inventory location",
+            "confirmation_phrase": decision.confirmation_token,
+            "retention_days": TRASH_RETENTION_DAYS,
+            "cancel_url": reverse("inventory:locations"),
+            "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
+            "effects": (
+                f"Stock records: {location.stock_items.count()}",
+                f"Outgoing transfers: {location.outgoing_transfers.count()}",
+                f"Incoming transfers: {location.incoming_transfers.count()}",
+                "Locations with history must be archived instead of deleted.",
+                "An unused deleted office location remains recoverable from Trash for 30 days.",
+            ),
+        }
+
+    def get(self, request, pk):
+        location = get_object_or_404(InventoryLocation.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        return render(request, self.template_name, self._context(location))
+
+    def post(self, request, pk):
+        location = get_object_or_404(InventoryLocation.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
+        context = self._context(location)
+        if not context["delete_allowed"]:
+            context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This location cannot be deleted."
+            return render(request, self.template_name, context, status=409)
+        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
+            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=400)
+        try:
+            trash_unused_location(actor_membership=request.company_membership, location_id=location.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+        except ValidationError as exc:
+            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=409)
+        messages.success(request, f"Location {location.code} was moved to Trash for 30 days.")
+        return redirect("inventory:locations")
 
 
 class StockPickerAPIView(InventoryWorkspaceMixin, View):

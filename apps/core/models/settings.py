@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.core.exceptions import ValidationError
@@ -10,17 +8,30 @@ from django.db import models
 
 from .base import UUIDTimeStampedModel
 
-def document_branding_upload_to(instance, filename: str) -> str:
-    """Store private company branding under a tenant-specific, non-guessable name."""
-    suffix = Path(filename or "asset.png").suffix.lower()
-    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
-        suffix = ".bin"
-    return f"company-document-assets/{instance.company_id}/{uuid.uuid4().hex}{suffix}"
+
+def _branding_upload_path(instance, filename: str, kind: str) -> str:
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return f"company-branding/{instance.company_id}/{kind}/{instance.id}.{suffix}"
 
 
-def validate_document_branding_size(value) -> None:
-    if value and getattr(value, "size", 0) > 12 * 1024 * 1024:
-        raise ValidationError("Document branding images must be 12 MB or smaller.")
+def company_logo_upload_to(instance, filename: str) -> str:
+    return _branding_upload_path(instance, filename, "logo")
+
+
+def company_letterhead_upload_to(instance, filename: str) -> str:
+    return _branding_upload_path(instance, filename, "letterhead")
+
+
+def company_watermark_upload_to(instance, filename: str) -> str:
+    return _branding_upload_path(instance, filename, "watermark")
+
+
+class DocumentBrandingMode(models.TextChoices):
+    STANDARD = "standard", "Standard header"
+    LETTERHEAD = "letterhead", "Full-page letterhead"
+
+
+_BRAND_EXTENSIONS = FileExtensionValidator(["png", "jpg", "jpeg", "webp"])
 
 
 class CompanySettings(UUIDTimeStampedModel):
@@ -40,18 +51,12 @@ class CompanySettings(UUIDTimeStampedModel):
     document_email = models.EmailField(blank=True)
     document_phone = models.CharField(max_length=40, blank=True)
     website = models.URLField(max_length=300, blank=True)
-    document_logo = models.FileField(
-        upload_to=document_branding_upload_to, blank=True, max_length=180,
-        validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), validate_document_branding_size],
+    document_branding_mode = models.CharField(
+        max_length=16, choices=DocumentBrandingMode.choices, default=DocumentBrandingMode.STANDARD
     )
-    document_letterhead = models.FileField(
-        upload_to=document_branding_upload_to, blank=True, max_length=180,
-        validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), validate_document_branding_size],
-    )
-    document_watermark = models.FileField(
-        upload_to=document_branding_upload_to, blank=True, max_length=180,
-        validators=[FileExtensionValidator(("png", "jpg", "jpeg", "webp")), validate_document_branding_size],
-    )
+    document_logo = models.FileField(upload_to=company_logo_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
+    document_letterhead = models.FileField(upload_to=company_letterhead_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
+    document_watermark = models.FileField(upload_to=company_watermark_upload_to, blank=True, validators=[_BRAND_EXTENSIONS])
 
     class Meta:
         db_table = "core_company_settings"
@@ -68,6 +73,9 @@ class CompanySettings(UUIDTimeStampedModel):
         self.document_email = self.document_email.strip().lower()
         self.document_phone = self.document_phone.strip()
         self.website = self.website.strip()
+        self.document_branding_mode = self.document_branding_mode.strip().lower()
+        if self.document_branding_mode not in DocumentBrandingMode.values:
+            raise ValidationError({"document_branding_mode": "Select a valid document branding mode."})
 
         try:
             ZoneInfo(self.timezone)

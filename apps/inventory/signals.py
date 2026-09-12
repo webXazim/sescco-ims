@@ -26,6 +26,8 @@ def ensure_project_inventory_location(sender, instance, **kwargs):
             "code": code,
             "name": instance.name,
             "location_type": InventoryLocation.Type.PROJECT,
-            "is_active": instance.deleted_at is None,
+            "is_active": instance.deleted_at is None and instance.status == Project.Status.ACTIVE,
+            "archived_at": instance.archived_at if instance.status == Project.Status.ARCHIVED else None,
+            "archived_reason": instance.archived_reason if instance.status == Project.Status.ARCHIVED else "",
         },
     )

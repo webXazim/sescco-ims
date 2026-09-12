@@ -78,15 +78,6 @@
   }
   const csrfToken = document.getElementById('payroll-csrf-token')?.dataset.token || '';
 
-  async function appUpload(url, file) {
-    const form = new FormData();
-    form.append('file', file);
-    const response = await fetch(url, {method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','X-CSRFToken':csrfToken},body:form});
-    let payload={}; try{payload=await response.json();}catch{throw new Error('The server returned an invalid response.');}
-    if(!response.ok||payload.ok===false){const errors=payload.errors||{};const first=Object.values(errors).flat().find(Boolean);throw new Error(first||`Request failed (${response.status}).`);}
-    return payload;
-  }
-
   async function appApi(url, { method = 'GET', body = null } = {}) {
     const options = { method, credentials: 'same-origin', headers: { 'Accept': 'application/json' } };
     if (body !== null) {
@@ -101,6 +92,22 @@
     if (response.status === 401) {
       throw new Error('Your sign-in session is no longer active. Sign in again to continue.');
     }
+    if (!response.ok || payload.ok === false) {
+      const errors = payload.errors || {};
+      const first = Object.values(errors).flat().find(Boolean);
+      throw new Error(first || `Request failed (${response.status}).`);
+    }
+    return payload;
+  }
+
+  async function appMultipartApi(url, { method = 'POST', formData = null } = {}) {
+    const options = { method, credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRFToken': csrfToken } };
+    if (formData !== null) options.body = formData;
+    const response = await fetch(url, options);
+    let payload = {};
+    try { payload = await response.json(); }
+    catch { throw new Error('The server returned an invalid response.'); }
+    if (response.status === 401) throw new Error('Your sign-in session is no longer active. Sign in again to continue.');
     if (!response.ok || payload.ok === false) {
       const errors = payload.errors || {};
       const first = Object.values(errors).flat().find(Boolean);
@@ -877,7 +884,8 @@
       documentEmail: settingsBootstrap.documentEmail || '',
       documentPhone: settingsBootstrap.documentPhone || '',
       website: settingsBootstrap.website || '',
-      documentAssets: settingsBootstrap.documentAssets || {},
+      documentBrandingMode: settingsBootstrap.documentBrandingMode || settingsBootstrap.branding?.mode || 'standard',
+      branding: settingsBootstrap.branding || {mode:'standard',logo:{configured:false,url:''},letterhead:{configured:false,url:''},watermark:{configured:false,url:''}},
       today: companyTodayIso
     },
     canManage: Boolean(settingsBootstrap.canManage)
@@ -922,12 +930,12 @@
     projectWorkerFiltersOpen: false,
     projectTab: 'overview',
     branchSearch: '',
-    branchStatus: 'All',
+    branchStatus: 'Active',
     branchSort: localStorage.getItem('payroll-ui-branch-sort') || 'code-asc',
     branchTab: 'overview',
     branchSelectedId: '',
     departmentSearch: '',
-    departmentStatus: 'All',
+    departmentStatus: 'Active',
     departmentSort: localStorage.getItem('payroll-ui-department-sort') || 'code-asc',
     departmentTab: 'overview',
     departmentSelectedId: '',
@@ -981,6 +989,7 @@
     salaryComponentSearch: '',
     salaryComponentType: 'All',
     salaryComponentStatus: 'Active',
+    overtimePolicyStatus: 'Active',
     salaryStructureSearch: '',
     timesheetWorkspace: localStorage.getItem('payroll-ui-timesheet-workspace') || 'internal',
     timesheetFullscreen: false,
@@ -1045,13 +1054,13 @@
     bankExportSearch: '',
     bankExportStatus: 'All',
     bankExportBranch: 'All branches',
-    bankTemplateId: localStorage.getItem('payroll-ui-bank-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'bank_csv' && item.active)?.id || null,
+    bankTemplateId: localStorage.getItem('payroll-ui-bank-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'bank_csv' && item.active && !item.archived)?.id || null,
     exportTemplateDetailId: null,
     bankTemplates: [...(paymentBootstrap.templates || [])],
     bankBatches: (paymentBootstrap.batches || []).filter(item => item.channelValue === 'bank_csv'),
     bankReconciliation: {},
     wpsTab: 'validation',
-    wpsTemplateId: localStorage.getItem('payroll-ui-wps-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'wps' && item.active)?.id || null,
+    wpsTemplateId: localStorage.getItem('payroll-ui-wps-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'wps' && item.active && !item.archived)?.id || null,
     wpsStatusFilter: 'All',
     wpsSearch: '',
     wpsBatches: (paymentBootstrap.batches || []).filter(item => item.channelValue === 'wps'),
@@ -1149,7 +1158,7 @@
 
   function statusBadge(status) {
     const success = ['Active','Assigned','Paid','Approved','Ready','Applied','Recorded'];
-    const neutral = ['Completed','Released','Inactive','Available','Closed','Transferred'];
+    const neutral = ['Completed','Released','Inactive','Terminated','Archived','Available','Closed','Transferred'];
     const tone = success.includes(status) ? 'success' : neutral.includes(status) ? 'neutral' : 'warning';
     return `<span class="status status--${tone}"><span></span>${escapeHtml(status)}</span>`;
   }
@@ -1271,7 +1280,7 @@
     const accountRoleLabel = document.getElementById('accountRoleLabel');
     if (accountRoleLabel) accountRoleLabel.textContent = roleDefinition().label;
     const accountMenuRoleLabel = document.getElementById('accountMenuRoleLabel');
-    if (accountMenuRoleLabel) accountMenuRoleLabel.textContent = `${roleDefinition().label} · ${serverAccess.company_name || ''}`;
+    if (accountMenuRoleLabel) accountMenuRoleLabel.textContent = roleDefinition().label;
     const settingsLink = document.querySelector('[data-account-settings]');
     if (settingsLink) settingsLink.hidden = !roleCanSettings();
 
@@ -1599,11 +1608,11 @@
 
 
   function branchEmployeesByDepartment(departmentName) {
-    return state.employees.filter(employee => employee.status === 'Active' && employee.department === departmentName);
+    return state.employees.filter(employee => !employee.archived && employee.status === 'Active' && employee.department === departmentName);
   }
 
   function branchEmployees(branchId) {
-    return state.employees.filter(employee => employee.branchId === branchId);
+    return state.employees.filter(employee => !employee.archived && employee.branchId === branchId);
   }
 
   function branchPayrollTotals(branchId) {
@@ -1619,7 +1628,7 @@
   function departmentEmployees(departmentIdOrName) {
     const department = state.departments.find(item => item.id === departmentIdOrName) || departmentByName(departmentIdOrName);
     if (!department) return [];
-    return state.employees.filter(employee => employee.departmentId === department.id || employee.department === department.name);
+    return state.employees.filter(employee => !employee.archived && (employee.departmentId === department.id || employee.department === department.name));
   }
 
   function departmentPayrollTotals(departmentIdOrName) {
@@ -1677,11 +1686,11 @@
     const selectedReady = selectedEmployees.filter(employee => employee.wps === 'Ready').length;
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Branches & Offices</h1><p class="ui-v2-body">Company offices are organization masters for internal employees. Inactive values remain in history but are unavailable for new assignments.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="departments">Departments</button><button class="btn btn--primary" data-quick-add="branch">${icon('plus')} Add Branch / Office</button></div></div>
-      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${Math.max(0, ...branchActiveCounts.values())}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
-      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter branch status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'All' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
+      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${Math.max(0, ...branchActiveCounts.values())}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Archive</strong><small>Delete only unused masters</small></div></div>
+      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter branch status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'Active' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
       ${branches.length ? `<div class="ui-v2-payroll-master-grid">
-        <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.location || 'Location not set')}${branch.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
-        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-edit-branch="${escapeHtml(selected.id)}">${icon('edit')} Edit</button><button class="btn btn--secondary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button></div></section>
+        <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.type || 'Branch')} · ${escapeHtml(branch.location || 'Location not set')}${branch.status !== 'Active' ? ` · ${escapeHtml(branch.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
+        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Only when no employee or payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
       </div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branches and offices are company-controlled masters. Moving an employee creates effective-dated organization history rather than rewriting prior payroll context.</span></div>
     </section>`;
@@ -1709,9 +1718,9 @@
     } else if (tab === 'documents') {
       content = `<section class="data-panel"><div class="section-headline"><div><h2>Branch payroll documents</h2><p>Salary slips and internal-company documents remain employee/payroll records but can be reviewed by branch.</p></div><button class="btn btn--secondary btn--sm" data-route-link="documents">Open Document Center</button></div><div class="document-grid"><button class="document-tile" data-route-link="documents"><span>SL</span><div><strong>Salary Slips</strong><small>${employees.length} branch employees</small></div><em>Internal</em>${icon('chevron')}</button><button class="document-tile" data-route-link="bank-export"><span>BK</span><div><strong>Bank / WPS Export</strong><small>${wpsReady}/${employees.length} WPS-ready employees</small></div><em>Payment</em>${icon('chevron')}</button></div></section>`;
     } else {
-      content = `<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Organization snapshot</h2><p>Employees and departments attached to this company office.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${activeEmployees.length} active</small></div><div><span>Departments</span><strong>${departmentRows.length}</strong><small>Represented in this branch</small></div><div><span>WPS ready</span><strong>${wpsReady}/${employees.length}</strong><small>Bank / identity readiness</small></div><div><span>Net payroll</span><strong>${formatCurrency(totals.net||0)}</strong><small>${escapeHtml(state.period)}</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department mix</h2><p>Current employee-master assignments.</p></div></div><div class="composition-block">${departmentRows.length?departmentRows.map(({department,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-department="${escapeHtml(department.id)}">${escapeHtml(department.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employees assigned yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Branch details</h3><button class="text-link" data-edit-branch="${escapeHtml(branch.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(branch.code)}</dd></div><div><dt>Location</dt><dd>${escapeHtml(branch.location)}</dd></div><div><dt>Address</dt><dd>${escapeHtml(branch.address||'—')}</dd></div><div><dt>Manager</dt><dd>${escapeHtml(branch.manager||'—')}</dd></div><div><dt>Status</dt><dd>${escapeHtml(branch.status)}</dd></div></dl></section><section class="detail-card"><div class="detail-card__head"><h3>Quick actions</h3></div><div class="stack-actions"><button data-open-branch-timesheet="${escapeHtml(branch.id)}">Attendance & OT ${icon('chevron')}</button><button data-open-branch-payroll="${escapeHtml(branch.id)}">Branch Payroll ${icon('chevron')}</button><button data-route-link="bank-export">Bank / WPS ${icon('chevron')}</button></div></section></aside></div>`;
+      content = `<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Organization snapshot</h2><p>Employees and departments attached to this company office.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${activeEmployees.length} active</small></div><div><span>Departments</span><strong>${departmentRows.length}</strong><small>Represented in this branch</small></div><div><span>WPS ready</span><strong>${wpsReady}/${employees.length}</strong><small>Bank / identity readiness</small></div><div><span>Net payroll</span><strong>${formatCurrency(totals.net||0)}</strong><small>${escapeHtml(state.period)}</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department mix</h2><p>Current employee-master assignments.</p></div></div><div class="composition-block">${departmentRows.length?departmentRows.map(({department,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-department="${escapeHtml(department.id)}">${escapeHtml(department.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employees assigned yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Branch details</h3><button class="text-link" data-edit-branch="${escapeHtml(branch.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(branch.code)}</dd></div><div><dt>Type</dt><dd>${escapeHtml(branch.type||'Branch')}</dd></div><div><dt>Location</dt><dd>${escapeHtml(branch.location)}</dd></div><div><dt>Address</dt><dd>${escapeHtml(branch.address||'—')}</dd></div><div><dt>Manager</dt><dd>${escapeHtml(branch.manager||'—')}</dd></div><div><dt>Status</dt><dd>${escapeHtml(branch.status)}</dd></div>${branch.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(branch.archivedReason)}</dd></div>`:''}</dl></section><section class="detail-card"><div class="detail-card__head"><h3>Quick actions</h3></div><div class="stack-actions"><button data-open-branch-timesheet="${escapeHtml(branch.id)}">Attendance & OT ${icon('chevron')}</button><button data-open-branch-payroll="${escapeHtml(branch.id)}">Branch Payroll ${icon('chevron')}</button><button data-route-link="bank-export">Bank / WPS ${icon('chevron')}</button></div></section></aside></div>`;
     }
-    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employees.length} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions"><button class="btn btn--secondary" data-edit-branch="${escapeHtml(branch.id)}">${icon('edit')} Edit</button><button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button></div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch assignments are effective-dated internal organization records and remain separate from rental project assignments.</span></div></section>`;
+    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employees.length} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${branch.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(branch.id)}"`},'separator',{label:branch.archived?'Restore from archive':'Archive branch / office',hint:branch.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|${branch.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Available only before organization/payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch assignments are effective-dated internal organization records and remain separate from rental project assignments.</span></div></section>`;
   }
 
   function departmentsTemplate() {
@@ -1745,8 +1754,8 @@
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Departments</h1><p class="ui-v2-body">Departments are published organization masters used across employee assignment, filtering and reporting. Inactive values remain available to historical records.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="branches">Branches & Offices</button><button class="btn btn--primary" data-quick-add="department">${icon('plus')} Add Department</button></div></div>
       <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${state.departments.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>Internal company records</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest department</span><strong>${Math.max(0,...counts)}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
-      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter department status">${['All','Active','Inactive'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'All' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
-      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status === 'Inactive' ? ' · Inactive' : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-edit-department="${escapeHtml(selected.id)}">${icon('edit')} Edit</button><button class="btn btn--secondary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button></div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
+      <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter department status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'Active' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
+      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Only when no employee or payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department edits affect the current master only; employee organization history and closed payroll snapshots remain attributable to their original effective records.</span></div>
     </section>`;
   }
@@ -1767,9 +1776,9 @@
     } else if (tab==='payroll') {
       content=`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(state.period)} department payroll</h2><p>Company payroll aggregated across every branch for this department.</p></div><button class="btn btn--secondary btn--sm" data-open-department-payroll="${escapeHtml(department.id)}">Open Payroll Run</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong></div><div><span>Gross payroll</span><strong>${formatCurrency(totals.gross||0)}</strong></div><div><span>Deductions</span><strong>${formatCurrency((totals.advances||0)+(totals.deductions||0))}</strong></div><div><span>Net payable</span><strong>${formatCurrency(totals.net||0)}</strong></div></div></section>`;
     } else {
-      content=`<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department snapshot</h2><p>Cross-branch internal-company organization view.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${employees.filter(item=>item.status==='Active').length} active</small></div><div><span>Branches</span><strong>${branchRows.length}</strong><small>Currently represented</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employees.length}</strong><small>Configured structures</small></div><div><span>WPS ready</span><strong>${ready}/${employees.length}</strong><small>Payment-data readiness</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Branch distribution</h2><p>Employees grouped by office.</p></div></div><div class="composition-block">${branchRows.length?branchRows.map(({branch,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-branch="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employee assignments yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Department details</h3><button class="text-link" data-edit-department="${escapeHtml(department.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(department.code)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(department.status)}</dd></div><div><dt>Employees</dt><dd>${employees.length}</dd></div><div><dt>Current net payroll</dt><dd>${formatCurrency(totals.net||0)}</dd></div></dl>${department.notes?`<p class="organization-notes">${escapeHtml(department.notes)}</p>`:''}</section></aside></div>`;
+      content=`<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department snapshot</h2><p>Cross-branch internal-company organization view.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${employees.filter(item=>item.status==='Active').length} active</small></div><div><span>Branches</span><strong>${branchRows.length}</strong><small>Currently represented</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employees.length}</strong><small>Configured structures</small></div><div><span>WPS ready</span><strong>${ready}/${employees.length}</strong><small>Payment-data readiness</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Branch distribution</h2><p>Employees grouped by office.</p></div></div><div class="composition-block">${branchRows.length?branchRows.map(({branch,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-branch="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employee assignments yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Department details</h3><button class="text-link" data-edit-department="${escapeHtml(department.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(department.code)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(department.status)}</dd></div>${department.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(department.archivedReason)}</dd></div>`:''}<div><dt>Employees</dt><dd>${employees.length}</dd></div><div><dt>Current net payroll</dt><dd>${formatCurrency(totals.net||0)}</dd></div></dl>${department.notes?`<p class="organization-notes">${escapeHtml(department.notes)}</p>`:''}</section></aside></div>`;
     }
-    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employees.length} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions"><button class="btn btn--secondary" data-edit-department="${escapeHtml(department.id)}">${icon('edit')} Edit</button><button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button></div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department changes do not rewrite historical payroll snapshots or organization audit events.</span></div></section>`;
+    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employees.length} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${department.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(department.id)}"`},'separator',{label:department.archived?'Restore from archive':'Archive department',hint:department.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|${department.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Available only before organization/payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department changes do not rewrite historical payroll snapshots or organization audit events.</span></div></section>`;
   }
 
   function employeeWpsBadge(value) {
@@ -1778,15 +1787,54 @@
     return `<span class="readiness readiness--neutral"><span></span>No supplied record</span>`;
   }
 
+  function employeeLifecycleActions(employee) {
+    if (!employee) return [];
+    if (employee.archived) return [
+      { value:'restore_archive', label:'Restore archived employee' },
+      { value:'delete', label:'Delete unused employee master' }
+    ];
+    const actions = [];
+    if (employee.status === 'Active') actions.push(
+      { value:'leave', label:'Put employee on leave' },
+      { value:'deactivate', label:'Deactivate / stop payroll eligibility' },
+      { value:'terminate', label:'Terminate employment' }
+    );
+    else if (employee.status === 'On Leave') actions.push(
+      { value:'activate', label:'Return employee to Active' },
+      { value:'deactivate', label:'Deactivate / stop payroll eligibility' },
+      { value:'terminate', label:'Terminate employment' }
+    );
+    else if (employee.status === 'Inactive') actions.push(
+      { value:'activate', label:'Reactivate employee' },
+      { value:'terminate', label:'Terminate employment' },
+      { value:'archive', label:'Archive employee record' }
+    );
+    else if (employee.status === 'Terminated') actions.push(
+      { value:'archive', label:'Archive terminated employee' }
+    );
+    actions.push({ value:'delete', label:'Delete unused employee master' });
+    return actions;
+  }
+
+  function employeeLifecycleBanner(employee) {
+    if (!employee) return '';
+    if (employee.archived) return `<div class="employee-lifecycle-banner is-archived">${icon('info')}<span><strong>Archived employee record</strong>${escapeHtml(employee.archivedReason || 'Removed from current employee registers while payroll history remains available.')} ${employee.archivedAt ? `Archived ${escapeHtml(payrollTimestamp(employee.archivedAt))}.` : ''}</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
+    if (employee.status === 'Terminated') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employment ended${employee.employmentEnd ? ` · ${escapeHtml(employee.employmentEnd)}` : ''}</strong>This master remains available for payroll, payment and document history. Archive it when day-to-day access is no longer needed.</span><button class="text-link" data-employee-lifecycle>Manage record</button></div>`;
+    if (employee.status === 'Inactive') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employee inactive</strong>Inactive employees are excluded from new attendance/payroll eligibility. Use Employment to reactivate, terminate or archive this record.</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
+    if (employee.status === 'On Leave') return `<div class="employee-lifecycle-banner">${icon('info')}<span><strong>Employee on leave</strong>The employee remains employed. Attendance can record leave while the employee is outside normal active work.</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
+    return '';
+  }
+
   function getFilteredEmployees() {
     const q = state.employeeSearch.trim().toLowerCase();
     return state.employees.filter(employee => {
-      const statusMatch = state.employeeStatus === 'All' || employee.status === state.employeeStatus;
+      const archiveMatch = state.employeeStatus === 'Archived' ? !!employee.archived : !employee.archived;
+      const statusMatch = state.employeeStatus === 'All' || state.employeeStatus === 'Archived' || employee.status === state.employeeStatus;
       const branchMatch = state.employeeBranch === 'All branches' || employee.branch === state.employeeBranch;
       const departmentMatch = state.employeeDepartment === 'All departments' || employee.department === state.employeeDepartment;
       const wpsMatch = state.employeeWps === 'All' || (state.employeeWps === 'WPS ready' ? employee.wps === 'Ready' : employee.wps !== 'Ready');
-      const text = `${employee.employeeId} ${employee.name} ${employee.position} ${employee.department} ${employee.branch}`.toLowerCase();
-      return statusMatch && branchMatch && departmentMatch && wpsMatch && (!q || text.includes(q));
+      const text = `${employee.employeeId} ${employee.name} ${employee.position} ${employee.department} ${employee.branch} ${employee.status} ${employee.archivedReason || ''}`.toLowerCase();
+      return archiveMatch && statusMatch && branchMatch && departmentMatch && wpsMatch && (!q || text.includes(q));
     });
   }
 
@@ -1804,9 +1852,11 @@
 
   function internalEmployeesTemplate() {
     const employees = getFilteredEmployees();
-    const active = state.employees.filter(e => e.status === 'Active').length;
-    const wpsReady = state.employees.filter(e => e.wps === 'Ready').length;
-    const configuredSalary = state.employees.filter(e => !!employeeProfileData(e).salary).length;
+    const currentEmployees = state.employees.filter(e => !e.archived);
+    const archivedCount = state.employees.length - currentEmployees.length;
+    const active = currentEmployees.filter(e => e.status === 'Active').length;
+    const wpsReady = currentEmployees.filter(e => e.wps === 'Ready').length;
+    const configuredSalary = currentEmployees.filter(e => !!employeeProfileData(e).salary).length;
     const dimensions = [
       state.branches.filter(b => b.status === 'Active').length,
       state.departments.filter(d => d.status === 'Active').length
@@ -1820,24 +1870,24 @@
         <div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button><button class="btn btn--secondary" data-employee-export>Export</button><button class="btn btn--primary" data-quick-add="internal-employee">${icon('plus')} Add Employee</button></div>
       </div>
       <div class="summary-strip ui-v2-payroll-summary-strip">
-        <div class="summary-item ui-v2-payroll-metric"><span>Employee records</span><strong>${state.employees.length}</strong><small>${active} active in company scope</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Current employee records</span><strong>${currentEmployees.length}</strong><small>${active} active · ${archivedCount} archived retained</small></div>
         <div class="summary-item ui-v2-payroll-metric"><span>Organization dimensions</span><strong>${dimensions}</strong><small>Branch + department in current preset</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${configuredSalary}/${state.employees.length}</strong><small>Numeric structures available</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReady}/${state.employees.length}</strong><small>Bank/WPS source records</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${configuredSalary}/${currentEmployees.length || 0}</strong><small>Current employee structures available</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReady}/${currentEmployees.length || 0}</strong><small>Current employee payment records</small></div>
       </div>
       <section class="data-panel ui-v2-payroll-panel ui-v2-payroll-register">
         <div class="table-toolbar ui-v2-payroll-register__toolbar ui-v2-payroll-register__toolbar--dimensions">
           <div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="employeeSearch" class="ui-v2-input" type="search" placeholder="Search employee, ID, position or organization…" value="${escapeHtml(state.employeeSearch)}"></div>
           <select id="employeeBranchFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by branch">${branchOptions.map(option => `<option ${state.employeeBranch === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>
           <select id="employeeDepartmentFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by department">${departmentOptions.map(option => `<option ${state.employeeDepartment === option ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select>
-          <select id="employeeStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by employee status">${['All','Active','On Leave','Inactive','Terminated'].map(option => `<option value="${option}" ${state.employeeStatus === option ? 'selected' : ''}>${option === 'All' ? 'All statuses' : option}</option>`).join('')}</select>
+          <select id="employeeStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by employee status">${['All','Active','On Leave','Inactive','Terminated','Archived'].map(option => `<option value="${option}" ${state.employeeStatus === option ? 'selected' : ''}>${option === 'All' ? 'All statuses' : option}</option>`).join('')}</select>
           <select id="employeeWpsFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by WPS readiness"><option ${state.employeeWps === 'All' ? 'selected' : ''}>All</option><option ${state.employeeWps === 'WPS ready' ? 'selected' : ''}>WPS ready</option><option ${state.employeeWps === 'Needs setup' ? 'selected' : ''}>Needs setup</option></select>
           <button class="btn btn--secondary btn--sm" type="button" data-employee-filter-reset>Reset</button>
         </div>
         <div class="table-meta ui-v2-payroll-table-meta"><span><strong>${employees.length}</strong> employee${employees.length === 1 ? '' : 's'}</span><span>Organization filters use the employee's current effective branch and department assignment.</span></div>
         <div class="table-scroll ui-v2-table-wrap ui-v2-payroll-table-wrap">
           <table class="data-table ui-v2-table ui-v2-payroll-table employee-table"><thead><tr><th>Employee</th><th>Organization</th><th>Position</th><th>Salary base</th><th>WPS</th><th>Status</th><th aria-label="Open"></th></tr></thead>
-          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${salaryBasicForEmployee(employee) != null ? formatCurrency(salaryBasicForEmployee(employee)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div></td></tr>`}</tbody></table>
+          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${salaryBasicForEmployee(employee) != null ? formatCurrency(salaryBasicForEmployee(employee)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${employee.archived ? statusBadge('Archived') : statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div></td></tr>`}</tbody></table>
         </div>
       </section>
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Employee master records are company-scoped and organization changes are preserved as effective-dated history.</span></div>
@@ -1881,7 +1931,7 @@
             </div>
           </section>
 
-          ${branch ? (()=>{const department=state.departments.find(item=>item.id===employee.departmentId)||departmentByName(employee.department);const history=employeeOrganizationHistory(employee);return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Organization assignment</h2><p>Branch and department define the employee's internal-company organization. They are not construction-project assignments.</p></div><button class="btn btn--secondary btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">Change Organization</button></div><div class="employee-organization-current"><button class="employee-project-card" data-open-branch="${branch.id}"><span class="employee-assignment-card__icon">${icon('branch')}</span><span><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.location)}</small></span><span class="project-deployment-tag">Branch / Office</span>${icon('chevron')}</button>${department?`<button class="employee-project-card employee-department-assignment" data-open-department="${escapeHtml(department.id)}"><span class="employee-assignment-card__icon">${icon('department')}</span><span><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · ${escapeHtml(employee.position)}</small></span><span class="project-deployment-tag">Department</span>${icon('chevron')}</button>`:''}</div><div class="organization-history"><div class="organization-history__head"><strong>Assignment history</strong><span>Effective-dated organization changes</span></div>${history.slice(0,4).map((item,index)=>`<div class="organization-history__row ${index===0?'is-current':''}"><span class="organization-history__dot"></span><div><strong>${escapeHtml(item.branch)} · ${escapeHtml(item.department)}</strong><small>${escapeHtml(item.position||employee.position)} · effective ${escapeHtml(item.effective||'Not set')}</small>${item.reason?`<em>${escapeHtml(item.reason)}</em>`:''}</div><span>${index===0?'Current':'History'}</span></div>`).join('')}</div></section>`})() : `<section class="panel panel--flush"><div class="section-headline"><div><h2>Organization assignment</h2><p>No branch has been assigned to this employee.</p></div><button class="btn btn--primary btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">Assign Organization</button></div><div class="employee-empty-compact"><strong>Branch not set</strong><span>Select a managed Branch / Office and Department record; do not use a construction project as the employee's master location.</span></div></section>`}
+          ${branch ? (()=>{const department=state.departments.find(item=>item.id===employee.departmentId)||departmentByName(employee.department);const history=employeeOrganizationHistory(employee);return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Organization assignment</h2><p>Branch and department define the employee's internal-company organization. They are not construction-project assignments.</p></div><button class="btn btn--secondary btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">Change Organization</button></div><div class="employee-organization-current"><button class="employee-project-card" data-open-branch="${branch.id}"><span class="employee-assignment-card__icon">${icon('branch')}</span><span><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.location)}</small></span><span class="project-deployment-tag">Branch / Office</span>${icon('chevron')}</button>${department?`<button class="employee-project-card employee-department-assignment" data-open-department="${escapeHtml(department.id)}"><span class="employee-assignment-card__icon">${icon('department')}</span><span><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · ${escapeHtml(employee.position)}</small></span><span class="project-deployment-tag">Department</span>${icon('chevron')}</button>`:''}</div><div class="organization-history"><div class="organization-history__head"><strong>Assignment history</strong><span>Effective-dated organization changes</span></div>${history.slice(0,4).map((item,index)=>`<div class="organization-history__row ${index===0?'is-current':''}"><span class="organization-history__dot"></span><div><strong>${escapeHtml(item.branch)} · ${escapeHtml(item.department)}</strong><small>${escapeHtml(item.position||employee.position)} · effective ${escapeHtml(item.effective||'Not set')}</small>${item.reason?`<em>${escapeHtml(item.reason)}</em>`:''}</div><span>${item.effectiveTo ? 'Ended' : (index===0 ? 'Current' : 'History')}</span></div>`).join('')}</div></section>`})() : `<section class="panel panel--flush"><div class="section-headline"><div><h2>Organization assignment</h2><p>No branch has been assigned to this employee.</p></div><button class="btn btn--primary btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">Assign Organization</button></div><div class="employee-empty-compact"><strong>Branch not set</strong><span>Select a managed Branch / Office and Department record; do not use a construction project as the employee's master location.</span></div></section>`}
 
           <section class="panel panel--flush">
             <div class="section-headline"><div><h2>Payroll snapshot</h2><p>${escapeHtml(state.period)} · current employee readiness and payroll inputs.</p></div><button class="text-link" data-employee-tab-jump="payroll">Payroll history →</button></div>
@@ -2033,6 +2083,7 @@
     const profile = employeeProfileData(employee);
     const fixedGross = profile.salary ? profile.salary.components.filter(c=>c.type==='earning').reduce((s,c)=>s+Number(c.amount||0),0) : null;
     const tab = state.employeeTab;
+    const organizationLocked = !!employee.archived || ['Inactive','Terminated'].includes(employee.status);
     const tabs = [
       ['overview','Overview'],['salary','Salary Structure'],['bank','Bank & WPS'],['attendance','Attendance'],['adjustments','Advances & Adjustments'],['payroll','Payroll History'],['documents','Documents']
     ];
@@ -2045,12 +2096,13 @@
     else if (tab === 'documents') content = employeeProfileDocuments(employee, profile);
 
     return `
-      <section class="page employee-profile-page">
+      <section class="page employee-profile-page ui-v2-prs-internal-page ui-v2-payroll-employee-profile">
         <div class="profile-crumb ui-v2-payroll-profile-crumb"><button type="button" class="text-link text-link--muted" data-route-link="internal-employees">Internal Employees</button><span>›</span><span>EMP ${escapeHtml(employee.employeeId)}</span></div>
         <header class="entity-header employee-profile-header ui-v2-payroll-entity-header">
-          <div class="entity-header__identity ui-v2-payroll-entity-header__identity"><span class="entity-avatar entity-avatar--employee ui-v2-payroll-entity-avatar">${icon('person')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(employee.name)}</h1>${statusBadge(employee.status)}</div><div class="entity-subline"><span>EMP ${escapeHtml(employee.employeeId)}</span><span>·</span><span>${escapeHtml(employee.position)}</span><span>·</span><span>${escapeHtml(employee.department)}</span></div></div></div>
-          <div class="entity-header__actions ui-v2-payroll-entity-header__actions"><button class="btn btn--secondary" data-change-employee-organization="${escapeHtml(employee.id)}">${icon('branch')} Organization</button><button class="btn btn--secondary" data-employee-profile-action="edit">${icon('edit')} Edit</button><button class="btn btn--secondary" data-employee-profile-action="adjustment">${icon('plus')} Adjustment</button><button class="icon-btn entity-more" data-employee-profile-action="more">${icon('more')}</button></div>
+          <div class="entity-header__identity ui-v2-payroll-entity-header__identity"><span class="entity-avatar entity-avatar--employee ui-v2-payroll-entity-avatar">${icon('person')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(employee.name)}</h1>${statusBadge(employee.status)}${employee.archived ? statusBadge('Archived') : ''}</div><div class="entity-subline"><span>EMP ${escapeHtml(employee.employeeId)}</span><span>·</span><span>${escapeHtml(employee.position)}</span><span>·</span><span>${escapeHtml(employee.department)}</span></div></div></div>
+          <div class="entity-header__actions ui-v2-payroll-entity-header__actions"><button class="btn btn--primary employee-employment-btn" data-employee-lifecycle>${icon('person')} Employment</button>${lifecycleActionsMenu([{label:'Edit employee master',hint:'Identity and contact details only',iconName:'edit',attrs:'data-employee-profile-action="edit"'},{label:'Change organization',hint:organizationLocked?'Restore/reactivate before changing organization':'Effective-dated branch and department assignment',iconName:'branch',attrs:`data-change-employee-organization="${escapeHtml(employee.id)}"`,disabled:organizationLocked},{label:'Add adjustment',hint:'Advance, deduction, bonus or reimbursement',iconName:'plus',attrs:'data-employee-profile-action="adjustment"'}])}</div>
         </header>
+        ${employeeLifecycleBanner(employee)}
         <div class="profile-facts employee-profile-facts ui-v2-payroll-profile-facts">
           <div><span>Branch / Office</span><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong></div>
           <div><span>Department</span><strong>${escapeHtml(employee.department || 'Department not set')}</strong></div>
@@ -2491,7 +2543,7 @@
           <div class="table-toolbar">
             <div class="table-toolbar__search">${icon('search')}<input id="supplierSearch" type="search" placeholder="Search supplier, code, contact or location" value="${escapeHtml(state.supplierSearch)}"></div>
             <div class="segmented segmented--compact" aria-label="Supplier status filter">
-              ${['All','Active','Inactive'].map(status => `<button type="button" data-supplier-status="${status}" class="${state.supplierStatus === status ? 'is-active' : ''}">${status}</button>`).join('')}
+              ${['All','Active','Inactive','Archived'].map(status => `<button type="button" data-supplier-status="${status}" class="${state.supplierStatus === status ? 'is-active' : ''}">${status}</button>`).join('')}
             </div>
             <button class="btn btn--ghost ${supplierAdvancedCount ? 'is-active-filter' : ''}" data-supplier-filter aria-expanded="${state.supplierFiltersOpen}">${icon('more')} More filters${supplierAdvancedCount ? ` (${supplierAdvancedCount})` : ''}</button>
             ${supplierHasFilters ? '<button class="btn btn--ghost" data-supplier-reset>Reset</button>' : ''}
@@ -2525,7 +2577,7 @@
           </div>
         </section>
 
-        <div class="source-banner">${icon('info')}<span>Supplier companies are permanent managed masters. Worker ownership is stored here; project deployment and commercial terms are maintained through dated assignments and settlements.</span></div>
+        <div class="source-banner">${icon('info')}<span>Supplier companies are managed masters. Archive retains worker, assignment, settlement and payment history; permanent delete is only allowed for a genuinely unused supplier.</span></div>
       </section>`;
   }
 
@@ -2551,11 +2603,15 @@
             </div>
           </div>
           <div class="entity-header__actions ui-v2-payroll-entity-header__actions">
-            <button class="btn btn--secondary" data-supplier-action="edit">${icon('edit')} Edit</button>
             <button class="btn btn--secondary" data-supplier-assignment-activity="${escapeHtml(supplier.id)}">Assignment Activity</button>
-            <button class="btn btn--secondary" data-supplier-bulk-onboard="${escapeHtml(supplier.id)}">Bulk Add</button>
-            <button class="btn btn--secondary" data-supplier-add-worker="${escapeHtml(supplier.id)}">${icon('plus')} Add Worker</button>
-            <button class="icon-btn entity-more" type="button" data-supplier-action="more" aria-label="More supplier actions">${icon('more')}</button>
+            ${!supplier.archived && supplier.status === 'Active' ? `<button class="btn btn--secondary" data-supplier-bulk-onboard="${escapeHtml(supplier.id)}">Bulk Add</button><button class="btn btn--primary" data-supplier-add-worker="${escapeHtml(supplier.id)}">${icon('plus')} Add Worker</button>` : ''}
+            ${lifecycleActionsMenu([
+              ...(!supplier.archived ? [{label:'Edit supplier',hint:'Update supplier master details',iconName:'edit',attrs:'data-supplier-action="edit"'}] : []),
+              {label:'Manage supplier lifecycle',hint:'Activate, inactivate, archive or restore',iconName:'info',attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|manage"`},
+              'separator',
+              {label:supplier.archived?'Restore from archive':'Archive supplier',hint:supplier.archived?'Restore as Inactive':'Preserve workers, assignments and financial history',iconName:'info',attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|${supplier.archived?'restore':'archive'}"`},
+              {label:'Delete unused supplier',hint:'Only when no worker, settlement or payment history exists',iconName:'more',danger:true,attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|delete"`}
+            ])}
           </div>
         </header>
 
@@ -2765,7 +2821,7 @@
           <div class="segmented segmented--compact salary-type-filter">
             ${['All','Earning','Deduction'].map(type => `<button class="${state.salaryComponentType === type ? 'is-active' : ''}" data-salary-component-type="${type}">${type === 'All' ? 'All' : `${type}s`}</button>`).join('')}
           </div>
-          <select class="select salary-status-select" id="salaryComponentStatus"><option ${state.salaryComponentStatus === 'Active' ? 'selected' : ''}>Active</option><option ${state.salaryComponentStatus === 'Inactive' ? 'selected' : ''}>Inactive</option><option ${state.salaryComponentStatus === 'All' ? 'selected' : ''}>All</option></select>
+          <select class="select salary-status-select" id="salaryComponentStatus"><option ${state.salaryComponentStatus === 'Active' ? 'selected' : ''}>Active</option><option ${state.salaryComponentStatus === 'Inactive' ? 'selected' : ''}>Inactive</option><option ${state.salaryComponentStatus === 'Archived' ? 'selected' : ''}>Archived</option><option ${state.salaryComponentStatus === 'All' ? 'selected' : ''}>All</option></select>
           <button class="btn btn--primary" data-salary-component-add>${icon('plus')} Add Component</button>
         </div>
         <div class="table-scroll">
@@ -2773,13 +2829,18 @@
             <thead><tr><th>Component</th><th>Type</th><th>Usage</th><th>Calculation</th><th>WPS Mapping</th><th>Status</th><th></th></tr></thead>
             <tbody>
               ${rows.length ? rows.map(item => `<tr>
-                <td><button class="entity-link entity-link--stack" data-salary-component-edit="${item.id}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.code)}</span></button></td>
+                <td>${item.archived?`<span class="entity-link entity-link--stack"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.code)}</span></span>`:`<button class="entity-link entity-link--stack" data-salary-component-edit="${item.id}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.code)}</span></button>`}</td>
                 <td><span class="component-kind component-kind--${item.category.toLowerCase()}">${escapeHtml(item.category)}</span></td>
                 <td><div class="table-primary">${escapeHtml(item.recurrence)}</div><div class="table-secondary">${item.recurrence === 'Recurring' ? 'Part of permanent salary structure' : 'Calculated / entered per payroll period'}</div></td>
                 <td><div class="table-primary">${escapeHtml(item.calculation)}</div><div class="table-secondary">${item.calculation === 'Manual Amount' ? 'Entered when assigned or processed' : 'Stored recurring component amount'}</div></td>
                 <td><span class="mapping-chip ${item.wpsMap === 'Not mapped' ? 'is-muted' : ''}">${escapeHtml(item.wpsMap || 'Not mapped')}</span></td>
                 <td>${statusBadge(item.status)}</td>
-                <td class="table-actions"><button class="icon-btn icon-btn--sm" data-salary-component-edit="${item.id}" aria-label="Edit ${escapeHtml(item.name)}">${icon('more')}</button></td>
+                <td class="table-actions">${lifecycleActionsMenu([
+                  ...(!item.archived ? [{label:'Edit component',hint:'Update future salary setup behaviour',iconName:'edit',attrs:`data-salary-component-edit="${item.id}"`}] : []),
+                  'separator',
+                  {label:item.archived?'Restore component':'Archive component',hint:item.archived?'Restore as Inactive':'Keep payroll history; remove from new salary setup',iconName:'info',attrs:`data-config-lifecycle="component|${item.id}|${item.archived?'restore':'archive'}"`},
+                  {label:'Delete unused component',hint:'Only before salary or overtime references exist',iconName:'more',danger:true,attrs:`data-config-lifecycle="component|${item.id}|delete"`}
+                ],{compact:true})}</td>
               </tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No salary components match this view.</strong><span>Change the type/status filters or create a new reusable component.</span></div></td></tr>`}
             </tbody>
           </table>
@@ -2794,7 +2855,7 @@
     const configured = state.employees.filter(employee => !!employeeProfileData(employee).salary).length;
     return `
       <section class="data-panel salary-config-panel">
-        <div class="section-headline salary-structure-head"><div><h2>Employee salary structures</h2><p>Each employee keeps an effective-dated structure. Changing today's salary never rewrites a closed payroll period.</p></div><button class="btn btn--primary" data-salary-structure-new>${icon('plus')} Assign Structure</button></div>
+        <div class="section-headline salary-structure-head"><div><h2>Employee salary structures</h2><p>Each employee keeps an effective-dated structure. Effective-dated history is retained; changes create the next effective record and never rewrite a closed payroll period.</p></div><button class="btn btn--primary" data-salary-structure-new>${icon('plus')} Assign Structure</button></div>
         <div class="structure-coverage">
           <div class="structure-coverage__copy"><span>Configuration coverage</span><strong>${configured} of ${state.employees.length} employees</strong><small>${state.employees.length - configured} records still need a numeric salary structure.</small></div>
           <div class="structure-progress"><span style="width:${state.employees.length ? Math.round(configured/state.employees.length*100) : 0}%"></span></div>
@@ -2814,7 +2875,7 @@
               const earnings = salary.components.filter(c => c.type === 'earning').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
               const deductions = salary.components.filter(c => c.type === 'deduction').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
               const basic = salaryBasicComponent(salary)?.amount;
-              return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${employee.id}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)} · ${escapeHtml(employee.position)}</span></button></td><td><span class="setup-state setup-state--ready">Configured</span><div class="table-secondary">Effective ${escapeHtml(salary.effective || 'Current')}</div></td><td class="table-money"><strong>${Number.isFinite(Number(basic)) ? formatCurrency(Number(basic)) : '—'}</strong></td><td class="table-money">${formatCurrency(earnings)}</td><td class="table-money">${formatCurrency(deductions)}</td><td><div class="table-primary">${escapeHtml(salary.otPolicy || 'Not assigned')}</div></td><td><div class="table-primary">${escapeHtml(salary.effectiveTo || 'Current')}</div></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${employee.id}">Edit</button></td></tr>`;
+              return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${employee.id}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)} · ${escapeHtml(employee.position)}</span></button></td><td><span class="setup-state setup-state--ready">Configured</span><div class="table-secondary">Effective ${escapeHtml(salary.effective || 'Current')}</div></td><td class="table-money"><strong>${Number.isFinite(Number(basic)) ? formatCurrency(Number(basic)) : '—'}</strong></td><td class="table-money">${formatCurrency(earnings)}</td><td class="table-money">${formatCurrency(deductions)}</td><td><div class="table-primary">${escapeHtml(salary.otPolicy || 'Not assigned')}</div></td><td><div class="table-primary">${escapeHtml(salary.effectiveTo || 'Current')}</div></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${employee.id}">Create effective change</button></td></tr>`;
             }).join('')}</tbody>
           </table>
         </div>
@@ -2822,19 +2883,25 @@
   }
 
   function salaryOvertimeTab() {
-    const active = state.overtimePolicies.find(item => item.status === 'Active') || state.overtimePolicies[0];
+    const visiblePolicies = state.overtimePolicies.filter(item => state.overtimePolicyStatus === 'All' || item.status === state.overtimePolicyStatus);
+    const active = state.overtimePolicies.find(item => item.status === 'Active') || null;
     const formula = active ? `${active.baseComponent} ÷ ${active.divisor} × OT hours × ${active.multiplier}` : 'No active policy';
     return `
       <div class="salary-overtime-layout">
         <section class="data-panel salary-config-panel">
-          <div class="section-headline"><div><h2>Overtime policies</h2><p>Keep the company formula configurable and assign it to employee salary structures instead of hard-coding it into payroll.</p></div><button class="btn btn--primary" data-overtime-policy-add>${icon('plus')} Add Policy</button></div>
+          <div class="section-headline"><div><h2>Overtime policies</h2><p>Keep the company formula configurable and assign it to employee salary structures instead of hard-coding it into payroll.</p></div><div class="payment-head-actions"><select class="select" id="overtimePolicyStatus">${['Active','Inactive','Archived','All'].map(status=>`<option ${state.overtimePolicyStatus===status?'selected':''}>${status}</option>`).join('')}</select><button class="btn btn--primary" data-overtime-policy-add>${icon('plus')} Add Policy</button></div></div>
           <div class="ot-policy-list">
-            ${state.overtimePolicies.length ? state.overtimePolicies.map(policy => `<article class="ot-policy-card ${policy.status === 'Active' ? 'is-active' : ''}">
+            ${visiblePolicies.length ? visiblePolicies.map(policy => `<article class="ot-policy-card ${policy.status === 'Active' ? 'is-active' : ''}">
               <div class="ot-policy-card__head"><div><span class="ot-policy-icon">OT</span><div><strong>${escapeHtml(policy.name)}</strong><small>${escapeHtml(policy.code || 'Overtime policy')}</small></div></div>${statusBadge(policy.status)}</div>
               <div class="ot-formula">${escapeHtml(policy.baseComponent)} <span>÷</span> ${escapeHtml(policy.divisor)} <span>×</span> OT hours <span>×</span> ${escapeHtml(policy.multiplier)}</div>
               <div class="ot-policy-card__meta"><span>Base <strong>${escapeHtml(policy.baseComponent)}</strong></span><span>Divisor <strong>${escapeHtml(policy.divisor)}</strong></span><span>Multiplier <strong>${escapeHtml(policy.multiplier)}</strong></span></div>
-              <div class="ot-policy-card__foot"><span>${escapeHtml(policy.notes || 'Managed overtime policy')}</span><button class="btn btn--ghost btn--sm" data-overtime-policy-edit="${policy.id}">Edit Policy</button></div>
-            </article>`).join('') : `<div class="table-empty table-empty--card"><strong>No overtime policies.</strong><span>Create a policy before assigning overtime calculation to employee salary structures.</span></div>`}
+              <div class="ot-policy-card__foot"><span>${escapeHtml(policy.archivedReason || policy.notes || 'Managed overtime policy')}</span><div class="payment-head-actions">${lifecycleActionsMenu([
+                ...(!policy.archived ? [{label:'Edit overtime policy',hint:'Update future overtime calculation setup',iconName:'edit',attrs:`data-overtime-policy-edit="${policy.id}"`}] : []),
+                'separator',
+                {label:policy.archived?'Restore policy':'Archive policy',hint:policy.archived?'Restore as Inactive':'Preserve salary history and remove from new structures',iconName:'info',attrs:`data-config-lifecycle="overtime|${policy.id}|${policy.archived?'restore':'archive'}"`},
+                {label:'Delete unused policy',hint:'Only before salary structures reference this policy',iconName:'more',danger:true,attrs:`data-config-lifecycle="overtime|${policy.id}|delete"`}
+              ],{compact:true})}</div></div>
+            </article>`).join('') : `<div class="table-empty table-empty--card"><strong>No overtime policies in this view.</strong><span>Change the status filter or create a policy before assigning overtime calculation to employee salary structures.</span></div>`}
           </div>
         </section>
 
@@ -4305,9 +4372,9 @@
     state.paymentBatches = [...(payload.batches || [])];
     state.bankBatches = state.paymentBatches.filter(item => item.channelValue === 'bank_csv');
     state.wpsBatches = state.paymentBatches.filter(item => item.channelValue === 'wps');
-    const bankTemplates = state.bankTemplates.filter(item => item.channel === 'bank_csv' && item.active);
+    const bankTemplates = state.bankTemplates.filter(item => item.channel === 'bank_csv' && item.active && !item.archived);
     if (!bankTemplates.some(item => item.id === state.bankTemplateId)) state.bankTemplateId = bankTemplates[0]?.id || null;
-    const wpsTemplates = state.bankTemplates.filter(item => item.channel === 'wps' && item.active);
+    const wpsTemplates = state.bankTemplates.filter(item => item.channel === 'wps' && item.active && !item.archived);
     if (!wpsTemplates.some(item => item.id === state.wpsTemplateId)) state.wpsTemplateId = wpsTemplates[0]?.id || null;
     syncEmployeePaymentProfiles(payload);
   }
@@ -4392,7 +4459,7 @@
   function latestBankBatch(period = state.period) { return [...bankBatchesForPeriod(period)].sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null; }
 
   const bankColumnCatalog = {
-    employee_number:'Employee ID', employee_name:'Employee name', national_id:'National ID / Iqama', bank_name:'Bank name', bank_code:'Bank code',
+    employee_number:'Employee ID', employee_name:'Employee name', national_id:'National ID / Iqama', employee_address:'Employee address', bank_name:'Bank name', bank_code:'Bank code',
     iban:'IBAN', salary_card_number:'Salary card number', account_holder_name:'Account holder', basic_salary:'Basic salary', housing_allowance:'Housing allowance',
     other_earnings:'Other earnings', deductions:'Deductions', net_salary:'Net salary', transaction_reference:'Transaction reference', period_start:'Period start',
     period_end:'Period end', employer_identifier:'Employer identifier', employer_bank_name:'Employer bank name', employer_bank_code:'Employer bank code', employer_iban:'Employer IBAN', bank_customer_reference:'Bank customer reference'
@@ -4406,7 +4473,7 @@
   }
   function activePaymentTemplate(channel) {
     const preferred = channel === 'bank_csv' ? bankTemplateById() : bankTemplatesAll('wps').find(item => item.id === state.wpsTemplateId);
-    return preferred?.active && preferred.channel === channel ? preferred : bankTemplatesAll(channel).find(item => item.active) || null;
+    return preferred?.active && !preferred.archived && preferred.channel === channel ? preferred : bankTemplatesAll(channel).find(item => item.active && !item.archived) || null;
   }
 
   function bankPaymentRows({ all = false } = {}) {
@@ -4494,7 +4561,7 @@
     const blockers = readiness.companyBlockers || [];
     return `<div class="wps-summary-strip"><div><span>Payroll status</span><strong>${escapeHtml(context.payrollStatusLabel || 'Not calculated')}</strong><small>Approved payroll required</small></div><div><span>WPS ready</span><strong>${summary.ready} / ${summary.total}</strong><small>Employee payment profiles</small></div><div><span>Ready amount</span><strong>${formatCurrency(summary.readyAmount)}</strong><small>Approved net salaries</small></div><div class="${summary.blocked || blockers.length ? 'is-alert' : ''}"><span>Blocked</span><strong>${summary.blocked + blockers.length}</strong><small>${blockers.length ? 'Company setup required' : summary.blocked ? 'Employee setup required' : 'No blockers'}</small></div></div>
       ${blockers.length ? `<section class="source-note">${icon('info')}<span><strong>WPS company setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>` : ''}
-      <section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>WPS validation register</h2><p>Server validation against the approved payroll snapshot, WPS component mapping and employee payment profiles.</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-wps-prepare ${!wpsWorkflowGate().canPrepare ? 'disabled' : ''}>Prepare WPS Batch</button></div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="wpsSearch" type="search" value="${escapeHtml(state.wpsSearch)}" placeholder="Search employee, bank, account or ID…"></div>${bankTemplatesAll('wps').length>1?`<select class="select" id="wpsTemplateSelect">${bankTemplatesAll('wps').filter(item=>item.active).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.wpsTemplateId?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>`:''}<div class="segmented compact-segmented">${['All','Ready','Blocked'].map(status=>`<button type="button" class="${state.wpsStatusFilter===status?'is-active':''}" data-wps-status="${status}">${status}</button>`).join('')}</div><button class="btn btn--ghost" data-wps-reset>Reset</button></div><div class="table-wrap"><table class="data-table wps-table"><thead><tr><th>Employee</th><th>Bank / Account</th><th>National ID / Iqama</th><th class="num">Basic</th><th class="num">Housing</th><th class="num">Other Earnings</th><th class="num">Deductions</th><th class="num">Net Salary</th><th>Validation</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position || '—')}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank || 'Not configured')}</strong><span>${escapeHtml(row.account || '—')}</span></div></td><td><span class="mono-cell">${escapeHtml(row.nationalId || '—')}</span></td><td class="num">${formatCurrency(row.basicSalary)}</td><td class="num">${formatCurrency(row.housingAllowance)}</td><td class="num">${formatCurrency(row.otherEarnings)}</td><td class="num">${formatCurrency(row.deductions)}</td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.wpsStatus)}${row.wpsBlockers.length?`<small class="validation-issue-count">${row.wpsBlockers.length} issue${row.wpsBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-wps-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join('') : `<tr><td colspan="10"><div class="table-empty"><strong>No WPS rows match this view.</strong><span>Complete payroll and employee payment setup or reset filters.</span></div></td></tr>`}</tbody></table></div></section>`;
+      <section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>WPS validation register</h2><p>Server validation against the approved payroll snapshot, WPS component mapping and employee payment profiles.</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-wps-prepare ${!wpsWorkflowGate().canPrepare ? 'disabled' : ''}>Prepare WPS Batch</button></div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="wpsSearch" type="search" value="${escapeHtml(state.wpsSearch)}" placeholder="Search employee, bank, account or ID…"></div>${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).length>1?`<select class="select" id="wpsTemplateSelect">${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.wpsTemplateId?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>`:''}<div class="segmented compact-segmented">${['All','Ready','Blocked'].map(status=>`<button type="button" class="${state.wpsStatusFilter===status?'is-active':''}" data-wps-status="${status}">${status}</button>`).join('')}</div><button class="btn btn--ghost" data-wps-reset>Reset</button></div><div class="table-wrap"><table class="data-table wps-table"><thead><tr><th>Employee</th><th>Bank / Account</th><th>National ID / Iqama</th><th class="num">Basic</th><th class="num">Housing</th><th class="num">Other Earnings</th><th class="num">Deductions</th><th class="num">Net Salary</th><th>Validation</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position || '—')}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank || 'Not configured')}</strong><span>${escapeHtml(row.account || '—')}</span></div></td><td><span class="mono-cell">${escapeHtml(row.nationalId || '—')}</span></td><td class="num">${formatCurrency(row.basicSalary)}</td><td class="num">${formatCurrency(row.housingAllowance)}</td><td class="num">${formatCurrency(row.otherEarnings)}</td><td class="num">${formatCurrency(row.deductions)}</td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.wpsStatus)}${row.wpsBlockers.length?`<small class="validation-issue-count">${row.wpsBlockers.length} issue${row.wpsBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-wps-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join('') : `<tr><td colspan="10"><div class="table-empty"><strong>No WPS rows match this view.</strong><span>Complete payroll and employee payment setup or reset filters.</span></div></td></tr>`}</tbody></table></div></section>`;
   }
 
   function wpsBatchesTemplate() {
@@ -4509,13 +4576,18 @@
 
   function bankExportRegisterTemplate() {
     const context = paymentContextForPeriod(); const readiness = context.bankReadiness || {}; const rows = bankPaymentRows(); const allRows = bankPaymentRows({all:true}); const ready = allRows.filter(row=>row.bankStatus==='Ready'); const blockers = readiness.companyBlockers || []; const template=activePaymentTemplate('bank_csv');
-    return `<div class="bank-export-subhead"><div><span class="eyebrow">Bank salary file</span><h2>Salary Transfer Register</h2><p>Validate payment profiles and generate only the configured bank layout from an approved payroll snapshot.</p></div><div class="bank-template-picker"><label>Export template</label><select class="select" id="bankTemplateSelect" ${!bankTemplatesAll('bank_csv').length?'disabled':''}>${bankTemplatesAll('bank_csv').map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.bankTemplateId?'selected':''}>${escapeHtml(item.name)}${item.active?'':' · inactive'}</option>`).join('') || '<option>No bank template configured</option>'}</select></div></div>${blockers.length?`<section class="source-note">${icon('info')}<span><strong>Payment setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>`:''}<section class="data-panel"><div class="panel__head panel__head--padded"><div><h2>Bank-payment validation</h2><p>${template?`Using ${escapeHtml(template.name)}.`:'Create an export template before preparing a payment batch.'}</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-bank-batch-prepare ${!(context.payrollStatus==='approved' && readiness.ready && template)?'disabled':''}>Prepare Payment Batch</button></div></div><div class="table-toolbar bank-transfer-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="bankExportSearch" type="search" value="${escapeHtml(state.bankExportSearch)}" placeholder="Search employee, branch, bank or account"></div><select class="select" id="bankExportBranch"><option value="All branches">All branches</option>${state.branches.filter(item=>item.status==='Active').map(item=>`<option value="${escapeHtml(item.id)}" ${state.bankExportBranch===item.id?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select><div class="segmented segmented--compact">${['All','Ready','Blocked'].map(status=>`<button data-bank-export-status="${status}" class="${state.bankExportStatus===status?'is-active':''}">${status}</button>`).join('')}</div></div><div class="table-scroll"><table class="data-table bank-payment-register"><thead><tr><th>Employee</th><th>Branch / Department</th><th>Bank / Account</th><th class="num">Net Salary</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position||'—')}</span></button></td><td>${escapeHtml(row.branch||'—')}<small class="table-secondary">${escapeHtml(row.department||'—')}</small></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'Not configured')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.bankStatus)}${row.bankBlockers.length?`<small class="validation-issue-count">${row.bankBlockers.length} issue${row.bankBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-bank-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="6"><div class="table-empty"><strong>No salary rows match this view.</strong><span>Reset filters or complete employee payment profiles.</span></div></td></tr>`}</tbody></table></div><div class="table-meta"><span><strong>${ready.length}</strong> ready · ${allRows.length-ready.length} blocked</span><span>Batch creation is all-or-nothing for the approved payroll.</span></div></section>`;
+    return `<div class="bank-export-subhead"><div><span class="eyebrow">Bank salary file</span><h2>Salary Transfer Register</h2><p>Validate payment profiles and generate only the configured bank layout from an approved payroll snapshot.</p></div><div class="bank-template-picker"><label>Export template</label><select class="select" id="bankTemplateSelect" ${!bankTemplatesAll('bank_csv').some(item=>item.active && !item.archived)?'disabled':''}>${bankTemplatesAll('bank_csv').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.bankTemplateId?'selected':''}>${escapeHtml(item.name)}${item.active?'':' · inactive'}</option>`).join('') || '<option>No bank template configured</option>'}</select></div></div>${blockers.length?`<section class="source-note">${icon('info')}<span><strong>Payment setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>`:''}<section class="data-panel"><div class="panel__head panel__head--padded"><div><h2>Bank-payment validation</h2><p>${template?`Using ${escapeHtml(template.name)}.`:'Create an export template before preparing a payment batch.'}</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-bank-batch-prepare ${!(context.payrollStatus==='approved' && readiness.ready && template)?'disabled':''}>Prepare Payment Batch</button></div></div><div class="table-toolbar bank-transfer-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="bankExportSearch" type="search" value="${escapeHtml(state.bankExportSearch)}" placeholder="Search employee, branch, bank or account"></div><select class="select" id="bankExportBranch"><option value="All branches">All branches</option>${state.branches.filter(item=>item.status==='Active').map(item=>`<option value="${escapeHtml(item.id)}" ${state.bankExportBranch===item.id?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select><div class="segmented segmented--compact">${['All','Ready','Blocked'].map(status=>`<button data-bank-export-status="${status}" class="${state.bankExportStatus===status?'is-active':''}">${status}</button>`).join('')}</div></div><div class="table-scroll"><table class="data-table bank-payment-register"><thead><tr><th>Employee</th><th>Branch / Department</th><th>Bank / Account</th><th class="num">Net Salary</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position||'—')}</span></button></td><td>${escapeHtml(row.branch||'—')}<small class="table-secondary">${escapeHtml(row.department||'—')}</small></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'Not configured')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.bankStatus)}${row.bankBlockers.length?`<small class="validation-issue-count">${row.bankBlockers.length} issue${row.bankBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-bank-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="6"><div class="table-empty"><strong>No salary rows match this view.</strong><span>Reset filters or complete employee payment profiles.</span></div></td></tr>`}</tbody></table></div><div class="table-meta"><span><strong>${ready.length}</strong> ready · ${allRows.length-ready.length} blocked</span><span>Batch creation is all-or-nothing for the approved payroll.</span></div></section>`;
   }
 
   function bankTemplatesTemplate() {
     const templates=bankTemplatesAll(); const selected=templates.find(item=>item.id===state.exportTemplateDetailId) || bankTemplateById() || templates[0] || null;
     if(selected && !state.exportTemplateDetailId) state.exportTemplateDetailId=selected.id;
-    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary export templates</h2><p>Company-owned bank/WPS file layouts. No vendor format is seeded or assumed.</p></div><button class="btn btn--primary" data-bank-template-new>${icon('plus')} New Template</button></div>${templates.length?`<div class="bank-template-layout"><div class="bank-template-list">${templates.map(item=>`<button class="bank-template-card ${item.id===selected?.id?'is-active':''}" data-bank-template-pick="${escapeHtml(item.id)}"><span class="bank-template-card__icon">${item.channel==='wps'?'WPS':'CSV'}</span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.code)} · ${escapeHtml(item.channelLabel)}</small><em>${item.columns.length} columns · ${item.active?'Active':'Inactive'}</em></span></button>`).join('')}</div>${selected?`<aside class="detail-card bank-template-detail"><div class="detail-card__head"><h3>${escapeHtml(selected.name)}</h3><button class="text-link" data-bank-template-edit>Edit</button></div><p>${escapeHtml(selected.channelLabel)} · ${escapeHtml(selected.code)}</p><div class="mapping-flow">${selected.columns.map((key,index)=>`<div><span>${index+1}</span><strong>${escapeHtml((selected.headers||[])[index]||bankColumnCatalog[key]||key)}</strong><small>${escapeHtml(key)}</small></div>`).join('')}</div><div class="bank-template-detail__actions"><button class="btn btn--secondary" data-bank-template-use>Use for Export</button><button class="btn btn--ghost" data-bank-template-preview>Preview Header</button></div></aside>`:''}</div>`:`<div class="table-empty table-empty--card"><strong>No salary export template configured.</strong><span>Create the exact layout required by the company bank or WPS submission channel.</span></div>`}</section>`;
+    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary export templates</h2><p>Company-owned bank/WPS file layouts. Archived templates remain visible for payment history but cannot be used for new batches.</p></div><button class="btn btn--primary" data-bank-template-new>${icon('plus')} New Template</button></div>${templates.length?`<div class="bank-template-layout"><div class="bank-template-list">${templates.map(item=>`<button class="bank-template-card ${item.id===selected?.id?'is-active':''}" data-bank-template-pick="${escapeHtml(item.id)}"><span class="bank-template-card__icon">${item.channel==='wps'?'WPS':'CSV'}</span><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.code)} · ${escapeHtml(item.channelLabel)}</small><em>${item.columns.length} columns · ${escapeHtml(item.status || (item.active?'Active':'Inactive'))}</em></span></button>`).join('')}</div>${selected?`<aside class="detail-card bank-template-detail"><div class="detail-card__head"><h3>${escapeHtml(selected.name)}</h3>${selected.archived?'':`<button class="text-link" data-bank-template-edit>Edit</button>`}</div><p>${escapeHtml(selected.channelLabel)} · ${escapeHtml(selected.code)} · ${escapeHtml(selected.status || '')}</p>${selected.archivedReason?`<div class="source-note"><span><strong>Archive reason</strong>${escapeHtml(selected.archivedReason)}</span></div>`:''}<div class="mapping-flow">${selected.columns.map((key,index)=>`<div><span>${index+1}</span><strong>${escapeHtml((selected.headers||[])[index]||bankColumnCatalog[key]||key)}</strong><small>${escapeHtml(key)}</small></div>`).join('')}</div><div class="bank-template-detail__actions">${!selected.archived?`<button class="btn btn--secondary" data-bank-template-use ${selected.active?'':'disabled'}>Use for Export</button>`:''}<button class="btn btn--ghost" data-bank-template-preview>Preview Header</button>${lifecycleActionsMenu([
+          ...(!selected.archived ? [{label:'Edit export template',hint:'Change the future bank/WPS file layout',iconName:'edit',attrs:'data-bank-template-edit'}] : []),
+          'separator',
+          {label:selected.archived?'Restore template':'Archive template',hint:selected.archived?'Restore as Inactive':'Keep payment history and stop new batch use',iconName:'info',attrs:`data-config-lifecycle="template|${selected.id}|${selected.archived?'restore':'archive'}"`},
+          {label:'Delete unused template',hint:'Only before payment batches reference it',iconName:'more',danger:true,attrs:`data-config-lifecycle="template|${selected.id}|delete"`}
+        ])}</div></aside>`:''}</div>`:`<div class="table-empty table-empty--card"><strong>No salary export template configured.</strong><span>Create the exact layout required by the company bank or WPS submission channel.</span></div>`}</section>`;
   }
 
   function bankBatchesTemplate() {
@@ -4537,11 +4609,12 @@
 
   function openBankTemplateDrawer(templateId = null) {
     const source = templateId ? bankTemplatesAll().find(item=>item.id===templateId) : null;
+    if (source?.archived) { openConfigurationLifecycleDrawer('template', source.id, 'restore'); return; }
     const columns = source?.columns || ['employee_number','employee_name','iban','net_salary','transaction_reference'];
     state.drawerType='bank-template'; state.drawerContext=templateId; drawerSave.hidden=false; drawerSave.textContent=source?'Save Template':'Create Template'; drawerTitle.textContent=source?`Edit ${source.name}`:'New Salary Export Template';
     const headers = source?.headers?.length === columns.length ? source.headers : columns.map(key=>bankColumnCatalog[key]||key);
     const resultColumns = source?.resultColumns || {};
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Template definition</strong><span>Company-owned file layout</span></div><div class="form-grid">${namedField('Code','bank-template-code',source?.code||'')} ${namedField('Template name','bank-template-name',source?.name||'')} ${namedSelectFieldValue('Channel','bank-template-channel',['Bank CSV','WPS'],source?.channel==='wps'?'WPS':'Bank CSV')} ${namedSelectFieldValue('Delimiter','bank-template-delimiter',['Comma','Tab','Semicolon'],source?.delimiter==='tab'?'Tab':source?.delimiter==='semicolon'?'Semicolon':'Comma')} ${namedSelectFieldValue('Encoding','bank-template-encoding',['UTF-8','UTF-8 with BOM'],source?.encoding==='utf-8-sig'?'UTF-8 with BOM':'UTF-8')} ${namedSelectFieldValue('Include header','bank-template-header',['Yes','No'],source?.includeHeader===false?'No':'Yes')} ${namedSelectFieldValue('Status','bank-template-status',['Active','Inactive'],source?.active===false?'Inactive':'Active')}<div class="form-field form-field--full"><label>Column keys in export order</label><textarea class="textarea mono-cell" name="bank-template-columns" rows="5">${escapeHtml(columns.join(', '))}</textarea><span class="field-hint">Required: employee_number, net_salary. Allowed: ${escapeHtml(Object.keys(bankColumnCatalog).join(', '))}</span></div><div class="form-field form-field--full"><label>Exact header labels</label><textarea class="textarea" name="bank-template-headers" rows="5">${escapeHtml(headers.join('\n'))}</textarea><span class="field-hint">One label per line, in the same order as the column keys. Use the exact labels required by the bank/WPS channel.</span></div></div></section><section class="form-section"><div class="form-section__head"><strong>Reconciliation result headers</strong><span>Optional exact mapping</span></div><div class="form-grid">${namedField('Employee ID header','bank-result-employee',resultColumns.employee||'')}${namedField('Status header','bank-result-status',resultColumns.status||'')}${namedField('Transaction reference header','bank-result-reference',resultColumns.reference||'')}${namedField('Failure reason header','bank-result-reason',resultColumns.reason||'')}</div><span class="field-hint">Leave all four blank to accept the built-in common aliases. If configured, Employee ID and Status are required.</span></section><section class="source-note">${icon('info')}<span>Configure the exact file and reconciliation layout supplied by the company bank/WPS channel. The system does not seed or claim a universal bank format.</span></section>`;
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Template definition</strong><span>Company-owned file layout</span></div><div class="form-grid">${namedField('Code','bank-template-code',source?.code||'')} ${namedField('Template name','bank-template-name',source?.name||'')} ${namedSelectFieldValue('Channel','bank-template-channel',['Bank CSV','WPS'],source?.channel==='wps'?'WPS':'Bank CSV')} ${namedSelectFieldValue('Delimiter','bank-template-delimiter',['Comma','Tab','Semicolon'],source?.delimiter==='tab'?'Tab':source?.delimiter==='semicolon'?'Semicolon':'Comma')} ${namedSelectFieldValue('Encoding','bank-template-encoding',['UTF-8','UTF-8 with BOM'],source?.encoding==='utf-8-sig'?'UTF-8 with BOM':'UTF-8')} ${namedSelectFieldValue('Include header','bank-template-header',['Yes','No'],source?.includeHeader===false?'No':'Yes')} ${namedSelectFieldValue('Status','bank-template-status',['Active','Inactive'],source?.active===false?'Inactive':'Active')}<div class="form-field form-field--full"><label>Column keys in export order</label><textarea class="textarea mono-cell" name="bank-template-columns" rows="5">${escapeHtml(columns.join(', '))}</textarea><span class="field-hint">Required: net_salary. Employee ID is optional when the bank layout identifies rows another way. Allowed: ${escapeHtml(Object.keys(bankColumnCatalog).join(', '))}</span></div><div class="form-field form-field--full"><label>Exact header labels</label><textarea class="textarea" name="bank-template-headers" rows="5">${escapeHtml(headers.join('\n'))}</textarea><span class="field-hint">One label per line, in the same order as the column keys. Use the exact labels required by the bank/WPS channel.</span></div></div></section><section class="form-section"><div class="form-section__head"><strong>Reconciliation result headers</strong><span>Optional exact mapping</span></div><div class="form-grid">${namedField('Employee ID header','bank-result-employee',resultColumns.employee||'')}${namedField('Status header','bank-result-status',resultColumns.status||'')}${namedField('Transaction reference header','bank-result-reference',resultColumns.reference||'')}${namedField('Failure reason header','bank-result-reason',resultColumns.reason||'')}</div><span class="field-hint">Leave all four blank to accept the built-in common aliases. If configured, Employee ID and Status are required.</span></section><section class="source-note">${icon('info')}<span>Configure the exact file and reconciliation layout supplied by the company bank/WPS channel. The system does not seed or claim a universal bank format.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
   }
 
@@ -4551,8 +4624,9 @@
     const profile = paymentContextForPeriod().profiles?.[employeeId] || null;
     state.drawerType='employee-payment-profile'; state.drawerContext={employeeId}; drawerSave.hidden=false; drawerSave.disabled=false; drawerSave.textContent=profile?'Save Payment Profile':'Create Payment Profile'; drawerTitle.textContent=`${employee.name} · Salary Payment`;
     const destinationType = profile?.destinationType === 'salary_card' ? 'Salary card' : 'Bank account / IBAN';
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Payment destination</strong><span>Encrypted at rest</span></div><div class="form-grid">${namedSelectFieldValue('Destination type','payment-profile-destination',['Bank account / IBAN','Salary card'],destinationType)}${namedField('Account holder name','payment-profile-holder',profile?.accountHolderName||employee.name||'')}${namedField('Bank / issuer name','payment-profile-bank-name',profile?.bankName||'')}${namedField('Bank code','payment-profile-bank-code',profile?.bankCode||'')}<div class="form-field"><label>IBAN</label><input class="input mono-cell" name="payment-profile-iban" autocomplete="off" value="" placeholder="${escapeHtml(profile?.ibanMasked ? `Leave blank to keep ${profile.ibanMasked}` : 'Enter full IBAN')}"><span class="field-hint">The full value is never sent back to the browser after it is saved.</span></div><div class="form-field"><label>Salary card number</label><input class="input mono-cell" name="payment-profile-card" autocomplete="off" value="" placeholder="${escapeHtml(profile?.salaryCardMasked ? `Leave blank to keep ${profile.salaryCardMasked}` : 'Enter salary card number')}"></div>${namedSelectFieldValue('WPS enabled','payment-profile-wps',['Yes','No'],profile?.wpsEnabled?'Yes':'No')}${namedSelectFieldValue('Profile status','payment-profile-active',['Active','Inactive'],profile?.active===false?'Inactive':'Active')}${namedSelectFieldValue('Mark verified','payment-profile-verified',['No','Yes'],'No')}</div></section><section class="source-note">${icon('info')}<span><strong>Historical payment protection</strong>Updating this profile affects only future payment batches. Existing batches keep their encrypted destination snapshot.</span></section>`;
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Payment destination</strong><span>Encrypted at rest</span></div><div class="form-grid">${namedSelectFieldValue('Destination type','payment-profile-destination',['Bank account / IBAN','Salary card'],destinationType)}${namedField('Account holder name','payment-profile-holder',profile?.accountHolderName||employee.name||'')}${namedField('Bank / issuer name','payment-profile-bank-name',profile?.bankName||'')}${namedField('Bank code','payment-profile-bank-code',profile?.bankCode||'')}<div class="form-field"><label>IBAN</label><input class="input mono-cell" name="payment-profile-iban" autocomplete="off" value="" placeholder="${escapeHtml(profile?.ibanMasked ? `Leave blank to keep ${profile.ibanMasked}` : 'Enter full IBAN')}"><span class="field-hint">The full value is never sent back to the browser after it is saved.</span></div><div class="form-field"><label>Salary card number</label><input class="input mono-cell" name="payment-profile-card" autocomplete="off" value="" placeholder="${escapeHtml(profile?.salaryCardMasked ? `Leave blank to keep ${profile.salaryCardMasked}` : 'Enter salary card number')}"></div>${namedSelectFieldValue('WPS enabled','payment-profile-wps',['Yes','No'],profile?.wpsEnabled?'Yes':'No')}${namedSelectFieldValue('Profile status','payment-profile-active',['Active','Inactive'],profile?.active===false?'Inactive':'Active')}${namedSelectFieldValue('Mark verified','payment-profile-verified',['No','Yes'],'No')}</div></section><section class="source-note">${icon('info')}<span><strong>Historical payment protection</strong>Updating this profile affects only future payment batches. Existing batches keep their encrypted destination snapshot.</span></section>${profile?`<section class="payroll-detail-actions"><button type="button" class="btn btn--ghost" data-config-lifecycle="payment-profile|${escapeHtml(employeeId)}|delete">Delete unused payment profile</button></section>`:''}`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+    drawerBody.querySelector('[data-config-lifecycle]')?.addEventListener('click',()=>{const [kind,id,action]=drawerBody.querySelector('[data-config-lifecycle]').dataset.configLifecycle.split('|');openConfigurationLifecycleDrawer(kind,id,action);});
   }
 
   function openCompanyPaymentSettingsDrawer() {
@@ -5017,7 +5091,7 @@
     const changes = Math.max(0, history.filter(item => item.kind === 'assignment').length - 1);
     return `<div class="rental-profile-grid">
       <div class="profile-main-stack">
-        <section class="panel panel--flush"><div class="section-headline"><div><h2>Worker overview</h2><p>Permanent worker identity stays separate from changing project, trade and rate assignments.</p></div><button class="btn btn--secondary btn--sm" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit worker</button></div><div class="worker-overview-grid"><div><span>Worker ID</span><strong>${escapeHtml(rentalWorkerCode(worker))}</strong></div><div><span>Iqama / National ID</span><strong>${escapeHtml(worker.nationalId || 'Not recorded')}</strong></div><div><span>Phone</span><strong>${escapeHtml(worker.phone || 'Not recorded')}</strong></div><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || 'Not linked')}</strong></div><div><span>Master status</span><strong>${escapeHtml(worker.masterStatus || 'Active')}</strong></div><div><span>Assignment changes</span><strong>${changes}</strong></div></div></section>
+        <section class="panel panel--flush"><div class="section-headline"><div><h2>Worker overview</h2><p>Permanent worker identity stays separate from changing project, trade and rate assignments.</p></div><button class="btn btn--secondary btn--sm" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit worker</button></div><div class="worker-overview-grid"><div><span>Worker ID</span><strong>${escapeHtml(rentalWorkerCode(worker))}</strong></div><div><span>Iqama / National ID</span><strong>${escapeHtml(worker.nationalId || 'Not recorded')}</strong></div><div><span>Phone</span><strong>${escapeHtml(worker.phone || 'Not recorded')}</strong></div><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || 'Not linked')}</strong></div><div><span>Master status</span><strong>${escapeHtml(worker.masterStatus || 'Active')}</strong>${worker.inactiveOn?`<small>Stopped ${escapeHtml(rentalDisplayDate(worker.inactiveOn))}</small>`:''}</div><div><span>Assignment changes</span><strong>${changes}</strong></div></div></section>
         <section class="panel panel--flush"><div class="section-headline"><div><h2>Current assignment</h2><p>Current state is resolved from effective-dated assignment history.</p></div>${snapshot.project ? `<button class="text-link" data-open-project="${escapeHtml(snapshot.project.id)}">Open project →</button>` : ''}</div><div class="current-assignment-card ${snapshot.project ? '' : 'is-pool'}"><div class="current-assignment-card__icon">${snapshot.project ? 'PR' : 'AV'}</div><div><span class="eyebrow">${snapshot.project ? 'Active project assignment' : 'Supplier worker pool'}</span><h3>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive / not available' : worker.status === 'Scheduled' ? `Scheduled for ${worker.nextProject || 'project assignment'}` : 'Available for assignment'))}</h3><div class="assignment-preview__meta"><span>${escapeHtml(snapshot.trade)}</span><span>${escapeHtml(snapshot.rate)}</span>${snapshot.since ? `<span>From ${escapeHtml(rentalDisplayDate(snapshot.since))}</span>` : ''}</div></div><div class="current-assignment-card__action">${snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project</button>` : ''}</div></div></section>
       </div>
       <aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Master links</h3></div><div class="rental-master-links">${supplier ? `<button class="mini-entity" data-open-supplier="${escapeHtml(supplier.id)}"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Manpower supplier</small></span>${icon('chevron')}</button>` : ''}${snapshot.project ? `<button class="mini-entity" data-open-project="${escapeHtml(snapshot.project.id)}"><span class="mini-entity__icon">PR</span><span><strong>${escapeHtml(snapshot.project.name)}</strong><small>Current project</small></span>${icon('chevron')}</button>` : ''}</div></section><section class="detail-card"><div class="detail-card__head"><h3>Worker controls</h3></div><div class="rental-worker-actions-list">${snapshot.project && !worker.nextAssignmentId ? `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Change trade <span>→</span></button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Change rate <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>` : worker.status === 'Available' ? `<button data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project <span>→</span></button>` : ''}${worker.nextAssignmentId ? `<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel latest scheduled change <span>→</span></button>` : ''}<button data-rental-worker-action="advance" data-worker-id="${escapeHtml(worker.id)}">Record advance <span>→</span></button></div></section></aside>
@@ -5281,7 +5355,7 @@
         </div>
 
         <div class="rental-status-tabs" role="tablist" aria-label="Rental worker assignment status">
-          ${['All','Assigned','Scheduled','Available','Inactive'].map(status => {
+          ${['All','Assigned','Scheduled','Available','Inactive','Archived'].map(status => {
             const count = status === 'All' ? state.rentalWorkers.length : state.rentalWorkers.filter(worker => worker.status === status).length;
             return `<button type="button" class="${state.rentalStatus === status ? 'is-active' : ''}" data-rental-status="${status}"><span>${status}</span><em>${count}</em></button>`;
           }).join('')}
@@ -5294,7 +5368,7 @@
             return `<tr>
               <td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button></td>
               <td>${supplier ? `<button class="entity-link entity-link--stack" data-open-supplier="${escapeHtml(supplier.id)}"><strong>${escapeHtml(supplier.name)}</strong><span>${escapeHtml(supplier.code)}</span></button>` : `<span class="table-secondary">Supplier not linked</span>`}</td>
-              <td>${project ? `<button class="entity-link entity-link--stack" data-open-project="${escapeHtml(project.id)}"><strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(project.code)}</span></button>` : `<div class="table-primary">Available / unassigned</div><div class="table-secondary">No active project</div>`}</td>
+              <td>${project ? `<button class="entity-link entity-link--stack" data-open-project="${escapeHtml(project.id)}"><strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(project.code)}</span></button>` : `<div class="table-primary">${worker.archived ? 'Archived' : worker.status === 'Inactive' ? 'Inactive / unassigned' : 'Available / unassigned'}</div><div class="table-secondary">No active project</div>`}</td>
               <td><div class="table-primary">${escapeHtml(worker.trade || '—')}</div>${worker.changed ? '<div class="table-secondary">Role changed in source period</div>' : ''}</td>
               <td><div class="rate-cell"><strong>${escapeHtml(rentalWorkerRate(worker))}</strong><span>${escapeHtml(worker.rateType || 'Rate')}</span></div></td>
               <td>${escapeHtml(worker.since || '—')}</td>
@@ -5450,7 +5524,13 @@
       <div class="profile-crumb ui-v2-payroll-profile-crumb"><button type="button" class="text-link text-link--muted" data-route-link="rental-workforce">Rental Workforce</button><span>›</span><span>${escapeHtml(rentalWorkerCode(worker))}</span></div>
       <header class="entity-header rental-worker-header">
         <div class="entity-header__identity"><span class="entity-avatar rental-worker-avatar">RW</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(worker.name)}</h1>${statusBadge(worker.status || 'Available')}</div><div class="entity-subline"><span>${escapeHtml(rentalWorkerCode(worker))}</span><span>·</span><span>Rental worker</span>${supplier ? `<span>·</span><button class="text-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>` : ''}</div></div></div>
-        <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--primary" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer Project</button>` : worker.status === 'Available' ? `<button class="btn btn--primary" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to Project</button>` : ''}<button class="btn btn--secondary" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit</button><button class="icon-btn entity-more" data-rental-worker-menu="${escapeHtml(worker.id)}">${icon('more')}</button></div>
+        <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${!worker.archived && snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--primary" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer Project</button>` : !worker.archived && worker.status === 'Available' ? `<button class="btn btn--primary" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to Project</button>` : ''}${lifecycleActionsMenu([
+          ...(!worker.archived ? [{label:'Edit worker',hint:'Update current worker master details',iconName:'edit',attrs:`data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}"`}] : []),
+          {label:'Manage worker lifecycle',hint:'Deactivate, reactivate, archive or restore',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|manage"`},
+          'separator',
+          {label:worker.archived?'Restore from archive':'Archive worker',hint:worker.archived?'Restore as Inactive':'Available after the worker is inactive and unassigned',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|${worker.archived?'restore':'archive'}"`},
+          {label:'Delete unused worker',hint:'Only before assignment, timesheet or settlement history exists',iconName:'more',danger:true,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|delete"`}
+        ])}</div>
       </header>
       <div class="profile-facts rental-worker-facts"><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || worker.supplier || 'Not linked')}</strong></div><div><span>Current project</span><strong>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive' : worker.status === 'Released' ? 'Released / unassigned' : 'Available / unassigned'))}</strong></div><div><span>Current trade</span><strong>${escapeHtml(snapshot.trade)}</strong></div><div><span>Current rate</span><strong>${escapeHtml(snapshot.rate)}</strong></div></div>
       <div class="rental-profile-kpis"><div><span>Assignments</span><strong>${assignmentCount}</strong><small>effective-dated record${assignmentCount === 1 ? '' : 's'}</small></div><div><span>Current period hours</span><strong>${sourceMetrics.hours == null ? '—' : Number(sourceMetrics.hours).toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>${sourceMetrics.period || 'No source timesheet'}</small></div><div><span>Current period net</span><strong>${sourceMetrics.net == null ? '—' : formatCurrency(sourceMetrics.net)}</strong><small>${sourceMetrics.period || 'No settlement source'}</small></div><div><span>Worker status</span><strong class="text-value">${escapeHtml(worker.status || 'Available')}</strong><small>${snapshot.since ? `Since ${escapeHtml(rentalDisplayDate(snapshot.since))}` : 'Permanent worker master'}</small></div></div>
@@ -6157,6 +6237,13 @@
     return `<label class="settings-field"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span><input class="input" data-company-setting="${escapeHtml(name)}" value="${escapeHtml(value ?? '')}" ${attrs} ${disabled}></label>`;
   }
 
+  function brandingAssetTemplate(kind, label, hint) {
+    const general=state.systemSettings.general || {};
+    const asset=general.branding?.[kind] || {configured:false,url:''};
+    const canManage=state.systemSettings.canManage;
+    return `<div class="branding-asset-card" data-brand-card="${kind}"><div class="branding-asset-preview">${asset.configured&&asset.url?`<img src="${escapeHtml(asset.url)}" alt="${escapeHtml(label)} preview">`:`<span>${icon('document')}<small>Not configured</small></span>`}</div><div class="branding-asset-copy"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(hint)}</span><small>${asset.configured?'Configured · historical documents keep the version they were finalized with.':'PNG, JPEG or WebP.'}</small></div>${canManage?`<div class="branding-asset-actions"><input type="file" hidden accept="image/png,image/jpeg,image/webp" data-brand-file="${kind}"><button class="btn btn--secondary" type="button" data-brand-upload="${kind}">${asset.configured?'Replace':'Upload'}</button>${asset.configured?`<button class="btn btn--ghost" type="button" data-brand-clear="${kind}">Clear current</button>`:''}</div>`:''}</div>`;
+  }
+
   function settingsPanelTemplate() {
     const general=state.systemSettings.general || {};
     if(state.settingsTab==='internal') {
@@ -6166,14 +6253,14 @@
     if(state.settingsTab==='rental') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Rental workforce</span><h2>Rental lifecycle controls</h2><p>Rental rules are enforced by assignment, timesheet and settlement services rather than browser defaults.</p></div><button class="btn btn--secondary" data-route-link="rental-assignments">Open Assignments</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Assignment history</strong><small>Transfers, trade changes and rate changes close the previous effective segment.</small></span><strong>Preserved</strong></div><div class="settings-summary-row"><span><strong>Timesheet completeness</strong><small>Every assigned worker-day requires hours or an explicit status before submission.</small></span><strong>Required</strong></div><div class="settings-summary-row"><span><strong>Settlement boundary</strong><small>Only locked project timesheets can feed supplier settlements.</small></span><strong>Enforced</strong></div></div></section>`;
     if(state.settingsTab==='wps') {
       const paymentSettings=paymentContextForPeriod().settings||{};
-      const activeWpsTemplates=bankTemplatesAll('wps').filter(item=>item.active);
+      const activeWpsTemplates=bankTemplatesAll('wps').filter(item=>item.active && !item.archived);
       return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">WPS & salary payments</span><h2>Employer payment configuration</h2><p>Company payment identity and configured WPS export layouts used by the server-side salary payment workflow.</p></div><div class="payment-head-actions"><button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button><button class="btn btn--secondary" data-route-link="wps">Open WPS Workspace</button></div></div><div class="settings-list settings-list--two"><div class="settings-summary-row"><span><strong>Employer identifier</strong><small>Used only by templates that require it.</small></span><strong>${escapeHtml(paymentSettings.employerIdentifier||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer bank</strong><small>${escapeHtml(paymentSettings.employerBankCode||'No bank code')}</small></span><strong>${escapeHtml(paymentSettings.employerBankName||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer IBAN</strong><small>Encrypted at rest.</small></span><strong class="mono-cell">${escapeHtml(paymentSettings.employerIbanMasked||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Bank customer reference</strong><small>Optional bank-specific identifier.</small></span><strong>${escapeHtml(paymentSettings.bankCustomerReference||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Active WPS templates</strong><small>Export layouts are company-defined.</small></span><strong>${activeWpsTemplates.length}</strong></div></div></section>`;
     }
     if(state.settingsTab==='access') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Access</span><h2>Workspace authorization</h2><p>Company-scoped Django memberships enforce workspace and action permissions on the server.</p></div><button class="btn btn--secondary" data-route-link="access-roles">Open Access & Roles</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Current role</strong><small>Resolved from the active company membership.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div><div class="settings-summary-row"><span><strong>Operational separation</strong><small>Internal Company and Rental Manpower keep separate masters, calculations and payment workflows.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Management workspace</strong><small>Aggregates controlled records without owning operational writes.</small></span><strong>Read-only</strong></div></div><div class="settings-policy-note"><span>${icon('info')}</span><p>Access changes are applied through company membership controls and audited server-side. Browser state never grants permissions.</p></div></section>`;
     if(state.settingsTab==='documents') {
-      const assets=general.documentAssets||{};
-      const assetCard=(kind,label,help,accept='image/png,image/jpeg,image/webp')=>{const asset=assets[kind]||{};return `<div class="document-branding-card"><div class="document-branding-preview document-branding-preview--${kind}">${asset.configured?`<img src="${escapeHtml(asset.url||'')}?v=${encodeURIComponent(String(asset.filename||''))}" alt="${escapeHtml(label)} preview">`:`<span>${escapeHtml(kind==='logo'?'LOGO':kind==='letterhead'?'A4':'WM')}</span>`}</div><div class="document-branding-copy"><span class="eyebrow">${escapeHtml(label)}</span><h3>${asset.configured?escapeHtml(asset.filename||'Configured image'):'Not configured'}</h3><p>${escapeHtml(help)}</p><div class="document-branding-actions">${state.systemSettings.canManage?`<label class="btn btn--secondary btn--sm">${asset.configured?'Replace':'Upload'}<input hidden type="file" accept="${accept}" data-document-asset-input="${kind}"></label>${asset.configured?`<button class="btn btn--ghost btn--sm" data-document-asset-remove="${kind}">Remove</button>`:''}`:'<span class="status status--neutral"><span></span>Read only</span>'}</div></div></div>`};
-      return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Documents</span><h2>Final document controls & branding</h2><p>Upload private company branding for finalized salary slips, receipts and manpower documents. Existing finalized documents keep the exact branding file snapshotted when they were created.</p></div><button class="btn btn--secondary" data-route-link="documents">Open Documents</button></div><div class="document-branding-grid">${assetCard('logo','Company logo','Used in the standard document header when no full-page letterhead is configured.')}${assetCard('letterhead','A4 letterhead background','Upload a flattened high-resolution PNG/JPEG/WebP of the approved A4 letterhead. It prints behind the document content.')}${assetCard('watermark','Watermark','Optional transparent or white-background mark positioned behind document content.')}</div><div class="settings-list settings-list--separated"><div class="settings-summary-row"><span><strong>Number allocation</strong><small>Company-scoped server sequence.</small></span><strong>Server controlled</strong></div><div class="settings-summary-row"><span><strong>Final records</strong><small>Source, issuer and branding-storage identity are snapshotted at finalization.</small></span><strong>Immutable</strong></div><div class="settings-summary-row"><span><strong>Integrity</strong><small>Final snapshots carry a SHA-256 fingerprint checked before printing.</small></span><strong>Verified</strong></div></div></section>`;
+      const branding=general.branding || {};
+      const mode=general.documentBrandingMode || branding.mode || 'standard';
+      return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Documents</span><h2>Final document controls</h2><p>Document identity, branding and finalization are server-controlled and snapshotted at finalization.</p></div><button class="btn btn--secondary" data-route-link="documents">Open Documents</button></div><div class="settings-list"><div class="settings-field"><span><strong>Print branding mode</strong><small>Use the normal issuer header, or reserve the page for a full-page letterhead image.</small></span><select class="select" data-company-setting="documentBrandingMode" ${state.systemSettings.canManage?'':'disabled'}><option value="standard" ${mode==='standard'?'selected':''}>Standard header</option><option value="letterhead" ${mode==='letterhead'?'selected':''}>Full-page letterhead</option></select></div><div class="settings-summary-row"><span><strong>Number allocation</strong><small>Company-scoped server sequence.</small></span><strong>Server controlled</strong></div><div class="settings-summary-row"><span><strong>Final records</strong><small>Source, payment evidence, issuer identity and branding versions are snapshotted at finalization.</small></span><strong>Immutable</strong></div><div class="settings-summary-row"><span><strong>Integrity</strong><small>Final JSON snapshots and historical branding assets are SHA-256 verified before printing.</small></span><strong>Verified</strong></div></div><div class="branding-asset-grid">${brandingAssetTemplate('logo','Company logo','Displayed beside the standard document header.')}${brandingAssetTemplate('letterhead','A4 letterhead','Full-page background used when Letterhead mode is selected.')}${brandingAssetTemplate('watermark','Watermark','Centered, faint background mark used on finalized documents.')}</div><div class="settings-policy-note"><span>${icon('info')}</span><p>Replacing or clearing current branding never rewrites previously finalized documents. Historical documents keep their original image hash and storage version.</p></div></section>`;
     }
     if(state.settingsTab==='workflow') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Workflow</span><h2>Approval & audit controls</h2><p>Financial lifecycle rules are enforced by the owning Django services and database constraints.</p></div></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Internal payroll</strong><small>Calculation, Finance Review, approval and payment are separate controlled states.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Rental settlement</strong><small>Locked timesheets feed reviewed/approved immutable settlement snapshots.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Payments</strong><small>Payment results, retries and reversals never rewrite approved financial snapshots.</small></span><strong>Audited</strong></div><div class="settings-summary-row"><span><strong>Audit trail</strong><small>Security and financial lifecycle events are append-only through the application layer.</small></span><strong>Enabled</strong></div></div></section>`;
     return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">General</span><h2>Company settings</h2><p>Company identity, legal print details and locale values are stored in Django and audited when changed.</p></div></div><div class="settings-list">${settingsInputRow('companyName','Company name',general.companyName,'Operational display name.','maxlength="200" autocomplete="organization"')}${settingsInputRow('legalName','Legal name',general.legalName,'Legal entity name used on finalized payroll documents.','maxlength="250" autocomplete="organization"')}${settingsInputRow('commercialRegistration','Commercial registration',general.commercialRegistration,'Printed on finalized payroll and manpower documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('vatNumber','VAT number',general.vatNumber,'Company VAT identity for branded documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('documentAddress','Document address',general.documentAddress,'Registered/company address shown on final documents.','maxlength="400" autocomplete="street-address"')}${settingsInputRow('documentEmail','Document email',general.documentEmail,'Contact email shown on final documents.','maxlength="254" type="email" autocomplete="email"')}${settingsInputRow('documentPhone','Document phone',general.documentPhone,'Contact number shown on final documents.','maxlength="40" autocomplete="tel"')}${settingsInputRow('website','Website',general.website,'Website shown on final documents.','maxlength="300" type="url" autocomplete="url"')}<div class="settings-summary-row"><span><strong>Current role</strong><small>Only authorized company roles may change these settings.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div>${settingsInputRow('timezone','Timezone',general.timezone,'IANA timezone, for example Asia/Riyadh.','autocomplete="off"')}${settingsInputRow('currency','Currency',general.currency,'ISO 4217 currency code.','maxlength="3" autocomplete="off"')}${settingsInputRow('country','Country',general.country,'ISO 3166-1 alpha-2 country code.','maxlength="2" autocomplete="off"')}</div>${state.systemSettings.canManage?'':'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Your company role has read-only access to these settings.</p></div>'}</section>`;
@@ -6182,31 +6269,43 @@
   function settingsTemplate() {
     const tabs = state.workspace === 'management' ? [['general','General'],['documents','Documents'],['workflow','Workflow'],['access','Access']] : state.workspace === 'rental' ? [['general','General'],['rental','Rental Workforce'],['documents','Documents'],['workflow','Workflow']] : [['general','General'],['internal','Internal Payroll'],['wps','WPS'],['documents','Documents'],['workflow','Workflow']];
     if (!tabs.some(([id])=>id===state.settingsTab)) state.settingsTab = state.workspace === 'rental' ? 'rental' : 'general';
-    const canSave=state.settingsTab==='general' && state.systemSettings.canManage;
+    const canSave=['general','documents'].includes(state.settingsTab) && state.systemSettings.canManage;
     return `<section class="page settings-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Payroll administration</span><h1>Settings</h1><p>Review server-enforced company, payroll, rental, document and workflow controls.</p></div><div class="page-head__actions">${canSave?'<button class="btn btn--primary" data-settings-save>Save Company Settings</button>':''}</div></div><div class="settings-layout"><nav class="settings-nav" aria-label="Settings sections">${tabs.map(([id,label])=>`<button class="${state.settingsTab===id?'is-active':''}" data-settings-tab="${id}"><span>${label}</span>${icon('chevron')}</button>`).join('')}</nav><div class="settings-main">${settingsPanelTemplate()}</div></div></section>`;
   }
 
   async function saveSettingsFromPage() {
     if(!state.systemSettings.canManage) return;
-    const field=name=>document.querySelector(`[data-company-setting="${name}"]`)?.value?.trim() || '';
+    const current=state.systemSettings.general || {};
+    const field=(name,fallback='')=>{const control=document.querySelector(`[data-company-setting="${name}"]`);return control?String(control.value||'').trim():String(fallback||'').trim();};
     try {
-      const payload=await appApi('/api/settings/',{method:'PATCH',body:{companyName:field('companyName'),legalName:field('legalName'),commercialRegistration:field('commercialRegistration'),vatNumber:field('vatNumber'),documentAddress:field('documentAddress'),documentEmail:field('documentEmail'),documentPhone:field('documentPhone'),website:field('website'),timezone:field('timezone'),currency:field('currency').toUpperCase(),country:field('country').toUpperCase()}});
+      const payload=await appApi('/api/settings/',{method:'PATCH',body:{companyName:field('companyName',current.companyName),legalName:field('legalName',current.legalName),commercialRegistration:field('commercialRegistration',current.commercialRegistration),vatNumber:field('vatNumber',current.vatNumber),documentAddress:field('documentAddress',current.documentAddress),documentEmail:field('documentEmail',current.documentEmail),documentPhone:field('documentPhone',current.documentPhone),website:field('website',current.website),documentBrandingMode:field('documentBrandingMode',current.documentBrandingMode||'standard'),timezone:field('timezone',current.timezone),currency:field('currency',current.currency).toUpperCase(),country:field('country',current.country).toUpperCase()}});
       const updated=payload.settings || {};
-      state.systemSettings.general={companyName:updated.companyName||state.systemSettings.general.companyName,legalName:updated.legalName||'',commercialRegistration:updated.commercialRegistration||'',vatNumber:updated.vatNumber||'',documentAddress:updated.documentAddress||'',documentEmail:updated.documentEmail||'',documentPhone:updated.documentPhone||'',website:updated.website||'',documentAssets:updated.documentAssets||state.systemSettings.general.documentAssets||{},timezone:updated.timezone||'',currency:updated.currency||'',country:updated.country||'',today:updated.today||state.systemSettings.general.today};
+      state.systemSettings.general={companyName:updated.companyName||current.companyName,legalName:updated.legalName||'',commercialRegistration:updated.commercialRegistration||'',vatNumber:updated.vatNumber||'',documentAddress:updated.documentAddress||'',documentEmail:updated.documentEmail||'',documentPhone:updated.documentPhone||'',website:updated.website||'',documentBrandingMode:updated.documentBrandingMode||'standard',branding:updated.branding||current.branding||{},timezone:updated.timezone||'',currency:updated.currency||'',country:updated.country||'',today:updated.today||current.today};
       serverAccess.company_name=state.systemSettings.general.companyName;
       renderWorkspaceShell();
       renderRoute();
-      showToast('Company settings saved','Company identity and locale settings were updated and audited.');
+      showToast('Company settings saved','Company identity, document branding mode and locale settings were updated and audited.');
     } catch(error) { showToast('Settings not saved',error.message); }
   }
 
-  async function uploadDocumentBrandingAsset(kind,file){
-    if(!file)return;
-    try{const payload=await appUpload(`/api/settings/document-assets/${encodeURIComponent(kind)}/`,file);const updated=payload.settings||{};state.systemSettings.general.documentAssets=updated.documentAssets||{};renderRoute();showToast('Branding asset saved',`${kind[0].toUpperCase()+kind.slice(1)} will be used by newly finalized documents.`);}catch(error){showToast('Branding asset not saved',error.message);}
+  async function uploadBrandAsset(kind, file) {
+    if(!state.systemSettings.canManage || !file) return;
+    const formData=new FormData();formData.append('asset',file);
+    try {
+      const payload=await appMultipartApi(`/api/settings/branding/${encodeURIComponent(kind)}/`,{method:'POST',formData});
+      state.systemSettings.general.branding=payload.branding||state.systemSettings.general.branding;
+      state.systemSettings.general.documentBrandingMode=state.systemSettings.general.branding?.mode||state.systemSettings.general.documentBrandingMode;
+      renderRoute();showToast('Branding image saved',`${kind[0].toUpperCase()+kind.slice(1)} is ready for newly finalized documents.`);
+    } catch(error) { showToast('Branding image not saved',error.message); }
   }
 
-  async function removeDocumentBrandingAsset(kind){
-    try{const payload=await appApi(`/api/settings/document-assets/${encodeURIComponent(kind)}/`,{method:'DELETE',body:{}});state.systemSettings.general.documentAssets=payload.settings?.documentAssets||{};renderRoute();showToast('Branding asset removed',`New documents will no longer use the ${kind}. Previously finalized documents keep their historical branding snapshot.`);}catch(error){showToast('Branding asset not removed',error.message);}
+  async function clearBrandAsset(kind) {
+    if(!state.systemSettings.canManage) return;
+    try {
+      const payload=await appMultipartApi(`/api/settings/branding/${encodeURIComponent(kind)}/`,{method:'DELETE'});
+      state.systemSettings.general.branding=payload.branding||state.systemSettings.general.branding;
+      renderRoute();showToast('Current branding cleared',`New documents will no longer use the current ${kind}. Historical finalized documents are unchanged.`);
+    } catch(error) { showToast('Branding image not cleared',error.message); }
   }
 
   function placeholderTemplate(route) {
@@ -6384,7 +6483,7 @@
     else breadcrumbHtml += breadcrumbItem(title, '', true);
     breadcrumbs.innerHTML = breadcrumbHtml;
 
-    document.title = `${title} — ${serverAccess.company_name || 'Payroll'}`;
+    document.title = `${title} — SESCCO MS`;
     document.querySelectorAll('[data-route]').forEach(el => {
       const active = el.dataset.route === route;
       el.classList.toggle('is-active', active);
@@ -6446,14 +6545,17 @@
     document.querySelectorAll('[data-branch-status]').forEach(btn=>btn.addEventListener('click',()=>{state.branchStatus=btn.dataset.branchStatus;renderRoute();}));
     const branchStatusFilter=document.getElementById('branchStatusFilter'); if(branchStatusFilter) branchStatusFilter.addEventListener('change',()=>{state.branchStatus=branchStatusFilter.value;renderRoute();});
     const branchSortFilter=document.getElementById('branchSortFilter'); if(branchSortFilter) branchSortFilter.addEventListener('change',()=>{state.branchSort=branchSortFilter.value;localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();});
-    document.querySelectorAll('[data-branch-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.branchSearch='';state.branchStatus='All';state.branchSort='code-asc';localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();}));
+    document.querySelectorAll('[data-branch-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.branchSearch='';state.branchStatus='Active';state.branchSort='code-asc';localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();}));
     const departmentSearch=document.getElementById('departmentSearch'); bindPayrollSearch(departmentSearch,value=>{state.departmentSearch=value;});
     document.querySelectorAll('[data-department-status]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentStatus=btn.dataset.departmentStatus;renderRoute();}));
     const departmentStatusFilter=document.getElementById('departmentStatusFilter'); if(departmentStatusFilter) departmentStatusFilter.addEventListener('change',()=>{state.departmentStatus=departmentStatusFilter.value;renderRoute();});
     const departmentSortFilter=document.getElementById('departmentSortFilter'); if(departmentSortFilter) departmentSortFilter.addEventListener('change',()=>{state.departmentSort=departmentSortFilter.value;localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();});
-    document.querySelectorAll('[data-department-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentSearch='';state.departmentStatus='All';state.departmentSort='code-asc';localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();}));
+    document.querySelectorAll('[data-department-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentSearch='';state.departmentStatus='Active';state.departmentSort='code-asc';localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();}));
     document.querySelectorAll('[data-edit-branch]').forEach(btn=>btn.addEventListener('click',()=>openBranchEditDrawer(btn.dataset.editBranch)));
     document.querySelectorAll('[data-edit-department]').forEach(btn=>btn.addEventListener('click',()=>openDepartmentEditDrawer(btn.dataset.editDepartment)));
+    document.querySelectorAll('[data-organization-lifecycle]').forEach(btn=>btn.addEventListener('click',()=>{const [kind,id,action]=btn.dataset.organizationLifecycle.split('|');openOrganizationLifecycleDrawer(kind,id,action);}));
+    document.querySelectorAll('[data-rental-master-lifecycle]').forEach(btn=>btn.addEventListener('click',()=>{const [kind,id,action]=btn.dataset.rentalMasterLifecycle.split('|');openRentalMasterLifecycleDrawer(kind,id,action);}));
+    document.querySelectorAll('[data-config-lifecycle]').forEach(btn=>btn.addEventListener('click',()=>{const [kind,id,action]=btn.dataset.configLifecycle.split('|');openConfigurationLifecycleDrawer(kind,id,action);}));
     document.querySelectorAll('[data-change-employee-organization]').forEach(btn=>btn.addEventListener('click',()=>openEmployeeOrganizationDrawer(btn.dataset.changeEmployeeOrganization)));
     document.querySelectorAll('[data-open-branch-timesheet]').forEach(btn=>btn.addEventListener('click',()=>{const branch=state.branches.find(item=>item.id===btn.dataset.openBranchTimesheet);state.timesheetBranch=branch?.name||'All branches';state.timesheetDepartment='All departments';navigate('timesheets');}));
     document.querySelectorAll('[data-open-branch-payroll]').forEach(btn=>btn.addEventListener('click',()=>{const branch=state.branches.find(item=>item.id===btn.dataset.openBranchPayroll);state.payrollBranch=branch?.name||'All branches';state.payrollDepartment='All departments';navigate('payroll-runs');}));
@@ -6483,8 +6585,9 @@
     document.querySelectorAll('[data-report-print]').forEach(btn=>btn.addEventListener('click',printCurrentReport));
     document.querySelectorAll('[data-settings-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.settingsTab=btn.dataset.settingsTab;localStorage.setItem('payroll-ui-settings-tab',state.settingsTab);renderRoute();}));
     document.querySelectorAll('[data-settings-save]').forEach(btn=>btn.addEventListener('click',saveSettingsFromPage));
-    document.querySelectorAll('[data-document-asset-input]').forEach(input=>input.addEventListener('change',()=>uploadDocumentBrandingAsset(input.dataset.documentAssetInput,input.files?.[0])));
-    document.querySelectorAll('[data-document-asset-remove]').forEach(btn=>btn.addEventListener('click',()=>removeDocumentBrandingAsset(btn.dataset.documentAssetRemove)));
+    document.querySelectorAll('[data-brand-upload]').forEach(btn=>btn.addEventListener('click',()=>document.querySelector(`[data-brand-file="${btn.dataset.brandUpload}"]`)?.click()));
+    document.querySelectorAll('[data-brand-file]').forEach(input=>input.addEventListener('change',()=>uploadBrandAsset(input.dataset.brandFile,input.files?.[0]||null)));
+    document.querySelectorAll('[data-brand-clear]').forEach(btn=>btn.addEventListener('click',()=>clearBrandAsset(btn.dataset.brandClear)));
     document.querySelectorAll('[data-document-tab]').forEach(btn => btn.addEventListener('click', () => { state.documentTab=btn.dataset.documentTab; localStorage.setItem('payroll-ui-document-tab',state.documentTab); renderRoute(); }));
     const documentSearch=document.getElementById('documentSearch'); bindPayrollSearch(documentSearch,value=>{state.documentSearch=value;});
     const documentPeriod=document.getElementById('documentPeriodFilter'); if(documentPeriod) documentPeriod.addEventListener('change',()=>{state.documentPeriodFilter=documentPeriod.value;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();});
@@ -7100,6 +7203,7 @@
       state.employeeTab = btn.dataset.employeeTabJump;
       renderRoute();
     }));
+    document.querySelectorAll('[data-employee-lifecycle]').forEach(btn => btn.addEventListener('click', () => openEmployeeLifecycleDrawer(currentEmployeeId())));
     document.querySelectorAll('[data-employee-profile-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.employeeProfileAction;
       const employeeId = currentEmployeeId();
@@ -7141,6 +7245,7 @@
     bindPayrollSearch(salaryStructureSearch,value=>{state.salaryStructureSearch=value;});
     document.querySelectorAll('[data-overtime-policy-add]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer()));
     document.querySelectorAll('[data-overtime-policy-edit]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer(btn.dataset.overtimePolicyEdit)));
+    const overtimePolicyStatus=document.getElementById('overtimePolicyStatus'); if(overtimePolicyStatus)overtimePolicyStatus.addEventListener('change',()=>{state.overtimePolicyStatus=overtimePolicyStatus.value;renderRoute();});
     const otBasic = document.getElementById('otPreviewBasic');
     const otHours = document.getElementById('otPreviewHours');
     const updateOtPreview = () => {
@@ -7182,7 +7287,7 @@
 
     document.querySelectorAll('[data-supplier-row-menu]').forEach(btn => btn.addEventListener('click', () => {
       const supplier = state.suppliers.find(item => item.id === btn.dataset.supplierRowMenu);
-      showToast('Supplier actions', `${supplier?.name || 'Supplier'}: open, edit, deactivate and statement actions are available from the supplier profile.`);
+      if (supplier) { state.supplierTab='overview'; navigate(`suppliers/${supplier.id}`); }
     }));
 
     document.querySelectorAll('[data-supplier-action]').forEach(btn => btn.addEventListener('click', () => {
@@ -7317,7 +7422,7 @@
     drawerSave.hidden = false;
     drawerSave.disabled = false;
     drawerSave.textContent = 'Save Policy';
-    drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Monthly salary proration</strong><span>This company-level rule is used only when employment or salary structure changes make a month partial.</span></div><label class="form-field form-field--full"><span>Proration method</span><select class="select" name="payroll-proration-method"><option value="calendar_days" ${policy.prorationMethod==='calendar_days'?'selected':''}>Calendar-day proration</option><option value="no_proration" ${policy.prorationMethod==='no_proration'?'selected':''}>No proration — use full monthly salary</option></select><span class="field-hint">Full-month employees with one salary structure calculate normally even before a proration policy is needed. Partial months are blocked until this rule is explicitly configured.</span></label></section><section class="source-note">${icon('info')}<span><strong>Historical integrity.</strong> Changing this policy affects future calculations only. Existing calculated/reviewed payroll snapshots are not rewritten.</span></section>`;
+    drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Monthly salary proration</strong><span>This company-level rule is used only when employment or salary structure changes make a month partial.</span></div><label class="form-field form-field--full"><span>Proration method</span><select class="select" name="payroll-proration-method"><option value="calendar_days" ${policy.prorationMethod==='calendar_days'?'selected':''}>Calendar-day proration</option><option value="no_proration" ${policy.prorationMethod==='no_proration'?'selected':''}>No proration — use full monthly salary</option></select><span class="field-hint">Full-month employees with one salary structure calculate normally even before a proration policy is needed. Partial months are blocked until this rule is explicitly configured.</span></label></section><section class="source-note">${icon('info')}<span><strong>Company policy is retained.</strong> This is singleton company configuration, not a deletable master record. Changing it affects future calculations only; existing calculated/reviewed payroll snapshots are not rewritten.</span></section>`;
     drawer.classList.add('is-open');
     drawerScrim.classList.add('is-open');
     drawer.setAttribute('aria-hidden','false');
@@ -7358,6 +7463,11 @@
         trigger.setAttribute('aria-expanded', String(open));
       });
     });
+    document.querySelectorAll('[data-lifecycle-menu-action]').forEach(item => item.addEventListener('click', () => {
+      const host = item.closest('[data-dropdown]');
+      host?.classList.remove('is-open');
+      host?.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
+    }));
     document.addEventListener('click', (e) => {
       if (!e.target.closest('[data-dropdown]')) document.querySelectorAll('[data-dropdown].is-open').forEach(d => {
         d.classList.remove('is-open');
@@ -7591,7 +7701,7 @@
       saveLabel: 'Create branch',
       html: () => formSections([
         ['Branch / office master', 'Internal employees are organized by company office or branch. This is separate from construction projects used by rental manpower.', [
-          namedField('Branch / office name', 'branch-name', ''), namedField('Branch code (auto if blank)', 'branch-code', ''), namedField('Location / city', 'branch-location', ''), namedField('Address', 'branch-address', ''), namedField('Branch manager', 'branch-manager', ''), namedSelectField('Status', 'branch-status', ['Active','Inactive'])
+          namedField('Branch / office name', 'branch-name', ''), namedField('Branch code (auto if blank)', 'branch-code', ''), namedSelectFieldValue('Type', 'branch-kind', ['Branch','Office'], 'Branch'), namedField('Location / city', 'branch-location', ''), namedField('Address', 'branch-address', ''), namedField('Branch manager', 'branch-manager', ''), namedSelectField('Status', 'branch-status', ['Active','Inactive'])
         ]]
       ])
     },
@@ -7947,6 +8057,29 @@
   function selectWithCreate(label, options, type) { return `<div class="form-field form-field--full"><label>${label}</label><div class="inline-create"><select class="select">${options.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select><button class="btn btn--secondary" type="button" data-inline-create="${type}">+ New</button></div><span class="field-hint">Existing records appear here; creating a new one returns to this form.</span></div>`; }
   function formSections(sections) { return sections.map(([title, subtitle, fields]) => `<section class="form-section"><div class="form-section__head"><strong>${title}</strong><span>${subtitle}</span></div><div class="form-grid">${fields.join('')}</div></section>`).join(''); }
 
+  function lifecycleMenuItem({label, hint='', iconName='info', attrs='', danger=false, disabled=false}) {
+    return `<button type="button" class="ui-v2-menu__item${danger ? ' ui-v2-menu__item--danger' : ''}" ${attrs} data-lifecycle-menu-action ${disabled ? 'disabled aria-disabled="true"' : ''}>${icon(iconName)}<span class="ui-v2-menu__copy"><strong>${escapeHtml(label)}</strong>${hint ? `<small>${escapeHtml(hint)}</small>` : ''}</span></button>`;
+  }
+
+  function lifecycleActionsMenu(items, {label='Actions', compact=false} = {}) {
+    const rendered = items.map(item => item === 'separator' ? '<div class="ui-v2-menu__separator" role="separator"></div>' : lifecycleMenuItem(item)).join('');
+    return `<div class="ui-v2-prs-dropdown ui-v2-lifecycle-menu" data-dropdown><button type="button" class="btn btn--secondary${compact ? ' btn--sm' : ''} ui-v2-lifecycle-menu__trigger" data-dropdown-trigger aria-haspopup="menu" aria-expanded="false">${escapeHtml(label)} ${icon('more')}</button><div class="ui-v2-menu ui-v2-prs-dropdown-menu ui-v2-lifecycle-menu__menu" data-dropdown-menu role="menu"><div class="ui-v2-menu__label">Record actions</div>${rendered}</div></div>`;
+  }
+
+  function lifecycleDrawerIntro(title, copy, danger=false) {
+    return `<section class="ui-v2-lifecycle-panel${danger ? ' ui-v2-lifecycle-panel--danger' : ''}"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(copy)}</span></section>`;
+  }
+
+  function clearLifecycleDrawerError() {
+    drawerBody?.querySelector('.ui-v2-lifecycle-error')?.remove();
+  }
+
+  function showLifecycleDrawerError(error, fallback='This lifecycle action could not be completed.') {
+    clearLifecycleDrawerError();
+    const raw = String(error?.message || fallback);
+    drawerBody?.insertAdjacentHTML('afterbegin', `<div class="ui-v2-lifecycle-error" role="alert"><strong>Action blocked</strong><span>${escapeHtml(raw)}</span></div>`);
+  }
+
   function openSalaryComponentDrawer(componentId = null) {
     openQuickDrawer('salary-component', componentId);
     drawerTitle.textContent = componentId ? 'Edit salary component' : 'Add salary component';
@@ -7972,7 +8105,7 @@
     state.drawerType='branch-edit'; state.drawerContext={branchId};
     drawerTitle.textContent='Edit branch / office'; drawerSave.hidden=false; drawerSave.textContent='Save Changes';
     drawerBody.innerHTML=formSections([[`Branch / office master`, 'Changes affect future organization selections while existing employee history stays intact.', [
-      namedField('Branch / office name','branch-name',branch.name||''), namedField('Branch code','branch-code',branch.code||''), namedField('Location / city','branch-location',branch.location||''), namedField('Address','branch-address',branch.address||''), namedField('Branch manager','branch-manager',branch.manager||''), namedSelectFieldValue('Status','branch-status',['Active','Inactive'],branch.status||'Active')
+      namedField('Branch / office name','branch-name',branch.name||''), namedField('Branch code','branch-code',branch.code||''), namedSelectFieldValue('Type','branch-kind',['Branch','Office'],branch.type||'Branch'), namedField('Location / city','branch-location',branch.location||''), namedField('Address','branch-address',branch.address||''), namedField('Branch manager','branch-manager',branch.manager||''), namedSelectFieldValue('Status','branch-status',['Active','Inactive'],branch.archived?'Inactive':(branch.status||'Active'))
     ]]]);
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
   }
@@ -7986,6 +8119,75 @@
       namedField('Department name','department-name',department.name||''), namedField('Department code','department-code',department.code||''), namedSelectFieldValue('Status','department-status',['Active','Inactive'],department.status||'Active'), namedTextareaField('Notes','department-notes',department.notes||'')
     ]]]);
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+  }
+
+  function openConfigurationLifecycleDrawer(kind, id, action) {
+    let record=null, label='configuration record', token='';
+    if(kind==='component'){record=state.salaryComponents.find(item=>item.id===id);label='salary component';token=record?.code||'';}
+    else if(kind==='overtime'){record=state.overtimePolicies.find(item=>item.id===id);label='overtime policy';token=record?.code||'';}
+    else if(kind==='template'){record=bankTemplatesAll().find(item=>item.id===id);label='bank / WPS export template';token=record?.code||'';}
+    else if(kind==='payment-profile'){const employee=state.employees.find(item=>item.id===id);const profile=paymentContextForPeriod().profiles?.[id];if(!employee||!profile)return;record={name:employee.name};label='employee payment profile';token=employee.employeeId||'';}
+    if(!record)return;
+    state.drawerType='configuration-lifecycle'; state.drawerContext={kind,id,action,token}; drawerSave.hidden=false; drawerSave.disabled=false; drawerSave.classList.toggle('is-lifecycle-danger', action==='delete');
+    if(action==='archive'){
+      drawerTitle.textContent=`Archive ${label}`; drawerSave.textContent='Archive record';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Archive preserves history','This record will stop appearing in new Payroll selections, but every historical salary, payment and export reference remains intact.')+formSections([[`Archive ${record.name}`,'A reason is required for the lifecycle audit trail.',[namedTextareaField('Archive reason','configuration-lifecycle-reason','')]]]);
+    }else if(action==='restore'){
+      drawerTitle.textContent=`Restore ${label}`; drawerSave.textContent='Restore as inactive';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Restore safely','Restored configuration returns as Inactive. Review it before activating it for new Payroll work.')+formSections([[`Restore ${record.name}`,'Historical records are not rewritten.',[namedTextareaField('Restore note','configuration-lifecycle-reason','')]]]);
+    }else{
+      drawerTitle.textContent=`Delete unused ${label}`; drawerSave.textContent='Delete unused record';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Delete only mistaken, unused setup','The server will reject this action if any protected salary, payment or export history exists. Real historical records must be archived instead.',true)+formSections([[`Permanent delete`,'Type the exact code to confirm this destructive action.',[namedField(`Type ${token} to confirm delete`,'configuration-lifecycle-confirmation',''),namedTextareaField('Reason / note','configuration-lifecycle-reason','Duplicate or mistaken setup')]]]);
+    }
+    drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+  }
+
+  function openOrganizationLifecycleDrawer(kind, id, action) {
+    const collection = kind === 'branch' ? state.branches : state.departments;
+    const record = collection.find(item => item.id === id);
+    if (!record) return;
+    const label = kind === 'branch' ? 'branch / office' : 'department';
+    state.drawerType = 'organization-lifecycle';
+    state.drawerContext = { kind, id, action };
+    drawerSave.hidden = false;
+    drawerSave.classList.toggle('is-lifecycle-danger', action === 'delete');
+    if (action === 'archive') {
+      drawerTitle.textContent = `Archive ${label}`; drawerSave.textContent = 'Archive record';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Archive preserves organization history','The master is removed from new employee assignments while existing organization and payroll history continues to resolve normally.') + formSections([[`Archive ${record.name}`, 'A reason is required for the audit trail.', [namedTextareaField('Archive reason','organization-lifecycle-reason','')]]]);
+    } else if (action === 'restore') {
+      drawerTitle.textContent = `Restore ${label}`; drawerSave.textContent = 'Restore as inactive';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Restore safely','This master returns as Inactive and will not appear in new assignment selectors until deliberately activated.') + formSections([[`Restore ${record.name}`, 'Historical employee/payroll context is unchanged.', [namedTextareaField('Restore note','organization-lifecycle-reason','')]]]);
+    } else {
+      drawerTitle.textContent = `Delete unused ${label}`; drawerSave.textContent = 'Delete unused record';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Delete only an unused mistake','The server checks employee assignments and payroll history before deletion. Any referenced master must remain and be archived.',true) + formSections([[`Permanent delete`, 'Type the exact master code to confirm.', [namedField(`Type ${record.code} to confirm delete`,'organization-lifecycle-confirmation',''), namedTextareaField('Reason / note','organization-lifecycle-reason','Duplicate or mistaken setup')]]]);
+    }
+    drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+  }
+
+  function openRentalMasterLifecycleDrawer(kind, id, action='manage') {
+    const record = kind === 'supplier' ? state.suppliers.find(item=>item.id===id) : state.rentalWorkers.find(item=>item.id===id);
+    if (!record) return;
+    state.drawerType='rental-master-lifecycle'; state.drawerContext={kind,id,action}; drawerSave.hidden=false; drawerSave.disabled=false; drawerSave.classList.toggle('is-lifecycle-danger', action === 'delete');
+    const code=kind==='supplier'?record.code:rentalWorkerCode(record); const label=kind==='supplier'?'manpower supplier':'rental worker';
+    if (action === 'archive') {
+      drawerTitle.textContent=`Archive ${label}`; drawerSave.textContent='Archive record';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Archive preserves manpower history','Assignments, timesheets, settlements and payments remain intact while the master is removed from new operational selections.')+formSections([[`Archive ${record.name}`,'A reason is required for the audit trail.',[namedTextareaField('Archive reason','rental-lifecycle-reason','')]]]);
+    } else if (action === 'restore') {
+      drawerTitle.textContent=`Restore ${label}`; drawerSave.textContent='Restore as inactive';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Restore safely','The master returns as Inactive and cannot be used operationally until deliberately reactivated.')+formSections([[`Restore ${record.name}`,'Historical manpower records are unchanged.',[namedTextareaField('Restore note','rental-lifecycle-reason','')]]]);
+    } else if (action === 'delete') {
+      drawerTitle.textContent=`Delete unused ${label}`; drawerSave.textContent='Delete unused record';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Delete only an unused mistake','Assignment, timesheet, settlement or payment history permanently blocks hard deletion. Archive real records instead.',true)+formSections([[`Permanent delete`,'Type the exact worker/supplier code to confirm.',[namedField(`Type ${code} to confirm delete`,'rental-lifecycle-confirmation',''),namedTextareaField('Reason / note','rental-lifecycle-reason','Duplicate or mistaken setup')]]]);
+    } else if (kind === 'worker') {
+      const actions=record.archived?[{value:'restore_archive',label:'Restore from archive'}]:record.masterStatusValue==='inactive'?[{value:'activate',label:'Reactivate worker'},{value:'archive',label:'Archive worker'}]:[{value:'deactivate',label:'Mark worker inactive'}];
+      drawerTitle.textContent=`${record.name} · Worker lifecycle`; drawerSave.textContent='Apply Action';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Worker lifecycle','Release or cancel current/future assignments before stopping the worker. Lifecycle changes never erase timesheet or settlement history.')+formSections([[`Choose lifecycle action`,'A reason is retained in the audit trail for stop/archive actions.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedField('Effective stop date','rental-lifecycle-effective',rentalTodayIso(),'date'),namedTextareaField('Reason','rental-lifecycle-reason',record.inactiveReason||record.archivedReason||'')]]]);
+    } else if (kind === 'supplier') {
+      const actions=record.archived?[{value:'restore_archive',label:'Restore from archive'}]:record.statusValue==='inactive'?[{value:'activate',label:'Reactivate supplier'},{value:'archive',label:'Archive supplier'}]:[{value:'deactivate',label:'Make supplier inactive'}];
+      drawerTitle.textContent=`${record.name} · Supplier lifecycle`; drawerSave.textContent='Apply Action';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Supplier lifecycle','Active workers must be released/deactivated first. Supplier history, settlements and payments remain permanent.')+formSections([[`Choose lifecycle action`,'Archive is available after the supplier is inactive.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedTextareaField('Reason','rental-lifecycle-reason',record.archivedReason||'')]]]);
+    } else { return; }
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
   }
 
   function openEmployeeOrganizationDrawer(employeeId) {
@@ -8012,18 +8214,47 @@
     drawerSave.hidden = false;
     drawerSave.textContent = 'Save Changes';
     drawerBody.innerHTML = formSections([
-      ['Employee master', 'Identity and employment status changes are audited. Branch, department and position changes use the separate organization lifecycle.', [
+      ['Employee master', 'Edit identity/contact data here. Employment status, leave, deactivation, termination, archive and deletion are controlled from the separate Employment action.', [
         namedField('Employee ID','employee-id',employee.employeeNumber || employee.employeeId || ''),
         namedField('Full name','employee-name',employee.name || ''),
         namedField('Joining date','employee-joining',employee.joining || '','date'),
-        namedSelectFieldValue('Status','employee-status',['Active','On Leave','Inactive','Terminated'],employee.status || 'Active'),
         namedField('National ID / Iqama','employee-national-id',employee.nationalId || ''),
         namedField('Phone','employee-phone',employee.phone || ''),
-        namedField('Address','employee-address',employee.address || ''),
-        namedField('Employment end date','employee-end-date',employee.employmentEnd || '','date')
+        namedField('Address','employee-address',employee.address || '')
       ]]
-    ]);
+    ]) + `<section class="source-note">${icon('info')}<span><strong>Employment lifecycle is protected.</strong>Use the Employment action on the profile to place the employee on leave, deactivate payroll eligibility, terminate employment, archive the record or cancel an unused onboarding record.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+  }
+
+  function openEmployeeLifecycleDrawer(employeeId) {
+    const employee = state.employees.find(item => item.id === employeeId);
+    if (!employee) return;
+    const actions = employeeLifecycleActions(employee);
+    state.drawerType = 'employee-lifecycle';
+    state.drawerContext = { employeeId };
+    drawerTitle.textContent = `${employee.name} · Employment`;
+    drawerSave.hidden = false;
+    drawerSave.disabled = false;
+    drawerSave.textContent = 'Apply Action';
+    drawerSave.classList.remove('is-lifecycle-danger');
+    const statusCopy = employee.archived ? `Archived · underlying employment status ${employee.status}` : `${employee.status}${employee.employmentEnd ? ` · ended ${employee.employmentEnd}` : ''}`;
+    drawerBody.innerHTML = lifecycleDrawerIntro('Employment lifecycle','Use employment states to stop work cleanly without erasing attendance, payroll, payment or document history.') + `<section class="employee-lifecycle-summary"><span class="eyebrow">Employment lifecycle</span><h3>${escapeHtml(employee.name)}</h3><p>EMP ${escapeHtml(employee.employeeId)} · <strong>${escapeHtml(statusCopy)}</strong></p></section>${formSections([
+      ['Lifecycle action','Employment changes are audited and historical payroll remains immutable.',[
+        namedSelectOptions('Action','employee-lifecycle-action',actions,actions[0]?.value || ''),
+        namedField('Employment end date (termination only)','employee-lifecycle-effective',rentalTodayIso(),'date'),
+        namedTextareaField('Reason / notes','employee-lifecycle-reason',employee.archivedReason || '')
+      ]],
+      ['Deletion safeguard','Hard deletion is only for an unused/duplicate onboarding master. Attendance, adjustments, payroll, payments or finalized documents permanently block deletion.',[
+        namedField('Type employee ID to confirm delete','employee-lifecycle-confirm','')
+      ]]
+    ])}<section class="source-note">${icon('info')}<span><strong>Use the right lifecycle action.</strong>On Leave keeps the employment open. Deactivate stops new attendance/payroll eligibility without deleting history. Terminate records the real employment end date. Archive only hides a stopped record from current registers. Delete is intentionally blocked after payroll history exists.</span></section>`;
+    const lifecycleActionSelect = drawerBody.querySelector('[name="employee-lifecycle-action"]');
+    const syncEmployeeLifecycleTone = () => drawerSave.classList.toggle('is-lifecycle-danger', lifecycleActionSelect?.value === 'delete');
+    lifecycleActionSelect?.addEventListener('change', syncEmployeeLifecycleTone);
+    syncEmployeeLifecycleTone();
+    drawer.classList.add('is-open');
+    drawerScrim.classList.add('is-open');
+    drawer.setAttribute('aria-hidden','false');
   }
 
   function openSupplierEditDrawer(supplierId) {
@@ -8121,6 +8352,7 @@
     state.drawerContext = null;
     drawerSave.hidden = false;
     drawerSave.disabled = false;
+    drawerSave.classList.remove('is-lifecycle-danger');
   }
 
   async function saveDrawer() {
@@ -8130,7 +8362,7 @@
     if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${roleDefinition().label} cannot post or reconcile payments.`); return; }
     if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${roleDefinition().label} can view this workspace but cannot change operational records.`); return; }
     if (!validatePayrollRequiredFields()) return;
-    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
+    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
       const type = state.drawerType;
       closeDrawer();
       showToast('Action unavailable', 'This function is not enabled in the current backend module.');
@@ -8194,7 +8426,7 @@
       if(!code){drawerBody.querySelector('[name="bank-template-code"]')?.focus();showToast('Template code required','Use a short stable code for this export definition.');return;}
       if(!name){drawerBody.querySelector('[name="bank-template-name"]')?.focus();showToast('Template name required','Give this salary export mapping a clear name.');return;}
       if(!columns.length||invalid.length){drawerBody.querySelector('[name="bank-template-columns"]')?.focus();showToast('Check template columns',invalid.length?`Unknown keys: ${invalid.join(', ')}`:'Add at least one export column.');return;}
-      if(!columns.includes('employee_number')||!columns.includes('net_salary')){drawerBody.querySelector('[name="bank-template-columns"]')?.focus();showToast('Required columns missing','Every salary export template must contain employee_number and net_salary.');return;}
+      if(!columns.includes('net_salary')){drawerBody.querySelector('[name="bank-template-columns"]')?.focus();showToast('Required column missing','Every salary export template must contain net_salary.');return;}
       if(headers.length!==columns.length){drawerBody.querySelector('[name="bank-template-headers"]')?.focus();showToast('Header count does not match',`Add exactly ${columns.length} header label${columns.length===1?'':'s'}, one per line.`);return;}
       if(Object.keys(resultColumns).length && (!resultColumns.employee||!resultColumns.status)){showToast('Result mapping incomplete','When result headers are configured, Employee ID and Status headers are required.');return;}
       const payload={
@@ -8729,7 +8961,7 @@
           body: {
             name,
             code: editing ? (get('branch-code') || existing?.code || '') : get('branch-code'),
-            location:get('branch-location'), address:get('branch-address'), manager:get('branch-manager'),
+            location:get('branch-location'), address:get('branch-address'), manager:get('branch-manager'), kind:(get('branch-kind')||'Branch').toLowerCase(),
             status:get('branch-status') || 'Active'
           }
         });
@@ -8783,6 +9015,89 @@
       return;
     }
 
+    if (state.drawerType === 'configuration-lifecycle') {
+      clearLifecycleDrawerError();
+      const {kind,id,action,token}=state.drawerContext||{}; const reason=get('configuration-lifecycle-reason');
+      if(action==='archive' && !reason){showToast('Archive reason required','Explain why this configuration record is being archived.');return;}
+      let endpoint='', lifecycleEndpoint='';
+      if(kind==='component'){endpoint=`/api/internal/salary/components/${id}/`;lifecycleEndpoint=`${endpoint}lifecycle/`;}
+      else if(kind==='overtime'){endpoint=`/api/internal/salary/overtime-policies/${id}/`;lifecycleEndpoint=`${endpoint}lifecycle/`;}
+      else if(kind==='template'){endpoint=`/api/internal/salary-payments/templates/${id}/`;lifecycleEndpoint=`${endpoint}lifecycle/`;}
+      else if(kind==='payment-profile'){endpoint=`/api/internal/salary-payments/profiles/${id}/`;}
+      if(!endpoint){closeDrawer();return;}
+      try{
+        drawerSave.disabled=true;
+        if(action==='delete'){
+          await appApi(endpoint,{method:'DELETE',body:{confirmation:get('configuration-lifecycle-confirmation'),reason}});
+          if(kind==='component')state.salaryComponents=state.salaryComponents.filter(item=>item.id!==id);
+          else if(kind==='overtime')state.overtimePolicies=state.overtimePolicies.filter(item=>item.id!==id);
+          else if(kind==='template'){state.bankTemplates=state.bankTemplates.filter(item=>item.id!==id);await loadSalaryPayments(state.period,{force:true});}
+          else if(kind==='payment-profile')await loadSalaryPayments(state.period,{force:true});
+          closeDrawer();renderRoute();showToast('Unused configuration deleted','The record was permanently deleted because it had no protected history.');
+        }else{
+          const payload=await appApi(lifecycleEndpoint,{method:'POST',body:{action,reason}});
+          if(kind==='component')replaceStateRecord(state.salaryComponents,payload.component);
+          else if(kind==='overtime')replaceStateRecord(state.overtimePolicies,payload.policy);
+          else if(kind==='template'){replaceStateRecord(state.bankTemplates,payload.template);await loadSalaryPayments(state.period,{force:true});}
+          closeDrawer();renderRoute();showToast(action==='archive'?'Configuration archived':'Configuration restored',action==='archive'?'Historical records remain intact.':'The restored record remains inactive until explicitly activated.');
+        }
+      }catch(error){drawerSave.disabled=false;showLifecycleDrawerError(error);showToast('Lifecycle action blocked',error.message);}
+      return;
+    }
+
+    if (state.drawerType === 'organization-lifecycle') {
+      clearLifecycleDrawerError();
+      const { kind, id, action } = state.drawerContext || {};
+      const collection = kind === 'branch' ? state.branches : state.departments;
+      const record = collection.find(item => item.id === id);
+      if (!record) { closeDrawer(); return; }
+      const reason = get('organization-lifecycle-reason');
+      if (action === 'archive' && !reason) { showToast('Archive reason required','Explain why this organization master is being archived.'); return; }
+      try {
+        drawerSave.disabled = true;
+        if (action === 'delete') {
+          const confirmation = get('organization-lifecycle-confirmation');
+          const endpoint = kind === 'branch' ? `/api/internal/branches/${id}/` : `/api/internal/departments/${id}/`;
+          const payload = await appApi(endpoint, { method:'DELETE', body:{confirmation,reason} });
+          const index = collection.findIndex(item=>item.id===id); if(index>=0) collection.splice(index,1);
+          if (kind === 'branch' && state.branchSelectedId === id) state.branchSelectedId='';
+          if (kind === 'department' && state.departmentSelectedId === id) state.departmentSelectedId='';
+          closeDrawer(); navigate(kind === 'branch' ? 'branches' : 'departments');
+          showToast('Unused master deleted', `${record.name} was permanently deleted because it had no protected history.`);
+        } else {
+          const endpoint = kind === 'branch' ? `/api/internal/branches/${id}/lifecycle/` : `/api/internal/departments/${id}/lifecycle/`;
+          const payload = await appApi(endpoint, { method:'POST', body:{action:action==='restore'?'restore_archive':'archive',reason} });
+          const updated = kind === 'branch' ? payload.branch : payload.department; replaceStateRecord(collection, updated);
+          closeDrawer(); renderRoute();
+          showToast(action === 'archive' ? 'Master archived' : 'Master restored', action === 'archive' ? `${updated.name} is retained for history and removed from new assignments.` : `${updated.name} is restored as Inactive; activate it explicitly when ready.`);
+        }
+      } catch (error) { showLifecycleDrawerError(error); showToast('Lifecycle action not completed', error.message); }
+      finally { drawerSave.disabled = false; }
+      return;
+    }
+
+    if (state.drawerType === 'rental-master-lifecycle') {
+      clearLifecycleDrawerError();
+      const {kind,id,action}=state.drawerContext||{}; const collection=kind==='supplier'?state.suppliers:state.rentalWorkers; const record=collection.find(item=>item.id===id); if(!record){closeDrawer();return;}
+      const reason=get('rental-lifecycle-reason');
+      let selectedAction=action==='manage'?get('rental-lifecycle-action'):action;
+      if (['archive','deactivate'].includes(selectedAction) && !reason) {showToast('Reason required','Enter a lifecycle reason for the audit trail.');return;}
+      try {
+        drawerSave.disabled=true;
+        if (selectedAction==='delete') {
+          const confirmation=get('rental-lifecycle-confirmation');
+          const endpoint=kind==='supplier'?`/api/rental/suppliers/${id}/`:`/api/rental/workers/${id}/`;
+          await appApi(endpoint,{method:'DELETE',body:{confirmation,reason}});
+          const idx=collection.findIndex(item=>item.id===id);if(idx>=0)collection.splice(idx,1);closeDrawer();navigate(kind==='supplier'?'suppliers':'rental-workforce');showToast('Unused master deleted',`${record.name} was permanently removed because no protected history referenced it.`);return;
+        }
+        const endpoint=kind==='supplier'?`/api/rental/suppliers/${id}/lifecycle/`:`/api/rental/workers/${id}/lifecycle/`;
+        const body={action:selectedAction==='restore'?'restore_archive':selectedAction,reason};
+        if(kind==='worker')body.effective_date=get('rental-lifecycle-effective');
+        const payload=await appApi(endpoint,{method:'POST',body}); const updated=kind==='supplier'?payload.supplier:payload.worker;replaceStateRecord(collection,updated);closeDrawer();renderRoute();showToast('Lifecycle updated',`${updated.name} · ${updated.status||updated.masterStatus}`);
+      } catch(error){showLifecycleDrawerError(error);showToast('Lifecycle action not completed',error.message);} finally{drawerSave.disabled=false;}
+      return;
+    }
+
     if (state.drawerType === 'employee-organization') {
       const employee=state.employees.find(item=>item.id===state.drawerContext?.employeeId); if(!employee){closeDrawer();return;}
       const branch=state.branches.find(item=>item.id===get('organization-branch'));
@@ -8833,13 +9148,48 @@
       return;
     }
 
+    if (state.drawerType === 'employee-lifecycle') {
+      clearLifecycleDrawerError();
+      const employee=state.employees.find(item=>item.id===state.drawerContext?.employeeId); if(!employee){closeDrawer();return;}
+      const action=get('employee-lifecycle-action');
+      const reason=get('employee-lifecycle-reason');
+      const effective=get('employee-lifecycle-effective');
+      const confirmation=get('employee-lifecycle-confirm');
+      if (!action) { showToast('Employment action required','Choose a lifecycle action.'); return; }
+      if (['leave','deactivate','terminate','archive'].includes(action) && !reason) { showToast('Reason required','Enter a reason so the lifecycle audit trail explains this change.'); return; }
+      if (action === 'terminate' && !effective) { showToast('Employment end date required',"Choose the employee's final employment date."); return; }
+      if (action === 'delete' && confirmation.trim().toUpperCase() !== String(employee.employeeId || '').trim().toUpperCase()) { showToast('Employee ID confirmation required',`Type ${employee.employeeId} exactly before deleting an unused employee master.`); return; }
+      try {
+        drawerSave.disabled = true;
+        if (action === 'delete') {
+          await appApi(`/api/internal/employees/${employee.id}/`, {method:'DELETE',body:{confirmation,reason}});
+          state.employees = state.employees.filter(item=>item.id!==employee.id);
+          delete state.employeeOrganizationHistory[employee.id];
+          delete state.salaryStructures[employee.id];
+          delete state.salaryStructureHistory[employee.id];
+          closeDrawer();
+          showToast('Unused employee deleted',`${employee.name} was removed because no historical payroll records referenced the employee.`);
+          navigate('internal-employees');
+          return;
+        }
+        const payload=await appApi(`/api/internal/employees/${employee.id}/lifecycle/`, {method:'POST',body:{action,effective_date:effective,reason}});
+        replaceStateRecord(state.employees,payload.employee);
+        if (payload.history) state.employeeOrganizationHistory[employee.id]=payload.history;
+        closeDrawer(); renderRoute();
+        const labels={leave:'Employee placed on leave',activate:'Employee reactivated',deactivate:'Employee deactivated',terminate:'Employment terminated',archive:'Employee archived',restore_archive:'Employee restored from archive'};
+        showToast(labels[action] || 'Employment updated',`${payload.employee.name} · ${payload.employee.archived ? 'Archived' : payload.employee.status}`);
+      } catch(error) { showLifecycleDrawerError(error); showToast('Employment action not completed',error.message); }
+      finally { drawerSave.disabled = false; }
+      return;
+    }
+
     if (state.drawerType === 'internal-employee-edit') {
       const employee=state.employees.find(item=>item.id===state.drawerContext?.employeeId); if(!employee){closeDrawer();return;}
       try {
         drawerSave.disabled = true;
         const payload=await appApi(`/api/internal/employees/${employee.id}/`, {method:'PATCH',body:{
           employee_number:get('employee-id'), full_name:get('employee-name'), joining_date:get('employee-joining'),
-          status:get('employee-status'), national_id:get('employee-national-id'), phone:get('employee-phone'), address:get('employee-address'), employment_end_date:get('employee-end-date')
+          national_id:get('employee-national-id'), phone:get('employee-phone'), address:get('employee-address')
         }});
         replaceStateRecord(state.employees,payload.employee); closeDrawer(); renderRoute();
         showToast('Employee updated', `${payload.employee.name}'s master details were saved.`);
@@ -8982,7 +9332,7 @@
       if (next === 'Submitted' && !roleCanEdit('rental')) return 'edit';
     }
     const editSelector = [
-      '[data-quick-add]','[data-edit-branch]','[data-edit-department]','[data-change-employee-organization]',
+      '[data-quick-add]','[data-edit-branch]','[data-edit-department]','[data-change-employee-organization]','[data-employee-lifecycle]',
       '[data-salary-component-add]','[data-salary-component-edit]','[data-salary-structure-new]','[data-salary-structure-edit]',
       '[data-overtime-policy-add]','[data-overtime-policy-edit]','[data-timesheet-bulk-action]','[data-timesheet-import]','[data-timesheet-save]',
       '[data-rental-timesheet-import]','[data-rental-timesheet-save]','[data-rental-ts-bulk]','[data-payroll-calculate]','[data-payroll-reopen]','[data-payroll-reset-run]','[data-payroll-submit-review]',

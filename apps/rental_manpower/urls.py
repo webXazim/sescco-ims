@@ -20,9 +20,11 @@ urlpatterns = [
     path("api/rental/assignments/", api.assignments_api, name="assignments-api"),
     path("api/rental/suppliers/", api.suppliers_api, name="suppliers-api"),
     path("api/rental/suppliers/<uuid:supplier_id>/", api.supplier_detail_api, name="supplier-detail-api"),
+    path("api/rental/suppliers/<uuid:supplier_id>/lifecycle/", api.supplier_lifecycle_api, name="supplier-lifecycle-api"),
     path("api/rental/projects/", api.projects_api, name="projects-api"),
     path("api/rental/projects/<uuid:project_id>/", api.project_detail_api, name="project-detail-api"),
     path("api/rental/workers/", api.workers_api, name="workers-api"),
     path("api/rental/workers/import/", api.workers_import_api, name="workers-import-api"),
     path("api/rental/workers/<uuid:worker_id>/", api.worker_detail_api, name="worker-detail-api"),
+    path("api/rental/workers/<uuid:worker_id>/lifecycle/", api.worker_lifecycle_api, name="worker-lifecycle-api"),
 ]

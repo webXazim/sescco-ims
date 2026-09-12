@@ -159,23 +159,29 @@ class ProjectWorkspaceTests(TestCase):
         with self.assertRaises(ValidationError):
             project.save()
 
-    def test_storekeeper_can_archive_project_but_only_admin_can_delete(self):
+    def test_project_lifecycle_requires_inventory_management_authority(self):
         project = Project.objects.create(company=self.company, code="LIFE-02", name="Lifecycle Controls")
         status_url = reverse("projects:status", kwargs={"code": project.code})
         delete_url = reverse("projects:delete", kwargs={"code": project.code})
 
-        response = self.client.post(status_url, {"action": "archive"})
+        self.assertEqual(
+            self.client.post(status_url, {"action": "archive", "reason": "No longer used"}).status_code,
+            403,
+        )
+        self.assertEqual(self.client.post(delete_url).status_code, 403)
+        project.refresh_from_db()
+        self.assertEqual(project.status, Project.Status.ACTIVE)
+
+        self.client.force_login(self.admin)
+        response = self.client.post(status_url, {"action": "archive", "reason": "No longer used"})
         self.assertRedirects(response, reverse("projects:detail", args=[project.code]))
         project.refresh_from_db()
         self.assertEqual(project.status, Project.Status.ARCHIVED)
+        self.assertIsNotNone(project.archived_at)
 
-        self.assertEqual(self.client.post(delete_url).status_code, 403)
-        self.assertTrue(Project.objects.filter(pk=project.pk).exists())
-
-        self.client.force_login(self.admin)
         response = self.client.post(
             delete_url,
-            {"confirmation": f"DELETE {project.code}", "reason": "Duplicate", "acknowledge": "yes"},
+            {"confirmation": project.code, "reason": "Duplicate", "acknowledge": "yes"},
         )
         self.assertRedirects(response, reverse("projects:list"))
         project.refresh_from_db()
@@ -203,7 +209,8 @@ class ProjectWorkspaceTests(TestCase):
                 "acknowledge": "yes",
             },
         )
-        self.assertRedirects(response, reverse("projects:list"))
+        self.assertEqual(response.status_code, 409)
+        self.assertContains(response, "Archive it instead of deleting it", status_code=409)
         project.refresh_from_db()
-        self.assertIsNotNone(project.deleted_at)
+        self.assertIsNone(project.deleted_at)
         self.assertTrue(Project.objects.filter(pk=project.pk).exists())

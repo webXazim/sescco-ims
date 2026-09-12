@@ -7,6 +7,11 @@ from django.db.models import Q
 from apps.core.models import CompanyOwnedModel
 
 
+class BranchKind(models.TextChoices):
+    BRANCH = "branch", "Branch"
+    OFFICE = "office", "Office"
+
+
 class EmploymentStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     ON_LEAVE = "on_leave", "On Leave"
@@ -22,7 +27,10 @@ class Branch(CompanyOwnedModel):
     location = models.CharField(max_length=160, blank=True)
     address = models.TextField(blank=True)
     manager_name = models.CharField(max_length=160, blank=True)
+    kind = models.CharField(max_length=20, choices=BranchKind.choices, default=BranchKind.BRANCH, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "internal_branch"
@@ -33,6 +41,7 @@ class Branch(CompanyOwnedModel):
         ]
         indexes = [
             models.Index(fields=("company", "is_active", "name"), name="int_branch_company_active_idx"),
+            models.Index(fields=("company", "archived_at", "name"), name="int_branch_company_archive_idx"),
         ]
 
     def clean(self) -> None:
@@ -41,10 +50,13 @@ class Branch(CompanyOwnedModel):
         self.location = self.location.strip()
         self.address = self.address.strip()
         self.manager_name = self.manager_name.strip()
+        self.archived_reason = self.archived_reason.strip()
         if not self.code:
             raise ValidationError({"code": "Branch code is required."})
         if not self.name:
             raise ValidationError({"name": "Branch name is required."})
+        if self.archived_at and self.is_active:
+            raise ValidationError({"is_active": "An archived branch or office cannot be active."})
 
     def __str__(self) -> str:
         return f"{self.code} · {self.name}"
@@ -57,6 +69,8 @@ class Department(CompanyOwnedModel):
     name = models.CharField(max_length=160)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "internal_department"
@@ -67,16 +81,20 @@ class Department(CompanyOwnedModel):
         ]
         indexes = [
             models.Index(fields=("company", "is_active", "name"), name="int_dept_company_active_idx"),
+            models.Index(fields=("company", "archived_at", "name"), name="int_dept_company_archive_idx"),
         ]
 
     def clean(self) -> None:
         self.code = self.code.strip().upper()
         self.name = self.name.strip()
         self.notes = self.notes.strip()
+        self.archived_reason = self.archived_reason.strip()
         if not self.code:
             raise ValidationError({"code": "Department code is required."})
         if not self.name:
             raise ValidationError({"name": "Department name is required."})
+        if self.archived_at and self.is_active:
+            raise ValidationError({"is_active": "An archived department cannot be active."})
 
     def __str__(self) -> str:
         return f"{self.code} · {self.name}"
@@ -96,6 +114,8 @@ class InternalEmployee(CompanyOwnedModel):
     address = models.CharField(max_length=300, blank=True)
     joining_date = models.DateField()
     employment_end_date = models.DateField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
     status = models.CharField(
         max_length=20,
         choices=EmploymentStatus.choices,
@@ -128,6 +148,10 @@ class InternalEmployee(CompanyOwnedModel):
                 condition=~Q(status=EmploymentStatus.TERMINATED) | Q(employment_end_date__isnull=False),
                 name="internal_employee_terminated_has_end",
             ),
+            models.CheckConstraint(
+                condition=Q(archived_at__isnull=True) | Q(status__in=[EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED]),
+                name="internal_employee_archive_requires_stopped_status",
+            ),
         ]
         indexes = [
             models.Index(fields=("company", "status", "full_name"), name="int_emp_company_status_idx"),
@@ -140,6 +164,7 @@ class InternalEmployee(CompanyOwnedModel):
         self.national_id = self.national_id.strip()
         self.phone = self.phone.strip()
         self.address = self.address.strip()
+        self.archived_reason = self.archived_reason.strip()
         if not self.employee_number:
             raise ValidationError({"employee_number": "Employee number is required."})
         if not self.full_name:
@@ -148,6 +173,8 @@ class InternalEmployee(CompanyOwnedModel):
             raise ValidationError({"employment_end_date": "Employment end date cannot be before the joining date."})
         if self.status == EmploymentStatus.TERMINATED and not self.employment_end_date:
             raise ValidationError({"employment_end_date": "Employment end date is required for a terminated employee."})
+        if self.archived_at and self.status not in {EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED}:
+            raise ValidationError({"status": "Only inactive or terminated employees can be archived."})
 
     def __str__(self) -> str:
         return f"{self.employee_number} · {self.full_name}"

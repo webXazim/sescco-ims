@@ -20,9 +20,14 @@ def salary_components_for_company(
     company: Company,
     query: str = "",
     active: bool | None = None,
+    archived: bool | None = None,
     category: str = "",
 ) -> QuerySet[SalaryComponent]:
     rows = SalaryComponent.objects.for_company(company)
+    if archived is True:
+        rows = rows.filter(archived_at__isnull=False)
+    elif archived is False:
+        rows = rows.filter(archived_at__isnull=True)
     if active is not None:
         rows = rows.filter(is_active=active)
     if category:
@@ -43,8 +48,13 @@ def overtime_policies_for_company(
     company: Company,
     query: str = "",
     active: bool | None = None,
+    archived: bool | None = None,
 ) -> QuerySet[OvertimePolicy]:
     rows = OvertimePolicy.objects.for_company(company).select_related("base_component")
+    if archived is True:
+        rows = rows.filter(archived_at__isnull=False)
+    elif archived is False:
+        rows = rows.filter(archived_at__isnull=True)
     if active is not None:
         rows = rows.filter(is_active=active)
     query = query.strip()
@@ -98,7 +108,10 @@ def serialize_salary_component(component: SalaryComponent) -> dict[str, object]:
         "recurrence": component.get_recurrence_display(),
         "calculation": component.get_calculation_display(),
         "wpsMap": component.get_wps_mapping_display(),
-        "status": "Active" if component.is_active else "Inactive",
+        "status": "Archived" if component.archived_at else ("Active" if component.is_active else "Inactive"),
+        "archived": bool(component.archived_at),
+        "archivedAt": component.archived_at.isoformat() if component.archived_at else None,
+        "archivedReason": component.archived_reason,
         "notes": component.notes,
     }
 
@@ -112,7 +125,10 @@ def serialize_overtime_policy(policy: OvertimePolicy) -> dict[str, object]:
         "baseComponent": policy.base_component.name,
         "divisor": str(policy.divisor),
         "multiplier": str(policy.multiplier),
-        "status": "Active" if policy.is_active else "Inactive",
+        "status": "Archived" if policy.archived_at else ("Active" if policy.is_active else "Inactive"),
+        "archived": bool(policy.archived_at),
+        "archivedAt": policy.archived_at.isoformat() if policy.archived_at else None,
+        "archivedReason": policy.archived_reason,
         "notes": policy.notes,
     }
 

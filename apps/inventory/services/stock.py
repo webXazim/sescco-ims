@@ -175,6 +175,8 @@ def add_stock(
     _require_inventory_edit(user, project.company)
     if project.deleted_at or unit.deleted_at:
         raise InactiveStockError("Deleted projects and units cannot receive new stock.")
+    if unit.archived_at or not unit.is_active:
+        raise InactiveStockError("Only active, non-archived units can be used for new stock activity.")
     if unit.company_id != project.company_id:
         raise InventoryOperationError("Project and unit must belong to the same company.")
     duplicate = _existing_idempotent_result(project.company, idempotency_key)
@@ -187,8 +189,6 @@ def add_stock(
         raise InventoryOperationError("Unit price cannot be negative.")
     if project.status != Project.Status.ACTIVE:
         raise InactiveStockError("Only active projects can receive stock.")
-    if not unit.is_active:
-        raise InactiveStockError("Only active units can be used for new stock activity.")
 
     normalized_material = normalize_text(material_name)
     normalized_supplier = normalize_text(supplier_name)
@@ -207,7 +207,7 @@ def add_stock(
 
             # Keep suppliers introduced through imports and integrations available in
             # the managed supplier picker without changing historical stock snapshots.
-            Supplier.objects.for_company(locked_project.company).get_or_create(
+            supplier_master, supplier_created = Supplier.objects.for_company(locked_project.company).get_or_create(
                 company=locked_project.company,
                 normalized_name=normalized_supplier,
                 normalized_phone=normalized_phone,
@@ -217,6 +217,14 @@ def add_stock(
                     "location": supplier_location,
                 },
             )
+            if not supplier_created and (
+                supplier_master.deleted_at
+                or supplier_master.archived_at
+                or not supplier_master.is_active
+            ):
+                raise InactiveStockError(
+                    "This material supplier is archived or inactive. Restore the supplier before using it for new stock activity."
+                )
 
             exact = (
                 StockItem.objects.for_company(locked_project.company).select_for_update(of=("self",))
@@ -645,5 +653,12 @@ def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockI
                 )
         locked.status = status
         locked.updated_by = user
-        locked.save(update_fields=["status", "updated_by", "updated_at"])
+        if status == StockItem.Status.ARCHIVED:
+            locked.archived_at = timezone.now()
+            if not locked.archived_reason:
+                locked.archived_reason = "Archived through the inventory stock-record lifecycle."
+        else:
+            locked.archived_at = None
+            locked.archived_reason = ""
+        locked.save(update_fields=["status", "archived_at", "archived_reason", "updated_by", "updated_at"])
         return locked

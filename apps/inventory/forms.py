@@ -57,7 +57,7 @@ class UnitForm(StyledModelForm):
 
     class Meta:
         model = Unit
-        fields = ("name", "symbol", "is_active")
+        fields = ("name", "symbol")
 
     def clean(self):
         cleaned = super().clean()
@@ -82,7 +82,7 @@ class SupplierForm(StyledModelForm):
 
     class Meta:
         model = Supplier
-        fields = ("name", "phone", "location", "notes", "is_active")
+        fields = ("name", "phone", "location", "notes")
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
 
     def clean(self):
@@ -155,7 +155,7 @@ class StockItemForm(StyledModelForm):
         active_projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         )
-        active_units = Unit.objects.for_company(company).filter(is_active=True, deleted_at__isnull=True)
+        active_units = Unit.objects.for_company(company).filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
         if self.instance.pk:
             active_projects = Project.objects.for_company(company).filter(deleted_at__isnull=True).filter(
                 models.Q(status=Project.Status.ACTIVE) | models.Q(pk=self.instance.project_id)
@@ -288,10 +288,10 @@ class StockAdditionForm(IdempotentMovementForm):
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         ).order_by("code")
         self.fields["unit"].queryset = Unit.objects.for_company(company).filter(
-            is_active=True, deleted_at__isnull=True
+            is_active=True, archived_at__isnull=True, deleted_at__isnull=True
         ).order_by("name")
         self.fields["supplier"].queryset = Supplier.objects.for_company(company).filter(
-            is_active=True, deleted_at__isnull=True
+            is_active=True, archived_at__isnull=True, deleted_at__isnull=True
         ).order_by("name", "phone")
         self.exact_match = None
         self.similar_matches = []
@@ -539,7 +539,7 @@ class StockTransferForm(StyledForm):
         company = company or getattr(source_location, "company", None)
         self.company = company
         super().__init__(*args, **kwargs)
-        locations = InventoryLocation.objects.for_company(company).select_related("project").filter(is_active=True)
+        locations = InventoryLocation.objects.for_company(company).select_related("project").filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
         self.fields["source_location"].queryset = locations.order_by("location_type", "code")
         self.fields["destination_location"].queryset = locations.order_by(
             "location_type", "code"
@@ -809,7 +809,7 @@ class StockItemFilterForm(DateRangeFilterForm):
             "code"
         )
         self.fields["location"].queryset = InventoryLocation.objects.for_company(company).filter(
-            is_active=True
+            is_active=True, deleted_at__isnull=True
         ).order_by("location_type", "code")
         self.fields["unit"].queryset = Unit.objects.for_company(company).filter(deleted_at__isnull=True).order_by("name")
         self.fields["q"].widget.attrs.update(
@@ -933,9 +933,9 @@ class MovementFilterForm(DateRangeFilterForm):
         self.fields["project"].queryset = Project.objects.for_company(company).filter(deleted_at__isnull=True).order_by(
             "code"
         )
-        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).order_by(
-            "location_type", "code"
-        )
+        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).filter(
+            deleted_at__isnull=True
+        ).order_by("location_type", "code")
         self.fields["q"].widget.attrs.update(
             {
                 "placeholder": ("Search project, material, supplier, reference, purpose, or user…"),

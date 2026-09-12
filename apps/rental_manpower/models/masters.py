@@ -37,6 +37,8 @@ class ManpowerSupplier(CompanyOwnedModel):
     payment_terms = models.CharField(max_length=160, blank=True)
     address = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "rental_manpower_supplier"
@@ -61,6 +63,7 @@ class ManpowerSupplier(CompanyOwnedModel):
         ]
         indexes = [
             models.Index(fields=("company", "status", "name"), name="rntl_sup_status_name_idx"),
+            models.Index(fields=("company", "archived_at", "name"), name="rntl_sup_archive_name_idx"),
         ]
 
     def clean(self) -> None:
@@ -74,6 +77,9 @@ class ManpowerSupplier(CompanyOwnedModel):
         self.payment_terms = (self.payment_terms or "").strip()
         self.address = (self.address or "").strip()
         self.notes = (self.notes or "").strip()
+        self.archived_reason = (self.archived_reason or "").strip()
+        if self.archived_at and self.status == SupplierStatus.ACTIVE:
+            raise ValidationError({"status": "An archived manpower supplier cannot be active."})
         if not self.code:
             raise ValidationError({"code": "Supplier code is required."})
         if not self.name:
@@ -107,6 +113,10 @@ class RentalWorker(CompanyOwnedModel):
         db_index=True,
     )
     notes = models.TextField(blank=True)
+    inactive_on = models.DateField(null=True, blank=True, db_index=True)
+    inactive_reason = models.CharField(max_length=300, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "rental_worker"
@@ -129,6 +139,7 @@ class RentalWorker(CompanyOwnedModel):
         indexes = [
             models.Index(fields=("company", "status", "full_name"), name="rntl_wrk_status_name_idx"),
             models.Index(fields=("company", "supplier", "status"), name="rntl_wrk_supplier_status_idx"),
+            models.Index(fields=("company", "archived_at", "full_name"), name="rntl_wrk_archive_name_idx"),
         ]
 
     def clean(self) -> None:
@@ -137,6 +148,14 @@ class RentalWorker(CompanyOwnedModel):
         self.national_id = (self.national_id or "").strip()
         self.phone = (self.phone or "").strip()
         self.notes = (self.notes or "").strip()
+        self.inactive_reason = (self.inactive_reason or "").strip()
+        self.archived_reason = (self.archived_reason or "").strip()
+        if self.archived_at and self.status == RentalWorkerStatus.ACTIVE:
+            raise ValidationError({"status": "An archived rental worker cannot be active."})
+        if self.status == RentalWorkerStatus.ACTIVE and self.inactive_on:
+            raise ValidationError({"inactive_on": "An active rental worker cannot have an inactive effective date."})
+        if self.status == RentalWorkerStatus.ACTIVE and self.inactive_reason:
+            raise ValidationError({"inactive_reason": "An active rental worker cannot have an inactive reason."})
         if not self.worker_number:
             raise ValidationError({"worker_number": "Worker number is required."})
         if not self.full_name:

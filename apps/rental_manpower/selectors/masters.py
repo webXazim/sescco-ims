@@ -32,10 +32,14 @@ def _current_assignment_filter(today):
     )
 
 
-def suppliers_for_company(*, company, query: str = "", status: str = ""):
+def suppliers_for_company(*, company, query: str = "", status: str = "", archived: bool | None = False):
     today = timezone.localdate()
     current_filter = _current_assignment_filter(today)
     queryset = ManpowerSupplier.objects.for_company(company)
+    if archived is True:
+        queryset = queryset.filter(archived_at__isnull=False)
+    elif archived is False:
+        queryset = queryset.filter(archived_at__isnull=True)
     if query.strip():
         q = query.strip()
         queryset = queryset.filter(
@@ -95,11 +99,15 @@ def projects_for_company(*, company, query: str = "", status: str = ""):
     )
 
 
-def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None):
+def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False):
     assignment_qs = WorkerAssignment.objects.for_company(company).select_related("project", "company__settings").order_by("effective_from", "created_at")
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
         Prefetch("rental_assignments", queryset=assignment_qs)
     )
+    if archived is True:
+        queryset = queryset.filter(archived_at__isnull=False)
+    elif archived is False:
+        queryset = queryset.filter(archived_at__isnull=True)
     if query.strip():
         q = query.strip()
         queryset = queryset.filter(
@@ -129,8 +137,11 @@ def serialize_supplier(supplier: ManpowerSupplier) -> dict[str, object]:
         "id": str(supplier.id),
         "code": supplier.code,
         "name": supplier.name,
-        "status": supplier.get_status_display(),
+        "status": "Archived" if supplier.archived_at else supplier.get_status_display(),
         "statusValue": supplier.status,
+        "archived": bool(supplier.archived_at),
+        "archivedAt": supplier.archived_at.isoformat() if supplier.archived_at else None,
+        "archivedReason": supplier.archived_reason,
         "contact": supplier.contact_person,
         "phone": supplier.phone,
         "email": supplier.email,
@@ -205,8 +216,11 @@ def _assignment_rate_label(assignment: WorkerAssignment | None, currency: str = 
 
 def serialize_worker(worker: RentalWorker) -> dict[str, object]:
     current, future, last = _worker_assignment_snapshot(worker)
-    master_active = worker.status == RentalWorkerStatus.ACTIVE
-    if not master_active:
+    master_active = worker.status == RentalWorkerStatus.ACTIVE and not worker.archived_at
+    if worker.archived_at:
+        display_status = "Archived"
+        reference = last
+    elif not master_active:
         display_status = "Inactive"
         reference = last
     elif current:
@@ -242,8 +256,13 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         "phone": worker.phone,
         "supplierId": str(worker.supplier_id),
         "supplier": worker.supplier.name,
-        "masterStatus": worker.get_status_display(),
+        "masterStatus": "Archived" if worker.archived_at else worker.get_status_display(),
         "masterStatusValue": worker.status,
+        "archived": bool(worker.archived_at),
+        "archivedAt": worker.archived_at.isoformat() if worker.archived_at else None,
+        "archivedReason": worker.archived_reason,
+        "inactiveOn": worker.inactive_on.isoformat() if worker.inactive_on else "",
+        "inactiveReason": worker.inactive_reason,
         "status": display_status,
         "projectId": project_id,
         "project": project_name,
@@ -263,9 +282,9 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
 
 
 def rental_master_context(*, company) -> dict[str, object]:
-    suppliers = list(suppliers_for_company(company=company))
+    suppliers = list(suppliers_for_company(company=company, archived=None))
     projects = list(projects_for_company(company=company))
-    workers = list(workers_for_company(company=company))
+    workers = list(workers_for_company(company=company, archived=None))
     assignments = assignment_context(company=company)
     return {
         "suppliers": [serialize_supplier(item) for item in suppliers],

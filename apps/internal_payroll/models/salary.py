@@ -48,6 +48,8 @@ class SalaryComponent(CompanyOwnedModel):
     wps_mapping = models.CharField(max_length=30, choices=WPSMapping.choices, default=WPSMapping.NOT_MAPPED)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "internal_salary_component"
@@ -79,6 +81,7 @@ class SalaryComponent(CompanyOwnedModel):
         ]
         indexes = [
             models.Index(fields=("company", "is_active", "category"), name="int_sal_comp_active_idx"),
+            models.Index(fields=("company", "archived_at", "category"), name="int_sal_comp_archive_idx"),
             models.Index(fields=("company", "wps_mapping"), name="int_sal_comp_wps_idx"),
         ]
 
@@ -86,6 +89,9 @@ class SalaryComponent(CompanyOwnedModel):
         self.code = self.code.strip().upper()
         self.name = self.name.strip()
         self.notes = self.notes.strip()
+        self.archived_reason = self.archived_reason.strip()
+        if self.archived_at and self.is_active:
+            raise ValidationError({"is_active": "An archived salary component cannot be active."})
         if not self.code:
             raise ValidationError({"code": "Component code is required."})
         if not self.name:
@@ -120,6 +126,8 @@ class OvertimePolicy(CompanyOwnedModel):
     multiplier = rate_field()
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    archived_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         db_table = "internal_overtime_policy"
@@ -130,12 +138,18 @@ class OvertimePolicy(CompanyOwnedModel):
             models.CheckConstraint(condition=Q(divisor__gt=0), name="int_ot_pol_divisor_positive"),
             models.CheckConstraint(condition=Q(multiplier__gt=0), name="int_ot_pol_multiplier_positive"),
         ]
-        indexes = [models.Index(fields=("company", "is_active", "name"), name="int_ot_policy_active_idx")]
+        indexes = [
+            models.Index(fields=("company", "is_active", "name"), name="int_ot_policy_active_idx"),
+            models.Index(fields=("company", "archived_at", "name"), name="int_ot_policy_archive_idx"),
+        ]
 
     def clean(self) -> None:
         self.code = self.code.strip().upper()
         self.name = self.name.strip()
         self.notes = self.notes.strip()
+        self.archived_reason = self.archived_reason.strip()
+        if self.archived_at and self.is_active:
+            raise ValidationError({"is_active": "An archived overtime policy cannot be active."})
         if not self.code:
             raise ValidationError({"code": "Overtime policy code is required."})
         if not self.name:

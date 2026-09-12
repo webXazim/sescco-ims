@@ -12,13 +12,17 @@ from apps.internal_payroll.api_utils import handle_api_error, json_body
 from apps.internal_payroll.models import BankExportTemplate
 from apps.internal_payroll.selectors.payment import salary_payment_context, serialize_export_template, serialize_payment_profile, serialize_payment_settings
 from apps.internal_payroll.services.payment import (
+    archive_bank_export_template,
     cancel_salary_payment_batch,
     close_salary_payment_batch,
     create_bank_export_template,
+    delete_unused_bank_export_template,
+    delete_unused_employee_payment_profile,
     export_salary_payment_batch,
     import_salary_payment_results,
     prepare_salary_payment_batch,
     reopen_salary_payment_batch,
+    restore_bank_export_template_archive,
     retry_salary_payment_row,
     start_salary_payment_batch,
     update_bank_export_template,
@@ -67,11 +71,17 @@ def salary_payments_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
 def employee_payment_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id = delete_unused_employee_payment_profile(
+                actor_membership=request.company_membership, employee_id=employee_id,
+                confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
+            )
+            return JsonResponse({"ok": True, "deletedPaymentProfileId": deleted_id})
         allowed = {
             "destination_type", "account_holder_name", "bank_name", "bank_code",
             "iban", "salary_card_number", "wps_enabled", "is_active", "mark_verified",
@@ -135,11 +145,17 @@ def bank_export_templates_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
 def bank_export_template_detail_api(request: HttpRequest, template_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id = delete_unused_bank_export_template(
+                actor_membership=request.company_membership, template_id=template_id,
+                confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
+            )
+            return JsonResponse({"ok": True, "deletedTemplateId": deleted_id})
         values: dict[str, object] = {}
         mapping = {
             "code": "code",
@@ -163,6 +179,22 @@ def bank_export_template_detail_api(request: HttpRequest, template_id) -> JsonRe
         if "result_columns" in values and not isinstance(values["result_columns"], dict):
             raise ValidationError({"result_columns": "Result columns must be a JSON object."})
         template = update_bank_export_template(actor_membership=request.company_membership, template_id=template_id, values=values, request=request)
+        return JsonResponse({"ok": True, "template": serialize_export_template(template)})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.INTERNAL)
+def bank_export_template_lifecycle_api(request: HttpRequest, template_id) -> JsonResponse:
+    try:
+        body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
+        if action == "archive":
+            template = archive_bank_export_template(actor_membership=request.company_membership, template_id=template_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"restore", "restore_archive"}:
+            template = restore_bank_export_template_archive(actor_membership=request.company_membership, template_id=template_id, reason=str(body.get("reason", "")), request=request)
+        else:
+            raise ValidationError({"action": "Export-template lifecycle action must be archive or restore."})
         return JsonResponse({"ok": True, "template": serialize_export_template(template)})
     except Exception as exc:
         return handle_api_error(exc)

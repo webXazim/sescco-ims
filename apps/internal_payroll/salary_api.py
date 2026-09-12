@@ -10,7 +10,6 @@ from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import (
     handle_api_error,
     json_body,
-    parse_active_query,
     parse_date,
 )
 from apps.internal_payroll.models import OvertimePolicy, SalaryComponent, SalaryComponentCategory
@@ -23,12 +22,31 @@ from apps.internal_payroll.selectors import (
     serialize_salary_structure,
 )
 from apps.internal_payroll.services import (
+    archive_overtime_policy,
+    archive_salary_component,
     assign_employee_salary_structure,
     create_overtime_policy,
     create_salary_component,
+    delete_unused_overtime_policy,
+    delete_unused_salary_component,
+    restore_overtime_policy_archive,
+    restore_salary_component_archive,
     update_overtime_policy,
     update_salary_component,
 )
+
+
+def _configuration_status(value: str) -> tuple[bool | None, bool | None]:
+    normalized = (value or "").strip().lower()
+    if not normalized or normalized == "all":
+        return None, None
+    if normalized == "active":
+        return True, False
+    if normalized == "inactive":
+        return False, False
+    if normalized == "archived":
+        return None, True
+    raise ValidationError({"status": "Status must be Active, Inactive, Archived, or All."})
 
 
 def _category_query(value: str) -> str:
@@ -45,10 +63,9 @@ def _category_query(value: str) -> str:
 def salary_components_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            active, archived = _configuration_status(request.GET.get("status", ""))
             rows = salary_components_for_company(
-                company=request.company,
-                query=request.GET.get("q", ""),
-                active=parse_active_query(request.GET.get("status", "")),
+                company=request.company, query=request.GET.get("q", ""), active=active, archived=archived,
                 category=_category_query(request.GET.get("category", "")),
             )
             return JsonResponse({"ok": True, "results": [serialize_salary_component(item) for item in rows]})
@@ -71,11 +88,17 @@ def salary_components_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
 def salary_component_detail_api(request: HttpRequest, component_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id = delete_unused_salary_component(
+                actor_membership=request.company_membership, component_id=component_id,
+                confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
+            )
+            return JsonResponse({"ok": True, "deletedComponentId": deleted_id})
         current = SalaryComponent.objects.for_company(request.company).get(pk=component_id)
         component = update_salary_component(
             actor_membership=request.company_membership,
@@ -95,15 +118,30 @@ def salary_component_detail_api(request: HttpRequest, component_id) -> JsonRespo
         return handle_api_error(exc)
 
 
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.INTERNAL)
+def salary_component_lifecycle_api(request: HttpRequest, component_id) -> JsonResponse:
+    try:
+        body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
+        if action == "archive":
+            component = archive_salary_component(actor_membership=request.company_membership, component_id=component_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"restore", "restore_archive"}:
+            component = restore_salary_component_archive(actor_membership=request.company_membership, component_id=component_id, reason=str(body.get("reason", "")), request=request)
+        else:
+            raise ValidationError({"action": "Salary component lifecycle action must be archive or restore."})
+        return JsonResponse({"ok": True, "component": serialize_salary_component(component)})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
 def overtime_policies_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            active, archived = _configuration_status(request.GET.get("status", ""))
             rows = overtime_policies_for_company(
-                company=request.company,
-                query=request.GET.get("q", ""),
-                active=parse_active_query(request.GET.get("status", "")),
+                company=request.company, query=request.GET.get("q", ""), active=active, archived=archived,
             )
             return JsonResponse({"ok": True, "results": [serialize_overtime_policy(item) for item in rows]})
 
@@ -125,11 +163,17 @@ def overtime_policies_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
 def overtime_policy_detail_api(request: HttpRequest, policy_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            deleted_id = delete_unused_overtime_policy(
+                actor_membership=request.company_membership, policy_id=policy_id,
+                confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
+            )
+            return JsonResponse({"ok": True, "deletedPolicyId": deleted_id})
         current = OvertimePolicy.objects.for_company(request.company).select_related("base_component").get(pk=policy_id)
         policy = update_overtime_policy(
             actor_membership=request.company_membership,
@@ -143,6 +187,23 @@ def overtime_policy_detail_api(request: HttpRequest, policy_id) -> JsonResponse:
             is_active=body.get("status", "Active" if current.is_active else "Inactive"),
             request=request,
         )
+        policy = OvertimePolicy.objects.for_company(request.company).select_related("base_component").get(pk=policy.pk)
+        return JsonResponse({"ok": True, "policy": serialize_overtime_policy(policy)})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.INTERNAL)
+def overtime_policy_lifecycle_api(request: HttpRequest, policy_id) -> JsonResponse:
+    try:
+        body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
+        if action == "archive":
+            policy = archive_overtime_policy(actor_membership=request.company_membership, policy_id=policy_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"restore", "restore_archive"}:
+            policy = restore_overtime_policy_archive(actor_membership=request.company_membership, policy_id=policy_id, reason=str(body.get("reason", "")), request=request)
+        else:
+            raise ValidationError({"action": "Overtime policy lifecycle action must be archive or restore."})
         policy = OvertimePolicy.objects.for_company(request.company).select_related("base_component").get(pk=policy.pk)
         return JsonResponse({"ok": True, "policy": serialize_overtime_policy(policy)})
     except Exception as exc:

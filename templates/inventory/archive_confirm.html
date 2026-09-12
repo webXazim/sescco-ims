@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">{{ record_type }} archive</div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
+<div class="detail-grid delete-confirm-grid">
+  <section class="card">
+    <div class="card-head"><div><h2 class="card-title">{{ record_label }}</h2><div class="card-meta">Archive is the correct lifecycle action for a real record that is no longer operational.</div></div></div>
+    <div class="card-body">
+      <h3 class="form-section-title">Archive behaviour</h3>
+      <ul class="effect-list">
+        <li>The record remains available to historical Inventory, Payroll and audit records.</li>
+        <li>It is removed from new operational selectors where applicable.</li>
+        <li>Restore is available later without recreating or rewriting history.</li>
+      </ul>
+      {% if archive_blockers %}<div class="alert alert-warning section-gap"><strong>Archive is currently blocked</strong><ul class="effect-list">{% for blocker in archive_blockers %}<li>{{ blocker.message }}{% if blocker.count is not None %} ({{ blocker.count }}){% endif %}</li>{% endfor %}</ul></div>{% endif %}
+    </div>
+  </section>
+  <aside class="card">
+    <div class="card-head"><h2 class="card-title">Confirm archive</h2></div>
+    <div class="card-body form-stack">
+      {% if archive_allowed %}
+      <form method="post" class="form-stack">{% csrf_token %}<input type="hidden" name="action" value="archive">
+        <label class="field"><span>Archive reason</span><textarea class="textarea" name="reason" rows="4" required></textarea><small>Required for the lifecycle audit trail.</small></label>
+        <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn" type="submit">Archive record</button></div>
+      </form>
+      {% else %}
+      <p class="micro">Resolve the blockers shown on the left before archiving this record.</p>
+      <div class="form-actions"><a class="btn" href="{{ cancel_url }}">Back</a></div>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

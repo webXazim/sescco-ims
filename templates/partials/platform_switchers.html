@@ -1,16 +1,16 @@
 <div class="platform-switchers" data-platform-switchers>
-  {% if ACTIVE_COMPANY %}
+  {% if not SINGLE_COMPANY_MODE and ACTIVE_COMPANY %}
   <details class="platform-switcher platform-switcher--company" data-platform-switcher>
-    <summary class="platform-switcher__trigger" aria-label="Switch business" title="Switch business">
+    <summary class="platform-switcher__trigger" aria-label="Switch company" title="Switch company">
       <span class="platform-switcher__code" aria-hidden="true">{{ ACTIVE_COMPANY.name|slice:':1'|upper }}</span>
       <span class="platform-switcher__copy">
         <strong>{{ ACTIVE_COMPANY.name }}</strong>
-        <small>Business</small>
+        <small>Company</small>
       </span>
       <svg class="platform-switcher__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
     </summary>
-    <div class="platform-switcher__menu" role="menu" aria-label="Available businesses">
-      <div class="platform-switcher__label">Businesses</div>
+    <div class="platform-switcher__menu" role="menu" aria-label="Available companies">
+      <div class="platform-switcher__label">Companies</div>
       {% for membership in AVAILABLE_COMPANY_MEMBERSHIPS %}
       <form method="post" action="{% url 'accounts:activate-company' membership.company_id %}" class="platform-switcher__form">
         {% csrf_token %}
@@ -22,23 +22,23 @@
         </button>
       </form>
       {% empty %}
-      <div class="platform-switcher__empty">No active business access</div>
+      <div class="platform-switcher__empty">No active company access</div>
       {% endfor %}
     </div>
   </details>
   {% endif %}
 
   <details class="platform-switcher platform-switcher--module" data-platform-switcher>
-    <summary class="platform-switcher__trigger" aria-label="Switch business area" title="Switch business area">
+    <summary class="platform-switcher__trigger" aria-label="Switch module" title="Switch module">
       <span class="platform-switcher__code" aria-hidden="true">{% if PLATFORM_CONTEXT.current_module == 'payroll' %}PM{% else %}IM{% endif %}</span>
       <span class="platform-switcher__copy">
         <strong>{% if PLATFORM_CONTEXT.current_module == 'payroll' %}Payroll Management{% else %}Inventory Management{% endif %}</strong>
-        <small>Business area</small>
+        <small>Module</small>
       </span>
       <svg class="platform-switcher__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
     </summary>
-    <div class="platform-switcher__menu" role="menu" aria-label="Available business areas">
-      <div class="platform-switcher__label">Business areas</div>
+    <div class="platform-switcher__menu" role="menu" aria-label="Available modules">
+      <div class="platform-switcher__label">Modules</div>
       {% for module in PLATFORM_CONTEXT.modules %}
       <a class="platform-switcher__item{% if module.active %} is-active{% endif %}" href="{{ module.url }}" role="menuitem"{% if module.active %} aria-current="page"{% endif %}>
         <span class="platform-switcher__item-code" aria-hidden="true">{{ module.code }}</span>
@@ -46,7 +46,7 @@
         {% if module.active %}<span class="platform-switcher__check" aria-hidden="true">✓</span>{% endif %}
       </a>
       {% empty %}
-      <div class="platform-switcher__empty">No business areas available</div>
+      <div class="platform-switcher__empty">No modules available</div>
       {% endfor %}
     </div>
   </details>

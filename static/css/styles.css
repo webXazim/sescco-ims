@@ -784,3 +784,7 @@ select:disabled, input:disabled, textarea:disabled { background: #f3f4f5; color:
 .trash-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid var(--line); }
 .trash-toolbar .archive-search { flex: 1; max-width: 48rem; }
 @media (max-width: 760px) { .trash-toolbar { align-items: stretch; flex-direction: column; } }
+
+/* SESCCO MS brand image utility for authentication/error surfaces. */
+.brand-mark--image { overflow: hidden; background: #fff; border-color: var(--line, #dfe2e5); }
+.brand-mark--image img { width: 100%; height: 100%; display: block; object-fit: contain; }

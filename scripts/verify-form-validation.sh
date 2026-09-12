@@ -28,7 +28,11 @@ require_text static/platform/js/form-validation.js "validateRequired"
 require_text static/platform/js/form-validation.js "field-required-message"
 require_text static/platform/js/form-validation.js "aria-invalid"
 require_text static/platform/js/form-validation.js "syncConditionalRequired"
-require_text apps/projects/forms.py "data-required-when-name"
+# Project status is now lifecycle-owned rather than a normal editable form field.
+require_text apps/projects/forms.py '"end_date",'
+require_text apps/projects/views.py '"complete": Project.Status.COMPLETED'
+require_text apps/projects/models.py 'Set the actual end date before completing the project.'
+reject_text apps/projects/forms.py 'data-required-when-name'
 require_text static/platform/css/form-validation.css ".required::after"
 require_text static/platform/css/form-validation.css ".field-required-message"
 require_text templates/explorer/saved_view_row.html 'for="saved-view-name-{{ saved.pk }}"'

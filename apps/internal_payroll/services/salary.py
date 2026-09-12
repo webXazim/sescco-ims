@@ -6,7 +6,9 @@ from typing import Iterable
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest
+from django.utils import timezone
 
 from apps.accounts.models import CompanyMembership
 from apps.accounts.permissions import membership_can_edit
@@ -14,6 +16,7 @@ from apps.accounts.roles import Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.numbering import allocate_number
+from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
 from apps.internal_payroll.models import (
     InternalEmployee,
     OvertimePolicy,
@@ -81,6 +84,8 @@ def _component_snapshot(component: SalaryComponent) -> dict[str, object]:
         "wps_mapping": component.wps_mapping,
         "notes": component.notes,
         "is_active": component.is_active,
+        "archived_at": component.archived_at.isoformat() if component.archived_at else None,
+        "archived_reason": component.archived_reason,
     }
 
 
@@ -95,6 +100,8 @@ def _policy_snapshot(policy: OvertimePolicy) -> dict[str, object]:
         "multiplier": str(policy.multiplier),
         "notes": policy.notes,
         "is_active": policy.is_active,
+        "archived_at": policy.archived_at.isoformat() if policy.archived_at else None,
+        "archived_reason": policy.archived_reason,
     }
 
 
@@ -192,6 +199,8 @@ def update_salary_component(
     _require_internal_edit(actor_membership)
     company = actor_membership.company
     component = SalaryComponent.objects.select_for_update().get(pk=component_id, company=company)
+    if component.archived_at:
+        raise ValidationError({"component": "Restore the archived salary component before editing it."})
     before = _component_snapshot(component)
     component.code = code
     component.name = name
@@ -258,8 +267,8 @@ def create_overtime_policy(
     if not base_component_id:
         raise ValidationError({"base_component": "Overtime base component is required."})
     base_component = SalaryComponent.objects.select_for_update().for_company(company).get(pk=base_component_id)
-    if not base_component.is_active:
-        raise ValidationError({"base_component": "Overtime base component must be active."})
+    if not base_component.is_active or base_component.archived_at:
+        raise ValidationError({"base_component": "Overtime base component must be active and not archived."})
     code = code.strip() or allocate_number(company=company, key="internal.overtime_policy", prefix="OT-", padding=4)
     policy = OvertimePolicy(
         company=company,
@@ -307,11 +316,13 @@ def update_overtime_policy(
     _require_internal_edit(actor_membership)
     company = actor_membership.company
     policy = OvertimePolicy.objects.select_for_update().select_related("base_component").get(pk=policy_id, company=company)
+    if policy.archived_at:
+        raise ValidationError({"policy": "Restore the archived overtime policy before editing it."})
     if not base_component_id:
         raise ValidationError({"base_component": "Overtime base component is required."})
     base_component = SalaryComponent.objects.select_for_update().for_company(company).get(pk=base_component_id)
-    if not base_component.is_active:
-        raise ValidationError({"base_component": "Overtime base component must be active."})
+    if not base_component.is_active or base_component.archived_at:
+        raise ValidationError({"base_component": "Overtime base component must be active and not archived."})
     before = _policy_snapshot(policy)
     policy.code = code
     policy.name = name
@@ -340,6 +351,103 @@ def update_overtime_policy(
             request=request,
         )
     return policy
+
+
+
+@transaction.atomic
+def archive_salary_component(*, actor_membership: CompanyMembership, component_id, reason: str, request: HttpRequest | None = None) -> SalaryComponent:
+    _require_internal_edit(actor_membership)
+    component = SalaryComponent.objects.select_for_update().for_company(actor_membership.company).get(pk=component_id)
+    if component.archived_at:
+        return component
+    decision = require_lifecycle_action(component, LifecycleAction.ARCHIVE, reason=reason)
+    before = _component_snapshot(component)
+    component.is_active = False
+    component.archived_at = timezone.now()
+    component.archived_reason = (reason or "").strip()
+    component.full_clean()
+    component.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(instance=component, decision=decision, actor_membership=actor_membership, before=before, after=_component_snapshot(component), reason=reason, audit_action="internal.salary_component.archived", request=request)
+    return component
+
+
+@transaction.atomic
+def restore_salary_component_archive(*, actor_membership: CompanyMembership, component_id, reason: str = "", request: HttpRequest | None = None) -> SalaryComponent:
+    _require_internal_edit(actor_membership)
+    component = SalaryComponent.objects.select_for_update().for_company(actor_membership.company).get(pk=component_id)
+    if not component.archived_at:
+        return component
+    decision = require_lifecycle_action(component, LifecycleAction.RESTORE)
+    before = _component_snapshot(component); previous_reason = component.archived_reason
+    component.archived_at = None
+    component.archived_reason = ""
+    component.is_active = False
+    component.full_clean()
+    component.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
+    record_lifecycle_action(instance=component, decision=decision, actor_membership=actor_membership, before=before, after=_component_snapshot(component), reason=reason, audit_action="internal.salary_component.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    return component
+
+
+@transaction.atomic
+def delete_unused_salary_component(*, actor_membership: CompanyMembership, component_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    component = SalaryComponent.objects.select_for_update().for_company(actor_membership.company).get(pk=component_id)
+    decision = require_lifecycle_action(component, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _component_snapshot(component); object_id = str(component.pk); object_label = str(component)
+    try:
+        component.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"component": "This salary component is referenced by protected payroll history. Archive it instead."}) from exc
+    record_lifecycle_action(instance=component, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.salary_component.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
+    return object_id
+
+
+@transaction.atomic
+def archive_overtime_policy(*, actor_membership: CompanyMembership, policy_id, reason: str, request: HttpRequest | None = None) -> OvertimePolicy:
+    _require_internal_edit(actor_membership)
+    policy = OvertimePolicy.objects.select_for_update().select_related("base_component").for_company(actor_membership.company).get(pk=policy_id)
+    if policy.archived_at:
+        return policy
+    decision = require_lifecycle_action(policy, LifecycleAction.ARCHIVE, reason=reason)
+    before = _policy_snapshot(policy)
+    policy.is_active = False
+    policy.archived_at = timezone.now()
+    policy.archived_reason = (reason or "").strip()
+    policy.full_clean()
+    policy.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(instance=policy, decision=decision, actor_membership=actor_membership, before=before, after=_policy_snapshot(policy), reason=reason, audit_action="internal.overtime_policy.archived", request=request)
+    return policy
+
+
+@transaction.atomic
+def restore_overtime_policy_archive(*, actor_membership: CompanyMembership, policy_id, reason: str = "", request: HttpRequest | None = None) -> OvertimePolicy:
+    _require_internal_edit(actor_membership)
+    policy = OvertimePolicy.objects.select_for_update().select_related("base_component").for_company(actor_membership.company).get(pk=policy_id)
+    if not policy.archived_at:
+        return policy
+    decision = require_lifecycle_action(policy, LifecycleAction.RESTORE)
+    before = _policy_snapshot(policy); previous_reason = policy.archived_reason
+    policy.archived_at = None
+    policy.archived_reason = ""
+    policy.is_active = False
+    policy.full_clean()
+    policy.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
+    record_lifecycle_action(instance=policy, decision=decision, actor_membership=actor_membership, before=before, after=_policy_snapshot(policy), reason=reason, audit_action="internal.overtime_policy.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    return policy
+
+
+@transaction.atomic
+def delete_unused_overtime_policy(*, actor_membership: CompanyMembership, policy_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    policy = OvertimePolicy.objects.select_for_update().select_related("base_component").for_company(actor_membership.company).get(pk=policy_id)
+    decision = require_lifecycle_action(policy, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _policy_snapshot(policy); object_id = str(policy.pk); object_label = str(policy)
+    try:
+        policy.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"policy": "This overtime policy is referenced by protected salary history. Archive it instead."}) from exc
+    record_lifecycle_action(instance=policy, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.overtime_policy.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
+    return object_id
 
 
 @transaction.atomic
@@ -392,13 +500,13 @@ def assign_employee_salary_structure(
             OvertimePolicy.objects.select_for_update()
             .for_company(company)
             .select_related("base_component")
-            .get(pk=overtime_policy_id, is_active=True)
+            .get(pk=overtime_policy_id, is_active=True, archived_at__isnull=True)
         )
 
     component_rows = list(
         SalaryComponent.objects.select_for_update()
         .for_company(company)
-        .filter(pk__in=list(normalized_input), is_active=True)
+        .filter(pk__in=list(normalized_input), is_active=True, archived_at__isnull=True)
         .order_by("code")
     )
     if len(component_rows) != len(normalized_input):

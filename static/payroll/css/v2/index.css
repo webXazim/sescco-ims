@@ -28,6 +28,7 @@
 @import "./components/tabs.css";
 @import "./components/table.css";
 @import "./components/menu.css";
+@import "./components/lifecycle.css";
 @import "./components/command.css";
 @import "./components/empty-state.css";
 @import "./components/skeleton.css";

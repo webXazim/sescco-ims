@@ -10,13 +10,15 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView
 from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
-from apps.core.trash import TRASH_RETENTION_DAYS, move_to_trash
+from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
+from apps.core.trash import TRASH_RETENTION_DAYS
 from apps.inventory.models import StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
 from .forms import ProjectForm
 from .models import Project
 from .selectors import project_list
+from .services import archive_project, restore_project_archive, trash_unused_project
 
 
 def _project_snapshot(project: Project) -> dict[str, object]:
@@ -163,31 +165,76 @@ class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
         return context
 
 
-class ProjectStatusView(InventoryWorkspaceMixin, View):
-    def post(self, request, code):
-        project = get_object_or_404(Project.objects.for_company(request.company), code=code, deleted_at__isnull=True)
-        action = request.POST.get("action", "").strip()
-        target = {
-            "hold": Project.Status.ON_HOLD,
-            "archive": Project.Status.ARCHIVED,
-            "complete": Project.Status.COMPLETED,
-            "reactivate": Project.Status.ACTIVE,
-        }.get(action)
-        if not target:
-            messages.error(request, "Choose a valid project lifecycle action.")
+class ProjectStatusView(InventoryAdminRequiredMixin, View):
+    template_name = "inventory/archive_confirm.html"
+
+    def get(self, request, code):
+        project = get_object_or_404(
+            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+        )
+        action = request.GET.get("action", "").strip()
+        if action != "archive":
             return redirect("projects:detail", code=project.code)
-        before = _project_snapshot(project)
-        project.status = target
-        if target == Project.Status.ACTIVE:
-            # Reopening a completed project starts a new live lifecycle. Expected completion
-            # remains planning data; the prior actual end date is retained in the audit event.
-            project.end_date = None
-        project.updated_by = request.user
+        decision = lifecycle_decision(project, LifecycleAction.ARCHIVE)
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_key": "project-detail",
+                "page_title": "Archive project",
+                "page_subtitle": "Archive keeps all Inventory and Rental Manpower history while stopping new operational use.",
+                "record_label": str(project),
+                "record_type": "Project",
+                "archive_allowed": decision.allowed,
+                "archive_blockers": decision.blockers,
+                "cancel_url": reverse("projects:detail", kwargs={"code": project.code}),
+            },
+        )
+
+    def post(self, request, code):
+        project = get_object_or_404(
+            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+        )
+        action = request.POST.get("action", "").strip()
         try:
+            if action == "archive":
+                archive_project(
+                    actor_membership=request.company_membership,
+                    project_id=project.pk,
+                    reason=request.POST.get("reason", ""),
+                    request=request,
+                )
+                messages.success(request, f"Project {project.code} was archived.")
+                return redirect("projects:detail", code=project.code)
+            if action == "restore":
+                restored = restore_project_archive(
+                    actor_membership=request.company_membership,
+                    project_id=project.pk,
+                    reason=request.POST.get("reason", ""),
+                    request=request,
+                )
+                messages.success(
+                    request,
+                    f"Project {project.code} was restored as {restored.get_status_display().lower()}.",
+                )
+                return redirect("projects:detail", code=project.code)
+
+            target = {
+                "hold": Project.Status.ON_HOLD,
+                "complete": Project.Status.COMPLETED,
+                "reactivate": Project.Status.ACTIVE,
+            }.get(action)
+            if not target:
+                messages.error(request, "Choose a valid project lifecycle action.")
+                return redirect("projects:detail", code=project.code)
+            if project.status == Project.Status.ARCHIVED or project.archived_at:
+                raise ValidationError("Restore the archived project before changing its operational status.")
+            before = _project_snapshot(project)
+            project.status = target
+            if target == Project.Status.ACTIVE:
+                project.end_date = None
+            project.updated_by = request.user
             project.save()
-        except ValidationError as exc:
-            messages.error(request, exc.messages[0])
-        else:
             _audit_project(
                 request=request,
                 project=project,
@@ -199,6 +246,8 @@ class ProjectStatusView(InventoryWorkspaceMixin, View):
                 f"Project {project.code} was "
                 f"{'reactivated' if target == Project.Status.ACTIVE else project.get_status_display().lower()}.",
             )
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
         return redirect("projects:detail", code=project.code)
 
 
@@ -206,71 +255,56 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
     template_name = "inventory/delete_confirm.html"
 
     def _context(self, project):
-        stock = project.stock_items.all()
-        rental_assignments = project.rental_assignments.all() if hasattr(project, "rental_assignments") else ()
-        rental_count = rental_assignments.count() if hasattr(rental_assignments, "count") else 0
-        open_rental_count = (
-            rental_assignments.filter(cancelled_at__isnull=True, effective_to__isnull=True).count()
-            if hasattr(rental_assignments, "filter") else 0
-        )
+        decision = lifecycle_decision(project, LifecycleAction.DELETE)
         return {
             "page_key": "projects",
-            "page_title": "Move project to Trash",
-            "page_subtitle": "Review the project-wide effect before continuing.",
+            "page_title": "Delete unused project",
+            "page_subtitle": "Delete is only for a project created by mistake and never used by Inventory or Rental Manpower.",
             "record_label": str(project),
             "record_type": "Project",
-            "confirmation_phrase": f"DELETE {project.code}",
+            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("projects:detail", kwargs={"code": project.code}),
+            "delete_allowed": decision.allowed,
+            "delete_blockers": decision.blockers,
             "effects": (
-                f"Stock records hidden with this project: {stock.count()}",
-                f"Current quantity-bearing records: {stock.filter(current_quantity__gt=0).count()}",
-                f"Rental assignment history retained: {rental_count} ({open_rental_count} open)",
-                (
-                    "Protected activity entries retained: "
-                    f"{sum(item.movements.count() for item in stock)}"
-                ),
-                (
-                    "The project and its inventory disappear from search, activity, "
-                    "alerts, and totals."
-                ),
-                "The project and linked inventory return together if restored within 30 days.",
+                "Only an unused project can enter Trash.",
+                "Projects with stock, imports, transfers, rental assignments, timesheets, adjustments, or settlements must be archived instead.",
+                "An unused deleted project remains recoverable from Trash for 30 days.",
             ),
         }
 
     def get(self, request, code):
-        project = get_object_or_404(Project.objects.for_company(request.company), code=code, deleted_at__isnull=True)
+        project = get_object_or_404(
+            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+        )
         return render(request, self.template_name, self._context(project))
 
     def post(self, request, code):
-        project = get_object_or_404(Project.objects.for_company(request.company), code=code, deleted_at__isnull=True)
+        project = get_object_or_404(
+            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+        )
         context = self._context(project)
-        if hasattr(project, "rental_assignments") and project.rental_assignments.filter(
-            cancelled_at__isnull=True, effective_to__isnull=True
-        ).exists():
-            context.update(
-                form_error="Release, transfer, or cancel every open Rental Manpower assignment before moving this shared project to Trash.",
-                reason=request.POST.get("reason", ""),
-            )
+        if not context["delete_allowed"]:
+            context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This project cannot be deleted."
             return render(request, self.template_name, context, status=409)
-        if (
-            request.POST.get("confirmation", "").strip() != context["confirmation_phrase"]
-            or not request.POST.get("acknowledge")
-            or not request.POST.get("reason", "").strip()
-        ):
+        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
             context.update(
-                form_error="Enter the exact phrase, a reason, and confirm the effect.",
+                form_error="Enter a reason and confirm the effect.",
                 reason=request.POST.get("reason", ""),
             )
             return render(request, self.template_name, context, status=400)
-        before = _project_snapshot(project)
-        move_to_trash(project, user=request.user, reason=request.POST["reason"])
-        _audit_project(
-            request=request,
-            project=project,
-            action="project.moved_to_trash",
-            before=before,
-        )
+        try:
+            trash_unused_project(
+                actor_membership=request.company_membership,
+                project_id=project.pk,
+                confirmation=request.POST.get("confirmation", ""),
+                reason=request.POST.get("reason", ""),
+                request=request,
+            )
+        except ValidationError as exc:
+            context.update(form_error=exc.messages[0], reason=request.POST.get("reason", ""))
+            return render(request, self.template_name, context, status=409)
         messages.success(request, f"Project {code} was moved to Trash for 30 days.")
         return redirect("projects:list")
 
@@ -357,6 +391,9 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
                 self.object.status == Project.Status.ACTIVE
                 and all_project_items.filter(current_quantity__gt=0).exists()
             ),
+            project_archive_decision=lifecycle_decision(self.object, LifecycleAction.ARCHIVE),
+            project_restore_decision=lifecycle_decision(self.object, LifecycleAction.RESTORE),
+            project_delete_decision=lifecycle_decision(self.object, LifecycleAction.DELETE),
         )
         return context
 

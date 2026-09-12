@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from pathlib import Path
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import CompanyMembership
@@ -23,7 +23,7 @@ class UnifiedPlatformShellTests(TestCase):
         membership = CompanyMembership.objects.create(company=company, user=user, role=role)
         return user, membership
 
-    def test_owner_inventory_shell_exposes_shared_company_and_module_switchers(self):
+    def test_owner_inventory_shell_exposes_single_company_module_switcher(self):
         company = self.make_company("Unified Co", "unified-co")
         user, _ = self.make_user("unified-owner", company, AccessRole.OWNER)
         self.client.force_login(user)
@@ -41,7 +41,9 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertContains(response, 'class="inventory-shell-v2"')
         self.assertContains(response, 'data-inventory-sidebar-collapse')
         self.assertContains(response, 'data-inventory-sidebar-resize')
-        self.assertContains(response, company.name)
+        self.assertContains(response, "SESCCO MS")
+        self.assertContains(response, "Management System")
+        self.assertNotContains(response, "Switch business")
 
     def test_owner_payroll_shell_uses_same_platform_switchers(self):
         company = self.make_company("Payroll Unified", "payroll-unified")
@@ -88,6 +90,7 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertIn("margin-left: 0 !important;", css)
         self.assertIn("width: 100vw !important;", css)
 
+    @override_settings(SINGLE_COMPANY_MODE=False)
     def test_company_switch_preserves_payroll_module_when_destination_allows_it(self):
         first = self.make_company("First Payroll", "first-payroll")
         second = self.make_company("Second Payroll", "second-payroll")
@@ -106,6 +109,7 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertRedirects(response, reverse("core:payroll"), fetch_redirect_response=False)
         self.assertEqual(self.client.session[ACTIVE_COMPANY_SESSION_KEY], str(second.id))
 
+    @override_settings(SINGLE_COMPANY_MODE=False)
     def test_company_switch_falls_back_when_destination_lacks_current_module(self):
         payroll_company = self.make_company("Payroll Co", "payroll-co")
         inventory_company = self.make_company("Inventory Co", "inventory-co")

@@ -16,6 +16,16 @@ sha256sum -c merge/production-freeze.sha256 >/dev/null \
 bash scripts/verify-select-timesheet-ux.sh
 bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-payroll-reference-coverage.py
+python3 scripts/verify-payroll-reference-output.py
+python3 scripts/verify-lifecycle-authority.py
+python3 scripts/verify-employee-lifecycle.py
+python3 scripts/verify-organization-lifecycle.py
+python3 scripts/verify-rental-master-lifecycle.py
+python3 scripts/verify-project-inventory-lifecycle.py
+python3 scripts/verify-secondary-configuration-lifecycle.py
+python3 scripts/verify-unified-lifecycle-ux.py
+python3 scripts/verify-lifecycle-retention-contract.py
+python3 scripts/verify-single-company-branding.py
 
 [[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
 sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \

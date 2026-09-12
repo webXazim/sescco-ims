@@ -7,7 +7,8 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.internal_payroll.services import create_branch, create_department
+from apps.internal_payroll.models import Branch, Department, InternalEmployee
+from apps.internal_payroll.services import create_branch, create_department, create_employee
 
 
 class InternalOrganizationApiTests(TestCase):
@@ -108,3 +109,86 @@ class InternalOrganizationApiTests(TestCase):
         response = self.client.get(reverse("internal_payroll:branches-api"))
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["ok"], False)
+    def _create_employee(self, number="0001", name="Lifecycle Employee"):
+        return create_employee(
+            actor_membership=self.membership,
+            employee_number=number,
+            full_name=name,
+            joining_date=date(2020, 1, 1),
+            branch_id=self.branch.pk,
+            department_id=self.department.pk,
+            position="Supervisor",
+        )
+
+
+    def test_branch_archive_restore_delete_unused_and_archived_filter(self):
+        lifecycle_url = reverse("internal_payroll:branch-lifecycle-api", kwargs={"branch_id": self.branch.pk})
+        archived = self.client.post(lifecycle_url, data=json.dumps({"action":"archive","reason":"Unused office"}), content_type="application/json")
+        self.assertEqual(archived.status_code, 200)
+        self.assertEqual(archived.json()["branch"]["status"], "Archived")
+        listing = self.client.get(reverse("internal_payroll:branches-api"), {"status":"archived"})
+        self.assertIn(str(self.branch.pk), {row["id"] for row in listing.json()["results"]})
+        restored = self.client.post(lifecycle_url, data=json.dumps({"action":"restore_archive"}), content_type="application/json")
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.json()["branch"]["status"], "Inactive")
+        unused = create_branch(actor_membership=self.membership, code="TMP", name="Temp Office")
+        deleted = self.client.delete(reverse("internal_payroll:branch-detail-api", kwargs={"branch_id":unused.pk}), data=json.dumps({"confirmation":"TMP","reason":"Mistake"}), content_type="application/json")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(Branch.objects.filter(pk=unused.pk).exists())
+
+    def test_department_delete_is_blocked_after_employee_assignment(self):
+        self._create_employee()
+        response = self.client.delete(reverse("internal_payroll:department-detail-api", kwargs={"department_id": self.department.pk}), data=json.dumps({"confirmation":self.department.code}), content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Department.objects.filter(pk=self.department.pk).exists())
+
+    def test_employee_lifecycle_termination_and_archive_filters(self):
+        employee = self._create_employee()
+        lifecycle_url = reverse("internal_payroll:employee-lifecycle-api", kwargs={"employee_id": employee.pk})
+        response = self.client.post(
+            lifecycle_url,
+            data=json.dumps({"action": "terminate", "effective_date": date.today().isoformat(), "reason": "Contract ended"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["employee"]["status"], "Terminated")
+
+        response = self.client.post(
+            lifecycle_url,
+            data=json.dumps({"action": "archive", "reason": "Closed employment file"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["employee"]["archived"])
+
+        current = self.client.get(reverse("internal_payroll:employees-api"))
+        self.assertEqual(current.status_code, 200)
+        self.assertNotIn(str(employee.pk), {row["id"] for row in current.json()["results"]})
+
+        archived = self.client.get(reverse("internal_payroll:employees-api"), {"archived": "archived"})
+        self.assertEqual(archived.status_code, 200)
+        self.assertIn(str(employee.pk), {row["id"] for row in archived.json()["results"]})
+
+    def test_employee_lifecycle_leave_requires_reason(self):
+        employee = self._create_employee()
+        response = self.client.post(
+            reverse("internal_payroll:employee-lifecycle-api", kwargs={"employee_id": employee.pk}),
+            data=json.dumps({"action": "leave", "reason": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+
+    def test_unused_employee_delete_requires_typed_employee_number(self):
+        employee = self._create_employee()
+        detail_url = reverse("internal_payroll:employee-detail-api", kwargs={"employee_id": employee.pk})
+        blocked = self.client.delete(
+            detail_url, data=json.dumps({"confirmation": "WRONG", "reason": "Duplicate"}), content_type="application/json"
+        )
+        self.assertEqual(blocked.status_code, 400)
+        deleted = self.client.delete(
+            detail_url, data=json.dumps({"confirmation": employee.employee_number, "reason": "Duplicate onboarding"}), content_type="application/json"
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(InternalEmployee.objects.filter(pk=employee.pk).exists())
+

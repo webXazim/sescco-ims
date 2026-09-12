@@ -47,6 +47,8 @@ class Project(models.Model):
     )
     manager_name = models.CharField(max_length=160, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_reason = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     deleted_at = models.DateTimeField(blank=True, null=True, db_index=True)
     purge_after = models.DateTimeField(blank=True, null=True, db_index=True)

@@ -3,7 +3,7 @@ from .base import UUIDTimeStampedModel
 from .company import Company
 from .numbering import NumberSequence
 from .scoping import CompanyOwnedModel, CompanyScopedManager, CompanyScopedQuerySet
-from .settings import CompanySettings
+from .settings import CompanySettings, DocumentBrandingMode
 
 __all__ = [
     "AuditArea",
@@ -13,6 +13,7 @@ __all__ = [
     "CompanyScopedManager",
     "CompanyScopedQuerySet",
     "CompanySettings",
+    "DocumentBrandingMode",
     "NumberSequence",
     "UUIDTimeStampedModel",
 ]

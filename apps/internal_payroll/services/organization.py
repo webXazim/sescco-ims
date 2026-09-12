@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -12,9 +13,15 @@ from apps.accounts.permissions import membership_can_edit
 from apps.accounts.roles import Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
+from apps.core.services.lifecycle import (
+    LifecycleAction,
+    record_lifecycle_action,
+    require_lifecycle_action,
+)
 from apps.core.services.numbering import allocate_number
 from apps.internal_payroll.models import (
     Branch,
+    BranchKind,
     Department,
     EmployeeOrganizationAssignment,
     EmploymentStatus,
@@ -62,10 +69,17 @@ def _model_snapshot(obj) -> dict[str, object]:
             "location": obj.location,
             "address": obj.address,
             "manager_name": obj.manager_name,
+            "kind": obj.kind,
             "is_active": obj.is_active,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
         }
     if isinstance(obj, Department):
-        return {"code": obj.code, "name": obj.name, "notes": obj.notes, "is_active": obj.is_active}
+        return {
+            "code": obj.code, "name": obj.name, "notes": obj.notes, "is_active": obj.is_active,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
+        }
     if isinstance(obj, InternalEmployee):
         return {
             "employee_number": obj.employee_number,
@@ -75,6 +89,8 @@ def _model_snapshot(obj) -> dict[str, object]:
             "joining_date": obj.joining_date.isoformat(),
             "employment_end_date": obj.employment_end_date.isoformat() if obj.employment_end_date else None,
             "status": obj.status,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
         }
     if isinstance(obj, EmployeeOrganizationAssignment):
         return {
@@ -95,8 +111,12 @@ def _validate_company_master(*, membership: CompanyMembership, branch: Branch, d
         raise ValidationError({"branch": "Branch does not belong to the active company."})
     if department.company_id != company_id:
         raise ValidationError({"department": "Department does not belong to the active company."})
+    if branch.archived_at:
+        raise ValidationError({"branch": "Choose a current branch or office; this record is archived."})
     if not branch.is_active:
         raise ValidationError({"branch": "Choose an active branch or office."})
+    if department.archived_at:
+        raise ValidationError({"department": "Choose a current department; this record is archived."})
     if not department.is_active:
         raise ValidationError({"department": "Choose an active department."})
 
@@ -110,6 +130,7 @@ def create_branch(
     location: str = "",
     address: str = "",
     manager_name: str = "",
+    kind: str = BranchKind.BRANCH,
     is_active: bool | str = True,
     request: HttpRequest | None = None,
 ) -> Branch:
@@ -123,6 +144,7 @@ def create_branch(
         location=location,
         address=address,
         manager_name=manager_name,
+        kind=(kind or BranchKind.BRANCH).strip().lower(),
         is_active=_active_flag(is_active),
     )
     branch.full_clean()
@@ -154,6 +176,7 @@ def update_branch(
     location: str = "",
     address: str = "",
     manager_name: str = "",
+    kind: str = BranchKind.BRANCH,
     is_active: bool | str = True,
     request: HttpRequest | None = None,
 ) -> Branch:
@@ -161,19 +184,17 @@ def update_branch(
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company)
     before = _model_snapshot(branch)
     next_active = _active_flag(is_active)
+    lifecycle_decision = None
+    if branch.archived_at and next_active:
+        raise ValidationError({"status": "Restore the archived branch or office before making it active."})
     if branch.is_active and not next_active:
-        has_employees = InternalEmployee.objects.for_company(branch.company).filter(
-            status__in=EMPLOYED_STATUSES,
-            organization_assignments__branch=branch,
-            organization_assignments__effective_to__isnull=True,
-        ).exists()
-        if has_employees:
-            raise ValidationError("Transfer or deactivate current employees before making this branch inactive.")
+        lifecycle_decision = require_lifecycle_action(branch, LifecycleAction.DEACTIVATE)
     branch.code = code
     branch.name = name
     branch.location = location
     branch.address = address
     branch.manager_name = manager_name
+    branch.kind = (kind or branch.kind).strip().lower()
     branch.is_active = next_active
     branch.full_clean()
     try:
@@ -182,18 +203,17 @@ def update_branch(
         raise ValidationError("Branch code and name must be unique within the company.") from exc
     after = _model_snapshot(branch)
     if before != after:
-        record_audit_event(
-            company=branch.company,
-            area=AuditArea.INTERNAL,
-            action="internal.branch.updated",
-            object_type="internal_payroll.Branch",
-            object_id=branch.pk,
-            object_label=str(branch),
-            actor_membership=actor_membership,
-            before=before,
-            after=after,
-            request=request,
-        )
+        if lifecycle_decision is not None:
+            record_lifecycle_action(
+                instance=branch, decision=lifecycle_decision, actor_membership=actor_membership,
+                before=before, after=after, audit_action="internal.branch.deactivated", request=request,
+            )
+        else:
+            record_audit_event(
+                company=branch.company, area=AuditArea.INTERNAL, action="internal.branch.updated",
+                object_type="internal_payroll.Branch", object_id=branch.pk, object_label=str(branch),
+                actor_membership=actor_membership, before=before, after=after, request=request,
+            )
     return branch
 
 
@@ -251,14 +271,11 @@ def update_department(
     department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company)
     before = _model_snapshot(department)
     next_active = _active_flag(is_active)
+    lifecycle_decision = None
+    if department.archived_at and next_active:
+        raise ValidationError({"status": "Restore the archived department before making it active."})
     if department.is_active and not next_active:
-        has_employees = InternalEmployee.objects.for_company(department.company).filter(
-            status__in=EMPLOYED_STATUSES,
-            organization_assignments__department=department,
-            organization_assignments__effective_to__isnull=True,
-        ).exists()
-        if has_employees:
-            raise ValidationError("Move or deactivate current employees before making this department inactive.")
+        lifecycle_decision = require_lifecycle_action(department, LifecycleAction.DEACTIVATE)
     department.code = code
     department.name = name
     department.notes = notes
@@ -270,19 +287,115 @@ def update_department(
         raise ValidationError("Department code and name must be unique within the company.") from exc
     after = _model_snapshot(department)
     if before != after:
-        record_audit_event(
-            company=department.company,
-            area=AuditArea.INTERNAL,
-            action="internal.department.updated",
-            object_type="internal_payroll.Department",
-            object_id=department.pk,
-            object_label=str(department),
-            actor_membership=actor_membership,
-            before=before,
-            after=after,
-            request=request,
-        )
+        if lifecycle_decision is not None:
+            record_lifecycle_action(
+                instance=department, decision=lifecycle_decision, actor_membership=actor_membership,
+                before=before, after=after, audit_action="internal.department.deactivated", request=request,
+            )
+        else:
+            record_audit_event(
+                company=department.company, area=AuditArea.INTERNAL, action="internal.department.updated",
+                object_type="internal_payroll.Department", object_id=department.pk, object_label=str(department),
+                actor_membership=actor_membership, before=before, after=after, request=request,
+            )
     return department
+
+
+@transaction.atomic
+def archive_branch(*, actor_membership: CompanyMembership, branch_id, reason: str, request: HttpRequest | None = None) -> Branch:
+    _require_internal_edit(actor_membership)
+    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company)
+    if branch.archived_at:
+        return branch
+    decision = require_lifecycle_action(branch, LifecycleAction.ARCHIVE, reason=reason)
+    before = _model_snapshot(branch)
+    branch.is_active = False
+    branch.archived_at = timezone.now()
+    branch.archived_reason = (reason or "").strip()
+    branch.full_clean()
+    branch.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archived", request=request)
+    return branch
+
+
+@transaction.atomic
+def restore_branch_archive(*, actor_membership: CompanyMembership, branch_id, reason: str = "", request: HttpRequest | None = None) -> Branch:
+    _require_internal_edit(actor_membership)
+    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company)
+    if not branch.archived_at:
+        return branch
+    decision = require_lifecycle_action(branch, LifecycleAction.RESTORE)
+    before = _model_snapshot(branch)
+    previous_reason = branch.archived_reason
+    branch.archived_at = None
+    branch.archived_reason = ""
+    branch.is_active = False
+    branch.full_clean()
+    branch.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
+    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch), reason=reason, audit_action="internal.branch.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    return branch
+
+
+@transaction.atomic
+def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company)
+    decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _model_snapshot(branch); object_id = str(branch.pk); object_label = str(branch)
+    try:
+        branch.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"record": "This branch or office is referenced by protected history. Archive it instead."}) from exc
+    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.branch.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
+    return object_id
+
+
+@transaction.atomic
+def archive_department(*, actor_membership: CompanyMembership, department_id, reason: str, request: HttpRequest | None = None) -> Department:
+    _require_internal_edit(actor_membership)
+    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company)
+    if department.archived_at:
+        return department
+    decision = require_lifecycle_action(department, LifecycleAction.ARCHIVE, reason=reason)
+    before = _model_snapshot(department)
+    department.is_active = False
+    department.archived_at = timezone.now()
+    department.archived_reason = (reason or "").strip()
+    department.full_clean()
+    department.save(update_fields=["is_active", "archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.archived", request=request)
+    return department
+
+
+@transaction.atomic
+def restore_department_archive(*, actor_membership: CompanyMembership, department_id, reason: str = "", request: HttpRequest | None = None) -> Department:
+    _require_internal_edit(actor_membership)
+    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company)
+    if not department.archived_at:
+        return department
+    decision = require_lifecycle_action(department, LifecycleAction.RESTORE)
+    before = _model_snapshot(department); previous_reason = department.archived_reason
+    department.archived_at = None
+    department.archived_reason = ""
+    department.is_active = False
+    department.full_clean()
+    department.save(update_fields=["archived_at", "archived_reason", "is_active", "updated_at"])
+    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.archive_restored", metadata={"previous_archive_reason": previous_reason, "restored_status": "inactive"}, request=request)
+    return department
+
+
+@transaction.atomic
+def delete_unused_department(*, actor_membership: CompanyMembership, department_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    _require_internal_edit(actor_membership)
+    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company)
+    decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation)
+    before = _model_snapshot(department); object_id = str(department.pk); object_label = str(department)
+    try:
+        department.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"record": "This department is referenced by protected history. Archive it instead."}) from exc
+    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.department.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
+    return object_id
 
 
 @transaction.atomic
@@ -332,6 +445,7 @@ def create_employee(
         department=department,
         position=position,
         effective_from=employee.joining_date,
+        effective_to=employee.employment_end_date if employee.status == EmploymentStatus.TERMINATED else None,
         reason=reason,
     )
     assignment.full_clean()
@@ -416,6 +530,10 @@ def change_employee_organization(
     _require_internal_edit(actor_membership)
     company = actor_membership.company
     employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=company)
+    if employee.archived_at:
+        raise ValidationError({"employee": "Restore the archived employee before changing organization."})
+    if employee.status == EmploymentStatus.TERMINATED:
+        raise ValidationError({"employee": "Terminated employment cannot be reassigned. Create a deliberate rehire/onboarding record instead."})
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=company)
     department = Department.objects.select_for_update().get(pk=department_id, company=company)
     _validate_company_master(membership=actor_membership, branch=branch, department=department)
@@ -482,3 +600,232 @@ def change_employee_organization(
         request=request,
     )
     return next_assignment
+
+
+@transaction.atomic
+def change_employee_lifecycle(
+    *,
+    actor_membership: CompanyMembership,
+    employee_id,
+    action: str,
+    effective_date=None,
+    reason: str = "",
+    request: HttpRequest | None = None,
+) -> InternalEmployee:
+    """Apply an explicit employment lifecycle transition without rewriting payroll history.
+
+    Active/on-leave/inactive are current operational states. Termination is effective-dated
+    through ``employment_end_date`` and closes the open organization assignment at the same
+    date. A terminated employee is not silently reactivated; rehire should be a deliberate
+    onboarding decision instead of rewriting the old employment period.
+    """
+
+    _require_internal_edit(actor_membership)
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company)
+    if employee.archived_at:
+        raise ValidationError({"employee": "Restore the archived employee before changing employment status."})
+
+    normalized = (action or "").strip().lower().replace("-", "_").replace(" ", "_")
+    transitions = {
+        "activate": EmploymentStatus.ACTIVE,
+        "return_active": EmploymentStatus.ACTIVE,
+        "leave": EmploymentStatus.ON_LEAVE,
+        "on_leave": EmploymentStatus.ON_LEAVE,
+        "deactivate": EmploymentStatus.INACTIVE,
+        "inactive": EmploymentStatus.INACTIVE,
+        "terminate": EmploymentStatus.TERMINATED,
+        "terminated": EmploymentStatus.TERMINATED,
+    }
+    if normalized not in transitions:
+        raise ValidationError({"action": "Unknown employee lifecycle action."})
+
+    target = transitions[normalized]
+    lifecycle_decision = None
+    if target == EmploymentStatus.INACTIVE:
+        lifecycle_decision = require_lifecycle_action(
+            employee, LifecycleAction.DEACTIVATE, reason=reason
+        )
+    if employee.status == EmploymentStatus.TERMINATED and target != EmploymentStatus.TERMINATED:
+        raise ValidationError({"action": "A terminated employment record cannot be reactivated. Create a rehire/onboarding record instead."})
+    if target == EmploymentStatus.ACTIVE and employee.status not in {EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE, EmploymentStatus.INACTIVE}:
+        raise ValidationError({"action": "This employee cannot be returned to Active from the current status."})
+    if target in {EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE}:
+        current_assignment = employee.organization_assignments.select_related("branch", "department").filter(effective_to__isnull=True).first()
+        if current_assignment and (current_assignment.branch.archived_at or not current_assignment.branch.is_active):
+            raise ValidationError({"branch": "Move the employee to an active, current branch or office before returning employment to an eligible status."})
+        if current_assignment and (current_assignment.department.archived_at or not current_assignment.department.is_active):
+            raise ValidationError({"department": "Move the employee to an active, current department before returning employment to an eligible status."})
+    if target == EmploymentStatus.ON_LEAVE and employee.status not in {EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE}:
+        raise ValidationError({"action": "Only an active employee can be placed on leave."})
+
+    reason = (reason or "").strip()
+    if target in {EmploymentStatus.ON_LEAVE, EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED} and not reason:
+        raise ValidationError({"reason": "A reason is required for leave, deactivation, or termination."})
+
+    before = _model_snapshot(employee)
+    metadata = {"reason": reason, "from_status": employee.status, "to_status": target}
+
+    if target == EmploymentStatus.TERMINATED:
+        if effective_date is None:
+            raise ValidationError({"effective_date": "Employment end date is required when terminating an employee."})
+        if effective_date < employee.joining_date:
+            raise ValidationError({"effective_date": "Employment end date cannot be before the joining date."})
+        if effective_date > timezone.localdate():
+            raise ValidationError({"effective_date": "Future-dated termination is not supported by this workflow."})
+        open_assignment = (
+            EmployeeOrganizationAssignment.objects.select_for_update()
+            .filter(company=employee.company, employee=employee, effective_to__isnull=True)
+            .order_by("-effective_from", "-created_at")
+            .first()
+        )
+        if open_assignment:
+            if effective_date < open_assignment.effective_from:
+                raise ValidationError({"effective_date": "Employment cannot end before the current organization assignment starts."})
+            open_assignment.effective_to = effective_date
+            open_assignment.full_clean()
+            open_assignment.save(update_fields=["effective_to", "updated_at"])
+        employee.employment_end_date = effective_date
+        metadata["effective_date"] = effective_date.isoformat()
+    elif target != EmploymentStatus.TERMINATED:
+        # Non-terminal operational state changes do not invent an employment end date.
+        employee.employment_end_date = None
+
+    employee.status = target
+    employee.full_clean()
+    employee.save(update_fields=["status", "employment_end_date", "updated_at"])
+    after = _model_snapshot(employee)
+    if lifecycle_decision is not None:
+        record_lifecycle_action(
+            instance=employee,
+            decision=lifecycle_decision,
+            actor_membership=actor_membership,
+            before=before,
+            after=after,
+            reason=reason,
+            audit_action=f"internal.employee.lifecycle.{target}",
+            metadata={"from_status": before["status"], "to_status": target},
+            request=request,
+        )
+    else:
+        record_audit_event(
+            company=employee.company,
+            area=AuditArea.INTERNAL,
+            action=f"internal.employee.lifecycle.{target}",
+            object_type="internal_payroll.InternalEmployee",
+            object_id=employee.pk,
+            object_label=str(employee),
+            actor_membership=actor_membership,
+            before=before,
+            after=after,
+            metadata=metadata,
+            request=request,
+        )
+    return employee
+
+
+@transaction.atomic
+def archive_employee(
+    *,
+    actor_membership: CompanyMembership,
+    employee_id,
+    reason: str,
+    request: HttpRequest | None = None,
+) -> InternalEmployee:
+    _require_internal_edit(actor_membership)
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company)
+    if employee.archived_at:
+        return employee
+    reason = (reason or "").strip()
+    lifecycle_decision = require_lifecycle_action(
+        employee, LifecycleAction.ARCHIVE, reason=reason
+    )
+    before = _model_snapshot(employee)
+    employee.archived_at = timezone.now()
+    employee.archived_reason = reason
+    employee.full_clean()
+    employee.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=employee, decision=lifecycle_decision, actor_membership=actor_membership,
+        before=before, after=_model_snapshot(employee), reason=reason,
+        audit_action="internal.employee.archived", request=request,
+    )
+    return employee
+
+
+@transaction.atomic
+def restore_employee_archive(
+    *,
+    actor_membership: CompanyMembership,
+    employee_id,
+    reason: str = "",
+    request: HttpRequest | None = None,
+) -> InternalEmployee:
+    _require_internal_edit(actor_membership)
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company)
+    if not employee.archived_at:
+        return employee
+    lifecycle_decision = require_lifecycle_action(employee, LifecycleAction.RESTORE)
+    before = _model_snapshot(employee)
+    prior_reason = employee.archived_reason
+    employee.archived_at = None
+    employee.archived_reason = ""
+    employee.full_clean()
+    employee.save(update_fields=["archived_at", "archived_reason", "updated_at"])
+    record_lifecycle_action(
+        instance=employee, decision=lifecycle_decision, actor_membership=actor_membership,
+        before=before, after=_model_snapshot(employee), reason=(reason or "").strip(),
+        audit_action="internal.employee.archive_restored",
+        metadata={"previous_archive_reason": prior_reason}, request=request,
+    )
+    return employee
+
+
+
+@transaction.atomic
+def delete_unused_employee(
+    *,
+    actor_membership: CompanyMembership,
+    employee_id,
+    confirmation: str,
+    reason: str = "",
+    request: HttpRequest | None = None,
+) -> str:
+    """Hard-delete only an unused onboarding master. Historical payroll is never deleted.
+
+    Setup-only organization, salary and payment-profile rows may be removed with the unused
+    master. Any attendance, adjustment, payroll, payment or finalized document record blocks
+    deletion and directs the operator to archive instead.
+    """
+
+    _require_internal_edit(actor_membership)
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company)
+    lifecycle_decision = require_lifecycle_action(
+        employee, LifecycleAction.DELETE, confirmation=confirmation
+    )
+
+    before = _model_snapshot(employee)
+    object_id = str(employee.pk)
+    object_label = str(employee)
+    # Setup rows are allowed to disappear with a never-used onboarding master.
+    try:
+        for structure in list(employee.salary_structures.all().select_for_update()):
+            structure.lines.all().delete()
+            structure.delete()
+        try:
+            payment_profile = employee.payment_profile
+        except Exception:
+            payment_profile = None
+        if payment_profile is not None:
+            payment_profile.delete()
+        employee.organization_assignments.all().delete()
+        employee.delete()
+    except ProtectedError as exc:
+        raise ValidationError({"employee": "This employee is referenced by protected payroll history. Archive the employee instead."}) from exc
+
+    record_lifecycle_action(
+        instance=employee, decision=lifecycle_decision, actor_membership=actor_membership,
+        before=before, after={}, reason=(reason or "").strip(),
+        audit_action="internal.employee.deleted_unused", object_id=object_id, object_label=object_label,
+        metadata={"guard": "unused-onboarding-only"}, request=request,
+    )
+    return object_id

@@ -8,6 +8,8 @@ def application_context(request):
         "APP_NAME": settings.APP_NAME,
         "APP_SUBTITLE": settings.APP_SUBTITLE,
         "APP_VERSION": settings.APP_VERSION,
+        "SINGLE_COMPANY_MODE": settings.SINGLE_COMPANY_MODE,
+        "PRIMARY_COMPANY_SLUG": settings.PRIMARY_COMPANY_SLUG,
         "ACTIVE_COMPANY": company,
         "ACTIVE_COMPANY_SETTINGS": getattr(company, "settings", None) if company is not None else None,
         "ACTIVE_COMPANY_MEMBERSHIP": membership,
@@ -19,7 +21,8 @@ def application_context(request):
         from apps.accounts.context import access_context_for_request, platform_context_for_request
         from apps.accounts.selectors import active_memberships_for_user
 
-        context["AVAILABLE_COMPANY_MEMBERSHIPS"] = active_memberships_for_user(request.user)
+        if not settings.SINGLE_COMPANY_MODE:
+            context["AVAILABLE_COMPANY_MEMBERSHIPS"] = active_memberships_for_user(request.user)
         context["ACCESS_CONTEXT"] = access_context_for_request(request)
         context["PLATFORM_CONTEXT"] = platform_context_for_request(request)
 
@@ -32,7 +35,7 @@ def application_context(request):
             return context
 
         from apps.core.trash import active_trash
-        from apps.inventory.models import StockItem, Supplier, Unit
+        from apps.inventory.models import InventoryLocation, StockItem, Supplier, Unit
         from apps.inventory.selectors import low_stock_items
         from apps.projects.models import Project
 
@@ -46,14 +49,16 @@ def application_context(request):
             + Project.objects.for_company(company).filter(
                 status=Project.Status.ARCHIVED, deleted_at__isnull=True
             ).count()
-            + Unit.objects.for_company(company).filter(is_active=False, deleted_at__isnull=True).count()
-            + Supplier.objects.for_company(company).filter(is_active=False, deleted_at__isnull=True).count()
+            + Unit.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
+            + Supplier.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
+            + InventoryLocation.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
         )
         context["NAV_TRASH_COUNT"] = (
             active_trash(StockItem.objects.for_company(company)).count()
             + active_trash(Project.objects.for_company(company)).count()
             + active_trash(Unit.objects.for_company(company)).count()
             + active_trash(Supplier.objects.for_company(company)).count()
+            + active_trash(InventoryLocation.objects.for_company(company)).count()
         )
     else:
         context["NAV_LOW_STOCK_COUNT"] = 0
