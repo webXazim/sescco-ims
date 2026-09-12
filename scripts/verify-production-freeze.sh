@@ -18,6 +18,7 @@ bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-payroll-reference-coverage.py
 python3 scripts/verify-payroll-reference-output.py
 python3 scripts/verify-full-demo-seed.py
+python3 scripts/verify-tenant-reconciliation.py
 python3 scripts/verify-lifecycle-authority.py
 python3 scripts/verify-employee-lifecycle.py
 python3 scripts/verify-organization-lifecycle.py

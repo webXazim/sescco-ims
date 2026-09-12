@@ -466,6 +466,13 @@ class SupplierPayment(CompanyOwnedModel):
             raise ValidationError({"amount": "Payment amount must be greater than zero."})
         if self.company_id and self.supplier_id and self.supplier.company_id != self.company_id:
             raise ValidationError({"supplier": "Supplier must belong to the same company."})
+        if self.retry_of_id:
+            if self.company_id and self.retry_of.company_id != self.company_id:
+                raise ValidationError({"retry_of": "Retry payment must belong to the same company."})
+            if self.supplier_id and self.retry_of.supplier_id != self.supplier_id:
+                raise ValidationError({"retry_of": "Retry payment must belong to the same supplier."})
+            if self.pk and self.retry_of_id == self.pk:
+                raise ValidationError({"retry_of": "A supplier payment cannot retry itself."})
         if self.status == SupplierPaymentStatus.PAID and self.method != SupplierPaymentMethod.CASH and not self.transaction_reference:
             raise ValidationError({"transaction_reference": "A bank/cheque reference is required before marking the payment Paid."})
         if self.status in {SupplierPaymentStatus.FAILED, SupplierPaymentStatus.REVERSED} and not self.result_reason:

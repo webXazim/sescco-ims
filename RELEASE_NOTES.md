@@ -1,3 +1,11 @@
+# 1.0.47 — Nullable-safe tenant reconciliation
+
+- Fixed the production reconciliation false positive that reported `rental_manpower.SupplierPayment.retry_of` as a cross-company reference when `retry_of` is legitimately NULL on an original supplier payment.
+- Internal Payroll and Rental Manpower reconciliation now validate company ownership only when a nullable company-owned relation is actually populated; real cross-company references are still rejected.
+- Added SupplierPayment model validation so an actual retry link must remain inside the same company and supplier and cannot self-reference.
+- Added runtime regression coverage around original-payment + retry reconciliation and a packaged static tenant-reconciliation contract.
+- No database migration is required for this release.
+
 # 1.0.46 — E2E cascade seed state-refresh fix
 
 - Fixes `./scripts/deploy-production.sh --seed` falsely reporting that the Branch / Office cascade did not place its employee in the same 30-day recovery window after the PostgreSQL lock fix.

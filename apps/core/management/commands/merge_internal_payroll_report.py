@@ -54,7 +54,12 @@ class Command(BaseCommand):
                 related_fields = {item.name for item in related_meta.fields}
                 if "company" not in related_fields:
                     continue
-                mismatch = model.objects.exclude(**{f"{field.name}__company_id": F("company_id")}).count()
+                # Nullable company-owned relations are valid when unset.  Compare tenant
+                # ownership only for rows that actually reference a related object; using
+                # exclude() directly on a nullable FK makes Django include NULL relations
+                # in the negated predicate and produces a false cross-company error.
+                relation_scope = model.objects.filter(**{f"{field.name}__isnull": False})
+                mismatch = relation_scope.exclude(**{f"{field.name}__company_id": F("company_id")}).count()
                 if mismatch:
                     errors.append(
                         f"{model._meta.label}.{field.name}: {mismatch} cross-company references"

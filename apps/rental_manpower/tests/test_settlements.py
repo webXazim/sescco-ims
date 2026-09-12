@@ -2,8 +2,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
+from io import StringIO
 
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
@@ -266,6 +268,12 @@ class RentalSettlementTests(TestCase):
         retry = retry_supplier_payment(actor_membership=self.owner, payment_id=first.pk, payment_date=timezone.localdate())
         self.assertEqual(retry.retry_of_id, first.pk)
         self.assertEqual(retry.status, SupplierPaymentStatus.PROCESSING)
+
+        # The original payment legitimately has retry_of=NULL.  Tenant reconciliation
+        # must ignore an unset nullable FK while still validating the real retry link.
+        output = StringIO()
+        call_command("merge_rental_manpower_report", "--fail-on-errors", stdout=output)
+        self.assertIn("Rental Manpower tenant and shared-project integrity is valid.", output.getvalue())
 
     def test_reversal_reopens_paid_settlement(self):
         worker = self._worker("RW-R", "Reversed Worker", "Hourly", "10")
