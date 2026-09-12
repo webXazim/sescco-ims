@@ -113,6 +113,16 @@ for forbidden in (
     if forbidden in (ROOT / "apps/rental_manpower/services/masters.py").read_text(encoding="utf-8") or forbidden in (ROOT / "apps/rental_manpower/lifecycle.py").read_text(encoding="utf-8"):
         fail(f"obsolete restrictive stop-activity rule returned: {forbidden}")
 
+# E2E cascade assertions compare freshly persisted parent/child recovery windows.
+# Lifecycle services lock/refetch their own parent instance, so the seed must
+# refresh its caller-held parent object after Delete before comparing timestamps.
+for text in (
+    "deleted_branch.refresh_from_db()",
+    "deleted_department.refresh_from_db()",
+    "deleted_supplier.refresh_from_db()",
+):
+    require(seed_rel, text)
+
 for rel, text in (
     ("apps/core/trash.py", "def cascade_to_trash("),
     ("apps/core/trash.py", "def restore_trash_cascade("),

@@ -1,3 +1,11 @@
+# 1.0.46 — E2E cascade seed state-refresh fix
+
+- Fixes `./scripts/deploy-production.sh --seed` falsely reporting that the Branch / Office cascade did not place its employee in the same 30-day recovery window after the PostgreSQL lock fix.
+- Root cause: the lifecycle service correctly refetches and locks its own parent model instance, then updates that instance during Delete. The seed kept an older caller-held `deleted_branch` object and compared the freshly deleted child against the stale parent's pre-delete `purge_after=None`.
+- Refreshes Branch / Office, Department and Manpower Supplier parent fixtures from the database immediately after their real Delete action before verifying the parent/child `deleted_at` and `purge_after` recovery window.
+- Keeps the production cascade implementation unchanged; existing service regression tests already assert exact parent/child delete timestamps and 30-day recovery deadlines.
+- Adds a static release gate so all three E2E cascade assertions must refresh their parent record before comparing recovery-window state. No schema or migration change is required.
+
 # 1.0.45 — PostgreSQL cascade-lock compatibility
 
 - Fixes `./scripts/deploy-production.sh --seed` failing during the Branch / Office lifecycle fixture with PostgreSQL `FOR UPDATE is not allowed with DISTINCT clause`.

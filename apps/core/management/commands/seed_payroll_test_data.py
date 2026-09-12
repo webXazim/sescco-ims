@@ -857,8 +857,16 @@ class Command(BaseCommand):
                 actor_membership=actor, branch_id=deleted_branch.pk, confirmation=deleted_branch.code,
                 reason="TEST DATA branch 30-day recovery cascade fixture",
             )
+        # The lifecycle service refetches/locks the parent internally, so this
+        # caller-held instance is intentionally stale after Delete. Refresh the
+        # parent before comparing the shared cascade recovery window.
+        deleted_branch.refresh_from_db()
         branch_child.refresh_from_db()
-        if not branch_child.deleted_at or branch_child.purge_after != deleted_branch.purge_after:
+        if (
+            not branch_child.deleted_at
+            or branch_child.deleted_at != deleted_branch.deleted_at
+            or branch_child.purge_after != deleted_branch.purge_after
+        ):
             raise ValidationError({"seed": "Branch Trash cascade did not move its current employee into the same 30-day recovery window."})
 
         archived_department = Department.objects.for_company(company).filter(code="DEMO-DEP-ARCH").first()
@@ -892,8 +900,13 @@ class Command(BaseCommand):
                 actor_membership=actor, department_id=deleted_department.pk, confirmation=deleted_department.code,
                 reason="TEST DATA department 30-day recovery cascade fixture",
             )
+        deleted_department.refresh_from_db()
         department_child.refresh_from_db()
-        if not department_child.deleted_at or department_child.purge_after != deleted_department.purge_after:
+        if (
+            not department_child.deleted_at
+            or department_child.deleted_at != deleted_department.deleted_at
+            or department_child.purge_after != deleted_department.purge_after
+        ):
             raise ValidationError({"seed": "Department Trash cascade did not move its current employee into the same 30-day recovery window."})
 
         main_supplier = ManpowerSupplier.objects.for_company(company).filter(code="DEMO-SUP-01").first()
@@ -1031,8 +1044,13 @@ class Command(BaseCommand):
                 actor_membership=actor, supplier_id=deleted_supplier.pk, confirmation=deleted_supplier.code,
                 reason="TEST DATA supplier 30-day recovery cascade fixture",
             )
+        deleted_supplier.refresh_from_db()
         supplier_cascade_worker.refresh_from_db()
-        if not supplier_cascade_worker.deleted_at or supplier_cascade_worker.purge_after != deleted_supplier.purge_after:
+        if (
+            not supplier_cascade_worker.deleted_at
+            or supplier_cascade_worker.deleted_at != deleted_supplier.deleted_at
+            or supplier_cascade_worker.purge_after != deleted_supplier.purge_after
+        ):
             raise ValidationError({"seed": "Supplier Trash cascade did not move its workers into the same 30-day recovery window."})
 
         project_specs = (
