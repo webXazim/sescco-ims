@@ -32,6 +32,28 @@ for rel,text in [
  ("apps/internal_payroll/selectors/organization.py","_inherited_archived=Exists"),
  ("static/payroll/js/app.js","['All','Active','Inactive','Archived']"),
 ]: req(rel,text)
+# PostgreSQL does not allow SELECT ... FOR UPDATE on a DISTINCT outer query.
+# Parent-delete cascades must first resolve current assignment employee ids and
+# then lock the employee table directly. This gate protects the production
+# seed/delete path that exercises real Branch and Department cascades.
+service_path = ROOT / "apps/internal_payroll/services/organization.py"
+service_source = service_path.read_text(encoding="utf-8")
+service_tree = ast.parse(service_source)
+for function_name in ("delete_unused_branch", "delete_unused_department"):
+    node = next(
+        (item for item in service_tree.body if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == function_name),
+        None,
+    )
+    if node is None:
+        fail(f"missing lifecycle service {function_name}")
+    segment = ast.get_source_segment(service_source, node) or ""
+    if "select_for_update()" not in segment:
+        fail(f"{function_name} must lock cascade employee rows")
+    if ".distinct()" in segment:
+        fail(f"{function_name} cannot combine SELECT FOR UPDATE with DISTINCT on PostgreSQL")
+    if "EmployeeOrganizationAssignment.objects.filter(" not in segment or 'pk__in=current_employee_ids' not in segment:
+        fail(f"{function_name} must resolve assignment ids before locking employees")
+
 manifest=(ROOT/'merge/frozen-merge-migrations.sha256').read_text(encoding='utf-8')
 for migration in ('0009_organization_master_lifecycle.py','0011_master_trash_retention.py','0012_reversible_archive_lifecycle.py'):
  if migration not in manifest: fail(f'migration not frozen: {migration}')

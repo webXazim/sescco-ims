@@ -368,14 +368,24 @@ def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, conf
     branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(branch)
+    # PostgreSQL rejects SELECT ... FOR UPDATE when the outer query also uses
+    # DISTINCT. Resolve the current assignment scope in a subquery, then lock
+    # the employee rows themselves. The open-assignment constraint guarantees
+    # one current organization row per employee and the outer employee query is
+    # naturally unique without DISTINCT.
+    current_employee_ids = EmployeeOrganizationAssignment.objects.filter(
+        company=branch.company,
+        branch=branch,
+        effective_to__isnull=True,
+    ).values("employee_id")
     cascade_employees = list(
         InternalEmployee.objects.select_for_update()
         .filter(
-            company=branch.company, deleted_at__isnull=True,
-            organization_assignments__branch=branch,
-            organization_assignments__effective_to__isnull=True,
+            company=branch.company,
+            deleted_at__isnull=True,
+            pk__in=current_employee_ids,
         )
-        .distinct()
+        .order_by("pk")
     )
     move_to_trash(branch, user=actor_membership.user, reason=reason)
     cascaded = cascade_to_trash(
@@ -457,14 +467,19 @@ def delete_unused_department(*, actor_membership: CompanyMembership, department_
     department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(department)
+    current_employee_ids = EmployeeOrganizationAssignment.objects.filter(
+        company=department.company,
+        department=department,
+        effective_to__isnull=True,
+    ).values("employee_id")
     cascade_employees = list(
         InternalEmployee.objects.select_for_update()
         .filter(
-            company=department.company, deleted_at__isnull=True,
-            organization_assignments__department=department,
-            organization_assignments__effective_to__isnull=True,
+            company=department.company,
+            deleted_at__isnull=True,
+            pk__in=current_employee_ids,
         )
-        .distinct()
+        .order_by("pk")
     )
     move_to_trash(department, user=actor_membership.user, reason=reason)
     cascaded = cascade_to_trash(

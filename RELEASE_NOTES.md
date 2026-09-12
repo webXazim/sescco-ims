@@ -1,3 +1,11 @@
+# 1.0.45 — PostgreSQL cascade-lock compatibility
+
+- Fixes `./scripts/deploy-production.sh --seed` failing during the Branch / Office lifecycle fixture with PostgreSQL `FOR UPDATE is not allowed with DISTINCT clause`.
+- Root cause: Branch and Department 30-day cascade Delete locked `InternalEmployee` rows through a reverse organization-assignment join and then called `.distinct()`. PostgreSQL rejects `SELECT DISTINCT ... FOR UPDATE`, even though the cascade itself is valid.
+- Keeps row-level locking and the 30-day recoverable cascade semantics intact. The service now resolves current employee ids through `EmployeeOrganizationAssignment` first, then locks the unique `InternalEmployee` rows with `SELECT ... FOR UPDATE` on the outer employee query, with deterministic primary-key ordering.
+- Applies the same correction to both Branch / Office and Department Delete so the same production-only failure cannot appear later in the seed or normal lifecycle UI.
+- Adds a release gate that rejects any future reintroduction of `DISTINCT` into these PostgreSQL row-locking cascade functions. No schema or migration change is required.
+
 # 1.0.44 — Payroll E2E seed payment chronology fix
 
 - Fixes `./scripts/deploy-production.sh --seed` failing while creating the closed Rental Payroll history with `Payment date cannot be earlier than the settlement approval date`.
