@@ -1,3 +1,10 @@
+# 1.0.44 — Payroll E2E seed payment chronology fix
+
+- Fixes `./scripts/deploy-production.sh --seed` failing while creating the closed Rental Payroll history with `Payment date cannot be earlier than the settlement approval date`.
+- Root cause: the DEMO history is intentionally seeded for the prior closed month, while the real settlement approval transition happens at seed runtime. The fixture incorrectly forced the supplier payment date to that prior month-end, violating the production chronology guard.
+- Keeps the production payment rule unchanged. Seeded Paid supplier payments now use the later of the historical period end and the actual settlement approval date, while still rejecting future Paid dates.
+- Adds regression coverage for both chronology cases and keeps supplier-payment reports/documents attached to the historical settlement period through their allocation relationship.
+
 # 1.0.43 — Working Actions + recoverable cascade delete + E2E seed verification
 
 - Fixes the Payroll **Actions** dropdown regression on Branch / Office, Department and other lifecycle menus. The delegated controller correctly toggled the dropdown host, but a global CSS hardening rule still disabled pointer events on the menu itself; the open host now explicitly owns menu interactivity and the 1.0.43 assets are cache-busted.

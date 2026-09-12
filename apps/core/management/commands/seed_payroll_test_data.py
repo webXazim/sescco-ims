@@ -254,6 +254,24 @@ def _days(value: date):
         day += timedelta(days=1)
 
 
+def _seed_supplier_payment_date(*, settlement, period_start: date) -> date:
+    """Return a valid Paid date for a seeded supplier settlement.
+
+    The closed DEMO period is intentionally historical, but the settlement workflow is
+    executed when ``--seed`` runs. Production payment authority correctly rejects a
+    payment dated before that approval. Keep the real authority intact and let the
+    fixture date follow the later of period end and the actual approval date.
+    """
+    period_end = _month_end(period_start)
+    approval_date = timezone.localdate(settlement.approved_at) if settlement.approved_at else timezone.localdate()
+    payment_date = max(period_end, approval_date)
+    if payment_date > timezone.localdate():
+        raise ValidationError({
+            "payment_date": "DEMO Paid supplier payment cannot use a future payment date."
+        })
+    return payment_date
+
+
 def _demo_iban(index: int) -> str:
     # Synthetic Saudi IBAN with a valid ISO-13616 checksum. Never derived from uploaded bank data.
     bban = f"99{index:018d}"[-20:]
@@ -1211,7 +1229,8 @@ class Command(BaseCommand):
                 RentalSettlementStatus.APPROVED, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAYMENT_PROCESSING
             }:
                 payment = record_supplier_payment(
-                    actor_membership=actor, settlement_id=settlement.pk, payment_date=_month_end(period_start),
+                    actor_membership=actor, settlement_id=settlement.pk,
+                    payment_date=_seed_supplier_payment_date(settlement=settlement, period_start=period_start),
                     method=SupplierPaymentMethod.BANK, amount=settlement.total_net, status=SupplierPaymentStatus.PAID,
                     transaction_reference=f"DEMO-PAY-{period_start:%Y%m}-{settlement.supplier_code}",
                     note="TEST DATA full supplier payment",
