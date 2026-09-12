@@ -32,10 +32,12 @@ def _current_assignment_filter(today):
     )
 
 
-def suppliers_for_company(*, company, query: str = "", status: str = "", archived: bool | None = False):
+def suppliers_for_company(*, company, query: str = "", status: str = "", archived: bool | None = False, deleted: bool | None = False):
     today = timezone.localdate()
     current_filter = _current_assignment_filter(today)
     queryset = ManpowerSupplier.objects.for_company(company)
+    if deleted is not None:
+        queryset = queryset.filter(deleted_at__isnull=not deleted)
     if archived is True:
         queryset = queryset.filter(archived_at__isnull=False)
     elif archived is False:
@@ -99,11 +101,13 @@ def projects_for_company(*, company, query: str = "", status: str = ""):
     )
 
 
-def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False):
+def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False, deleted: bool | None = False):
     assignment_qs = WorkerAssignment.objects.for_company(company).select_related("project", "company__settings").order_by("effective_from", "created_at")
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
         Prefetch("rental_assignments", queryset=assignment_qs)
     )
+    if deleted is not None:
+        queryset = queryset.filter(deleted_at__isnull=not deleted)
     if archived is True:
         queryset = queryset.filter(archived_at__isnull=False)
     elif archived is False:
@@ -142,6 +146,10 @@ def serialize_supplier(supplier: ManpowerSupplier) -> dict[str, object]:
         "archived": bool(supplier.archived_at),
         "archivedAt": supplier.archived_at.isoformat() if supplier.archived_at else None,
         "archivedReason": supplier.archived_reason,
+        "deleted": supplier.deleted_at is not None,
+        "deletedAt": supplier.deleted_at.isoformat() if supplier.deleted_at else None,
+        "deletionReason": supplier.deletion_reason,
+        "purgeAfter": supplier.purge_after.isoformat() if supplier.purge_after else None,
         "contact": supplier.contact_person,
         "phone": supplier.phone,
         "email": supplier.email,
@@ -177,6 +185,13 @@ def serialize_project(project: Project) -> dict[str, object]:
         "manager": project.manager_name,
         "status": project.get_status_display(),
         "statusValue": project.status,
+        "archived": bool(project.archived_at),
+        "archivedAt": project.archived_at.isoformat() if project.archived_at else None,
+        "archivedReason": project.archived_reason,
+        "deleted": bool(project.deleted_at),
+        "deletedAt": project.deleted_at.isoformat() if project.deleted_at else None,
+        "deletionReason": project.deletion_reason,
+        "purgeAfter": project.purge_after.isoformat() if project.purge_after else None,
         "notes": project.notes,
         "rentalWorkers": int(getattr(project, "assigned_worker_count", 0)),
         "suppliers": int(getattr(project, "assigned_supplier_count", 0)),
@@ -261,6 +276,10 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         "archived": bool(worker.archived_at),
         "archivedAt": worker.archived_at.isoformat() if worker.archived_at else None,
         "archivedReason": worker.archived_reason,
+        "deleted": worker.deleted_at is not None,
+        "deletedAt": worker.deleted_at.isoformat() if worker.deleted_at else None,
+        "deletionReason": worker.deletion_reason,
+        "purgeAfter": worker.purge_after.isoformat() if worker.purge_after else None,
         "inactiveOn": worker.inactive_on.isoformat() if worker.inactive_on else "",
         "inactiveReason": worker.inactive_reason,
         "status": display_status,

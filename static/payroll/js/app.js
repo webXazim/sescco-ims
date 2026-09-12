@@ -3,7 +3,7 @@
     overview:{title:'Overview'}, 'management-cost':{title:'Workforce Cost'}, 'management-approvals':{title:'Approval Center'}, 'management-audit':{title:'Audit Trail'}, 'access-roles':{title:'Access & Roles'},
     'internal-employees':{title:'Internal Employees'}, branches:{title:'Branches & Offices'}, departments:{title:'Departments'}, 'bank-export':{title:'Bank & WPS Export'}, 'salary-setup':{title:'Salary Setup'},
     'rental-workforce':{title:'Rental Workforce'}, 'rental-onboarding':{title:'Rental Worker Onboarding'}, 'rental-assignments':{title:'Rental Assignments'}, projects:{title:'Projects'}, suppliers:{title:'Manpower Suppliers'},
-    timesheets:{title:'Timesheets'}, 'payroll-runs':{title:'Payroll Runs'}, 'rental-settlements':{title:'Rental Settlements'}, adjustments:{title:'Advances & Adjustments'}, payments:{title:'Payments'}, wps:{title:'WPS'}, documents:{title:'Documents'}, reports:{title:'Reports'}, settings:{title:'Settings'}
+    timesheets:{title:'Timesheets'}, 'payroll-runs':{title:'Payroll Runs'}, 'rental-settlements':{title:'Rental Settlements'}, adjustments:{title:'Advances & Adjustments'}, payments:{title:'Payments'}, wps:{title:'WPS'}, documents:{title:'Documents'}, archive:{title:'Archive Bin'}, trash:{title:'Trash Bin'}, reports:{title:'Reports'}, settings:{title:'Settings'}
   };
   const PAGE_SEARCH_ITEMS = [
     {type:'Page',code:'OV',name:'Overview',meta:'Workspace overview and operational status',route:'overview'},
@@ -23,6 +23,8 @@
     {type:'Page',code:'AD',name:'Advances & Adjustments',meta:'Internal and rental adjustment ledgers',route:'adjustments'},
     {type:'Page',code:'PY',name:'Payments',meta:'Internal salary and supplier payments',route:'payments'},
     {type:'Page',code:'DC',name:'Documents',meta:'Finalized payroll and workforce documents',route:'documents'},
+    {type:'Page',code:'AR',name:'Archive Bin',meta:'Archived master records retained for history',route:'archive'},
+    {type:'Page',code:'TR',name:'Trash Bin',meta:'Deleted master records recoverable for 30 days',route:'trash'},
     {type:'Page',code:'RP',name:'Reports',meta:'Controlled payroll and workforce reports',route:'reports'},
     {type:'Page',code:'SE',name:'Settings',meta:'Company and domain configuration',route:'settings'}
   ];
@@ -57,6 +59,9 @@
   const settingsContextNode = document.getElementById('payroll-settings-context');
   if (!settingsContextNode) throw new Error('Missing company settings context.');
   const settingsBootstrap = JSON.parse(settingsContextNode.textContent || '{}');
+  const recordManagementNode = document.getElementById('payroll-record-management-context');
+  if (!recordManagementNode) throw new Error('Missing record management context.');
+  const recordManagementBootstrap = JSON.parse(recordManagementNode.textContent || '{}');
   const companyTodayIso = String(settingsBootstrap.today || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(companyTodayIso)) throw new Error('Invalid company date context.');
   const periodMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -1096,6 +1101,7 @@
     reportSearch: '',
     settingsTab: localStorage.getItem('payroll-ui-settings-tab') || 'general',
     systemSettings,
+    recordManagement: { archive:[...(recordManagementBootstrap.archive || [])], trash:[...(recordManagementBootstrap.trash || [])], retentionDays:Number(recordManagementBootstrap.retentionDays || 30) },
     drawerType: null,
     drawerContext: null,
     branches: [...(internalMaster.branches || [])],
@@ -1133,6 +1139,8 @@
       chevron: '<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>',
       supplier: '<svg viewBox="0 0 24 24"><path d="M3 7h18M5 7V5h14v2m-1 0v12H6V7m3 4h6m-6 4h4"/></svg>',
       document: '<svg viewBox="0 0 24 24"><path d="M6 2h9l4 4v16H6zM14 2v5h5M9 12h6m-6 4h6"/></svg>',
+      archive: '<svg viewBox="0 0 24 24"><path d="M4 7h16v14H4zM3 3h18v4H3zM9 11h6"/></svg>',
+      trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14M10 11v6m4-6v6"/></svg>',
       clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
       person: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
       wallet: '<svg viewBox="0 0 24 24"><path d="M3 6h16v14H3z"/><path d="M3 8V5h13v3m1 4h4v5h-4a2.5 2.5 0 0 1 0-5z"/></svg>',
@@ -1196,11 +1204,11 @@
   }
 
   function internalRouteSet() {
-    return new Set(['overview','internal-employees','branches','departments','salary-setup','timesheets','payroll-runs','adjustments','payments','bank-export','wps','documents','reports','settings']);
+    return new Set(['overview','internal-employees','branches','departments','salary-setup','timesheets','payroll-runs','adjustments','payments','bank-export','wps','documents','archive','trash','reports','settings']);
   }
 
   function rentalRouteSet() {
-    return new Set(['overview','rental-workforce','rental-onboarding','rental-assignments','projects','suppliers','timesheets','rental-settlements','adjustments','payments','documents','reports','settings']);
+    return new Set(['overview','rental-workforce','rental-onboarding','rental-assignments','projects','suppliers','timesheets','rental-settlements','adjustments','payments','documents','archive','trash','reports','settings']);
   }
 
   function managementRouteSet() {
@@ -1226,14 +1234,14 @@
       ['Workforce', [['rental-workforce','Rental Workers','users'],['suppliers','Manpower Suppliers','supplier']]],
       ['Operations', [['rental-assignments','Assignment Lifecycle','arrow'],['projects','Projects','project'],['timesheets','Project Timesheets','timesheet']]],
       ['Cost & Settlement', [['rental-settlements','Supplier Settlements','calculator'],['adjustments','Worker Adjustments','wallet'],['payments','Supplier Payments','bank']]],
-      ['Records', [['documents','Rental Documents','document'],['reports','Rental Reports','calculator']]]
+      ['Records', [['documents','Rental Documents','document'],['archive','Archive Bin','archive'],['trash','Trash Bin','trash'],['reports','Rental Reports','calculator']]]
     ];
     return [
       ['Workspace', [['overview','Overview','users']]],
       ['Organization', [['internal-employees','Employees','users'],['branches','Branches & Offices','branch'],['departments','Departments','department']]],
       ['Time', [['timesheets','Attendance & Overtime','timesheet']]],
       ['Payroll', [['salary-setup','Salary Setup','wallet'],['payroll-runs','Payroll Runs','calculator'],['adjustments','Advances & Adjustments','wallet'],['payments','Salary Payments','bank'],['bank-export','Bank & WPS Export','bank']]],
-      ['Records', [['documents','Salary Slips & Documents','document'],['reports','Reports','calculator']]]
+      ['Records', [['documents','Salary Slips & Documents','document'],['archive','Archive Bin','archive'],['trash','Trash Bin','trash'],['reports','Reports','calculator']]]
     ];
   }
 
@@ -1690,7 +1698,7 @@
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter branch status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'Active' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
       ${branches.length ? `<div class="ui-v2-payroll-master-grid">
         <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.type || 'Branch')} · ${escapeHtml(branch.location || 'Location not set')}${branch.status !== 'Active' ? ` · ${escapeHtml(branch.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
-        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Only when no employee or payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
+        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; current employee assignments must be cleared first',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
       </div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branches and offices are company-controlled masters. Moving an employee creates effective-dated organization history rather than rewriting prior payroll context.</span></div>
     </section>`;
@@ -1720,7 +1728,7 @@
     } else {
       content = `<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Organization snapshot</h2><p>Employees and departments attached to this company office.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${activeEmployees.length} active</small></div><div><span>Departments</span><strong>${departmentRows.length}</strong><small>Represented in this branch</small></div><div><span>WPS ready</span><strong>${wpsReady}/${employees.length}</strong><small>Bank / identity readiness</small></div><div><span>Net payroll</span><strong>${formatCurrency(totals.net||0)}</strong><small>${escapeHtml(state.period)}</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department mix</h2><p>Current employee-master assignments.</p></div></div><div class="composition-block">${departmentRows.length?departmentRows.map(({department,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-department="${escapeHtml(department.id)}">${escapeHtml(department.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employees assigned yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Branch details</h3><button class="text-link" data-edit-branch="${escapeHtml(branch.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(branch.code)}</dd></div><div><dt>Type</dt><dd>${escapeHtml(branch.type||'Branch')}</dd></div><div><dt>Location</dt><dd>${escapeHtml(branch.location)}</dd></div><div><dt>Address</dt><dd>${escapeHtml(branch.address||'—')}</dd></div><div><dt>Manager</dt><dd>${escapeHtml(branch.manager||'—')}</dd></div><div><dt>Status</dt><dd>${escapeHtml(branch.status)}</dd></div>${branch.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(branch.archivedReason)}</dd></div>`:''}</dl></section><section class="detail-card"><div class="detail-card__head"><h3>Quick actions</h3></div><div class="stack-actions"><button data-open-branch-timesheet="${escapeHtml(branch.id)}">Attendance & OT ${icon('chevron')}</button><button data-open-branch-payroll="${escapeHtml(branch.id)}">Branch Payroll ${icon('chevron')}</button><button data-route-link="bank-export">Bank / WPS ${icon('chevron')}</button></div></section></aside></div>`;
     }
-    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employees.length} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${branch.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(branch.id)}"`},'separator',{label:branch.archived?'Restore from archive':'Archive branch / office',hint:branch.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|${branch.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Available only before organization/payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch assignments are effective-dated internal organization records and remain separate from rental project assignments.</span></div></section>`;
+    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employees.length} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${branch.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(branch.id)}"`},'separator',{label:branch.archived?'Restore from archive':'Archive branch / office',hint:branch.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|${branch.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; protected history remains intact',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch assignments are effective-dated internal organization records and remain separate from rental project assignments.</span></div></section>`;
   }
 
   function departmentsTemplate() {
@@ -1755,7 +1763,7 @@
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Departments</h1><p class="ui-v2-body">Departments are published organization masters used across employee assignment, filtering and reporting. Inactive values remain available to historical records.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="branches">Branches & Offices</button><button class="btn btn--primary" data-quick-add="department">${icon('plus')} Add Department</button></div></div>
       <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${state.departments.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>Internal company records</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest department</span><strong>${Math.max(0,...counts)}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter department status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'Active' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
-      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Only when no employee or payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
+      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore as Inactive':'Preserve history and remove from new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; current employee assignments must be cleared first',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department edits affect the current master only; employee organization history and closed payroll snapshots remain attributable to their original effective records.</span></div>
     </section>`;
   }
@@ -1778,7 +1786,7 @@
     } else {
       content=`<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department snapshot</h2><p>Cross-branch internal-company organization view.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${employees.filter(item=>item.status==='Active').length} active</small></div><div><span>Branches</span><strong>${branchRows.length}</strong><small>Currently represented</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employees.length}</strong><small>Configured structures</small></div><div><span>WPS ready</span><strong>${ready}/${employees.length}</strong><small>Payment-data readiness</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Branch distribution</h2><p>Employees grouped by office.</p></div></div><div class="composition-block">${branchRows.length?branchRows.map(({branch,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-branch="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employee assignments yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Department details</h3><button class="text-link" data-edit-department="${escapeHtml(department.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(department.code)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(department.status)}</dd></div>${department.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(department.archivedReason)}</dd></div>`:''}<div><dt>Employees</dt><dd>${employees.length}</dd></div><div><dt>Current net payroll</dt><dd>${formatCurrency(totals.net||0)}</dd></div></dl>${department.notes?`<p class="organization-notes">${escapeHtml(department.notes)}</p>`:''}</section></aside></div>`;
     }
-    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employees.length} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${department.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(department.id)}"`},'separator',{label:department.archived?'Restore from archive':'Archive department',hint:department.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|${department.archived?'restore':'archive'}"`},{label:'Delete unused record',hint:'Available only before organization/payroll history exists',iconName:'more',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department changes do not rewrite historical payroll snapshots or organization audit events.</span></div></section>`;
+    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employees.length} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${department.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(department.id)}"`},'separator',{label:department.archived?'Restore from archive':'Archive department',hint:department.archived?'Restore as Inactive':'Keep history and stop new assignments',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|${department.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; protected history remains intact',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department changes do not rewrite historical payroll snapshots or organization audit events.</span></div></section>`;
   }
 
   function employeeWpsBadge(value) {
@@ -1788,39 +1796,29 @@
   }
 
   function employeeLifecycleActions(employee) {
-    if (!employee) return [];
-    if (employee.archived) return [
-      { value:'restore_archive', label:'Restore archived employee' },
-      { value:'delete', label:'Delete unused employee master' }
-    ];
-    const actions = [];
-    if (employee.status === 'Active') actions.push(
+    if (!employee || employee.archived) return [];
+    if (employee.status === 'Active') return [
       { value:'leave', label:'Put employee on leave' },
       { value:'deactivate', label:'Deactivate / stop payroll eligibility' },
       { value:'terminate', label:'Terminate employment' }
-    );
-    else if (employee.status === 'On Leave') actions.push(
+    ];
+    if (employee.status === 'On Leave') return [
       { value:'activate', label:'Return employee to Active' },
       { value:'deactivate', label:'Deactivate / stop payroll eligibility' },
       { value:'terminate', label:'Terminate employment' }
-    );
-    else if (employee.status === 'Inactive') actions.push(
+    ];
+    if (employee.status === 'Inactive') return [
       { value:'activate', label:'Reactivate employee' },
-      { value:'terminate', label:'Terminate employment' },
-      { value:'archive', label:'Archive employee record' }
-    );
-    else if (employee.status === 'Terminated') actions.push(
-      { value:'archive', label:'Archive terminated employee' }
-    );
-    actions.push({ value:'delete', label:'Delete unused employee master' });
-    return actions;
+      { value:'terminate', label:'Terminate employment' }
+    ];
+    return [];
   }
 
   function employeeLifecycleBanner(employee) {
     if (!employee) return '';
-    if (employee.archived) return `<div class="employee-lifecycle-banner is-archived">${icon('info')}<span><strong>Archived employee record</strong>${escapeHtml(employee.archivedReason || 'Removed from current employee registers while payroll history remains available.')} ${employee.archivedAt ? `Archived ${escapeHtml(payrollTimestamp(employee.archivedAt))}.` : ''}</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
-    if (employee.status === 'Terminated') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employment ended${employee.employmentEnd ? ` · ${escapeHtml(employee.employmentEnd)}` : ''}</strong>This master remains available for payroll, payment and document history. Archive it when day-to-day access is no longer needed.</span><button class="text-link" data-employee-lifecycle>Manage record</button></div>`;
-    if (employee.status === 'Inactive') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employee inactive</strong>Inactive employees are excluded from new attendance/payroll eligibility. Use Employment to reactivate, terminate or archive this record.</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
+    if (employee.archived) return `<div class="employee-lifecycle-banner is-archived">${icon('info')}<span><strong>Archived employee record</strong>${escapeHtml(employee.archivedReason || 'Removed from current employee registers while payroll history remains available.')} ${employee.archivedAt ? `Archived ${escapeHtml(payrollTimestamp(employee.archivedAt))}.` : ''}</span><button class="text-link" data-employee-record-action="restore">Restore from archive</button></div>`;
+    if (employee.status === 'Terminated') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employment ended${employee.employmentEnd ? ` · ${escapeHtml(employee.employmentEnd)}` : ''}</strong>This master remains available for payroll, payment and document history. Use Actions to archive it or move it to the 30-day Trash Bin.</span></div>`;
+    if (employee.status === 'Inactive') return `<div class="employee-lifecycle-banner is-stopped">${icon('info')}<span><strong>Employee inactive</strong>Inactive employees are excluded from new attendance/payroll eligibility. Use Employment to reactivate or terminate; use Actions for Archive or Delete.</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
     if (employee.status === 'On Leave') return `<div class="employee-lifecycle-banner">${icon('info')}<span><strong>Employee on leave</strong>The employee remains employed. Attendance can record leave while the employee is outside normal active work.</span><button class="text-link" data-employee-lifecycle>Manage employment</button></div>`;
     return '';
   }
@@ -2100,7 +2098,7 @@
         <div class="profile-crumb ui-v2-payroll-profile-crumb"><button type="button" class="text-link text-link--muted" data-route-link="internal-employees">Internal Employees</button><span>›</span><span>EMP ${escapeHtml(employee.employeeId)}</span></div>
         <header class="entity-header employee-profile-header ui-v2-payroll-entity-header">
           <div class="entity-header__identity ui-v2-payroll-entity-header__identity"><span class="entity-avatar entity-avatar--employee ui-v2-payroll-entity-avatar">${icon('person')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(employee.name)}</h1>${statusBadge(employee.status)}${employee.archived ? statusBadge('Archived') : ''}</div><div class="entity-subline"><span>EMP ${escapeHtml(employee.employeeId)}</span><span>·</span><span>${escapeHtml(employee.position)}</span><span>·</span><span>${escapeHtml(employee.department)}</span></div></div></div>
-          <div class="entity-header__actions ui-v2-payroll-entity-header__actions"><button class="btn btn--primary employee-employment-btn" data-employee-lifecycle>${icon('person')} Employment</button>${lifecycleActionsMenu([{label:'Edit employee master',hint:'Identity and contact details only',iconName:'edit',attrs:'data-employee-profile-action="edit"'},{label:'Change organization',hint:organizationLocked?'Restore/reactivate before changing organization':'Effective-dated branch and department assignment',iconName:'branch',attrs:`data-change-employee-organization="${escapeHtml(employee.id)}"`,disabled:organizationLocked},{label:'Add adjustment',hint:'Advance, deduction, bonus or reimbursement',iconName:'plus',attrs:'data-employee-profile-action="adjustment"'}])}</div>
+          <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${employeeLifecycleActions(employee).length?`<button class="btn btn--primary employee-employment-btn" data-employee-lifecycle>${icon('person')} Employment</button>`:''}${lifecycleActionsMenu([{label:'Edit employee master',hint:'Identity and contact details only',iconName:'edit',attrs:'data-employee-profile-action="edit"'},{label:'Change organization',hint:organizationLocked?'Restore/reactivate before changing organization':'Effective-dated branch and department assignment',iconName:'branch',attrs:`data-change-employee-organization="${escapeHtml(employee.id)}"`,disabled:organizationLocked},{label:'Add adjustment',hint:'Advance, deduction, bonus or reimbursement',iconName:'plus',attrs:'data-employee-profile-action="adjustment"'},'separator',{label:employee.archived?'Restore from archive':'Archive employee',hint:employee.archived?'Return the retained master as Inactive':'Retain all history and remove from current registers',iconName:'archive',attrs:`data-employee-record-action="${employee.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; protected history is never erased',iconName:'trash',danger:true,attrs:'data-employee-record-action="delete"'}])}</div>
         </header>
         ${employeeLifecycleBanner(employee)}
         <div class="profile-facts employee-profile-facts ui-v2-payroll-profile-facts">
@@ -2208,7 +2206,7 @@
                     <td><span class="table-number">${project.suppliers}</span></td>
                     <td><div class="table-primary">${project.netCost ? formatCurrency(project.netCost) : '—'}</div><div class="table-secondary">${project.netCost ? 'Current known period' : 'No cost posted'}</div></td>
                     <td>${statusBadge(project.status)}</td>
-                    <td class="table-actions"><button class="icon-btn icon-btn--sm" type="button" data-project-row-menu="${project.id}" aria-label="Project actions">${icon('more')}</button></td>
+                    <td class="table-actions">${lifecycleActionsMenu([{label:'Open project',hint:'Open the full project profile',iconName:'project',attrs:`data-route-link="projects/${escapeHtml(project.id)}"`},{label:'Edit project',hint:'Update project master data',iconName:'edit',attrs:`data-project-edit-id="${escapeHtml(project.id)}"`},'separator',{label:project.archived?'Restore from archive':'Archive project',hint:'Archive preserves all project history',iconName:'archive',attrs:`data-project-lifecycle="${project.archived?'restore':'archive'}" data-project-lifecycle-id="${escapeHtml(project.id)}"`},{label:'Delete',hint:'Move to Trash for 30 days',iconName:'trash',danger:true,attrs:`data-project-lifecycle="delete" data-project-lifecycle-id="${escapeHtml(project.id)}"`}],{compact:true,label:'Actions'})}</td>
                   </tr>`).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No projects match these filters.</strong><span>Change the search/status filter or add a new project.</span></div></td></tr>`}
               </tbody>
             </table>
@@ -2284,10 +2282,9 @@
             </div>
           </div>
           <div class="entity-header__actions ui-v2-payroll-entity-header__actions">
-            <button class="btn btn--secondary" data-project-action="edit">${icon('edit')} Edit</button>
             <button class="btn btn--secondary" data-project-assignment-activity="${escapeHtml(project.id)}">Assignment Activity</button>
             <button class="btn btn--secondary" data-project-add-worker="${escapeHtml(project.id)}">${icon('plus')} Add Worker</button>
-            <button class="icon-btn entity-more" type="button" data-project-action="more" aria-label="More project actions">${icon('more')}</button>
+            ${lifecycleActionsMenu([{label:'Edit project',hint:'Update the project master',iconName:'edit',attrs:'data-project-action="edit"'},'separator',{label:project.archived?'Restore from archive':'Archive project',hint:project.archived?'Return the retained project master':'Retain history and stop new operational use',iconName:'archive',attrs:`data-project-lifecycle="${project.archived?'restore':'archive'}"`},{label:'Delete',hint:'Move to Trash for 30 days; stock balances and open assignments must be cleared first',iconName:'trash',danger:true,attrs:'data-project-lifecycle="delete"'}])}
           </div>
         </header>
 
@@ -2607,10 +2604,10 @@
             ${!supplier.archived && supplier.status === 'Active' ? `<button class="btn btn--secondary" data-supplier-bulk-onboard="${escapeHtml(supplier.id)}">Bulk Add</button><button class="btn btn--primary" data-supplier-add-worker="${escapeHtml(supplier.id)}">${icon('plus')} Add Worker</button>` : ''}
             ${lifecycleActionsMenu([
               ...(!supplier.archived ? [{label:'Edit supplier',hint:'Update supplier master details',iconName:'edit',attrs:'data-supplier-action="edit"'}] : []),
-              {label:'Manage supplier lifecycle',hint:'Activate, inactivate, archive or restore',iconName:'info',attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|manage"`},
+              {label:'Manage supplier status',hint:'Activate or make the supplier inactive',iconName:'info',disabled:supplier.archived,attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|manage"`},
               'separator',
               {label:supplier.archived?'Restore from archive':'Archive supplier',hint:supplier.archived?'Restore as Inactive':'Preserve workers, assignments and financial history',iconName:'info',attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|${supplier.archived?'restore':'archive'}"`},
-              {label:'Delete unused supplier',hint:'Only when no worker, settlement or payment history exists',iconName:'more',danger:true,attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|delete"`}
+              {label:'Delete',hint:'Move to Trash for 30 days; active workers must be cleared first',iconName:'trash',danger:true,attrs:`data-rental-master-lifecycle="supplier|${escapeHtml(supplier.id)}|delete"`}
             ])}
           </div>
         </header>
@@ -5526,10 +5523,10 @@
         <div class="entity-header__identity"><span class="entity-avatar rental-worker-avatar">RW</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(worker.name)}</h1>${statusBadge(worker.status || 'Available')}</div><div class="entity-subline"><span>${escapeHtml(rentalWorkerCode(worker))}</span><span>·</span><span>Rental worker</span>${supplier ? `<span>·</span><button class="text-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>` : ''}</div></div></div>
         <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${!worker.archived && snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--primary" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer Project</button>` : !worker.archived && worker.status === 'Available' ? `<button class="btn btn--primary" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to Project</button>` : ''}${lifecycleActionsMenu([
           ...(!worker.archived ? [{label:'Edit worker',hint:'Update current worker master details',iconName:'edit',attrs:`data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}"`}] : []),
-          {label:'Manage worker lifecycle',hint:'Deactivate, reactivate, archive or restore',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|manage"`},
+          {label:'Manage worker status',hint:'Deactivate or reactivate the worker',iconName:'info',disabled:worker.archived,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|manage"`},
           'separator',
           {label:worker.archived?'Restore from archive':'Archive worker',hint:worker.archived?'Restore as Inactive':'Available after the worker is inactive and unassigned',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|${worker.archived?'restore':'archive'}"`},
-          {label:'Delete unused worker',hint:'Only before assignment, timesheet or settlement history exists',iconName:'more',danger:true,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|delete"`}
+          {label:'Delete',hint:'Move to Trash for 30 days; current/future assignments must be cleared first',iconName:'trash',danger:true,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|delete"`}
         ])}</div>
       </header>
       <div class="profile-facts rental-worker-facts"><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || worker.supplier || 'Not linked')}</strong></div><div><span>Current project</span><strong>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive' : worker.status === 'Released' ? 'Released / unassigned' : 'Available / unassigned'))}</strong></div><div><span>Current trade</span><strong>${escapeHtml(snapshot.trade)}</strong></div><div><span>Current rate</span><strong>${escapeHtml(snapshot.rate)}</strong></div></div>
@@ -6124,6 +6121,27 @@
     return `<article class="document-paper"><header class="document-brand-header"><div class="document-brand-mark">${escapeHtml(documentTypeCode(doc.type))}</div><div><strong>${escapeHtml(snapshot.issuer?.legal_name||snapshot.issuer?.name||serverAccess.company_name||'Company')}</strong><span>Final business document</span></div><div class="document-brand-vat"><span>Integrity</span><strong>${doc.integrityOk?'Verified':'Check failed'}</strong></div></header><div class="document-title-block"><span>${escapeHtml(kind.toUpperCase())}</span><h2>${escapeHtml(doc.number)}</h2></div><div class="document-meta-grid"><div><span>Entity</span><strong>${escapeHtml(entity)}</strong></div><div><span>Period</span><strong>${escapeHtml(doc.period||'—')}</strong></div><div><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(doc.finalizedAt))}</strong></div><div><span>Finalized by</span><strong>${escapeHtml(doc.finalizedBy||'System')}</strong></div></div>${important.length?`<div class="document-summary-grid">${important.map(([key,value])=>`<div><span>${escapeHtml(String(key).replaceAll('_',' '))}</span><strong>${/amount|gross|net|deduction|base|overtime|total/i.test(key)?formatCurrency(value):escapeHtml(value)}</strong></div>`).join('')}</div>`:''}<div class="source-note document-source-note">${icon('info')}<span><strong>Immutable snapshot.</strong> This preview is backed by the finalized Django document record. Use Print / Save PDF for the full formatted document.</span></div></article>`;
   }
 
+  function recordKindLabel(kind) {
+    return ({branch:'Branch / Office',department:'Department',employee:'Employee',supplier:'Supplier',worker:'Rental Worker',project:'Project'})[kind] || 'Record';
+  }
+
+  function recordManagementTemplate(bucket) {
+    const isTrash = bucket === 'trash';
+    const rows = (state.recordManagement?.[bucket] || []).filter(item => item.workspace === state.workspace);
+    const title = isTrash ? 'Trash Bin' : 'Archive Bin';
+    const copy = isTrash
+      ? `Deleted master records remain recoverable for ${state.recordManagement.retentionDays || 30} days. Restore them here before the purge date.`
+      : 'Archived master records remain part of company history and can be restored here without rewriting historical activity.';
+    return `<section class="page records-bin-page ui-v2-payroll-page">
+      <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Records · Lifecycle control</span><h1>${title}</h1><p>${escapeHtml(copy)}</p></div></div>
+      <section class="panel panel--flush">
+        <div class="panel__head panel__head--padded"><div><h2>${title}</h2><p>${isTrash ? 'Trash is separate from Archive. Protected historical references remain preserved even after a trash entry expires.' : 'Archive is persistent until a user deliberately restores the record.'}</p></div><span class="status-badge">${rows.length} record${rows.length===1?'':'s'}</span></div>
+        ${rows.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Type</th><th>Record</th><th>${isTrash?'Deleted':'Archived'}</th>${isTrash?'<th>Purge after</th>':''}<th>Reason</th><th></th></tr></thead><tbody>${rows.map(row=>`<tr><td>${escapeHtml(recordKindLabel(row.kind))}</td><td><strong>${escapeHtml(row.label)}</strong><small class="table-secondary">${escapeHtml(row.code || '')}${row.detail?` · ${escapeHtml(row.detail)}`:''}</small></td><td>${escapeHtml(payrollTimestamp(isTrash?row.deletedAt:row.archivedAt) || '—')}</td>${isTrash?`<td><strong>${escapeHtml(payrollTimestamp(row.purgeAfter) || '—')}</strong><small class="table-secondary">30-day recovery window</small></td>`:''}<td>${escapeHtml((isTrash?row.deletionReason:row.archiveReason) || '—')}</td><td><button class="btn btn--secondary btn--sm" data-record-bin-restore="${bucket}|${escapeHtml(row.kind)}|${escapeHtml(row.id)}">Restore</button></td></tr>`).join('')}</tbody></table></div>` : `<div class="table-empty table-empty--card"><strong>${isTrash?'Trash is empty':'Archive is empty'}</strong><span>${isTrash?'Deleted records that are still inside the 30-day recovery window will appear here.':'Archived records for this workspace will appear here.'}</span></div>`}
+      </section>
+      <section class="source-note">${icon('info')}<span><strong>${isTrash?'30-day Trash retention':'Archive is not deletion'}.</strong>${isTrash?' Moving a record to Trash never erases protected payroll, assignment, inventory, settlement or audit history.':' Archived records are retained until restored and remain resolvable from historical records.'}</span></section>
+    </section>`;
+  }
+
   function documentsTemplate() {
     const all=documentAllRecords();
     const allowedTypes=state.workspace==='rental'?['rental_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']:['salary_slip','internal_timesheet','salary_payment_receipt'];
@@ -6361,6 +6379,27 @@
     location.hash = target;
   }
 
+  function reloadIntoRoute(route) {
+    history.replaceState(null, '', `${location.pathname}${location.search}#/${route}`);
+    location.reload();
+  }
+
+  async function restoreRecordFromBin(bucket, kind, id) {
+    const endpoints = {
+      branch:`/api/internal/branches/${encodeURIComponent(id)}/lifecycle/`,
+      department:`/api/internal/departments/${encodeURIComponent(id)}/lifecycle/`,
+      employee:`/api/internal/employees/${encodeURIComponent(id)}/lifecycle/`,
+      supplier:`/api/rental/suppliers/${encodeURIComponent(id)}/lifecycle/`,
+      worker:`/api/rental/workers/${encodeURIComponent(id)}/lifecycle/`,
+      project:`/api/rental/projects/${encodeURIComponent(id)}/lifecycle/`
+    };
+    const endpoint = endpoints[kind];
+    if (!endpoint) throw new Error('Unsupported record type.');
+    const action = bucket === 'trash' ? 'restore_trash' : 'restore_archive';
+    await appApi(endpoint, { method:'POST', body:{ action, reason:`Restored from ${bucket === 'trash' ? 'Trash Bin' : 'Archive Bin'}` } });
+    reloadIntoRoute(bucket);
+  }
+
   function applyTimesheetFullscreenState() {
     const active = currentRoute() === 'timesheets' && !!state.timesheetFullscreen;
     document.documentElement.classList.toggle('timesheet-focus-mode', active);
@@ -6456,6 +6495,8 @@
     else if (route === 'wps') pageRoot.innerHTML = wpsTemplate();
     else if (route === 'payments') pageRoot.innerHTML = paymentsTemplate();
     else if (route === 'documents') pageRoot.innerHTML = documentsTemplate();
+    else if (route === 'archive') pageRoot.innerHTML = recordManagementTemplate('archive');
+    else if (route === 'trash') pageRoot.innerHTML = recordManagementTemplate('trash');
     else if (route === 'reports') pageRoot.innerHTML = reportsTemplate();
     else if (route === 'settings') pageRoot.innerHTML = settingsTemplate();
     else pageRoot.innerHTML = placeholderTemplate(route);
@@ -6506,6 +6547,13 @@
   function wireDynamicActions() {
     document.querySelectorAll('[data-timesheet-fullscreen]').forEach(btn => btn.addEventListener('click', toggleTimesheetFullscreen));
     document.querySelectorAll('[data-route-link]').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.routeLink)));
+    document.querySelectorAll('[data-record-bin-restore]').forEach(btn => btn.addEventListener('click', async () => {
+      const [bucket,kind,id] = String(btn.dataset.recordBinRestore || '').split('|');
+      if (!bucket || !kind || !id) return;
+      btn.disabled = true;
+      try { await restoreRecordFromBin(bucket, kind, id); }
+      catch (error) { btn.disabled = false; showToast('Restore not completed', error.message); }
+    }));
     document.querySelectorAll('[data-workspace-jump]').forEach(btn => btn.addEventListener('click', () => switchWorkspace(btn.dataset.workspaceJump)));
     document.querySelectorAll('[data-management-open]').forEach(btn => btn.addEventListener('click', () => {
       const [workspace, route] = String(btn.dataset.managementOpen || '').split('|');
@@ -7204,6 +7252,7 @@
       renderRoute();
     }));
     document.querySelectorAll('[data-employee-lifecycle]').forEach(btn => btn.addEventListener('click', () => openEmployeeLifecycleDrawer(currentEmployeeId())));
+    document.querySelectorAll('[data-employee-record-action]').forEach(btn => btn.addEventListener('click', () => openEmployeeRecordLifecycleDrawer(currentEmployeeId(), btn.dataset.employeeRecordAction)));
     document.querySelectorAll('[data-employee-profile-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.employeeProfileAction;
       const employeeId = currentEmployeeId();
@@ -7342,16 +7391,16 @@
       showToast('Assignment actions', `${worker?.name || btn.dataset.workerMenu}: Transfer, change trade/rate, advance and release will use the effective-dated worker assignment lifecycle.`);
     }));
 
-    document.querySelectorAll('[data-project-row-menu]').forEach(btn => btn.addEventListener('click', () => {
-      const project = state.projects.find(p => p.id === btn.dataset.projectRowMenu);
-      showToast('Project actions', `${project?.name || 'Project'}: open, edit, archive and report actions are reserved.`);
-    }));
-
     document.querySelectorAll('[data-project-action]').forEach(btn => btn.addEventListener('click', () => {
       const action = btn.dataset.projectAction;
       if (action === 'edit') { const projectId=String(currentRoute()).split('/')[1]; openProjectEditDrawer(projectId); }
       else if (action === 'supplier-workers') { state.projectTab = 'workforce'; renderRoute(); }
       else showToast('Project actions', 'Project lifecycle actions are reserved without deleting payroll/workforce history.');
+    }));
+    document.querySelectorAll('[data-project-edit-id]').forEach(btn => btn.addEventListener('click', () => openProjectEditDrawer(btn.dataset.projectEditId)));
+    document.querySelectorAll('[data-project-lifecycle]').forEach(btn => btn.addEventListener('click', () => {
+      const projectId=btn.dataset.projectLifecycleId || String(currentPath()).split('/')[1];
+      openProjectLifecycleDrawer(projectId, btn.dataset.projectLifecycle);
     }));
 
     document.querySelectorAll('[data-project-export]').forEach(btn => btn.addEventListener('click', () => { state.reportType='rental-project-cost';state.reportPeriod=state.period;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);navigate('reports'); }));
@@ -7448,31 +7497,38 @@
   }
 
   function initDropdowns() {
-    document.querySelectorAll('[data-dropdown]').forEach(dropdown => {
-      const trigger = dropdown.querySelector('[data-dropdown-trigger]');
-      if (!trigger) return;
-      trigger.addEventListener('click', (e) => {
-        e.stopPropagation();
+    if (document.documentElement.dataset.payrollDropdownDelegation === 'ready') return;
+    document.documentElement.dataset.payrollDropdownDelegation = 'ready';
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-dropdown-trigger]');
+      if (trigger) {
+        const dropdown = trigger.closest('[data-dropdown]');
+        if (!dropdown) return;
+        event.preventDefault();
+        event.stopPropagation();
         document.querySelectorAll('[data-dropdown].is-open').forEach(other => {
           if (other !== dropdown) {
             other.classList.remove('is-open');
-            other.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded', 'false');
+            other.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
           }
         });
         const open = dropdown.classList.toggle('is-open');
         trigger.setAttribute('aria-expanded', String(open));
-      });
-    });
-    document.querySelectorAll('[data-lifecycle-menu-action]').forEach(item => item.addEventListener('click', () => {
-      const host = item.closest('[data-dropdown]');
-      host?.classList.remove('is-open');
-      host?.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
-    }));
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('[data-dropdown]')) document.querySelectorAll('[data-dropdown].is-open').forEach(d => {
-        d.classList.remove('is-open');
-        d.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded', 'false');
-      });
+        return;
+      }
+      const menuAction = event.target.closest('[data-lifecycle-menu-action]');
+      if (menuAction) {
+        const host = menuAction.closest('[data-dropdown]');
+        host?.classList.remove('is-open');
+        host?.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
+        return;
+      }
+      if (!event.target.closest('[data-dropdown]')) {
+        document.querySelectorAll('[data-dropdown].is-open').forEach(dropdown => {
+          dropdown.classList.remove('is-open');
+          dropdown.querySelector('[data-dropdown-trigger]')?.setAttribute('aria-expanded','false');
+        });
+      }
     });
   }
 
@@ -8158,8 +8214,8 @@
       drawerTitle.textContent = `Restore ${label}`; drawerSave.textContent = 'Restore as inactive';
       drawerBody.innerHTML = lifecycleDrawerIntro('Restore safely','This master returns as Inactive and will not appear in new assignment selectors until deliberately activated.') + formSections([[`Restore ${record.name}`, 'Historical employee/payroll context is unchanged.', [namedTextareaField('Restore note','organization-lifecycle-reason','')]]]);
     } else {
-      drawerTitle.textContent = `Delete unused ${label}`; drawerSave.textContent = 'Delete unused record';
-      drawerBody.innerHTML = lifecycleDrawerIntro('Delete only an unused mistake','The server checks employee assignments and payroll history before deletion. Any referenced master must remain and be archived.',true) + formSections([[`Permanent delete`, 'Type the exact master code to confirm.', [namedField(`Type ${record.code} to confirm delete`,'organization-lifecycle-confirmation',''), namedTextareaField('Reason / note','organization-lifecycle-reason','Duplicate or mistaken setup')]]]);
+      drawerTitle.textContent = `Delete ${label}`; drawerSave.textContent = 'Move to Trash';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Delete means 30-day Trash','The record is removed from active registers and can be restored from Trash Bin for 30 days. Historical payroll and organization references are preserved. Current employee assignments must be cleared first.',true) + formSections([[`Move to Trash`, 'Type the exact master code to confirm and provide a reason.', [namedField(`Type ${record.code} to confirm`,'organization-lifecycle-confirmation',''), namedTextareaField('Deletion reason','organization-lifecycle-reason','')]]]);
     }
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
   }
@@ -8176,16 +8232,18 @@
       drawerTitle.textContent=`Restore ${label}`; drawerSave.textContent='Restore as inactive';
       drawerBody.innerHTML=lifecycleDrawerIntro('Restore safely','The master returns as Inactive and cannot be used operationally until deliberately reactivated.')+formSections([[`Restore ${record.name}`,'Historical manpower records are unchanged.',[namedTextareaField('Restore note','rental-lifecycle-reason','')]]]);
     } else if (action === 'delete') {
-      drawerTitle.textContent=`Delete unused ${label}`; drawerSave.textContent='Delete unused record';
-      drawerBody.innerHTML=lifecycleDrawerIntro('Delete only an unused mistake','Assignment, timesheet, settlement or payment history permanently blocks hard deletion. Archive real records instead.',true)+formSections([[`Permanent delete`,'Type the exact worker/supplier code to confirm.',[namedField(`Type ${code} to confirm delete`,'rental-lifecycle-confirmation',''),namedTextareaField('Reason / note','rental-lifecycle-reason','Duplicate or mistaken setup')]]]);
+      drawerTitle.textContent=`Delete ${label}`; drawerSave.textContent='Move to Trash';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Delete means 30-day Trash','The master is recoverable from Trash Bin for 30 days. Historical assignments, timesheets, settlements and payments remain protected; only current operational dependencies block moving it to Trash.',true)+formSections([[`Move to Trash`,'Type the exact worker/supplier code to confirm and provide a reason.',[namedField(`Type ${code} to confirm`,'rental-lifecycle-confirmation',''),namedTextareaField('Deletion reason','rental-lifecycle-reason','')]]]);
     } else if (kind === 'worker') {
-      const actions=record.archived?[{value:'restore_archive',label:'Restore from archive'}]:record.masterStatusValue==='inactive'?[{value:'activate',label:'Reactivate worker'},{value:'archive',label:'Archive worker'}]:[{value:'deactivate',label:'Mark worker inactive'}];
-      drawerTitle.textContent=`${record.name} · Worker lifecycle`; drawerSave.textContent='Apply Action';
-      drawerBody.innerHTML=lifecycleDrawerIntro('Worker lifecycle','Release or cancel current/future assignments before stopping the worker. Lifecycle changes never erase timesheet or settlement history.')+formSections([[`Choose lifecycle action`,'A reason is retained in the audit trail for stop/archive actions.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedField('Effective stop date','rental-lifecycle-effective',rentalTodayIso(),'date'),namedTextareaField('Reason','rental-lifecycle-reason',record.inactiveReason||record.archivedReason||'')]]]);
+      if (record.archived) { showToast('Worker is archived','Use the separate Restore from archive action.'); return; }
+      const actions=record.masterStatusValue==='inactive'?[{value:'activate',label:'Reactivate worker'}]:[{value:'deactivate',label:'Mark worker inactive'}];
+      drawerTitle.textContent=`${record.name} · Worker status`; drawerSave.textContent='Apply Action';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Worker status','Release or cancel current/future assignments before stopping the worker. Archive and Delete remain separate Actions-menu operations.')+formSections([[`Choose lifecycle action`,'A reason is retained in the audit trail for stop actions.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedField('Effective stop date','rental-lifecycle-effective',rentalTodayIso(),'date'),namedTextareaField('Reason','rental-lifecycle-reason',record.inactiveReason||record.archivedReason||'')]]]);
     } else if (kind === 'supplier') {
-      const actions=record.archived?[{value:'restore_archive',label:'Restore from archive'}]:record.statusValue==='inactive'?[{value:'activate',label:'Reactivate supplier'},{value:'archive',label:'Archive supplier'}]:[{value:'deactivate',label:'Make supplier inactive'}];
-      drawerTitle.textContent=`${record.name} · Supplier lifecycle`; drawerSave.textContent='Apply Action';
-      drawerBody.innerHTML=lifecycleDrawerIntro('Supplier lifecycle','Active workers must be released/deactivated first. Supplier history, settlements and payments remain permanent.')+formSections([[`Choose lifecycle action`,'Archive is available after the supplier is inactive.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedTextareaField('Reason','rental-lifecycle-reason',record.archivedReason||'')]]]);
+      if (record.archived) { showToast('Supplier is archived','Use the separate Restore from archive action.'); return; }
+      const actions=record.statusValue==='inactive'?[{value:'activate',label:'Reactivate supplier'}]:[{value:'deactivate',label:'Make supplier inactive'}];
+      drawerTitle.textContent=`${record.name} · Supplier status`; drawerSave.textContent='Apply Action';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Supplier status','Active workers must be released/deactivated first. Archive and Delete remain separate Actions-menu operations, and supplier history remains protected.')+formSections([[`Choose lifecycle action`,'Status changes are separate from Archive and Delete.',[namedSelectOptions('Action','rental-lifecycle-action',actions,actions[0]?.value||''),namedTextareaField('Reason','rental-lifecycle-reason',record.archivedReason||'')]]]);
     } else { return; }
     drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
   }
@@ -8214,7 +8272,7 @@
     drawerSave.hidden = false;
     drawerSave.textContent = 'Save Changes';
     drawerBody.innerHTML = formSections([
-      ['Employee master', 'Edit identity/contact data here. Employment status, leave, deactivation, termination, archive and deletion are controlled from the separate Employment action.', [
+      ['Employee master', 'Edit identity/contact data here. Employment status is controlled from Employment; Archive and Delete are separate Actions-menu commands.', [
         namedField('Employee ID','employee-id',employee.employeeNumber || employee.employeeId || ''),
         namedField('Full name','employee-name',employee.name || ''),
         namedField('Joining date','employee-joining',employee.joining || '','date'),
@@ -8222,7 +8280,7 @@
         namedField('Phone','employee-phone',employee.phone || ''),
         namedField('Address','employee-address',employee.address || '')
       ]]
-    ]) + `<section class="source-note">${icon('info')}<span><strong>Employment lifecycle is protected.</strong>Use the Employment action on the profile to place the employee on leave, deactivate payroll eligibility, terminate employment, archive the record or cancel an unused onboarding record.</span></section>`;
+    ]) + `<section class="source-note">${icon('info')}<span><strong>Employment lifecycle is protected.</strong>Use Employment for leave, reactivation, deactivation and termination. Use the separate Actions menu for Archive and Delete; Delete moves the master to the 30-day Trash Bin.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
   }
 
@@ -8230,6 +8288,10 @@
     const employee = state.employees.find(item => item.id === employeeId);
     if (!employee) return;
     const actions = employeeLifecycleActions(employee);
+    if (!actions.length) {
+      showToast('No employment-state action available', 'Use the Actions menu for Archive, Restore or Delete.');
+      return;
+    }
     state.drawerType = 'employee-lifecycle';
     state.drawerContext = { employeeId };
     drawerTitle.textContent = `${employee.name} · Employment`;
@@ -8237,21 +8299,40 @@
     drawerSave.disabled = false;
     drawerSave.textContent = 'Apply Action';
     drawerSave.classList.remove('is-lifecycle-danger');
-    const statusCopy = employee.archived ? `Archived · underlying employment status ${employee.status}` : `${employee.status}${employee.employmentEnd ? ` · ended ${employee.employmentEnd}` : ''}`;
+    const statusCopy = `${employee.status}${employee.employmentEnd ? ` · ended ${employee.employmentEnd}` : ''}`;
     drawerBody.innerHTML = lifecycleDrawerIntro('Employment lifecycle','Use employment states to stop work cleanly without erasing attendance, payroll, payment or document history.') + `<section class="employee-lifecycle-summary"><span class="eyebrow">Employment lifecycle</span><h3>${escapeHtml(employee.name)}</h3><p>EMP ${escapeHtml(employee.employeeId)} · <strong>${escapeHtml(statusCopy)}</strong></p></section>${formSections([
       ['Lifecycle action','Employment changes are audited and historical payroll remains immutable.',[
         namedSelectOptions('Action','employee-lifecycle-action',actions,actions[0]?.value || ''),
         namedField('Employment end date (termination only)','employee-lifecycle-effective',rentalTodayIso(),'date'),
-        namedTextareaField('Reason / notes','employee-lifecycle-reason',employee.archivedReason || '')
-      ]],
-      ['Deletion safeguard','Hard deletion is only for an unused/duplicate onboarding master. Attendance, adjustments, payroll, payments or finalized documents permanently block deletion.',[
-        namedField('Type employee ID to confirm delete','employee-lifecycle-confirm','')
+        namedTextareaField('Reason / notes','employee-lifecycle-reason','')
       ]]
-    ])}<section class="source-note">${icon('info')}<span><strong>Use the right lifecycle action.</strong>On Leave keeps the employment open. Deactivate stops new attendance/payroll eligibility without deleting history. Terminate records the real employment end date. Archive only hides a stopped record from current registers. Delete is intentionally blocked after payroll history exists.</span></section>`;
-    const lifecycleActionSelect = drawerBody.querySelector('[name="employee-lifecycle-action"]');
-    const syncEmployeeLifecycleTone = () => drawerSave.classList.toggle('is-lifecycle-danger', lifecycleActionSelect?.value === 'delete');
-    lifecycleActionSelect?.addEventListener('change', syncEmployeeLifecycleTone);
-    syncEmployeeLifecycleTone();
+    ])}<section class="source-note">${icon('info')}<span><strong>Archive and Delete are separate.</strong>Use this Employment drawer only for employment-state changes. Archive and Delete live in the profile Actions menu.</span></section>`;
+    drawer.classList.add('is-open');
+    drawerScrim.classList.add('is-open');
+    drawer.setAttribute('aria-hidden','false');
+  }
+
+  function openEmployeeRecordLifecycleDrawer(employeeId, action) {
+    const employee = state.employees.find(item => item.id === employeeId);
+    if (!employee) return;
+    state.drawerType = 'employee-record-lifecycle';
+    state.drawerContext = { employeeId, action };
+    drawerSave.hidden = false;
+    drawerSave.disabled = false;
+    drawerSave.classList.toggle('is-lifecycle-danger', action === 'delete');
+    if (action === 'archive') {
+      drawerTitle.textContent = 'Archive employee';
+      drawerSave.textContent = 'Archive Employee';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Archive keeps the employee permanently available in history','The employee is removed from current registers, but payroll, attendance, payment, document and organization history remains intact.') + formSections([['Archive employee','The employee must first be stopped (Inactive or Terminated). A reason is required.',[namedTextareaField('Archive reason','employee-record-reason','')]]]);
+    } else if (action === 'restore') {
+      drawerTitle.textContent = 'Restore employee from archive';
+      drawerSave.textContent = 'Restore Employee';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Restore from Archive Bin','The employee returns as an inactive/current master. Historical records are unchanged.') + formSections([['Restore employee','Add an optional audit note.',[namedTextareaField('Restore note','employee-record-reason','')]]]);
+    } else if (action === 'delete') {
+      drawerTitle.textContent = 'Delete employee';
+      drawerSave.textContent = 'Move to Trash';
+      drawerBody.innerHTML = lifecycleDrawerIntro('Delete means 30-day Trash','This does not erase payroll or other protected history. The employee master is recoverable from Trash Bin for 30 days. The server blocks deletion while the employee is still active.',true) + formSections([['Move employee to Trash',`Type employee ID ${employee.employeeId} to confirm and provide a reason.`,[namedField(`Type ${employee.employeeId} to confirm`,'employee-record-confirmation',''),namedTextareaField('Deletion reason','employee-record-reason','')]]]);
+    } else return;
     drawer.classList.add('is-open');
     drawerScrim.classList.add('is-open');
     drawer.setAttribute('aria-hidden','false');
@@ -8313,6 +8394,32 @@
     drawer.setAttribute('aria-hidden', 'false');
   }
 
+  function openProjectLifecycleDrawer(projectId, action) {
+    const project = state.projects.find(item => item.id === projectId);
+    if (!project) return;
+    state.drawerType='project-lifecycle';
+    state.drawerContext={projectId,action};
+    drawerSave.hidden=false;
+    drawerSave.disabled=false;
+    drawerSave.classList.toggle('is-lifecycle-danger', action === 'delete');
+    if (action === 'archive') {
+      drawerTitle.textContent='Archive project';
+      drawerSave.textContent='Archive Project';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Archive preserves project history','The project remains available to historical inventory, rental assignment, timesheet, settlement and audit records. Quantity-bearing stock and open assignments must be cleared first.')+formSections([['Archive project','A reason is required for the audit trail.',[namedTextareaField('Archive reason','project-lifecycle-reason','')]]]);
+    } else if (action === 'restore') {
+      drawerTitle.textContent='Restore project from archive';
+      drawerSave.textContent='Restore Project';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Restore from Archive Bin','The retained project master becomes available again without rewriting historical project records.')+formSections([['Restore project','Add an optional audit note.',[namedTextareaField('Restore note','project-lifecycle-reason','')]]]);
+    } else if (action === 'delete') {
+      drawerTitle.textContent='Delete project';
+      drawerSave.textContent='Move to Trash';
+      drawerBody.innerHTML=lifecycleDrawerIntro('Delete means 30-day Trash','The project is recoverable from Trash Bin for 30 days. Historical records remain protected. Quantity-bearing stock and open rental assignments block this action.',true)+formSections([['Move project to Trash',`Type project code ${project.code} to confirm and provide a reason.`,[namedField(`Type ${project.code} to confirm`,'project-lifecycle-confirmation',''),namedTextareaField('Deletion reason','project-lifecycle-reason','')]]]);
+    } else return;
+    drawer.classList.add('is-open');
+    drawerScrim.classList.add('is-open');
+    drawer.setAttribute('aria-hidden','false');
+  }
+
   function openQuickDrawer(type, context = null) {
     document.querySelectorAll('[data-dropdown].is-open').forEach(d => d.classList.remove('is-open'));
     if (type === 'rental-worker' && !context?.resumeInline) state.inlineRentalDraft = null;
@@ -8362,7 +8469,7 @@
     if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${roleDefinition().label} cannot post or reconcile payments.`); return; }
     if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${roleDefinition().label} can view this workspace but cannot change operational records.`); return; }
     if (!validatePayrollRequiredFields()) return;
-    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
+    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','employee-record-lifecycle','project-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
       const type = state.drawerType;
       closeDrawer();
       showToast('Action unavailable', 'This function is not enabled in the current backend module.');
@@ -9045,6 +9152,31 @@
       return;
     }
 
+    if (state.drawerType === 'project-lifecycle') {
+      clearLifecycleDrawerError();
+      const {projectId,action}=state.drawerContext||{};
+      const project=state.projects.find(item=>item.id===projectId);
+      if(!project){closeDrawer();return;}
+      const reason=get('project-lifecycle-reason');
+      if (['archive','delete'].includes(action) && !reason) { showToast('Reason required','Enter a reason for the project lifecycle audit trail.'); return; }
+      try {
+        drawerSave.disabled=true;
+        if(action==='delete'){
+          const confirmation=get('project-lifecycle-confirmation');
+          await appApi(`/api/rental/projects/${encodeURIComponent(project.id)}/`,{method:'DELETE',body:{confirmation,reason}});
+          closeDrawer();reloadIntoRoute('trash');return;
+        }
+        const payload=await appApi(`/api/rental/projects/${encodeURIComponent(project.id)}/lifecycle/`,{method:'POST',body:{action:action==='restore'?'restore_archive':'archive',reason}});
+        replaceStateRecord(state.projects,payload.project);
+        closeDrawer();
+        if(action==='archive'){reloadIntoRoute('archive');return;}
+        location.reload();
+        return;
+      }catch(error){showLifecycleDrawerError(error);showToast('Project action not completed',error.message);}
+      finally{drawerSave.disabled=false;}
+      return;
+    }
+
     if (state.drawerType === 'organization-lifecycle') {
       clearLifecycleDrawerError();
       const { kind, id, action } = state.drawerContext || {};
@@ -9052,24 +9184,24 @@
       const record = collection.find(item => item.id === id);
       if (!record) { closeDrawer(); return; }
       const reason = get('organization-lifecycle-reason');
-      if (action === 'archive' && !reason) { showToast('Archive reason required','Explain why this organization master is being archived.'); return; }
+      if (['archive','delete'].includes(action) && !reason) { showToast('Reason required','Explain why this organization master is being archived or moved to Trash.'); return; }
       try {
         drawerSave.disabled = true;
         if (action === 'delete') {
           const confirmation = get('organization-lifecycle-confirmation');
           const endpoint = kind === 'branch' ? `/api/internal/branches/${id}/` : `/api/internal/departments/${id}/`;
-          const payload = await appApi(endpoint, { method:'DELETE', body:{confirmation,reason} });
-          const index = collection.findIndex(item=>item.id===id); if(index>=0) collection.splice(index,1);
-          if (kind === 'branch' && state.branchSelectedId === id) state.branchSelectedId='';
-          if (kind === 'department' && state.departmentSelectedId === id) state.departmentSelectedId='';
-          closeDrawer(); navigate(kind === 'branch' ? 'branches' : 'departments');
-          showToast('Unused master deleted', `${record.name} was permanently deleted because it had no protected history.`);
+          await appApi(endpoint, { method:'DELETE', body:{confirmation,reason} });
+          closeDrawer();
+          reloadIntoRoute('trash');
+          return;
         } else {
           const endpoint = kind === 'branch' ? `/api/internal/branches/${id}/lifecycle/` : `/api/internal/departments/${id}/lifecycle/`;
           const payload = await appApi(endpoint, { method:'POST', body:{action:action==='restore'?'restore_archive':'archive',reason} });
           const updated = kind === 'branch' ? payload.branch : payload.department; replaceStateRecord(collection, updated);
-          closeDrawer(); renderRoute();
-          showToast(action === 'archive' ? 'Master archived' : 'Master restored', action === 'archive' ? `${updated.name} is retained for history and removed from new assignments.` : `${updated.name} is restored as Inactive; activate it explicitly when ready.`);
+          closeDrawer();
+          if (action === 'archive') { reloadIntoRoute('archive'); return; }
+          location.reload();
+          return;
         }
       } catch (error) { showLifecycleDrawerError(error); showToast('Lifecycle action not completed', error.message); }
       finally { drawerSave.disabled = false; }
@@ -9081,19 +9213,22 @@
       const {kind,id,action}=state.drawerContext||{}; const collection=kind==='supplier'?state.suppliers:state.rentalWorkers; const record=collection.find(item=>item.id===id); if(!record){closeDrawer();return;}
       const reason=get('rental-lifecycle-reason');
       let selectedAction=action==='manage'?get('rental-lifecycle-action'):action;
-      if (['archive','deactivate'].includes(selectedAction) && !reason) {showToast('Reason required','Enter a lifecycle reason for the audit trail.');return;}
+      if (['archive','deactivate','delete'].includes(selectedAction) && !reason) {showToast('Reason required','Enter a lifecycle reason for the audit trail.');return;}
       try {
         drawerSave.disabled=true;
         if (selectedAction==='delete') {
           const confirmation=get('rental-lifecycle-confirmation');
           const endpoint=kind==='supplier'?`/api/rental/suppliers/${id}/`:`/api/rental/workers/${id}/`;
           await appApi(endpoint,{method:'DELETE',body:{confirmation,reason}});
-          const idx=collection.findIndex(item=>item.id===id);if(idx>=0)collection.splice(idx,1);closeDrawer();navigate(kind==='supplier'?'suppliers':'rental-workforce');showToast('Unused master deleted',`${record.name} was permanently removed because no protected history referenced it.`);return;
+          closeDrawer();reloadIntoRoute('trash');return;
         }
         const endpoint=kind==='supplier'?`/api/rental/suppliers/${id}/lifecycle/`:`/api/rental/workers/${id}/lifecycle/`;
         const body={action:selectedAction==='restore'?'restore_archive':selectedAction,reason};
         if(kind==='worker')body.effective_date=get('rental-lifecycle-effective');
-        const payload=await appApi(endpoint,{method:'POST',body}); const updated=kind==='supplier'?payload.supplier:payload.worker;replaceStateRecord(collection,updated);closeDrawer();renderRoute();showToast('Lifecycle updated',`${updated.name} · ${updated.status||updated.masterStatus}`);
+        const payload=await appApi(endpoint,{method:'POST',body}); const updated=kind==='supplier'?payload.supplier:payload.worker;replaceStateRecord(collection,updated);closeDrawer();
+        if (selectedAction==='archive') { reloadIntoRoute('archive'); return; }
+        if (selectedAction==='restore' || selectedAction==='restore_archive') { location.reload(); return; }
+        renderRoute();showToast('Status updated',`${updated.name} · ${updated.status||updated.masterStatus}`);
       } catch(error){showLifecycleDrawerError(error);showToast('Lifecycle action not completed',error.message);} finally{drawerSave.disabled=false;}
       return;
     }
@@ -9154,32 +9289,46 @@
       const action=get('employee-lifecycle-action');
       const reason=get('employee-lifecycle-reason');
       const effective=get('employee-lifecycle-effective');
-      const confirmation=get('employee-lifecycle-confirm');
       if (!action) { showToast('Employment action required','Choose a lifecycle action.'); return; }
-      if (['leave','deactivate','terminate','archive'].includes(action) && !reason) { showToast('Reason required','Enter a reason so the lifecycle audit trail explains this change.'); return; }
+      if (['leave','deactivate','terminate'].includes(action) && !reason) { showToast('Reason required','Enter a reason so the lifecycle audit trail explains this change.'); return; }
       if (action === 'terminate' && !effective) { showToast('Employment end date required',"Choose the employee's final employment date."); return; }
-      if (action === 'delete' && confirmation.trim().toUpperCase() !== String(employee.employeeId || '').trim().toUpperCase()) { showToast('Employee ID confirmation required',`Type ${employee.employeeId} exactly before deleting an unused employee master.`); return; }
       try {
         drawerSave.disabled = true;
-        if (action === 'delete') {
-          await appApi(`/api/internal/employees/${employee.id}/`, {method:'DELETE',body:{confirmation,reason}});
-          state.employees = state.employees.filter(item=>item.id!==employee.id);
-          delete state.employeeOrganizationHistory[employee.id];
-          delete state.salaryStructures[employee.id];
-          delete state.salaryStructureHistory[employee.id];
-          closeDrawer();
-          showToast('Unused employee deleted',`${employee.name} was removed because no historical payroll records referenced the employee.`);
-          navigate('internal-employees');
-          return;
-        }
         const payload=await appApi(`/api/internal/employees/${employee.id}/lifecycle/`, {method:'POST',body:{action,effective_date:effective,reason}});
         replaceStateRecord(state.employees,payload.employee);
         if (payload.history) state.employeeOrganizationHistory[employee.id]=payload.history;
         closeDrawer(); renderRoute();
-        const labels={leave:'Employee placed on leave',activate:'Employee reactivated',deactivate:'Employee deactivated',terminate:'Employment terminated',archive:'Employee archived',restore_archive:'Employee restored from archive'};
-        showToast(labels[action] || 'Employment updated',`${payload.employee.name} · ${payload.employee.archived ? 'Archived' : payload.employee.status}`);
+        const labels={leave:'Employee placed on leave',activate:'Employee reactivated',deactivate:'Employee deactivated',terminate:'Employment terminated'};
+        showToast(labels[action] || 'Employment updated',`${payload.employee.name} · ${payload.employee.status}`);
       } catch(error) { showLifecycleDrawerError(error); showToast('Employment action not completed',error.message); }
       finally { drawerSave.disabled = false; }
+      return;
+    }
+
+    if (state.drawerType === 'employee-record-lifecycle') {
+      clearLifecycleDrawerError();
+      const employee=state.employees.find(item=>item.id===state.drawerContext?.employeeId); if(!employee){closeDrawer();return;}
+      const action=state.drawerContext?.action;
+      const reason=get('employee-record-reason');
+      if (['archive','delete'].includes(action) && !reason) { showToast('Reason required','Enter a reason for the lifecycle audit trail.'); return; }
+      try {
+        drawerSave.disabled=true;
+        if (action === 'delete') {
+          const confirmation=get('employee-record-confirmation');
+          if (confirmation.trim().toUpperCase() !== String(employee.employeeId || '').trim().toUpperCase()) { showToast('Employee ID confirmation required',`Type ${employee.employeeId} exactly before moving this employee to Trash.`); return; }
+          await appApi(`/api/internal/employees/${employee.id}/`, {method:'DELETE',body:{confirmation,reason}});
+          closeDrawer(); reloadIntoRoute('trash'); return;
+        }
+        const lifecycleAction = action === 'restore' ? 'restore_archive' : 'archive';
+        const payload=await appApi(`/api/internal/employees/${employee.id}/lifecycle/`, {method:'POST',body:{action:lifecycleAction,reason}});
+        replaceStateRecord(state.employees,payload.employee);
+        if (payload.history) state.employeeOrganizationHistory[employee.id]=payload.history;
+        closeDrawer();
+        if (action === 'archive') { reloadIntoRoute('archive'); return; }
+        location.reload();
+        return;
+      } catch(error) { showLifecycleDrawerError(error); showToast('Record action not completed',error.message); }
+      finally { drawerSave.disabled=false; }
       return;
     }
 
@@ -9333,6 +9482,7 @@
     }
     const editSelector = [
       '[data-quick-add]','[data-edit-branch]','[data-edit-department]','[data-change-employee-organization]','[data-employee-lifecycle]',
+      '[data-employee-record-action]','[data-organization-lifecycle]','[data-rental-master-lifecycle]','[data-project-lifecycle]','[data-record-bin-restore]',
       '[data-salary-component-add]','[data-salary-component-edit]','[data-salary-structure-new]','[data-salary-structure-edit]',
       '[data-overtime-policy-add]','[data-overtime-policy-edit]','[data-timesheet-bulk-action]','[data-timesheet-import]','[data-timesheet-save]',
       '[data-rental-timesheet-import]','[data-rental-timesheet-save]','[data-rental-ts-bulk]','[data-payroll-calculate]','[data-payroll-reopen]','[data-payroll-reset-run]','[data-payroll-submit-review]',

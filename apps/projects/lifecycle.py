@@ -28,7 +28,7 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
     supported_actions = frozenset(
         {LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE}
     )
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DELETE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
 
     def confirmation_token(self, instance: Project) -> str:
@@ -49,18 +49,15 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
                 "open_rental_assignments": open_assignments,
             }
         if action is LifecycleAction.DELETE:
-            location = getattr(instance, "inventory_location", None)
-            transfer_count = 0
-            if location is not None:
-                transfer_count = location.outgoing_transfers.count() + location.incoming_transfers.count()
+            open_assignments = 0
+            if hasattr(instance, "rental_assignments"):
+                today = timezone.localdate()
+                open_assignments = instance.rental_assignments.filter(cancelled_at__isnull=True).filter(
+                    Q(effective_to__isnull=True) | Q(effective_to__gte=today)
+                ).count()
             return {
-                "stock_records": instance.stock_items.count(),
-                "inventory_imports": instance.import_jobs.count() if hasattr(instance, "import_jobs") else 0,
-                "stock_transfers": transfer_count,
-                "rental_assignments": instance.rental_assignments.count() if hasattr(instance, "rental_assignments") else 0,
-                "rental_timesheets": instance.rental_timesheet_periods.count() if hasattr(instance, "rental_timesheet_periods") else 0,
-                "rental_adjustments": instance.rental_settlement_adjustments.count() if hasattr(instance, "rental_settlement_adjustments") else 0,
-                "rental_settlements": instance.rental_supplier_settlements.count() if hasattr(instance, "rental_supplier_settlements") else 0,
+                "quantity_bearing_stock": instance.stock_items.filter(current_quantity__gt=0).count(),
+                "open_rental_assignments": open_assignments,
             }
         return {}
 
@@ -106,20 +103,18 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
                 )
             return ()
         if action is LifecycleAction.DELETE:
-            total = sum(evidence.values())
-            if total:
-                return (
-                    LifecycleBlocker(
-                        code="historical_records_exist",
-                        field="project",
-                        label="Project history",
-                        count=total,
-                        message=(
-                            "This project has Inventory or Rental Manpower history. Archive it instead of "
-                            "deleting it. Delete is reserved for an unused project created by mistake."
-                        ),
-                    ),
-                )
+            if evidence.get("quantity_bearing_stock", 0):
+                return (LifecycleBlocker(
+                    code="stock_balance_exists", field="project", label="Stock records with balance",
+                    count=evidence["quantity_bearing_stock"],
+                    message="Transfer, use, or adjust all project stock to zero before moving the project to Trash.",
+                ),)
+            if evidence.get("open_rental_assignments", 0):
+                return (LifecycleBlocker(
+                    code="open_rental_assignments", field="project", label="Open rental assignments",
+                    count=evidence["open_rental_assignments"],
+                    message="Release or transfer open Rental Manpower assignments before moving the project to Trash.",
+                ),)
             return ()
         return ()
 

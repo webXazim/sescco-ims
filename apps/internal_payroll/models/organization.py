@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -31,6 +32,16 @@ class Branch(CompanyOwnedModel):
     is_active = models.BooleanField(default=True, db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purge_after = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="internal_branches_deleted",
+    )
 
     class Meta:
         db_table = "internal_branch"
@@ -42,6 +53,7 @@ class Branch(CompanyOwnedModel):
         indexes = [
             models.Index(fields=("company", "is_active", "name"), name="int_branch_company_active_idx"),
             models.Index(fields=("company", "archived_at", "name"), name="int_branch_company_archive_idx"),
+            models.Index(fields=("company", "deleted_at", "name"), name="int_branch_trash_idx"),
         ]
 
     def clean(self) -> None:
@@ -71,6 +83,16 @@ class Department(CompanyOwnedModel):
     is_active = models.BooleanField(default=True, db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purge_after = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="internal_departments_deleted",
+    )
 
     class Meta:
         db_table = "internal_department"
@@ -82,6 +104,7 @@ class Department(CompanyOwnedModel):
         indexes = [
             models.Index(fields=("company", "is_active", "name"), name="int_dept_company_active_idx"),
             models.Index(fields=("company", "archived_at", "name"), name="int_dept_company_archive_idx"),
+            models.Index(fields=("company", "deleted_at", "name"), name="int_dept_trash_idx"),
         ]
 
     def clean(self) -> None:
@@ -116,6 +139,16 @@ class InternalEmployee(CompanyOwnedModel):
     employment_end_date = models.DateField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purge_after = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="internal_employees_deleted",
+    )
     status = models.CharField(
         max_length=20,
         choices=EmploymentStatus.choices,
@@ -156,6 +189,7 @@ class InternalEmployee(CompanyOwnedModel):
         indexes = [
             models.Index(fields=("company", "status", "full_name"), name="int_emp_company_status_idx"),
             models.Index(fields=("company", "joining_date"), name="int_emp_company_join_idx"),
+            models.Index(fields=("company", "deleted_at", "full_name"), name="int_emp_trash_idx"),
         ]
 
     def clean(self) -> None:

@@ -258,8 +258,8 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         decision = lifecycle_decision(project, LifecycleAction.DELETE)
         return {
             "page_key": "projects",
-            "page_title": "Delete unused project",
-            "page_subtitle": "Delete is only for a project created by mistake and never used by Inventory or Rental Manpower.",
+            "page_title": "Delete project",
+            "page_subtitle": "Move the project to the 30-day Trash Bin without erasing protected Inventory or Rental Manpower history.",
             "record_label": str(project),
             "record_type": "Project",
             "confirmation_phrase": decision.confirmation_token,
@@ -268,9 +268,9 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             "delete_allowed": decision.allowed,
             "delete_blockers": decision.blockers,
             "effects": (
-                "Only an unused project can enter Trash.",
-                "Projects with stock, imports, transfers, rental assignments, timesheets, adjustments, or settlements must be archived instead.",
-                "An unused deleted project remains recoverable from Trash for 30 days.",
+                "The project master is hidden from current operational selectors immediately.",
+                "Positive stock balances and open Rental Manpower assignments must be cleared first; historical Inventory and Rental records remain protected.",
+                "The deleted project remains recoverable from Trash for 30 days.",
             ),
         }
 

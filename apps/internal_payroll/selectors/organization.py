@@ -7,8 +7,10 @@ from apps.core.services.lifecycle import lifecycle_capabilities
 from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, InternalEmployee
 
 
-def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False) -> QuerySet[Branch]:
+def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Branch]:
     rows = Branch.objects.for_company(company)
+    if deleted is not None:
+        rows = rows.filter(deleted_at__isnull=not deleted)
     if archived is not None:
         rows = rows.filter(archived_at__isnull=not archived)
     if active is not None:
@@ -25,8 +27,10 @@ def branches_for_company(*, company: Company, query: str = "", active: bool | No
     return rows.order_by("code", "name")
 
 
-def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False) -> QuerySet[Department]:
+def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Department]:
     rows = Department.objects.for_company(company)
+    if deleted is not None:
+        rows = rows.filter(deleted_at__isnull=not deleted)
     if archived is not None:
         rows = rows.filter(archived_at__isnull=not archived)
     if active is not None:
@@ -45,6 +49,7 @@ def employees_for_company(
     branch_id=None,
     department_id=None,
     archived: bool | None = None,
+    deleted: bool | None = False,
 ) -> QuerySet[InternalEmployee]:
     assignment_history = EmployeeOrganizationAssignment.objects.for_company(company).select_related(
         "branch", "department"
@@ -52,6 +57,8 @@ def employees_for_company(
     rows = InternalEmployee.objects.for_company(company).prefetch_related(
         Prefetch("organization_assignments", queryset=assignment_history, to_attr="organization_history")
     )
+    if deleted is not None:
+        rows = rows.filter(deleted_at__isnull=not deleted)
     if archived is not None:
         rows = rows.filter(archived_at__isnull=not archived)
     query = query.strip()
@@ -94,6 +101,10 @@ def serialize_branch(branch: Branch) -> dict[str, object]:
         "archived": branch.archived_at is not None,
         "archivedAt": branch.archived_at.isoformat() if branch.archived_at else None,
         "archivedReason": branch.archived_reason,
+        "deleted": branch.deleted_at is not None,
+        "deletedAt": branch.deleted_at.isoformat() if branch.deleted_at else None,
+        "deletionReason": branch.deletion_reason,
+        "purgeAfter": branch.purge_after.isoformat() if branch.purge_after else None,
     }
 
 
@@ -107,6 +118,10 @@ def serialize_department(department: Department) -> dict[str, object]:
         "archived": department.archived_at is not None,
         "archivedAt": department.archived_at.isoformat() if department.archived_at else None,
         "archivedReason": department.archived_reason,
+        "deleted": department.deleted_at is not None,
+        "deletedAt": department.deleted_at.isoformat() if department.deleted_at else None,
+        "deletionReason": department.deletion_reason,
+        "purgeAfter": department.purge_after.isoformat() if department.purge_after else None,
     }
 
 
@@ -151,6 +166,10 @@ def serialize_employee(employee: InternalEmployee) -> dict[str, object]:
         "archived": employee.archived_at is not None,
         "archivedAt": employee.archived_at.isoformat() if employee.archived_at else None,
         "archivedReason": employee.archived_reason,
+        "deleted": employee.deleted_at is not None,
+        "deletedAt": employee.deleted_at.isoformat() if employee.deleted_at else None,
+        "deletionReason": employee.deletion_reason,
+        "purgeAfter": employee.purge_after.isoformat() if employee.purge_after else None,
         "nationalId": employee.national_id,
         "phone": employee.phone,
         "address": employee.address,

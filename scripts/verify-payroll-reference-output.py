@@ -52,7 +52,7 @@ for rel, text in [
     ("static/payroll/js/app.js", "documentBrandingMode"),
     ("apps/core/management/commands/seed_payroll_test_data.py", "_seed_document_branding"),
     ("apps/core/management/commands/seed_payroll_test_data.py", "DEMO-letterhead.png"),
-    ("templates/payroll/app.html", "?v=1.0.36"),
+    ("templates/payroll/app.html", "?v=1.0.39"),
 ]:
     require_text(rel, text)
 

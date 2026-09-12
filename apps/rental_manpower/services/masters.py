@@ -19,6 +19,7 @@ from apps.projects.contracts import ProjectStatus
 from apps.projects.models import Project
 from apps.rental_manpower.project_adapter import rental_project_for_company
 from apps.core.services.numbering import allocate_number
+from apps.core.trash import move_to_trash, restore_from_trash
 from apps.rental_manpower.models import (
     ManpowerSupplier,
     RentalWorker,
@@ -86,6 +87,9 @@ def _snapshot(obj: Any) -> dict[str, object]:
             "notes": obj.notes,
             "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
             "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     if isinstance(obj, Project):
         return {
@@ -98,6 +102,11 @@ def _snapshot(obj: Any) -> dict[str, object]:
             "manager_name": obj.manager_name,
             "status": obj.status,
             "notes": obj.notes,
+            "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
+            "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     if isinstance(obj, RentalWorker):
         return {
@@ -112,6 +121,9 @@ def _snapshot(obj: Any) -> dict[str, object]:
             "inactive_reason": obj.inactive_reason,
             "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
             "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     raise TypeError(f"Unsupported rental master snapshot: {type(obj)!r}")
 
@@ -409,12 +421,23 @@ def restore_supplier_archive(*, actor_membership: CompanyMembership, supplier_id
 @transaction.atomic
 def delete_unused_supplier(*, actor_membership: CompanyMembership, supplier_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
     _require_rental_edit(actor_membership)
-    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company, deleted_at__isnull=True)
     decision = require_lifecycle_action(supplier, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
-    before=_snapshot(supplier); object_id=str(supplier.pk); label=str(supplier)
-    supplier.delete()
-    record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after={"deleted":True}, reason=reason, audit_action="rental.supplier.deleted_unused", object_id=object_id, object_label=label, request=request)
-    return object_id
+    before = _snapshot(supplier)
+    move_to_trash(supplier, user=actor_membership.user, reason=reason)
+    record_lifecycle_action(instance=supplier, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(supplier), reason=reason, audit_action="rental.supplier.moved_to_trash", metadata={"retention_days":30}, request=request)
+    return str(supplier.pk)
+
+
+@transaction.atomic
+def restore_supplier_trash(*, actor_membership: CompanyMembership, supplier_id, request: HttpRequest | None = None) -> ManpowerSupplier:
+    _require_rental_edit(actor_membership)
+    supplier = ManpowerSupplier.objects.select_for_update().get(pk=supplier_id, company=actor_membership.company, deleted_at__isnull=False)
+    before = _snapshot(supplier)
+    if not restore_from_trash(supplier):
+        raise ValidationError({"supplier": "This Trash item has expired and can no longer be restored."})
+    record_audit_event(company=supplier.company, area=AuditArea.RENTAL, action="rental.supplier.trash_restored", object_type="rental_manpower.ManpowerSupplier", object_id=supplier.pk, object_label=str(supplier), actor_membership=actor_membership, before=before, after=_snapshot(supplier), request=request)
+    return supplier
 
 
 @transaction.atomic
@@ -460,19 +483,30 @@ def change_worker_lifecycle(*, actor_membership: CompanyMembership, worker_id, a
 @transaction.atomic
 def delete_unused_worker(*, actor_membership: CompanyMembership, worker_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
     _require_rental_edit(actor_membership)
-    worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company)
-    decision=require_lifecycle_action(worker, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
-    before=_snapshot(worker); object_id=str(worker.pk); label=str(worker)
-    worker.delete()
-    record_lifecycle_action(instance=worker, decision=decision, actor_membership=actor_membership, before=before, after={"deleted":True}, reason=reason, audit_action="rental.worker.deleted_unused", object_id=object_id, object_label=label, request=request)
-    return object_id
+    worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company, deleted_at__isnull=True)
+    decision = require_lifecycle_action(worker, LifecycleAction.DELETE, reason=reason, confirmation=confirmation)
+    before = _snapshot(worker)
+    move_to_trash(worker, user=actor_membership.user, reason=reason)
+    record_lifecycle_action(instance=worker, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(worker), reason=reason, audit_action="rental.worker.moved_to_trash", metadata={"retention_days":30}, request=request)
+    return str(worker.pk)
+
+
+@transaction.atomic
+def restore_worker_trash(*, actor_membership: CompanyMembership, worker_id, request: HttpRequest | None = None) -> RentalWorker:
+    _require_rental_edit(actor_membership)
+    worker = RentalWorker.objects.select_for_update().select_related("supplier").get(pk=worker_id, company=actor_membership.company, deleted_at__isnull=False)
+    before = _snapshot(worker)
+    if not restore_from_trash(worker):
+        raise ValidationError({"worker": "This Trash item has expired and can no longer be restored."})
+    record_audit_event(company=worker.company, area=AuditArea.RENTAL, action="rental.worker.trash_restored", object_type="rental_manpower.RentalWorker", object_id=worker.pk, object_label=str(worker), actor_membership=actor_membership, before=before, after=_snapshot(worker), request=request)
+    return worker
 
 
 MAX_WORKER_IMPORT_ROWS = 5000
 
 
 def _resolve_supplier(*, company, supplier_id=None, supplier_code: str = "", for_update: bool = False) -> ManpowerSupplier:
-    queryset = ManpowerSupplier.objects.for_company(company)
+    queryset = ManpowerSupplier.objects.for_company(company).filter(deleted_at__isnull=True)
     if for_update:
         queryset = queryset.select_for_update()
     if supplier_id:

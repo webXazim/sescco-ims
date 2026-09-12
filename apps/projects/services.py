@@ -5,18 +5,34 @@ from django.db import transaction
 from django.http import HttpRequest
 from django.utils import timezone
 
-from apps.accounts.permissions import membership_has_capability
-from apps.accounts.roles import Capability
+from apps.accounts.permissions import membership_can_edit, membership_has_capability
+from apps.accounts.roles import Capability, Workspace
 from apps.accounts.models import CompanyMembership
+from apps.core.models import AuditArea
+from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
-from apps.core.trash import move_to_trash
+from apps.core.trash import move_to_trash, restore_from_trash
 
 from .models import Project
 
 
 def _require_manage_inventory(membership: CompanyMembership) -> None:
-    if not membership_has_capability(membership, Capability.MANAGE_INVENTORY):
-        raise PermissionDenied("Inventory management authority is required for this project lifecycle action.")
+    if not (
+        membership_has_capability(membership, Capability.MANAGE_INVENTORY)
+        or membership_can_edit(membership, Workspace.RENTAL)
+    ):
+        raise PermissionDenied("Project lifecycle authority is required for this action.")
+
+
+def _project_for_membership(*, membership: CompanyMembership, identifier, for_update: bool = True, include_deleted: bool = False) -> Project:
+    queryset = Project.objects.select_for_update() if for_update else Project.objects.all()
+    queryset = queryset.filter(company=membership.company)
+    if not include_deleted:
+        queryset = queryset.filter(deleted_at__isnull=True)
+    raw = str(identifier)
+    if raw.isdigit():
+        return queryset.get(pk=int(raw))
+    return queryset.get(reference=identifier)
 
 
 def project_snapshot(project: Project) -> dict[str, object]:
@@ -35,7 +51,7 @@ def project_snapshot(project: Project) -> dict[str, object]:
 @transaction.atomic
 def archive_project(*, actor_membership: CompanyMembership, project_id, reason: str, request: HttpRequest | None = None) -> Project:
     _require_manage_inventory(actor_membership)
-    project = Project.objects.select_for_update().get(pk=project_id, company=actor_membership.company, deleted_at__isnull=True)
+    project = _project_for_membership(membership=actor_membership, identifier=project_id)
     if project.status == Project.Status.ARCHIVED and project.archived_at:
         return project
     decision = require_lifecycle_action(project, LifecycleAction.ARCHIVE, reason=reason)
@@ -62,7 +78,7 @@ def archive_project(*, actor_membership: CompanyMembership, project_id, reason: 
 @transaction.atomic
 def restore_project_archive(*, actor_membership: CompanyMembership, project_id, reason: str = "", request: HttpRequest | None = None) -> Project:
     _require_manage_inventory(actor_membership)
-    project = Project.objects.select_for_update().get(pk=project_id, company=actor_membership.company, deleted_at__isnull=True)
+    project = _project_for_membership(membership=actor_membership, identifier=project_id)
     if project.status != Project.Status.ARCHIVED and not project.archived_at:
         return project
     decision = require_lifecycle_action(project, LifecycleAction.RESTORE)
@@ -92,8 +108,8 @@ def restore_project_archive(*, actor_membership: CompanyMembership, project_id, 
 @transaction.atomic
 def trash_unused_project(*, actor_membership: CompanyMembership, project_id, confirmation: str, reason: str, request: HttpRequest | None = None) -> Project:
     _require_manage_inventory(actor_membership)
-    project = Project.objects.select_for_update().get(pk=project_id, company=actor_membership.company, deleted_at__isnull=True)
-    decision = require_lifecycle_action(project, LifecycleAction.DELETE, confirmation=confirmation)
+    project = _project_for_membership(membership=actor_membership, identifier=project_id)
+    decision = require_lifecycle_action(project, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = project_snapshot(project)
     move_to_trash(project, user=actor_membership.user, reason=reason)
     record_lifecycle_action(
@@ -103,8 +119,30 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
         before=before,
         after=project_snapshot(project),
         reason=reason,
-        audit_action="project.trashed_unused",
-        metadata={"guard": "unused-master-only", "retention_days": 30},
+        audit_action="project.moved_to_trash",
+        metadata={"retention_days": 30},
         request=request,
     )
     return project
+
+
+@transaction.atomic
+def restore_project_trash(*, actor_membership: CompanyMembership, project_id, request: HttpRequest | None = None) -> Project:
+    _require_manage_inventory(actor_membership)
+    project = _project_for_membership(membership=actor_membership, identifier=project_id, include_deleted=True)
+    if not project.deleted_at:
+        return project
+    before = project_snapshot(project)
+    if not restore_from_trash(project):
+        from django.core.exceptions import ValidationError
+        raise ValidationError({"project": "This Trash item has expired and can no longer be restored."})
+    project.updated_by = actor_membership.user
+    project.save(update_fields=("updated_by", "updated_at"))
+    record_audit_event(
+        company=project.company, area=AuditArea.PROJECTS, action="project.trash_restored",
+        object_type="projects.Project", object_id=project.reference, object_label=str(project),
+        actor_membership=actor_membership, before=before, after=project_snapshot(project),
+        metadata={"retention_days": 30}, request=request,
+    )
+    return project
+

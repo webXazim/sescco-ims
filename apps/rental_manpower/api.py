@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from apps.projects.contracts import ProjectStatus
 from apps.rental_manpower.project_adapter import rental_project_for_company
+from apps.projects.services import archive_project, restore_project_archive, trash_unused_project, restore_project_trash
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -47,7 +48,7 @@ from apps.rental_manpower.services import (
     update_project,
     update_supplier,
     update_worker,
-    archive_supplier, restore_supplier_archive, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, delete_unused_worker,
+    archive_supplier, restore_supplier_archive, restore_supplier_trash, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, restore_worker_trash, delete_unused_worker,
     calculate_project_settlements,
     create_rental_adjustment,
     record_supplier_payment,
@@ -187,8 +188,9 @@ def supplier_lifecycle_api(request: HttpRequest, supplier_id) -> JsonResponse:
         body=json_body(request); action=str(body.get("action","")).strip().lower().replace("-","_")
         if action == "archive": supplier=archive_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
         elif action in {"restore","restore_archive"}: supplier=restore_supplier_archive(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
+        elif action == "restore_trash": supplier=restore_supplier_trash(actor_membership=request.company_membership, supplier_id=supplier_id, request=request)
         elif action in {"deactivate","inactive","activate","reactivate","active"}: supplier=change_supplier_lifecycle(actor_membership=request.company_membership, supplier_id=supplier_id, action=action, reason=str(body.get("reason", "")), request=request)
-        else: raise ValidationError({"action":"Supplier lifecycle action must be deactivate, activate, archive, or restore."})
+        else: raise ValidationError({"action":"Supplier lifecycle action must be deactivate, activate, archive, restore archive, or restore trash."})
         supplier=suppliers_for_company(company=request.company, archived=None).get(pk=supplier.pk)
         return JsonResponse({"ok":True,"supplier":serialize_supplier(supplier)})
     except Exception as exc: return handle_api_error(exc)
@@ -237,11 +239,17 @@ def projects_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.RENTAL)
 def project_detail_api(request: HttpRequest, project_id) -> JsonResponse:
     try:
         body = json_body(request)
+        if request.method == "DELETE":
+            project = trash_unused_project(
+                actor_membership=request.company_membership, project_id=project_id,
+                confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
+            )
+            return JsonResponse({"ok": True, "deletedProjectId": str(project.reference)})
         current = rental_project_for_company(company=request.company, identifier=project_id)
         project = update_project(
             actor_membership=request.company_membership,
@@ -257,6 +265,25 @@ def project_detail_api(request: HttpRequest, project_id) -> JsonResponse:
             notes=str(body.get("notes", current.notes)),
             request=request,
         )
+        return JsonResponse({"ok": True, "project": serialize_project(project)})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_workspace_required(Workspace.RENTAL)
+def project_lifecycle_api(request: HttpRequest, project_id) -> JsonResponse:
+    try:
+        body = json_body(request)
+        action = str(body.get("action", "")).strip().lower().replace("-", "_")
+        if action == "archive":
+            project = archive_project(actor_membership=request.company_membership, project_id=project_id, reason=str(body.get("reason", "")), request=request)
+        elif action in {"restore", "restore_archive"}:
+            project = restore_project_archive(actor_membership=request.company_membership, project_id=project_id, reason=str(body.get("reason", "")), request=request)
+        elif action == "restore_trash":
+            project = restore_project_trash(actor_membership=request.company_membership, project_id=project_id, request=request)
+        else:
+            raise ValidationError({"action": "Project lifecycle action must be archive, restore archive, or restore trash."})
         return JsonResponse({"ok": True, "project": serialize_project(project)})
     except Exception as exc:
         return handle_api_error(exc)
@@ -335,9 +362,12 @@ def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def worker_lifecycle_api(request: HttpRequest, worker_id) -> JsonResponse:
     try:
-        body=json_body(request); action=str(body.get("action", "")).strip()
+        body=json_body(request); action=str(body.get("action", "")).strip().lower().replace("-", "_")
         effective=parse_optional_date(body.get("effective_date"), "effective_date")
-        worker=change_worker_lifecycle(actor_membership=request.company_membership, worker_id=worker_id, action=action, effective_date=effective, reason=str(body.get("reason", "")), request=request)
+        if action == "restore_trash":
+            worker=restore_worker_trash(actor_membership=request.company_membership, worker_id=worker_id, request=request)
+        else:
+            worker=change_worker_lifecycle(actor_membership=request.company_membership, worker_id=worker_id, action=action, effective_date=effective, reason=str(body.get("reason", "")), request=request)
         worker=workers_for_company(company=request.company, archived=None).get(pk=worker.pk)
         return JsonResponse({"ok":True,"worker":serialize_worker(worker)})
     except Exception as exc: return handle_api_error(exc)

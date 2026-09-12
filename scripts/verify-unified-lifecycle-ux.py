@@ -45,7 +45,7 @@ require(
 require(
     "templates/base.html",
     "platform/css/lifecycle-actions.css",
-    "?v=1.0.36",
+    "?v=1.0.39",
 )
 require(
     "static/payroll/js/app.js",
@@ -54,17 +54,21 @@ require(
     "function lifecycleDrawerIntro",
     "function showLifecycleDrawerError",
     "data-lifecycle-menu-action",
+    "payrollDropdownDelegation",
+    "event.target.closest('[data-dropdown-trigger]')",
     "organization-lifecycle",
     "rental-master-lifecycle",
     "configuration-lifecycle",
-    "Delete unused record",
+    "Move to Trash",
+    "Trash Bin",
+    "Archive Bin",
     "Delete unused payment profile",
     "is-lifecycle-danger",
 )
 
 # The drawer save gate must explicitly permit every lifecycle drawer type.
 app = text("static/payroll/js/app.js")
-for drawer_type in ("organization-lifecycle", "rental-master-lifecycle", "configuration-lifecycle"):
+for drawer_type in ("organization-lifecycle", "rental-master-lifecycle", "employee-record-lifecycle", "project-lifecycle", "configuration-lifecycle"):
     if f"'{drawer_type}'" not in app:
         fail(f"saveDrawer lifecycle allowlist is missing {drawer_type}")
 
@@ -75,8 +79,10 @@ for marker in (
     "Archive branch / office",
     "Edit department",
     "Archive department",
-    "Manage supplier lifecycle",
-    "Manage worker lifecycle",
+    "Manage supplier status",
+    "Manage worker status",
+    "Archive employee",
+    "Archive project",
     "Archive component",
     "Archive policy",
     "Archive template",
@@ -95,7 +101,7 @@ for template in (
 
 require(
     "templates/projects/project_detail.html",
-    "Delete unused project",
+    "<span>Delete</span><small>Move to Trash for 30 days; protected history remains intact</small>",
     "Archive project",
     "Restore from archive",
 )

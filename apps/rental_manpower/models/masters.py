@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -39,6 +40,16 @@ class ManpowerSupplier(CompanyOwnedModel):
     notes = models.TextField(blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purge_after = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="rental_suppliers_deleted",
+    )
 
     class Meta:
         db_table = "rental_manpower_supplier"
@@ -64,6 +75,7 @@ class ManpowerSupplier(CompanyOwnedModel):
         indexes = [
             models.Index(fields=("company", "status", "name"), name="rntl_sup_status_name_idx"),
             models.Index(fields=("company", "archived_at", "name"), name="rntl_sup_archive_name_idx"),
+            models.Index(fields=("company", "deleted_at", "name"), name="rntl_sup_trash_name_idx"),
         ]
 
     def clean(self) -> None:
@@ -117,6 +129,16 @@ class RentalWorker(CompanyOwnedModel):
     inactive_reason = models.CharField(max_length=300, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     archived_reason = models.CharField(max_length=300, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    purge_after = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="rental_workers_deleted",
+    )
 
     class Meta:
         db_table = "rental_worker"
@@ -140,6 +162,7 @@ class RentalWorker(CompanyOwnedModel):
             models.Index(fields=("company", "status", "full_name"), name="rntl_wrk_status_name_idx"),
             models.Index(fields=("company", "supplier", "status"), name="rntl_wrk_supplier_status_idx"),
             models.Index(fields=("company", "archived_at", "full_name"), name="rntl_wrk_archive_name_idx"),
+            models.Index(fields=("company", "deleted_at", "full_name"), name="rntl_wrk_trash_name_idx"),
         ]
 
     def clean(self) -> None:

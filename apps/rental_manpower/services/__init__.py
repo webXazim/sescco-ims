@@ -7,7 +7,7 @@ from .assignments import (
     transfer_worker,
 )
 from .masters import (
-    archive_supplier, restore_supplier_archive, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, delete_unused_worker,
+    archive_supplier, restore_supplier_archive, restore_supplier_trash, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, restore_worker_trash, delete_unused_worker,
     create_project,
     create_supplier,
     create_worker,
@@ -21,8 +21,10 @@ __all__ = [
     "archive_supplier",
     "change_supplier_lifecycle",
     "restore_supplier_archive",
+    "restore_supplier_trash",
     "delete_unused_supplier",
     "change_worker_lifecycle",
+    "restore_worker_trash",
     "delete_unused_worker",
     "assign_worker",
     "cancel_scheduled_assignment",

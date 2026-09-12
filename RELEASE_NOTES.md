@@ -1,3 +1,17 @@
+# 1.0.39 — Record lifecycle actions, 30-day Trash, and SESCCO MS shell branding
+
+- Fixes the dynamically rendered Payroll **Actions** dropdown by moving dropdown open/close behavior to a delegated document-level handler; profile Actions controls now work after route rendering and re-rendering.
+- Separates **Archive** and **Delete** as explicit Actions-menu operations instead of mixing them into edit/employment/status forms.
+- Adds 30-day soft-delete Trash retention to Internal Employees, Branches / Offices, Departments, Manpower Suppliers and Rental Workers; shared Projects continue on the same 30-day Trash contract.
+- Adds dedicated **Archive Bin** and **Trash Bin** Payroll routes with restore actions for Internal Company and Rental Manpower records.
+- Delete now means **Move to Trash**. Records are hidden from active selectors immediately, remain recoverable for 30 days, and keep the deletion actor/reason/purge deadline for auditability.
+- Keeps historical payroll, attendance, organization assignments, rental assignments, settlements, payments, inventory and audit evidence intact while a master is archived or in Trash.
+- Hardens Trash expiry: a physical delete is allowed only when Django's deletion collector proves that no related row would be cascaded or protected; otherwise the expired item becomes a hidden historical tombstone instead of deleting history.
+- Adds restore-from-Trash backend actions and audit events for employee, branch/office, department, supplier, worker and project masters.
+- Adds forward migrations `internal_payroll.0011_master_trash_retention` and `rental_manpower.0007_master_trash_retention`; no previously released migration is rewritten.
+- Locks the product shell identity to **SESCCO MS — Management System** so an environment override cannot restore the old “Project Inventory” brand label.
+- Extends production lifecycle verification and frozen migration/source manifests for the new retention contract.
+
 # 1.0.38 — Immutable branding-migration lineage repair
 
 - Repairs the production failure `column core_company_settings.document_branding_mode does not exist` seen after migrations completed and the `--seed` phase started.

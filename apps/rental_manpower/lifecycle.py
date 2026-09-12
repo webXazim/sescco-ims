@@ -20,7 +20,7 @@ class ManpowerSupplierLifecyclePolicy(LifecyclePolicy):
     area = AuditArea.RENTAL
     object_type = "rental_manpower.ManpowerSupplier"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE, LifecycleAction.DEACTIVATE})
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE, LifecycleAction.DELETE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
 
     def confirmation_token(self, instance): return instance.code
@@ -53,8 +53,11 @@ class ManpowerSupplierLifecyclePolicy(LifecyclePolicy):
             if evidence.get("active_workers", 0): return (LifecycleBlocker(code="active_workers", field="supplier", label="Active workers", count=evidence["active_workers"], message="Deactivate or release active workers before making this supplier inactive."),)
             return ()
         if action is LifecycleAction.DELETE:
-            total=sum(evidence.values())
-            if total: return (LifecycleBlocker(code="historical_records_exist", field="supplier", label="Historical references", count=total, message="This supplier has worker or financial history. Archive it instead of deleting it."),)
+            if instance.status != SupplierStatus.INACTIVE:
+                return (LifecycleBlocker(code="supplier_still_active", field="supplier", message="Make the supplier inactive before moving it to Trash."),)
+            active_workers = instance.workers.filter(status=RentalWorkerStatus.ACTIVE, archived_at__isnull=True, deleted_at__isnull=True).count()
+            if active_workers:
+                return (LifecycleBlocker(code="active_workers", field="supplier", label="Active workers", count=active_workers, message="Deactivate or release active workers before moving this supplier to Trash."),)
             return ()
         return ()
 
@@ -63,7 +66,7 @@ class RentalWorkerLifecyclePolicy(LifecyclePolicy):
     area = AuditArea.RENTAL
     object_type = "rental_manpower.RentalWorker"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE, LifecycleAction.DEACTIVATE})
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE, LifecycleAction.DELETE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
 
     def confirmation_token(self, instance): return instance.worker_number
@@ -96,8 +99,11 @@ class RentalWorkerLifecyclePolicy(LifecyclePolicy):
             if evidence.get("open_assignments", 0): return (LifecycleBlocker(code="open_assignments", field="worker", label="Current or scheduled assignments", count=evidence["open_assignments"], message="Release or cancel current/scheduled assignments before making this worker inactive."),)
             return ()
         if action is LifecycleAction.DELETE:
-            total=sum(evidence.values())
-            if total: return (LifecycleBlocker(code="historical_records_exist", field="worker", label="Historical references", count=total, message="This worker has assignment, timesheet, adjustment, or settlement history. Archive the worker instead of deleting it."),)
+            if instance.status != RentalWorkerStatus.INACTIVE:
+                return (LifecycleBlocker(code="worker_still_active", field="worker", message="Mark the worker inactive before moving the record to Trash."),)
+            open_assignments = _open_assignment_count(instance)
+            if open_assignments:
+                return (LifecycleBlocker(code="open_assignments", field="worker", label="Current or scheduled assignments", count=open_assignments, message="Release or cancel current/scheduled assignments before moving this worker to Trash."),)
             return ()
         return ()
 

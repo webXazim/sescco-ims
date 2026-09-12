@@ -33,6 +33,9 @@ from apps.internal_payroll.services import (
     restore_employee_archive,
     restore_branch_archive,
     restore_department_archive,
+    restore_branch_trash,
+    restore_department_trash,
+    restore_employee_trash,
     delete_unused_employee,
     delete_unused_branch,
     delete_unused_department,
@@ -129,7 +132,7 @@ def branch_detail_api(request: HttpRequest, branch_id) -> JsonResponse:
                 confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
             )
             return JsonResponse({"ok": True, "deletedBranchId": deleted_id})
-        current = Branch.objects.for_company(request.company).get(pk=branch_id)
+        current = Branch.objects.for_company(request.company).get(pk=branch_id, deleted_at__isnull=True)
         branch = update_branch(
             actor_membership=request.company_membership,
             branch_id=branch_id,
@@ -156,8 +159,10 @@ def branch_lifecycle_api(request: HttpRequest, branch_id) -> JsonResponse:
             branch = archive_branch(actor_membership=request.company_membership, branch_id=branch_id, reason=str(body.get("reason", "")), request=request)
         elif action in {"restore", "restore_archive"}:
             branch = restore_branch_archive(actor_membership=request.company_membership, branch_id=branch_id, reason=str(body.get("reason", "")), request=request)
+        elif action == "restore_trash":
+            branch = restore_branch_trash(actor_membership=request.company_membership, branch_id=branch_id, request=request)
         else:
-            raise ValidationError({"action": "Branch lifecycle action must be archive or restore."})
+            raise ValidationError({"action": "Branch lifecycle action must be archive, restore archive, or restore trash."})
         return JsonResponse({"ok": True, "branch": serialize_branch(branch)})
     except Exception as exc:
         return _handle_error(exc)
@@ -202,7 +207,7 @@ def department_detail_api(request: HttpRequest, department_id) -> JsonResponse:
                 confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request,
             )
             return JsonResponse({"ok": True, "deletedDepartmentId": deleted_id})
-        current = Department.objects.for_company(request.company).get(pk=department_id)
+        current = Department.objects.for_company(request.company).get(pk=department_id, deleted_at__isnull=True)
         department = update_department(
             actor_membership=request.company_membership,
             department_id=department_id,
@@ -226,8 +231,10 @@ def department_lifecycle_api(request: HttpRequest, department_id) -> JsonRespons
             department = archive_department(actor_membership=request.company_membership, department_id=department_id, reason=str(body.get("reason", "")), request=request)
         elif action in {"restore", "restore_archive"}:
             department = restore_department_archive(actor_membership=request.company_membership, department_id=department_id, reason=str(body.get("reason", "")), request=request)
+        elif action == "restore_trash":
+            department = restore_department_trash(actor_membership=request.company_membership, department_id=department_id, request=request)
         else:
-            raise ValidationError({"action": "Department lifecycle action must be archive or restore."})
+            raise ValidationError({"action": "Department lifecycle action must be archive, restore archive, or restore trash."})
         return JsonResponse({"ok": True, "department": serialize_department(department)})
     except Exception as exc:
         return _handle_error(exc)
@@ -301,7 +308,7 @@ def employee_detail_api(request: HttpRequest, employee_id) -> JsonResponse:
                 request=request,
             )
             return JsonResponse({"ok": True, "deletedEmployeeId": deleted_id})
-        employee = InternalEmployee.objects.for_company(request.company).get(pk=employee_id)
+        employee = InternalEmployee.objects.for_company(request.company).get(pk=employee_id, deleted_at__isnull=True)
         if "status" in body and _employee_status_query(str(body.get("status", ""))) not in {"", employee.status}:
             raise ValidationError({"status": "Use the employee lifecycle action to change employment status."})
         if "employment_end_date" in body:
@@ -345,6 +352,10 @@ def employee_lifecycle_api(request: HttpRequest, employee_id) -> JsonResponse:
             employee = restore_employee_archive(
                 actor_membership=request.company_membership, employee_id=employee_id,
                 reason=str(body.get("reason", "")), request=request,
+            )
+        elif action == "restore_trash":
+            employee = restore_employee_trash(
+                actor_membership=request.company_membership, employee_id=employee_id, request=request,
             )
         else:
             employee = change_employee_lifecycle(

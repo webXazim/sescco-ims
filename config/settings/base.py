@@ -98,8 +98,8 @@ CSRF_COOKIE_SAMESITE = "Lax"
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
-APP_NAME = env("APP_NAME", "SESCCO MS")
-APP_SUBTITLE = env("APP_SUBTITLE", "Management System")
+APP_NAME = "SESCCO MS"
+APP_SUBTITLE = "Management System"
 APP_VERSION = env("APP_VERSION", "dev")
 
 # SESCCO MS is a private, single-company deployment. We retain the Company and

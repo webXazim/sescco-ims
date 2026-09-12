@@ -25,6 +25,7 @@ for rel in (
     "apps/internal_payroll/api.py",
     "apps/internal_payroll/urls.py",
     "apps/internal_payroll/migrations/0008_employee_lifecycle_archive.py",
+    "apps/internal_payroll/migrations/0011_master_trash_retention.py",
     "static/payroll/js/app.js",
 ):
     ast.parse((ROOT / rel).read_text(encoding="utf-8")) if rel.endswith(".py") else None
@@ -37,7 +38,7 @@ for rel, text in [
     ("apps/internal_payroll/services/organization.py", "def archive_employee("),
     ("apps/internal_payroll/services/organization.py", "def restore_employee_archive("),
     ("apps/internal_payroll/services/organization.py", "def delete_unused_employee("),
-    ("apps/internal_payroll/lifecycle.py", "Archive the employee instead of deleting it."),
+    ("apps/internal_payroll/lifecycle.py", "Deactivate or terminate the employee before moving the record to Trash."),
     ("apps/internal_payroll/services/organization.py", "require_lifecycle_action("),
     ("apps/internal_payroll/services/organization.py", "record_lifecycle_action("),
     ("apps/internal_payroll/api.py", "def employee_lifecycle_api("),
@@ -47,13 +48,13 @@ for rel, text in [
     ("static/payroll/js/app.js", "function employeeLifecycleActions(employee)"),
     ("static/payroll/js/app.js", "Deactivate / stop payroll eligibility"),
     ("static/payroll/js/app.js", "Terminate employment"),
-    ("static/payroll/js/app.js", "Archive employee record"),
-    ("static/payroll/js/app.js", "Delete unused employee master"),
-    ("static/payroll/js/app.js", "Type employee ID to confirm delete"),
+    ("static/payroll/js/app.js", "Archive employee"),
+    ("static/payroll/js/app.js", "Move to Trash"),
+    ("static/payroll/js/app.js", "employee-record-confirmation"),
     ("static/payroll/js/app.js", "employee-profile-page ui-v2-prs-internal-page"),
     ("static/payroll/css/v2/payroll-controls.css", "padding: 16px 18px !important;"),
-    ("templates/payroll/app.html", "payroll/css/v2/payroll-controls.css' %}?v=1.0.36"),
-    ("templates/payroll/app.html", "payroll/js/app.js' %}?v=1.0.36"),
+    ("templates/payroll/app.html", "payroll/css/v2/payroll-controls.css' %}?v=1.0.39"),
+    ("templates/payroll/app.html", "payroll/js/app.js' %}?v=1.0.39"),
 ]:
     require(rel, text)
 
@@ -68,7 +69,8 @@ for forbidden in ("employee-status", "employee-end-date"):
         fail(f"normal employee Edit drawer still owns protected lifecycle field {forbidden}")
 
 migration_manifest = (ROOT / "merge/frozen-merge-migrations.sha256").read_text(encoding="utf-8")
-if "apps/internal_payroll/migrations/0008_employee_lifecycle_archive.py" not in migration_manifest:
-    fail("employee lifecycle migration is not frozen in the merge migration manifest")
+for migration in ("apps/internal_payroll/migrations/0008_employee_lifecycle_archive.py", "apps/internal_payroll/migrations/0011_master_trash_retention.py"):
+    if migration not in migration_manifest:
+        fail(f"employee lifecycle migration is not frozen: {migration}")
 
-print("Internal employee lifecycle, archive/delete safety, and profile-padding contract verified.")
+print("Internal employee lifecycle, separate Archive/30-day Trash, and profile-padding contract verified.")

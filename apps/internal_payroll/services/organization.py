@@ -19,6 +19,7 @@ from apps.core.services.lifecycle import (
     require_lifecycle_action,
 )
 from apps.core.services.numbering import allocate_number
+from apps.core.trash import move_to_trash, restore_from_trash
 from apps.internal_payroll.models import (
     Branch,
     BranchKind,
@@ -73,12 +74,18 @@ def _model_snapshot(obj) -> dict[str, object]:
             "is_active": obj.is_active,
             "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
             "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     if isinstance(obj, Department):
         return {
             "code": obj.code, "name": obj.name, "notes": obj.notes, "is_active": obj.is_active,
             "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
             "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     if isinstance(obj, InternalEmployee):
         return {
@@ -91,6 +98,9 @@ def _model_snapshot(obj) -> dict[str, object]:
             "status": obj.status,
             "archived_at": obj.archived_at.isoformat() if obj.archived_at else None,
             "archived_reason": obj.archived_reason,
+            "deleted_at": obj.deleted_at.isoformat() if obj.deleted_at else None,
+            "deletion_reason": obj.deletion_reason,
+            "purge_after": obj.purge_after.isoformat() if obj.purge_after else None,
         }
     if isinstance(obj, EmployeeOrganizationAssignment):
         return {
@@ -111,10 +121,14 @@ def _validate_company_master(*, membership: CompanyMembership, branch: Branch, d
         raise ValidationError({"branch": "Branch does not belong to the active company."})
     if department.company_id != company_id:
         raise ValidationError({"department": "Department does not belong to the active company."})
+    if branch.deleted_at:
+        raise ValidationError({"branch": "Choose a current branch or office; this record is in Trash."})
     if branch.archived_at:
         raise ValidationError({"branch": "Choose a current branch or office; this record is archived."})
     if not branch.is_active:
         raise ValidationError({"branch": "Choose an active branch or office."})
+    if department.deleted_at:
+        raise ValidationError({"department": "Choose a current department; this record is in Trash."})
     if department.archived_at:
         raise ValidationError({"department": "Choose a current department; this record is archived."})
     if not department.is_active:
@@ -338,16 +352,28 @@ def restore_branch_archive(*, actor_membership: CompanyMembership, branch_id, re
 
 @transaction.atomic
 def delete_unused_branch(*, actor_membership: CompanyMembership, branch_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    """Move a stopped branch/office to the 30-day Trash without erasing history."""
     _require_internal_edit(actor_membership)
-    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company)
-    decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation)
-    before = _model_snapshot(branch); object_id = str(branch.pk); object_label = str(branch)
-    try:
-        branch.delete()
-    except ProtectedError as exc:
-        raise ValidationError({"record": "This branch or office is referenced by protected history. Archive it instead."}) from exc
-    record_lifecycle_action(instance=branch, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.branch.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
-    return object_id
+    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=True)
+    decision = require_lifecycle_action(branch, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
+    before = _model_snapshot(branch)
+    move_to_trash(branch, user=actor_membership.user, reason=reason)
+    record_lifecycle_action(
+        instance=branch, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(branch),
+        reason=reason, audit_action="internal.branch.moved_to_trash", metadata={"retention_days": 30}, request=request,
+    )
+    return str(branch.pk)
+
+
+@transaction.atomic
+def restore_branch_trash(*, actor_membership: CompanyMembership, branch_id, request: HttpRequest | None = None) -> Branch:
+    _require_internal_edit(actor_membership)
+    branch = Branch.objects.select_for_update().get(pk=branch_id, company=actor_membership.company, deleted_at__isnull=False)
+    before = _model_snapshot(branch)
+    if not restore_from_trash(branch):
+        raise ValidationError({"record": "This Trash item has expired and can no longer be restored."})
+    record_audit_event(company=branch.company, area=AuditArea.INTERNAL, action="internal.branch.trash_restored", object_type="internal_payroll.Branch", object_id=branch.pk, object_label=str(branch), actor_membership=actor_membership, before=before, after=_model_snapshot(branch), request=request)
+    return branch
 
 
 @transaction.atomic
@@ -386,16 +412,25 @@ def restore_department_archive(*, actor_membership: CompanyMembership, departmen
 
 @transaction.atomic
 def delete_unused_department(*, actor_membership: CompanyMembership, department_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
+    """Move a department to the 30-day Trash while retaining all historical references."""
     _require_internal_edit(actor_membership)
-    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company)
-    decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation)
-    before = _model_snapshot(department); object_id = str(department.pk); object_label = str(department)
-    try:
-        department.delete()
-    except ProtectedError as exc:
-        raise ValidationError({"record": "This department is referenced by protected history. Archive it instead."}) from exc
-    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after={}, reason=reason, audit_action="internal.department.deleted_unused", object_id=object_id, object_label=object_label, metadata={"guard": "unused-master-only"}, request=request)
-    return object_id
+    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company, deleted_at__isnull=True)
+    decision = require_lifecycle_action(department, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
+    before = _model_snapshot(department)
+    move_to_trash(department, user=actor_membership.user, reason=reason)
+    record_lifecycle_action(instance=department, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(department), reason=reason, audit_action="internal.department.moved_to_trash", metadata={"retention_days":30}, request=request)
+    return str(department.pk)
+
+
+@transaction.atomic
+def restore_department_trash(*, actor_membership: CompanyMembership, department_id, request: HttpRequest | None = None) -> Department:
+    _require_internal_edit(actor_membership)
+    department = Department.objects.select_for_update().get(pk=department_id, company=actor_membership.company, deleted_at__isnull=False)
+    before = _model_snapshot(department)
+    if not restore_from_trash(department):
+        raise ValidationError({"record": "This Trash item has expired and can no longer be restored."})
+    record_audit_event(company=department.company, area=AuditArea.INTERNAL, action="internal.department.trash_restored", object_type="internal_payroll.Department", object_id=department.pk, object_label=str(department), actor_membership=actor_membership, before=before, after=_model_snapshot(department), request=request)
+    return department
 
 
 @transaction.atomic
@@ -783,49 +818,25 @@ def restore_employee_archive(
 
 @transaction.atomic
 def delete_unused_employee(
-    *,
-    actor_membership: CompanyMembership,
-    employee_id,
-    confirmation: str,
-    reason: str = "",
-    request: HttpRequest | None = None,
+    *, actor_membership: CompanyMembership, employee_id, confirmation: str, reason: str = "", request: HttpRequest | None = None,
 ) -> str:
-    """Hard-delete only an unused onboarding master. Historical payroll is never deleted.
-
-    Setup-only organization, salary and payment-profile rows may be removed with the unused
-    master. Any attendance, adjustment, payroll, payment or finalized document record blocks
-    deletion and directs the operator to archive instead.
-    """
-
+    """Move a stopped employee master to the 30-day Trash; never erase payroll history."""
     _require_internal_edit(actor_membership)
-    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company)
-    lifecycle_decision = require_lifecycle_action(
-        employee, LifecycleAction.DELETE, confirmation=confirmation
-    )
-
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company, deleted_at__isnull=True)
+    decision = require_lifecycle_action(employee, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _model_snapshot(employee)
-    object_id = str(employee.pk)
-    object_label = str(employee)
-    # Setup rows are allowed to disappear with a never-used onboarding master.
-    try:
-        for structure in list(employee.salary_structures.all().select_for_update()):
-            structure.lines.all().delete()
-            structure.delete()
-        try:
-            payment_profile = employee.payment_profile
-        except Exception:
-            payment_profile = None
-        if payment_profile is not None:
-            payment_profile.delete()
-        employee.organization_assignments.all().delete()
-        employee.delete()
-    except ProtectedError as exc:
-        raise ValidationError({"employee": "This employee is referenced by protected payroll history. Archive the employee instead."}) from exc
+    move_to_trash(employee, user=actor_membership.user, reason=reason)
+    record_lifecycle_action(instance=employee, decision=decision, actor_membership=actor_membership, before=before, after=_model_snapshot(employee), reason=reason, audit_action="internal.employee.moved_to_trash", metadata={"retention_days":30}, request=request)
+    return str(employee.pk)
 
-    record_lifecycle_action(
-        instance=employee, decision=lifecycle_decision, actor_membership=actor_membership,
-        before=before, after={}, reason=(reason or "").strip(),
-        audit_action="internal.employee.deleted_unused", object_id=object_id, object_label=object_label,
-        metadata={"guard": "unused-onboarding-only"}, request=request,
-    )
-    return object_id
+
+@transaction.atomic
+def restore_employee_trash(*, actor_membership: CompanyMembership, employee_id, request: HttpRequest | None = None) -> InternalEmployee:
+    _require_internal_edit(actor_membership)
+    employee = InternalEmployee.objects.select_for_update().get(pk=employee_id, company=actor_membership.company, deleted_at__isnull=False)
+    before = _model_snapshot(employee)
+    if not restore_from_trash(employee):
+        raise ValidationError({"employee": "This Trash item has expired and can no longer be restored."})
+    record_audit_event(company=employee.company, area=AuditArea.INTERNAL, action="internal.employee.trash_restored", object_type="internal_payroll.InternalEmployee", object_id=employee.pk, object_label=str(employee), actor_membership=actor_membership, before=before, after=_model_snapshot(employee), request=request)
+    return employee
+

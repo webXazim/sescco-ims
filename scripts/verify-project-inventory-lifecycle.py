@@ -55,13 +55,13 @@ require(
     "LifecycleAction.DELETE",
     '"quantity_bearing_stock"',
     '"open_rental_assignments"',
-    '"historical_records_exist"',
 )
 require(
     "apps/projects/services.py",
     "def archive_project",
     "def restore_project_archive",
     "def trash_unused_project",
+    "def restore_project_trash",
     '"retention_days": 30',
 )
 require(
@@ -144,7 +144,7 @@ require("templates/partials/sidebar.html", "inventory:locations", "Locations")
 require("templates/inventory/archive_list.html", "Locations")
 require("templates/inventory/location_list.html", "Archived", "Delete unused")
 require("templates/inventory/office_inventory.html", "office_locations")
-require("templates/projects/project_detail.html", "Archive", "Delete unused")
+require("templates/projects/project_detail.html", "Archive", "Move to Trash for 30 days")
 
 for migration in (
     "apps/projects/migrations/0005_project_archive_metadata.py",

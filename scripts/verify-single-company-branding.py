@@ -17,7 +17,8 @@ asset=root/'static/platform/brand-sescco-mark.webp'
 if not asset.is_file() or asset.stat().st_size < 1000:
     raise SystemExit('SINGLE-COMPANY/BRAND ERROR: SESCCO brand asset missing or empty')
 need('config/settings/base.py', 'SINGLE_COMPANY_MODE = env_bool("SINGLE_COMPANY_MODE", True)')
-need('config/settings/base.py', 'APP_NAME = env("APP_NAME", "SESCCO MS")')
+need('config/settings/base.py', 'APP_NAME = "SESCCO MS"')
+need('config/settings/base.py', 'APP_SUBTITLE = "Management System"')
 need('apps/accounts/selectors.py', 'if settings.SINGLE_COMPANY_MODE:')
 need('apps/accounts/services.py', 'Company switching is disabled in SESCCO MS single-company mode.')
 need('apps/core/checks.py', 'platform.E301')

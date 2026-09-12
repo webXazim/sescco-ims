@@ -26,7 +26,7 @@ class _OrganizationMasterLifecyclePolicy(LifecyclePolicy):
     supported_actions = frozenset(
         {LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE, LifecycleAction.DEACTIVATE}
     )
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DELETE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
     assignment_field = ""
     master_label = "organization master"
@@ -79,11 +79,10 @@ class _OrganizationMasterLifecyclePolicy(LifecyclePolicy):
                 ),)
             return ()
         if action is LifecycleAction.DELETE:
-            history = evidence.get("assignment_history", 0) + evidence.get("payroll_history", 0)
-            if history:
+            if evidence.get("current_employees", 0):
                 return (LifecycleBlocker(
-                    code="historical_records_exist", field="record", label="Historical references", count=history,
-                    message=f"This {self.master_label} has employee or payroll history. Archive it instead of deleting it.",
+                    code="current_employees", field="record", label="Current employees", count=evidence["current_employees"],
+                    message=f"Transfer or stop current employees before moving this {self.master_label} to Trash.",
                 ),)
             return ()
         return ()
@@ -118,7 +117,7 @@ class InternalEmployeeLifecyclePolicy(LifecyclePolicy):
             LifecycleAction.DEACTIVATE,
         }
     )
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DEACTIVATE, LifecycleAction.DELETE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
 
     _history_relations = (
@@ -218,29 +217,12 @@ class InternalEmployeeLifecyclePolicy(LifecyclePolicy):
             return ()
 
         if action is LifecycleAction.DELETE:
-            active = [(key, label, evidence.get(key, 0)) for _relation, key, label in self._history_relations if evidence.get(key, 0)]
-            if evidence.get("finalized_salary_documents", 0):
-                active.append(
-                    (
-                        "finalized_salary_documents",
-                        "finalized salary documents",
-                        evidence["finalized_salary_documents"],
-                    )
-                )
-            if active:
-                labels = ", ".join(label for _key, label, _count in active)
-                total = sum(count for _key, _label, count in active)
+            if instance.status not in {EmploymentStatus.INACTIVE, EmploymentStatus.TERMINATED}:
                 return (
                     LifecycleBlocker(
-                        code="historical_records_exist",
+                        code="employment_still_open",
                         field="employee",
-                        label="Historical payroll records",
-                        count=total,
-                        message=(
-                            "This employee has historical records ("
-                            + labels
-                            + "). Archive the employee instead of deleting it."
-                        ),
+                        message="Deactivate or terminate the employee before moving the record to Trash.",
                     ),
                 )
             return ()

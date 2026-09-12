@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/rental/suppliers/<uuid:supplier_id>/lifecycle/", api.supplier_lifecycle_api, name="supplier-lifecycle-api"),
     path("api/rental/projects/", api.projects_api, name="projects-api"),
     path("api/rental/projects/<uuid:project_id>/", api.project_detail_api, name="project-detail-api"),
+    path("api/rental/projects/<uuid:project_id>/lifecycle/", api.project_lifecycle_api, name="project-lifecycle-api"),
     path("api/rental/workers/", api.workers_api, name="workers-api"),
     path("api/rental/workers/import/", api.workers_import_api, name="workers-import-api"),
     path("api/rental/workers/<uuid:worker_id>/", api.worker_detail_api, name="worker-detail-api"),

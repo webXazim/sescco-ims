@@ -30,7 +30,7 @@
             <div class="row-action-option row-action-disabled" aria-disabled="true" title="{{ project_archive_decision.blockers.0.message }}"><span>Archive project</span><small>{{ project_archive_decision.blockers.0.message }}</small></div>
           {% endif %}
           <div class="row-action-divider"></div>
-          <a class="row-action-option row-action-danger" href="{% url 'projects:delete' project.code %}"><span>Delete unused project</span><small>Only if no Inventory or Rental history exists</small></a>
+          <a class="row-action-option row-action-danger" href="{% url 'projects:delete' project.code %}"><span>Delete</span><small>Move to Trash for 30 days; protected history remains intact</small></a>
         </div>
       </details>
     </div>{% endif %}

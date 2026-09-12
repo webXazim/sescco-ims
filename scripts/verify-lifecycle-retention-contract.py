@@ -61,21 +61,36 @@ allowed_modes = {
     "access_deactivate_only",
     "effective_dated_supersede_only",
     "employment_lifecycle_archive_delete_unused",
+    "employment_lifecycle_archive_trash_30d",
     "immutable_finalized_document",
     "immutable_ledger",
     "immutable_snapshot",
     "import_staging_retention",
     "master_archive_delete_unused",
+    "master_archive_trash_30d",
     "profile_delete_unused_or_deactivate",
     "system_singleton_no_delete",
     "user_preference_delete_ok",
     "worker_lifecycle_archive_delete_unused",
+    "worker_lifecycle_archive_trash_30d",
     "workflow_record_no_delete",
 }
 for label, spec in models.items():
     mode = spec.get("mode") if isinstance(spec, dict) else None
     if mode not in allowed_modes:
         fail(f"{label} has unknown retention mode {mode!r}")
+
+trash_modes = {
+    "projects.Project": "master_archive_trash_30d",
+    "internal_payroll.Branch": "master_archive_trash_30d",
+    "internal_payroll.Department": "master_archive_trash_30d",
+    "internal_payroll.InternalEmployee": "employment_lifecycle_archive_trash_30d",
+    "rental_manpower.ManpowerSupplier": "master_archive_trash_30d",
+    "rental_manpower.RentalWorker": "worker_lifecycle_archive_trash_30d",
+}
+for label, expected in trash_modes.items():
+    if models.get(label, {}).get("mode") != expected:
+        fail(f"{label} must use the 30-day Trash retention mode")
 
 actual = persisted_models()
 contracted = set(models)
@@ -112,8 +127,39 @@ for needle in (
     "Create effective change",
     "Effective-dated history is retained",
     "Company policy is retained",
+    "Archive Bin",
+    "Trash Bin",
+    "Move to Trash",
+    "restore_trash",
 ):
     if needle not in app_js:
         fail(f"Payroll UI retention guidance is missing: {needle}")
+
+
+trash_source = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in (
+    "apps/core/trash.py",
+    "apps/internal_payroll/models/organization.py",
+    "apps/rental_manpower/models/masters.py",
+    "apps/projects/models.py",
+    "apps/inventory/management/commands/purge_trash.py",
+))
+for needle in ("TRASH_RETENTION_DAYS = 30", "deleted_at", "purge_after", "deletion_reason", "move_to_trash", "restore_from_trash"):
+    if needle not in trash_source:
+        fail(f"30-day Trash implementation is missing {needle!r}")
+
+purge_text = (ROOT / "apps/inventory/management/commands/purge_trash.py").read_text(encoding="utf-8")
+for needle in (
+    "Collector",
+    "_hard_delete_is_history_safe",
+    "collector.fast_deletes",
+    "purge_after=None",
+    "protected historical tombstones",
+):
+    if needle not in purge_text:
+        fail(f"Trash expiry must preserve related history; purge safety is missing {needle!r}")
+
+settings_text = (ROOT / "config/settings/base.py").read_text(encoding="utf-8")
+if 'APP_NAME = "SESCCO MS"' not in settings_text:
+    fail("product branding must be locked to SESCCO MS")
 
 print(f"Lifecycle retention contract verified for {len(actual)} persisted SESCCO models.")

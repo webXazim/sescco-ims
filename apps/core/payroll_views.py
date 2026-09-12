@@ -18,6 +18,7 @@ from apps.accounts.permissions import (
 from apps.accounts.roles import Capability, Workspace
 from apps.core.management import management_context
 from apps.core.selectors.settings import company_settings
+from apps.core.selectors.record_management import record_management_context
 from apps.documents.selectors import document_context
 from apps.internal_payroll.selectors import (
     attendance_period_context,
@@ -259,6 +260,10 @@ def payroll_app(request):
         }
     )
 
+    record_management_bootstrap = record_management_context(
+        company=request.company, include_internal=can_internal, include_rental=can_rental
+    )
+
     return render(
         request,
         "payroll/app.html",
@@ -278,6 +283,7 @@ def payroll_app(request):
             "documents_context": documents_context,
             "management_context": management_bootstrap,
             "system_settings_context": system_settings_context,
+            "record_management_context": record_management_bootstrap,
             "period_options": _period_options(),
         },
     )
