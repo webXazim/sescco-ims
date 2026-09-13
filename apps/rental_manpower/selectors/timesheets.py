@@ -7,6 +7,7 @@ from django.db.models import Q
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
+from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
 from apps.rental_manpower.models import RentalTimesheetPeriod, RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetStatus, WorkerAssignment
 from apps.rental_manpower.services.timesheets import month_bounds
 from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
@@ -42,4 +43,4 @@ def rental_timesheet_context(*, company, project_id, period_start: date, members
             segments.append({'id':str(a.pk),'projectId':project_public_id(a.project),'start':a.effective_from.isoformat(),'end':a.effective_to.isoformat() if a.effective_to else None,'trade':a.trade,'rateType':a.rate_type,'rate':str(a.rate),'supplierId':str(a.worker.supplier_id),'supplierName':a.worker.supplier.name})
         roster.append({'id':wid,'workerId':w.worker_number,'name':w.full_name,'supplierId':str(w.supplier_id),'supplierName':w.supplier.name,'assignments':segments})
     regular_hours=sum((e.regular_hours for e in entries),Decimal('0')); ot_hours=sum((o.hours for o in overtime),Decimal('0'))
-    return {'period':{'id':str(period.pk) if period else None,'exists':period is not None,'period':f'{start:%Y-%m}','label':f'{month_name[start.month]} {start.year}','start':start.isoformat(),'end':end.isoformat(),'projectId':project_public_id(project) if project else None,'status':RentalTimesheetStatus(status).label,'statusValue':status,'revision':period.revision if period else 0,'canEdit':can_edit,'canApprove':can_approve,'nextAction':next_action},'roster':roster,'records':records,'overtime':ot,'summary':{'workerCount':len(roster),'entryCount':len(entries),'regularHours':str(regular_hours),'overtimeHours':str(ot_hours)}}
+    return {'attendanceContract': attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL), 'period':{'id':str(period.pk) if period else None,'exists':period is not None,'period':f'{start:%Y-%m}','label':f'{month_name[start.month]} {start.year}','start':start.isoformat(),'end':end.isoformat(),'projectId':project_public_id(project) if project else None,'status':RentalTimesheetStatus(status).label,'statusValue':status,'revision':period.revision if period else 0,'canEdit':can_edit,'canApprove':can_approve,'nextAction':next_action},'roster':roster,'records':records,'overtime':ot,'summary':{'workerCount':len(roster),'entryCount':len(entries),'regularHours':str(regular_hours),'overtimeHours':str(ot_hours)}}

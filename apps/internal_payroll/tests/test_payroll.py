@@ -8,6 +8,7 @@ from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditEvent, Company
 from apps.internal_payroll.models import PayrollRun, PayrollRunLine, PayrollRunStatus
+from apps.internal_payroll.selectors import payroll_period_context
 from apps.internal_payroll.services import (
     assign_employee_salary_structure,
     calculate_payroll_run,
@@ -281,6 +282,46 @@ class PayrollServiceTests(TestCase):
 
         self.assertFalse(PayrollRun.objects.filter(company=self.company, period_start=self.period_start).exists())
         self.assertFalse(PayrollRunLine.objects.filter(company=self.company).exists())
+
+
+    def test_internal_payroll_workflow_is_server_authoritative_and_revisioned(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+
+        before = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.officer)
+        self.assertEqual(before["workflow"]["allowedActions"], ["calculate"])
+
+        run = calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        self.assertEqual(run.revision, 1)
+        calculated = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.officer)
+        self.assertIn("submit_review", calculated["workflow"]["allowedActions"])
+        self.assertIn("reset", calculated["workflow"]["allowedActions"])
+
+        transition_payroll_run(actor_membership=self.officer, period_start=self.period_start, action="submit for review")
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.REVIEW)
+        self.assertEqual(run.revision, 2)
+        review = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.reviewer)
+        self.assertEqual(set(review["workflow"]["allowedActions"]), {"return_for_changes", "approve"})
+
+        transition_payroll_run(actor_membership=self.reviewer, period_start=self.period_start, action="reject")
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.CALCULATED)
+        self.assertEqual(run.revision, 3)
+
+        transition_payroll_run(actor_membership=self.officer, period_start=self.period_start, action="submit_review")
+        transition_payroll_run(
+            actor_membership=self.reviewer,
+            period_start=self.period_start,
+            action="approve",
+            confirmed=True,
+        )
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.APPROVED)
+        self.assertEqual(run.revision, 5)
+        approved = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.officer)
+        self.assertEqual(approved["workflow"]["allowedActions"], [])
+
 
 
 class PayrollProrationTests(TestCase):

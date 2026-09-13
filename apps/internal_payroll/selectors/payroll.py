@@ -333,6 +333,29 @@ def payroll_period_context(*, company: Company, period_start: date, membership=N
         attendance = attendance_period_for_company(company=company, period_start=start)
         attendance_status = attendance.get_status_display() if attendance else "Not created"
 
+    run_status = run.status if run else PayrollRunStatus.DRAFT
+    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL))
+    can_approve = bool(
+        membership
+        and membership_can_workspace(membership, Workspace.INTERNAL)
+        and membership_has_capability(membership, Capability.APPROVE)
+    )
+    attendance_calculable = attendance_status in {AttendancePeriodStatus.APPROVED.label, AttendancePeriodStatus.LOCKED.label}
+    attendance_locked = attendance_status == AttendancePeriodStatus.LOCKED.label
+    source_clear = not source_errors and not any(row.get("blockers") for row in rows)
+    allowed_actions: list[str] = []
+    if can_edit and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
+        allowed_actions.append("calculate")
+    if can_edit and run_status == PayrollRunStatus.CALCULATED:
+        allowed_actions.append("reset")
+        if attendance_locked and source_clear:
+            allowed_actions.append("submit_review")
+    if can_approve and run_status == PayrollRunStatus.REVIEW:
+        allowed_actions.append("return_for_changes")
+        if attendance_locked and source_clear:
+            allowed_actions.append("approve")
+    next_action = next((item for item in ("calculate", "submit_review", "approve") if item in allowed_actions), None)
+
     return {
         "run": _run_payload(run, period_start=start, membership=membership),
         "rows": rows,
@@ -342,7 +365,20 @@ def payroll_period_context(*, company: Company, period_start: date, membership=N
         "adjustmentsByEmployee": adjustments_by_employee,
         "reviewHistory": _audit_history(run),
         "attendanceStatus": attendance_status,
-        "attendanceLocked": attendance_status == AttendancePeriodStatus.LOCKED.label,
+        "attendanceLocked": attendance_locked,
+        "workflow": {
+            "statusValue": run_status,
+            "allowedActions": allowed_actions,
+            "nextAction": next_action,
+            "canCalculate": "calculate" in allowed_actions,
+            "canReset": "reset" in allowed_actions,
+            "canSubmitReview": "submit_review" in allowed_actions,
+            "canReturnForChanges": "return_for_changes" in allowed_actions,
+            "canApprove": "approve" in allowed_actions,
+            "sourceClear": source_clear,
+            "attendanceCalculable": attendance_calculable,
+            "attendanceLocked": attendance_locked,
+        },
         "previous": {
             "period": f"{previous_start:%Y-%m}",
             "label": _period_label(previous_start),

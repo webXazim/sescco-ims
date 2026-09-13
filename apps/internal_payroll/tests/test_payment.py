@@ -17,10 +17,12 @@ from apps.internal_payroll.models import (
     SalaryPaymentRow,
     SalaryPaymentRowStatus,
 )
+from apps.internal_payroll.selectors import salary_payment_context
 from apps.internal_payroll.services import (
     archive_bank_export_template,
     assign_employee_salary_structure,
     calculate_payroll_run,
+    cancel_salary_payment_batch,
     close_salary_payment_batch,
     create_bank_export_template,
     delete_unused_bank_export_template,
@@ -33,6 +35,7 @@ from apps.internal_payroll.services import (
     import_salary_payment_results,
     payment_readiness,
     prepare_salary_payment_batch,
+    reopen_salary_payment_batch,
     restore_bank_export_template_archive,
     retry_salary_payment_row,
     save_attendance_entries,
@@ -303,6 +306,88 @@ class SalaryPaymentServiceTests(TestCase):
         self.assertEqual(batch.status, SalaryPaymentBatchStatus.CLOSED)
         self.assertEqual(run.status, PayrollRunStatus.CLOSED)
         self.assertEqual(run.total_net, Decimal("5000.00"))
+
+
+
+    def test_payment_batch_actions_and_payroll_revision_follow_server_lifecycle(self):
+        self._payment_profile()
+        template = self._bank_template()
+        run = PayrollRun.objects.get(company=self.company, period_start=self.period_start)
+        approved_revision = run.revision
+
+        batch = prepare_salary_payment_batch(
+            actor_membership=self.officer,
+            period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV,
+            template_id=template.pk,
+        )
+        finance_context = salary_payment_context(
+            company=self.company, period_start=self.period_start, membership=self.finance
+        )
+        finance_batch = next(item for item in finance_context["batches"] if item["id"] == str(batch.pk))
+        self.assertEqual(set(finance_batch["allowedActions"]), {"export", "start", "cancel"})
+        officer_context = salary_payment_context(
+            company=self.company, period_start=self.period_start, membership=self.officer
+        )
+        officer_batch = next(item for item in officer_context["batches"] if item["id"] == str(batch.pk))
+        self.assertEqual(officer_batch["allowedActions"], [])
+
+        cancel_salary_payment_batch(
+            actor_membership=self.finance, batch_id=batch.pk, reason="Test cancellation before transmission"
+        )
+        batch.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(batch.status, SalaryPaymentBatchStatus.CANCELLED)
+        self.assertEqual(run.status, PayrollRunStatus.APPROVED)
+        self.assertEqual(run.revision, approved_revision)
+
+        batch = prepare_salary_payment_batch(
+            actor_membership=self.officer,
+            period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV,
+            template_id=template.pk,
+        )
+        start_salary_payment_batch(actor_membership=self.finance, batch_id=batch.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.PAYMENT_PROCESSING)
+        self.assertEqual(run.revision, approved_revision + 1)
+        processing = salary_payment_context(
+            company=self.company, period_start=self.period_start, membership=self.finance
+        )
+        processing_batch = next(item for item in processing["batches"] if item["id"] == str(batch.pk))
+        self.assertIn("import_results", processing_batch["allowedActions"])
+
+        import_salary_payment_results(
+            actor_membership=self.finance,
+            batch_id=batch.pk,
+            file_name="paid.csv",
+            content="Employee ID,Status,Reference\n0001,Paid,TX-LIFECYCLE\n",
+        )
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.PAID)
+        self.assertEqual(run.revision, approved_revision + 2)
+        paid_context = salary_payment_context(
+            company=self.company, period_start=self.period_start, membership=self.finance
+        )
+        paid_batch = next(item for item in paid_context["batches"] if item["id"] == str(batch.pk))
+        self.assertEqual(paid_batch["allowedActions"], ["export", "close"])
+
+        close_salary_payment_batch(actor_membership=self.finance, batch_id=batch.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.CLOSED)
+        self.assertEqual(run.revision, approved_revision + 3)
+        closed_context = salary_payment_context(
+            company=self.company, period_start=self.period_start, membership=self.finance
+        )
+        closed_batch = next(item for item in closed_context["batches"] if item["id"] == str(batch.pk))
+        self.assertEqual(closed_batch["allowedActions"], ["reopen"])
+
+        reopen_salary_payment_batch(
+            actor_membership=self.finance, batch_id=batch.pk, reason="Correction required after close"
+        )
+        run.refresh_from_db()
+        self.assertEqual(run.status, PayrollRunStatus.PAID)
+        self.assertEqual(run.revision, approved_revision + 4)
 
 
     def test_export_uses_exact_configured_header_labels(self):

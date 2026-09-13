@@ -747,12 +747,16 @@ def _refresh_batch_locked(batch: SalaryPaymentBatch) -> SalaryPaymentBatch:
     batch.full_clean()
     batch.save()
     run = PayrollRun.objects.select_for_update().for_company(batch.company).get(pk=batch.run_id)
+    target_status = run.status
     if batch.status == SalaryPaymentBatchStatus.PAID:
         # One active payment row per payroll line ensures this means every payroll line in the batch is paid.
-        run.status = PayrollRunStatus.PAID
+        target_status = PayrollRunStatus.PAID
     elif batch.status not in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED, SalaryPaymentBatchStatus.CANCELLED}:
-        run.status = PayrollRunStatus.PAYMENT_PROCESSING
-    run.save(update_fields=("status", "updated_at"))
+        target_status = PayrollRunStatus.PAYMENT_PROCESSING
+    if run.status != target_status:
+        run.status = target_status
+        run.revision += 1
+        run.save(update_fields=("status", "revision", "updated_at"))
     return batch
 
 
@@ -794,8 +798,10 @@ def start_salary_payment_batch(
     batch.full_clean()
     batch.save()
     run = PayrollRun.objects.select_for_update().for_company(company).get(pk=batch.run_id)
-    run.status = PayrollRunStatus.PAYMENT_PROCESSING
-    run.save(update_fields=("status", "updated_at"))
+    if run.status != PayrollRunStatus.PAYMENT_PROCESSING:
+        run.status = PayrollRunStatus.PAYMENT_PROCESSING
+        run.revision += 1
+        run.save(update_fields=("status", "revision", "updated_at"))
     record_audit_event(
         company=company,
         area=AuditArea.INTERNAL,
@@ -1078,8 +1084,10 @@ def close_salary_payment_batch(
     batch.full_clean()
     batch.save()
     run = PayrollRun.objects.select_for_update().for_company(company).get(pk=batch.run_id)
-    run.status = PayrollRunStatus.CLOSED
-    run.save(update_fields=("status", "updated_at"))
+    if run.status != PayrollRunStatus.CLOSED:
+        run.status = PayrollRunStatus.CLOSED
+        run.revision += 1
+        run.save(update_fields=("status", "revision", "updated_at"))
     record_audit_event(
         company=company,
         area=AuditArea.INTERNAL,
@@ -1111,8 +1119,10 @@ def reopen_salary_payment_batch(
     batch.closed_by = None
     batch.save(update_fields=("status", "closed_at", "closed_by", "updated_at"))
     run = PayrollRun.objects.select_for_update().for_company(company).get(pk=batch.run_id)
-    run.status = PayrollRunStatus.PAID
-    run.save(update_fields=("status", "updated_at"))
+    if run.status != PayrollRunStatus.PAID:
+        run.status = PayrollRunStatus.PAID
+        run.revision += 1
+        run.save(update_fields=("status", "revision", "updated_at"))
     record_audit_event(
         company=company,
         area=AuditArea.INTERNAL,

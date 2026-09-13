@@ -56,6 +56,45 @@ PAYABLE_SETTLEMENT_STATUSES = {
     RentalSettlementStatus.CLOSED,
 }
 
+SETTLEMENT_ACTION_ALIASES = {
+    "calculate": "calculate",
+    "recalculate": "calculate",
+    "submit": "submit",
+    "submit_for_review": "submit",
+    "review": "submit",
+    "approve": "approve",
+    "approved": "approve",
+    "return": "return",
+    "return_for_changes": "return",
+    "reject": "return",
+    "close": "close",
+    "close_period": "close",
+}
+
+PAYMENT_STATUS_ALIASES = {
+    "paid": SupplierPaymentStatus.PAID,
+    "complete": SupplierPaymentStatus.PAID,
+    "completed": SupplierPaymentStatus.PAID,
+    "success": SupplierPaymentStatus.PAID,
+    "failed": SupplierPaymentStatus.FAILED,
+    "fail": SupplierPaymentStatus.FAILED,
+    "cancelled": SupplierPaymentStatus.CANCELLED,
+    "canceled": SupplierPaymentStatus.CANCELLED,
+    "cancel": SupplierPaymentStatus.CANCELLED,
+    "reversed": SupplierPaymentStatus.REVERSED,
+    "reverse": SupplierPaymentStatus.REVERSED,
+}
+
+
+def _canonical_settlement_action(value: str) -> str:
+    normalized = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return SETTLEMENT_ACTION_ALIASES.get(normalized, normalized)
+
+
+def _canonical_payment_status(value: str) -> str:
+    normalized = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return PAYMENT_STATUS_ALIASES.get(normalized, normalized)
+
 
 def _money(value: Decimal | int | str) -> Decimal:
     return Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP)
@@ -207,7 +246,7 @@ def update_rental_adjustment(*, actor_membership, adjustment_id, request=None, *
 def transition_rental_adjustment(*, actor_membership, adjustment_id, action: str, reason: str = "", request=None) -> RentalAdjustment:
     company = actor_membership.company
     adjustment = RentalAdjustment.objects.select_for_update().for_company(company).select_related("worker", "supplier", "project").get(pk=adjustment_id)
-    action = (action or "").strip().lower().replace("-", "_")
+    action = _canonical_settlement_action(action)
     before = adjustment.status
     now = timezone.now()
     if action == "submit":
@@ -604,6 +643,7 @@ def transition_project_settlements(*, actor_membership, project_id, period_start
             before = row.status
             row.status = RentalSettlementStatus.REVIEW
             row.submitted_at = now; row.submitted_by = actor_membership.user
+            row.revision += 1
             row.save()
             record_audit_event(company=company, area=AuditArea.RENTAL, action="rental.settlement.submitted", object_type="rental_manpower.SupplierSettlement", object_id=row.pk, object_label=row.settlement_number, actor_membership=actor_membership, before={"status": before}, after={"status": row.status}, request=request)
     elif action == "approve":
@@ -619,6 +659,7 @@ def transition_project_settlements(*, actor_membership, project_id, period_start
             row.status = RentalSettlementStatus.PAID if row.total_net == ZERO else RentalSettlementStatus.APPROVED
             row.approved_at = now; row.approved_by = actor_membership.user
             row.reviewer_note = (reason or "").strip()
+            row.revision += 1
             row.save()
             record_audit_event(company=company, area=AuditArea.RENTAL, action="rental.settlement.approved", object_type="rental_manpower.SupplierSettlement", object_id=row.pk, object_label=row.settlement_number, actor_membership=actor_membership, before={"status": before}, after={"status": row.status}, metadata={"note": row.reviewer_note, "zero_payable": row.total_net == ZERO}, request=request)
     elif action == "return":
@@ -626,13 +667,14 @@ def transition_project_settlements(*, actor_membership, project_id, period_start
         if not (reason or "").strip():
             raise ValidationError({"reason": "A correction reason is required."})
         eligible = [row for row in rows if row.status == RentalSettlementStatus.REVIEW]
-        if not eligible:
-            raise ValidationError("Only settlements in Finance Review can be returned for changes.")
+        if len(eligible) != len(rows):
+            raise ValidationError("Every supplier settlement for this project must be in Review before it can be returned for changes.")
         for row in eligible:
             before = row.status
             row.status = RentalSettlementStatus.CALCULATED
             row.submitted_at = None; row.submitted_by = None
             row.reviewer_note = (reason or "").strip()
+            row.revision += 1
             row.save()
             record_audit_event(company=company, area=AuditArea.RENTAL, action="rental.settlement.returned", object_type="rental_manpower.SupplierSettlement", object_id=row.pk, object_label=row.settlement_number, actor_membership=actor_membership, before={"status": before}, after={"status": row.status}, metadata={"reason": row.reviewer_note}, request=request)
     elif action == "close":
@@ -644,6 +686,7 @@ def transition_project_settlements(*, actor_membership, project_id, period_start
             before = row.status
             row.status = RentalSettlementStatus.CLOSED
             row.closed_at = now; row.closed_by = actor_membership.user
+            row.revision += 1
             row.save()
             record_audit_event(company=company, area=AuditArea.RENTAL, action="rental.settlement.closed", object_type="rental_manpower.SupplierSettlement", object_id=row.pk, object_label=row.settlement_number, actor_membership=actor_membership, before={"status": before}, after={"status": row.status}, request=request)
     else:
@@ -679,6 +722,7 @@ def _sync_settlement_payment_status(*, settlement: SupplierSettlement, actor_mem
         settlement.status = target
         if before == RentalSettlementStatus.CLOSED and target != RentalSettlementStatus.PAID:
             settlement.closed_at = None; settlement.closed_by = None
+        settlement.revision += 1
         settlement.save()
         if actor_membership:
             record_audit_event(
@@ -751,7 +795,7 @@ def transition_supplier_payment(
         .filter(payment=payment).select_related("settlement")
     )
     settlements = [SupplierSettlement.objects.select_for_update().for_company(company).get(pk=row.settlement_id) for row in allocations]
-    target = (status or "").strip().lower().replace(" ", "_")
+    target = _canonical_payment_status(status)
     before = payment.status
     now = timezone.now()
     if before == SupplierPaymentStatus.PROCESSING:

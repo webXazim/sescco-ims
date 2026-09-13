@@ -14,9 +14,15 @@ from django.utils import timezone
 from apps.accounts.permissions import membership_can_edit, membership_has_capability, membership_can_workspace
 from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
+from apps.core.payroll_attendance_contract import (
+    ATTENDANCE_WORKSPACE_RENTAL,
+    attendance_contract_payload,
+    normalize_attendance_workflow_action,
+    normalize_payroll_attendance_value,
+)
 from apps.core.services.audit import record_audit_event
 from apps.rental_manpower.models import (
-    RentalAttendanceCode, RentalTimesheetEntry, RentalTimesheetOvertime,
+    RentalTimesheetEntry, RentalTimesheetOvertime,
     RentalTimesheetPeriod, RentalTimesheetStatus, RentalRateType, WorkerAssignment,
     RentalWorker, RentalWorkerStatus, SupplierStatus,
 )
@@ -109,13 +115,14 @@ def save_entries(*, actor_membership, project_id, period_start, entries, request
         worker_id=row.get('worker_id'); work_date=row.get('work_date')
         if not worker_id or not isinstance(work_date,date): raise ValidationError("worker_id and work_date are required.")
         a=_assignment(company=company, worker_id=worker_id, project_id=project.pk, work_date=work_date)
-        raw=str(row.get('value','')).strip().upper(); code=''; hours=Decimal('0')
-        if raw == '':
+        normalized = normalize_payroll_attendance_value(
+            row.get('value', ''), workspace=ATTENDANCE_WORKSPACE_RENTAL, field='value'
+        )
+        if normalized is None:
             deleted,_=RentalTimesheetEntry.objects.filter(company=company,period=period,worker_id=worker_id,work_date=work_date).delete()
             changed += 1 if deleted else 0
             continue
-        if raw in {v for v,_ in RentalAttendanceCode.choices}: code=raw
-        else: hours=_decimal(raw,'value',maximum=24)
+        hours, code, _display = normalized
         defaults={"company":company,"assignment":a,"regular_hours":hours,"code":code,"note":str(row.get('note') or '').strip(),**_entry_snapshot(a)}
         obj,created=RentalTimesheetEntry.objects.update_or_create(period=period,worker_id=worker_id,work_date=work_date,defaults=defaults)
         obj.full_clean(); changed += 1
@@ -169,11 +176,10 @@ def _missing(period):
 
 
 def validate_timesheet_for_submission(*, period: RentalTimesheetPeriod) -> None:
-    """Require one explicit value for every assigned worker-day.
+    """Require one explicit contract value for every assigned worker-day.
 
-    Numeric 0-24 hour values and the explicit Rental Attendance status codes
-    A / N / L / OFF are all complete values. Only an actually missing row blocks
-    workflow submission, approval, or locking.
+    Numeric hours and every explicit Rental Attendance code are complete values.
+    Only an actually missing row blocks submission, approval, or locking.
     """
     missing=_missing(period)
     if not missing:
@@ -181,11 +187,11 @@ def validate_timesheet_for_submission(*, period: RentalTimesheetPeriod) -> None:
     worker_ids={worker_id for worker_id,_work_date in missing[:10]}
     worker_numbers=dict(RentalWorker.objects.for_company(period.company).filter(pk__in=worker_ids).values_list('pk','worker_number'))
     first=[f"{worker_numbers.get(worker_id, str(worker_id))} · {work_date.isoformat()}" for worker_id,work_date in missing[:10]]
+    code_hint = " / ".join(row["value"] for row in attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL)["codes"])
     raise ValidationError({
         "entries": (
             "Timesheet is incomplete. Every assigned worker-day must contain hours or an explicit status code "
-            "(A / N / L / OFF). "
-            f"First missing rows: {', '.join(first)}"
+            f"({code_hint}). First missing rows: {', '.join(first)}"
         )
     })
 
@@ -193,7 +199,7 @@ def validate_timesheet_for_submission(*, period: RentalTimesheetPeriod) -> None:
 def transition_timesheet(*, actor_membership, project_id, period_start, action, reason='', request=None):
     company=actor_membership.company; project,period=_period(company=company,project_id=project_id,period_start=period_start,create=False)
     if period is None: raise ValidationError("Timesheet does not exist.")
-    action=action.strip().lower(); now=timezone.now(); before=period.status
+    action=normalize_attendance_workflow_action(action); now=timezone.now(); before=period.status
     if action=='submit':
         _edit(actor_membership)
         if period.status!=RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft timesheets can be submitted.")
@@ -209,12 +215,15 @@ def transition_timesheet(*, actor_membership, project_id, period_start, action, 
         if period.status!=RentalTimesheetStatus.APPROVED: raise ValidationError("Only Approved timesheets can be locked.")
         validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.LOCKED; period.locked_at=now; period.locked_by=actor_membership.user
-    elif action=='return':
+    elif action=='return_to_draft':
         _approve(actor_membership)
         if period.status not in {RentalTimesheetStatus.SUBMITTED,RentalTimesheetStatus.APPROVED}: raise ValidationError("Only Submitted or Approved timesheets can be returned.")
         if not reason.strip(): raise ValidationError({"reason":"A correction reason is required."})
         period.status=RentalTimesheetStatus.DRAFT; period.approved_at=None; period.approved_by=None; period.submitted_at=None; period.submitted_by=None; period.revision += 1
-    else: raise ValidationError({"action":"Action must be submit, approve, lock, or return."})
-    period.save()
-    record_audit_event(company=company,area=AuditArea.RENTAL,action=f'rental.timesheet.{action}',object_type='rental_manpower.RentalTimesheetPeriod',object_id=period.pk,actor_membership=actor_membership,before={'status':before},after={'status':period.status,'revision':period.revision},metadata={'reason':reason.strip()},request=request)
+    else: raise ValidationError({"action":"Action must be submit, approve, lock, or return_to_draft."})
+    if action != 'return_to_draft':
+        period.revision += 1
+    period.full_clean(); period.save()
+    audit_action = 'return_to_draft' if action == 'return_to_draft' else action
+    record_audit_event(company=company,area=AuditArea.RENTAL,action=f'rental.timesheet.{audit_action}',object_type='rental_manpower.RentalTimesheetPeriod',object_id=period.pk,actor_membership=actor_membership,before={'status':before},after={'status':period.status,'revision':period.revision},metadata={'reason':reason.strip()},request=request)
     return period

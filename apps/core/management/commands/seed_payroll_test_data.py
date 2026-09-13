@@ -676,6 +676,8 @@ class Command(BaseCommand):
                 special[weekdays[min(5, len(weekdays) - 1)]] = "S"
             if weekdays and emp_index == 2:
                 special[weekdays[min(8, len(weekdays) - 1)]] = "L"
+            if weekdays and emp_index == 3:
+                special[weekdays[min(11, len(weekdays) - 1)]] = "H"
             for work_date in _days(period_start):
                 if work_date in special:
                     value = special[work_date]

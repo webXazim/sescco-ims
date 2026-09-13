@@ -12,11 +12,22 @@ from apps.rental_manpower.project_adapter import rental_project_for_company, pro
 from apps.rental_manpower.models import (
     RentalAdjustment, RentalAdjustmentEffect, RentalAdjustmentStatus, RentalSettlementStatus,
     SupplierPayment, SupplierPaymentAllocation, SupplierPaymentStatus, SupplierSettlement,
-    SupplierSettlementAdjustmentLine, SupplierSettlementLine, SupplierSettlementRateLine, RentalTimesheetEntry, RentalTimesheetPeriod,
+    SupplierSettlementAdjustmentLine, SupplierSettlementLine, SupplierSettlementRateLine, RentalTimesheetEntry, RentalTimesheetPeriod, RentalTimesheetStatus,
     rental_adjustment_effect,
 )
 
 ZERO = Decimal("0.00")
+PAYABLE_SETTLEMENT_STATUSES = {
+    RentalSettlementStatus.APPROVED,
+    RentalSettlementStatus.PAYMENT_PROCESSING,
+    RentalSettlementStatus.PARTIALLY_PAID,
+    RentalSettlementStatus.PAID,
+    RentalSettlementStatus.CLOSED,
+}
+
+
+def _settlement_payable(settlement: SupplierSettlement) -> Decimal:
+    return settlement.total_net if settlement.status in PAYABLE_SETTLEMENT_STATUSES else ZERO
 
 
 def _month_bounds(period_start: date) -> tuple[date, date]:
@@ -32,6 +43,90 @@ def _user_label(user) -> str:
     if user is None:
         return ""
     return user.get_full_name().strip() or user.username
+
+
+def _rental_permissions(membership) -> dict[str, bool]:
+    return {
+        "edit": bool(membership and membership_can_edit(membership, Workspace.RENTAL)),
+        "approve": bool(
+            membership
+            and membership_can_workspace(membership, Workspace.RENTAL)
+            and membership_has_capability(membership, Capability.APPROVE)
+        ),
+        "pay": bool(
+            membership
+            and membership_can_workspace(membership, Workspace.RENTAL)
+            and membership_has_capability(membership, Capability.PAY)
+        ),
+    }
+
+
+def settlement_allowed_actions(settlement: SupplierSettlement, *, membership=None) -> list[str]:
+    permissions = _rental_permissions(membership)
+    actions: list[str] = []
+    if settlement.status == RentalSettlementStatus.CALCULATED and permissions["edit"]:
+        actions.extend(["calculate", "submit"])
+    elif settlement.status == RentalSettlementStatus.REVIEW and permissions["approve"]:
+        actions.extend(["return", "approve"])
+    elif settlement.status in {
+        RentalSettlementStatus.APPROVED,
+        RentalSettlementStatus.PAYMENT_PROCESSING,
+        RentalSettlementStatus.PARTIALLY_PAID,
+    } and permissions["pay"]:
+        _paid, processing = _payment_amounts(settlement)
+        available = max(ZERO, settlement.total_net - _paid - processing)
+        if available > ZERO:
+            actions.append("pay")
+    elif settlement.status == RentalSettlementStatus.PAID and permissions["pay"]:
+        actions.append("close")
+    return actions
+
+
+def supplier_payment_allowed_actions(payment: SupplierPayment, *, membership=None) -> list[str]:
+    permissions = _rental_permissions(membership)
+    if not permissions["pay"]:
+        return []
+    if payment.status == SupplierPaymentStatus.PROCESSING:
+        return ["paid", "failed", "cancelled"]
+    if payment.status == SupplierPaymentStatus.PAID:
+        return ["reversed"]
+    if payment.status in {SupplierPaymentStatus.FAILED, SupplierPaymentStatus.REVERSED}:
+        return ["retry"]
+    return []
+
+
+def project_settlement_workflow(*, period: RentalTimesheetPeriod, settlements: list[SupplierSettlement], membership=None) -> dict[str, object]:
+    permissions = _rental_permissions(membership)
+    statuses = [row.status for row in settlements]
+    all_status = lambda value: bool(statuses) and all(status == value for status in statuses)
+    allowed: list[str] = []
+    if permissions["edit"] and period.status == RentalTimesheetStatus.LOCKED and (not statuses or all(status in {RentalSettlementStatus.DRAFT, RentalSettlementStatus.CALCULATED} for status in statuses)):
+        allowed.append("calculate")
+    if permissions["edit"] and all_status(RentalSettlementStatus.CALCULATED):
+        allowed.append("submit")
+    if permissions["approve"] and all_status(RentalSettlementStatus.REVIEW):
+        allowed.extend(["return", "approve"])
+    if permissions["pay"] and all_status(RentalSettlementStatus.PAID):
+        allowed.append("close")
+
+    next_action = None
+    for candidate in ("submit", "approve", "close", "calculate"):
+        if candidate in allowed:
+            next_action = candidate
+            break
+    return {
+        "projectId": project_public_id(period.project),
+        "timesheetStatus": period.get_status_display(),
+        "timesheetStatusValue": period.status,
+        "settlementStatuses": statuses,
+        "allowedActions": allowed,
+        "nextAction": next_action,
+        "canCalculate": "calculate" in allowed,
+        "canSubmit": "submit" in allowed,
+        "canReturn": "return" in allowed,
+        "canApprove": "approve" in allowed,
+        "canClose": "close" in allowed,
+    }
 
 
 def serialize_rental_adjustment(item: RentalAdjustment) -> dict[str, object]:
@@ -99,6 +194,163 @@ def _payment_amounts(settlement: SupplierSettlement) -> tuple[Decimal, Decimal]:
     return paid, processing
 
 
+
+
+def _financial_bucket() -> dict[str, object]:
+    return {
+        "workers": 0,
+        "hours": ZERO,
+        "otHours": ZERO,
+        "base": ZERO,
+        "otAmount": ZERO,
+        "gross": ZERO,
+        "adjustmentEarnings": ZERO,
+        "adjustmentDeductions": ZERO,
+        "advances": ZERO,
+        "net": ZERO,
+        "payable": ZERO,
+        "paid": ZERO,
+        "processing": ZERO,
+        "outstanding": ZERO,
+        "available": ZERO,
+    }
+
+
+def _add_financial_bucket(target: dict[str, object], settlement: SupplierSettlement, *, paid: Decimal, processing: Decimal, advances: Decimal) -> None:
+    payable = _settlement_payable(settlement)
+    outstanding = max(ZERO, payable - paid)
+    available = max(ZERO, payable - paid - processing)
+    target["workers"] = int(target["workers"]) + int(settlement.worker_count)
+    target["hours"] += settlement.total_regular_hours
+    target["otHours"] += settlement.total_overtime_hours
+    target["base"] += settlement.total_base
+    target["otAmount"] += settlement.total_overtime
+    target["gross"] += settlement.total_gross
+    target["adjustmentEarnings"] += settlement.total_adjustment_earnings
+    target["adjustmentDeductions"] += settlement.total_adjustment_deductions
+    target["advances"] += advances
+    target["net"] += settlement.total_net
+    target["payable"] += payable
+    target["paid"] += paid
+    target["processing"] += processing
+    target["outstanding"] += outstanding
+    target["available"] += available
+
+
+def _settlement_advance_total(settlement: SupplierSettlement) -> Decimal:
+    total = ZERO
+    for line in getattr(settlement, "snapshot_lines", []):
+        for adjustment in getattr(line, "snapshot_adjustment_lines", []):
+            if adjustment.adjustment_type == "advance":
+                total += adjustment.amount
+    return total
+
+
+def _serialize_financial_bucket(bucket: dict[str, object]) -> dict[str, object]:
+    return {
+        "workers": int(bucket["workers"]),
+        "hours": str(bucket["hours"]),
+        "otHours": str(bucket["otHours"]),
+        "base": str(bucket["base"]),
+        "otAmount": str(bucket["otAmount"]),
+        "gross": str(bucket["gross"]),
+        "adjustmentEarnings": str(bucket["adjustmentEarnings"]),
+        "adjustmentDeductions": str(bucket["adjustmentDeductions"]),
+        "advances": str(bucket["advances"]),
+        "net": str(bucket["net"]),
+        "payable": str(bucket["payable"]),
+        "paid": str(bucket["paid"]),
+        "processing": str(bucket["processing"]),
+        "outstanding": str(bucket["outstanding"]),
+        "available": str(bucket["available"]),
+    }
+
+
+def rental_financial_metrics_from_settlements(settlements: list[SupplierSettlement], *, advance_totals: dict[object, Decimal] | None = None) -> dict[str, object]:
+    """Return the authoritative period financial roll-up used by Payroll UI surfaces.
+
+    Settlement snapshot totals are the only cost authority. Payment allocations alter
+    paid/processing/outstanding exposure but never recalculate settlement cost.
+    """
+    projects: dict[str, dict[str, object]] = {}
+    suppliers: dict[str, dict[str, object]] = {}
+    scopes: dict[str, dict[str, object]] = {}
+    totals = _financial_bucket()
+
+    for settlement in settlements:
+        project_id = project_public_id(settlement.project)
+        supplier_id = str(settlement.supplier_id)
+        scope_key = f"{project_id}::{supplier_id}"
+        paid, processing = _payment_amounts(settlement)
+        advances = advance_totals.get(settlement.pk, ZERO) if advance_totals is not None else _settlement_advance_total(settlement)
+
+        project_bucket = projects.setdefault(project_id, _financial_bucket())
+        supplier_bucket = suppliers.setdefault(supplier_id, _financial_bucket())
+        scope_bucket = scopes.setdefault(scope_key, _financial_bucket())
+        for bucket in (project_bucket, supplier_bucket, scope_bucket, totals):
+            _add_financial_bucket(bucket, settlement, paid=paid, processing=processing, advances=advances)
+
+        scope_bucket["projectId"] = project_id
+        scope_bucket["project"] = settlement.project_name
+        scope_bucket["projectCode"] = settlement.project_code
+        scope_bucket["supplierId"] = supplier_id
+        scope_bucket["supplier"] = settlement.supplier_name
+        scope_bucket["supplierCode"] = settlement.supplier_code
+        scope_bucket["settlementId"] = str(settlement.pk)
+        scope_bucket["settlementNumber"] = settlement.settlement_number
+        scope_bucket["status"] = settlement.get_status_display()
+        scope_bucket["statusValue"] = settlement.status
+
+    project_payload = {key: _serialize_financial_bucket(value) for key, value in projects.items()}
+    supplier_payload = {key: _serialize_financial_bucket(value) for key, value in suppliers.items()}
+    scope_payload: dict[str, dict[str, object]] = {}
+    for key, value in scopes.items():
+        row = _serialize_financial_bucket(value)
+        row.update({
+            "projectId": value["projectId"],
+            "project": value["project"],
+            "projectCode": value["projectCode"],
+            "supplierId": value["supplierId"],
+            "supplier": value["supplier"],
+            "supplierCode": value["supplierCode"],
+            "settlementId": value["settlementId"],
+            "settlementNumber": value["settlementNumber"],
+            "status": value["status"],
+            "statusValue": value["statusValue"],
+        })
+        scope_payload[key] = row
+
+    return {
+        "projects": project_payload,
+        "suppliers": supplier_payload,
+        "scopes": scope_payload,
+        "totals": _serialize_financial_bucket(totals),
+        "source": "Supplier settlement snapshots + supplier payment allocations",
+    }
+
+
+def rental_financial_metrics_for_period(*, company, period_start: date) -> dict[str, object]:
+    start, _end = _month_bounds(period_start)
+    allocation_qs = SupplierPaymentAllocation.objects.for_company(company).select_related("payment").order_by("created_at")
+    settlements = list(
+        SupplierSettlement.objects.for_company(company).filter(period_start=start)
+        .select_related("project", "supplier")
+        .prefetch_related(Prefetch("payment_allocations", queryset=allocation_qs, to_attr="snapshot_allocations"))
+        .order_by("project_code", "supplier_code")
+    )
+    advance_rows = (
+        SupplierSettlementAdjustmentLine.objects.for_company(company)
+        .filter(
+            settlement_line__settlement__period_start=start,
+            adjustment_type="advance",
+        )
+        .values("settlement_line__settlement_id")
+        .annotate(total=Sum("amount"))
+    )
+    advance_totals = {row["settlement_line__settlement_id"]: row["total"] or ZERO for row in advance_rows}
+    return rental_financial_metrics_from_settlements(settlements, advance_totals=advance_totals)
+
+
 def serialize_settlement_line(line: SupplierSettlementLine) -> dict[str, object]:
     return {
         "id": str(line.pk), "workerId": str(line.worker_id), "workerCode": line.worker_number, "name": line.worker_name,
@@ -126,10 +378,11 @@ def serialize_settlement_line(line: SupplierSettlementLine) -> dict[str, object]
     }
 
 
-def serialize_supplier_settlement(settlement: SupplierSettlement) -> dict[str, object]:
+def serialize_supplier_settlement(settlement: SupplierSettlement, *, membership=None) -> dict[str, object]:
     paid, processing = _payment_amounts(settlement)
-    outstanding = max(ZERO, settlement.total_net - paid)
-    available = max(ZERO, settlement.total_net - paid - processing)
+    payable = _settlement_payable(settlement)
+    outstanding = max(ZERO, payable - paid)
+    available = max(ZERO, payable - paid - processing)
     return {
         "id": str(settlement.pk), "number": settlement.settlement_number,
         "period": _period_label(settlement.period_start), "periodKey": f"{settlement.period_start:%Y-%m}",
@@ -142,12 +395,15 @@ def serialize_supplier_settlement(settlement: SupplierSettlement) -> dict[str, o
         "submittedAt": settlement.submitted_at.isoformat() if settlement.submitted_at else None, "submittedBy": _user_label(settlement.submitted_by),
         "approvedAt": settlement.approved_at.isoformat() if settlement.approved_at else None, "approvedBy": _user_label(settlement.approved_by),
         "reviewerNote": settlement.reviewer_note, "closedAt": settlement.closed_at.isoformat() if settlement.closed_at else None,
+        "allowedActions": settlement_allowed_actions(settlement, membership=membership),
+        "canGenerateSettlementDocument": settlement.status in PAYABLE_SETTLEMENT_STATUSES,
+        "canGenerateInvoice": settlement.status in PAYABLE_SETTLEMENT_STATUSES,
         "totals": {
             "workers": settlement.worker_count, "hours": str(settlement.total_regular_hours), "workDays": settlement.total_work_days,
             "otHours": str(settlement.total_overtime_hours), "base": str(settlement.total_base), "otAmount": str(settlement.total_overtime),
             "gross": str(settlement.total_gross), "adjustmentEarnings": str(settlement.total_adjustment_earnings),
             "adjustments": str(settlement.total_adjustment_deductions), "net": str(settlement.total_net),
-            "paid": str(paid), "processing": str(processing), "outstanding": str(outstanding), "available": str(available),
+            "payable": str(payable), "paid": str(paid), "processing": str(processing), "outstanding": str(outstanding), "available": str(available),
         },
         "rows": [serialize_settlement_line(line) for line in getattr(settlement, "snapshot_lines", [])],
         "preview": False,
@@ -165,7 +421,7 @@ def settlements_for_period(*, company, period_start: date, project_id=None, supp
     return list(qs.order_by("project_code", "supplier_code"))
 
 
-def serialize_supplier_payment(payment: SupplierPayment) -> dict[str, object]:
+def serialize_supplier_payment(payment: SupplierPayment, *, membership=None) -> dict[str, object]:
     allocations = getattr(payment, "snapshot_allocations", [])
     return {
         "id": str(payment.pk), "ref": payment.payment_number, "supplierId": str(payment.supplier_id), "supplier": payment.supplier_name,
@@ -175,6 +431,10 @@ def serialize_supplier_payment(payment: SupplierPayment) -> dict[str, object]:
         "paidAt": payment.paid_at.isoformat() if payment.paid_at else None, "reversedAt": payment.reversed_at.isoformat() if payment.reversed_at else None,
         "cancelledAt": payment.cancelled_at.isoformat() if payment.cancelled_at else None,
         "retryOf": str(payment.retry_of_id) if payment.retry_of_id else None,
+        "allowedActions": supplier_payment_allowed_actions(payment, membership=membership),
+        "nextAction": (supplier_payment_allowed_actions(payment, membership=membership) or [None])[0],
+        "canRetry": "retry" in supplier_payment_allowed_actions(payment, membership=membership),
+        "canGenerateReceipt": payment.status == SupplierPaymentStatus.PAID,
         "allocations": [
             {
                 "id": str(item.pk), "settlementId": str(item.settlement_id), "settlementNumber": item.settlement.settlement_number,
@@ -204,7 +464,11 @@ def rental_settlement_context(*, company, period_start: date, membership=None, p
     adjustments = rental_adjustments_for_period(company=company, period_start=start)
     payments = supplier_payments_for_period(company=company, period_start=start)
     timesheet_scopes = []
-    periods = RentalTimesheetPeriod.objects.for_company(company).filter(period_start=start).select_related("project").order_by("project__code")
+    project_workflows: dict[str, dict[str, object]] = {}
+    periods = list(RentalTimesheetPeriod.objects.for_company(company).filter(period_start=start).select_related("project").order_by("project__code"))
+    settlements_by_project: dict[object, list[SupplierSettlement]] = {}
+    for settlement in settlements:
+        settlements_by_project.setdefault(settlement.project_id, []).append(settlement)
     for ts_period in periods:
         supplier_rows = list(
             RentalTimesheetEntry.objects.for_company(company).filter(period=ts_period)
@@ -216,14 +480,20 @@ def rental_settlement_context(*, company, period_start: date, membership=None, p
             "statusValue": ts_period.status, "status": ts_period.get_status_display(), "revision": ts_period.revision,
             "suppliers": [{"id": str(row["worker__supplier_id"]), "code": row["worker__supplier__code"], "name": row["worker__supplier__name"]} for row in supplier_rows],
         })
+        project_workflows[project_public_id(ts_period.project)] = project_settlement_workflow(
+            period=ts_period, settlements=settlements_by_project.get(ts_period.project_id, []), membership=membership
+        )
+    financial_metrics = rental_financial_metrics_from_settlements(settlements)
     return {
         "period": f"{start:%Y-%m}", "label": _period_label(start),
-        "settlements": [serialize_supplier_settlement(row) for row in settlements],
+        "settlements": [serialize_supplier_settlement(row, membership=membership) for row in settlements],
+        "financialMetrics": financial_metrics,
         "adjustments": [serialize_rental_adjustment(row) for row in adjustments],
         "adjustmentsByWorker": rental_adjustments_by_worker(company=company, period_start=start),
-        "payments": [serialize_supplier_payment(row) for row in payments],
+        "payments": [serialize_supplier_payment(row, membership=membership) for row in payments],
         "timesheetScopes": timesheet_scopes,
-        "canEdit": bool(membership and membership_can_edit(membership, Workspace.RENTAL)),
-        "canApprove": bool(membership and membership_can_workspace(membership, Workspace.RENTAL) and membership_has_capability(membership, Capability.APPROVE)),
-        "canPay": bool(membership and membership_can_workspace(membership, Workspace.RENTAL) and membership_has_capability(membership, Capability.PAY)),
+        "projectWorkflows": project_workflows,
+        "canEdit": _rental_permissions(membership)["edit"],
+        "canApprove": _rental_permissions(membership)["approve"],
+        "canPay": _rental_permissions(membership)["pay"],
     }

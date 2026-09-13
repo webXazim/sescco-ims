@@ -4,9 +4,10 @@ from apps.projects.contracts import ProjectStatus
 from apps.projects.models import Project
 from apps.rental_manpower.project_adapter import rental_projects_for_company, project_public_id
 
-from datetime import timedelta
+from datetime import date, timedelta
 
-from django.db.models import Count, Prefetch, Q
+from django.db.models import CharField, Count, Exists, F, OuterRef, Prefetch, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.rental_manpower.models import (
@@ -32,7 +33,10 @@ def _current_assignment_filter(today):
     )
 
 
-def suppliers_for_company(*, company, query: str = "", status: str = "", archived: bool | None = False, deleted: bool | None = False):
+def suppliers_for_company(
+    *, company, query: str = "", status: str = "", archived: bool | None = False, deleted: bool | None = False,
+    project_id=None, payment_terms: str = "", workforce: str = "",
+):
     today = timezone.localdate()
     current_filter = _current_assignment_filter(today)
     queryset = ManpowerSupplier.objects.for_company(company)
@@ -58,7 +62,18 @@ def suppliers_for_company(*, company, query: str = "", status: str = "", archive
         )
     if status:
         queryset = queryset.filter(status=status)
-    return (
+    if payment_terms:
+        queryset = queryset.filter(payment_terms=payment_terms)
+    if project_id:
+        queryset = queryset.filter(
+            workers__rental_assignments__project_id=project_id,
+            workers__rental_assignments__cancelled_at__isnull=True,
+            workers__rental_assignments__effective_from__lte=today,
+        ).filter(
+            Q(workers__rental_assignments__effective_to__isnull=True)
+            | Q(workers__rental_assignments__effective_to__gte=today)
+        )
+    queryset = (
         queryset
         .annotate(
             total_worker_count=Count("workers", distinct=True),
@@ -74,16 +89,37 @@ def suppliers_for_company(*, company, query: str = "", status: str = "", archive
                 distinct=True,
             ),
         )
-        .order_by("code", "name")
     )
+    if workforce == "assigned":
+        queryset = queryset.filter(assigned_worker_count__gt=0)
+    elif workforce == "available":
+        queryset = queryset.filter(active_worker_count__gt=F("assigned_worker_count"))
+    elif workforce == "none":
+        queryset = queryset.filter(active_worker_count=0)
+    return queryset.order_by("code", "name")
 
 
-def projects_for_company(*, company, query: str = "", status: str = ""):
+def projects_for_company(
+    *, company, query: str = "", status: str = "", client: str | None = None,
+    manager: str | None = None, supplier_id=None,
+):
     today = timezone.localdate()
     current_filter = Q(rental_assignments__cancelled_at__isnull=True) & Q(rental_assignments__effective_from__lte=today) & (
         Q(rental_assignments__effective_to__isnull=True) | Q(rental_assignments__effective_to__gte=today)
     )
     queryset = rental_projects_for_company(company=company, query=query, status=status)
+    if client is not None:
+        queryset = queryset.filter(client_name=client)
+    if manager is not None:
+        queryset = queryset.filter(manager_name=manager)
+    if supplier_id:
+        queryset = queryset.filter(
+            rental_assignments__worker__supplier_id=supplier_id,
+            rental_assignments__cancelled_at__isnull=True,
+            rental_assignments__effective_from__lte=today,
+        ).filter(
+            Q(rental_assignments__effective_to__isnull=True) | Q(rental_assignments__effective_to__gte=today)
+        ).distinct()
     return (
         queryset.annotate(
             assigned_worker_count=Count(
@@ -101,7 +137,10 @@ def projects_for_company(*, company, query: str = "", status: str = ""):
     )
 
 
-def workers_for_company(*, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False, deleted: bool | None = False):
+def workers_for_company(
+    *, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False,
+    deleted: bool | None = False, operational_status: str = "", project_id=None, trade: str = "", rate_type: str = "",
+):
     assignment_qs = WorkerAssignment.objects.for_company(company).select_related("project", "company__settings").order_by("effective_from", "created_at")
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
         Prefetch("rental_assignments", queryset=assignment_qs)
@@ -135,10 +174,58 @@ def workers_for_company(*, company, query: str = "", status: str = "", supplier_
         queryset = queryset.filter(status=status)
     if supplier_id:
         queryset = queryset.filter(supplier_id=supplier_id)
-    return queryset.order_by("worker_number", "full_name")
+
+    today = timezone.localdate()
+    assignment_base = WorkerAssignment.objects.for_company(company).filter(worker_id=OuterRef("pk"), cancelled_at__isnull=True)
+    current_assignments = assignment_base.filter(effective_from__lte=today).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today)).order_by("-effective_from", "-created_at")
+    future_assignments = assignment_base.filter(effective_from__gt=today).order_by("effective_from", "created_at")
+    last_assignments = assignment_base.filter(effective_from__lte=today).order_by("-effective_from", "-created_at")
+    queryset = queryset.annotate(
+        _has_current_assignment=Exists(current_assignments),
+        _has_future_assignment=Exists(future_assignments),
+        _display_trade=Coalesce(
+            Subquery(current_assignments.values("trade")[:1], output_field=CharField()),
+            Subquery(future_assignments.values("trade")[:1], output_field=CharField()),
+            Subquery(last_assignments.values("trade")[:1], output_field=CharField()),
+            Value(""),
+        ),
+        _display_rate_type=Coalesce(
+            Subquery(current_assignments.values("rate_type")[:1], output_field=CharField()),
+            Subquery(future_assignments.values("rate_type")[:1], output_field=CharField()),
+            Subquery(last_assignments.values("rate_type")[:1], output_field=CharField()),
+            Value(""),
+        ),
+    )
+    if operational_status:
+        normalized = operational_status.strip().lower().replace(" ", "_")
+        if normalized == "assigned":
+            queryset = queryset.filter(status=RentalWorkerStatus.ACTIVE, supplier__status=SupplierStatus.ACTIVE, _has_current_assignment=True)
+        elif normalized == "scheduled":
+            queryset = queryset.filter(status=RentalWorkerStatus.ACTIVE, supplier__status=SupplierStatus.ACTIVE, _has_current_assignment=False, _has_future_assignment=True)
+        elif normalized == "available":
+            queryset = queryset.filter(status=RentalWorkerStatus.ACTIVE, supplier__status=SupplierStatus.ACTIVE, _has_current_assignment=False, _has_future_assignment=False)
+        elif normalized == "inactive":
+            queryset = queryset.filter(Q(status=RentalWorkerStatus.INACTIVE) | Q(supplier__status=SupplierStatus.INACTIVE))
+        elif normalized == "terminated":
+            queryset = queryset.filter(Q(status=RentalWorkerStatus.TERMINATED) | Q(supplier__status=SupplierStatus.TERMINATED))
+        elif normalized not in {"", "all", "archived"}:
+            raise ValueError("Unknown rental worker operational status.")
+    if project_id == "unassigned":
+        queryset = queryset.filter(_has_current_assignment=False)
+    elif project_id:
+        queryset = queryset.filter(
+            rental_assignments__project_id=project_id,
+            rental_assignments__cancelled_at__isnull=True,
+            rental_assignments__effective_from__lte=today,
+        ).filter(Q(rental_assignments__effective_to__isnull=True) | Q(rental_assignments__effective_to__gte=today))
+    if trade:
+        queryset = queryset.filter(_display_trade=trade)
+    if rate_type:
+        queryset = queryset.filter(_display_rate_type=rate_type)
+    return queryset.distinct().order_by("worker_number", "full_name")
 
 
-def serialize_supplier(supplier: ManpowerSupplier) -> dict[str, object]:
+def serialize_supplier(supplier: ManpowerSupplier, financial: dict[str, object] | None = None) -> dict[str, object]:
     active_workers = int(getattr(supplier, "active_worker_count", 0))
     total_workers = int(getattr(supplier, "total_worker_count", 0))
     assigned_workers = int(getattr(supplier, "assigned_worker_count", 0))
@@ -172,14 +259,14 @@ def serialize_supplier(supplier: ManpowerSupplier) -> dict[str, object]:
         "availableWorkers": max(0, active_workers - assigned_workers),
         "inactiveWorkers": max(0, total_workers - active_workers),
         "activeProjects": int(getattr(supplier, "active_project_count", 0)),
-        "hours": 0,
-        "otHours": 0,
-        "currentCost": 0,
-        "outstanding": 0,
+        "hours": financial.get("hours") if financial else None,
+        "otHours": financial.get("otHours") if financial else None,
+        "currentCost": financial.get("net") if financial else None,
+        "outstanding": financial.get("outstanding") if financial else None,
     }
 
 
-def serialize_project(project: Project) -> dict[str, object]:
+def serialize_project(project: Project, financial: dict[str, object] | None = None) -> dict[str, object]:
     return {
         "id": project_public_id(project),
         "reference": project_public_id(project),
@@ -204,11 +291,11 @@ def serialize_project(project: Project) -> dict[str, object]:
         "notes": project.notes,
         "rentalWorkers": int(getattr(project, "assigned_worker_count", 0)),
         "suppliers": int(getattr(project, "assigned_supplier_count", 0)),
-        "hours": 0,
-        "otHours": 0,
-        "grossCost": 0,
-        "advances": 0,
-        "netCost": 0,
+        "hours": financial.get("hours") if financial else None,
+        "otHours": financial.get("otHours") if financial else None,
+        "grossCost": financial.get("gross") if financial else None,
+        "advances": financial.get("advances") if financial else None,
+        "netCost": financial.get("net") if financial else None,
     }
 
 
@@ -246,6 +333,22 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
     supplier_terminated = worker.supplier.status == SupplierStatus.TERMINATED
     effective_archived = bool(worker.archived_at or supplier_archived)
     effective_deleted = bool(worker.deleted_at or supplier_deleted)
+
+    # A project is not the lifecycle parent of the permanent worker master, so
+    # project Archive/Delete must never move the worker itself to Archive/Delete.
+    # It *is* an inherited operational boundary for the current assignment.  Keep
+    # the effective-dated assignment intact and publish the project boundary so
+    # the UI can stop project-local actions while still allowing transfer/release.
+    assignment_project = current.project if current else None
+    assignment_project_archived = bool(assignment_project and assignment_project.archived_at)
+    assignment_project_deleted = bool(assignment_project and assignment_project.deleted_at)
+    assignment_project_active = bool(
+        assignment_project
+        and assignment_project.status == Project.Status.ACTIVE
+        and not assignment_project_archived
+        and not assignment_project_deleted
+    )
+
     archive_sources = []
     delete_sources = []
     if supplier_archived:
@@ -328,9 +431,23 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         "deletionReason": deletion_reason,
         "purgeAfter": purge_after.isoformat() if purge_after else None,
         "cascadeLifecycle": {"archiveSources": archive_sources, "deleteSources": delete_sources},
+        "assignmentLifecycle": {
+            "projectId": project_public_id(assignment_project) if assignment_project else None,
+            "projectStatus": assignment_project.get_status_display() if assignment_project else "",
+            "projectStatusValue": assignment_project.status if assignment_project else "",
+            "projectArchived": assignment_project_archived,
+            "projectDeleted": assignment_project_deleted,
+            "operational": assignment_project_active if assignment_project else True,
+        },
         "supplierInactive": supplier_inactive,
         "supplierTerminated": supplier_terminated,
-        "operationallyStopped": bool(worker.supplier.status != SupplierStatus.ACTIVE or worker.status != RentalWorkerStatus.ACTIVE or effective_archived or effective_deleted),
+        "operationallyStopped": bool(
+            worker.supplier.status != SupplierStatus.ACTIVE
+            or worker.status != RentalWorkerStatus.ACTIVE
+            or effective_archived
+            or effective_deleted
+            or (assignment_project is not None and not assignment_project_active)
+        ),
         "inactiveOn": worker.inactive_on.isoformat() if worker.inactive_on else "",
         "inactiveReason": worker.inactive_reason,
         "terminatedOn": (worker.terminated_on or worker.supplier.terminated_on).isoformat() if (worker.terminated_on or worker.supplier.terminated_on) else "",
@@ -353,14 +470,25 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
     }
 
 
-def rental_master_context(*, company) -> dict[str, object]:
+def rental_master_context(*, company, period_start: date | None = None) -> dict[str, object]:
+    from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
+    from apps.rental_manpower.selectors.settlements import rental_financial_metrics_for_period
+
+    period_start = (period_start or timezone.localdate()).replace(day=1)
     suppliers = list(suppliers_for_company(company=company, archived=None))
     projects = list(projects_for_company(company=company))
     workers = list(workers_for_company(company=company, archived=None))
     assignments = assignment_context(company=company)
+    financial_metrics = rental_financial_metrics_for_period(company=company, period_start=period_start)
+    supplier_metrics = financial_metrics["suppliers"]
+    project_metrics = financial_metrics["projects"]
     return {
-        "suppliers": [serialize_supplier(item) for item in suppliers],
-        "projects": [serialize_project(item) for item in projects],
+        "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
+        "financialPeriod": period_start.strftime("%B %Y"),
+        "financialPeriodKey": f"{period_start:%Y-%m}",
+        "financialMetrics": financial_metrics,
+        "suppliers": [serialize_supplier(item, supplier_metrics.get(str(item.pk))) for item in suppliers],
+        "projects": [serialize_project(item, project_metrics.get(project_public_id(item))) for item in projects],
         "workers": [serialize_worker(item) for item in workers],
         "assignmentsByWorker": assignments["assignmentsByWorker"],
         "assignmentAsOf": assignments["asOf"],

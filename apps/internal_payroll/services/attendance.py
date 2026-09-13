@@ -15,9 +15,13 @@ from apps.accounts.models import CompanyMembership
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
+from apps.core.payroll_attendance_contract import (
+    ATTENDANCE_WORKSPACE_INTERNAL,
+    normalize_attendance_workflow_action,
+    normalize_payroll_attendance_value,
+)
 from apps.core.services.audit import record_audit_event
 from apps.internal_payroll.models import (
-    AttendanceCode,
     AttendanceEntry,
     AttendanceOvertimeEntry,
     AttendancePeriod,
@@ -92,30 +96,11 @@ def _decimal(value: object, field: str, places: str = "0.01") -> Decimal:
 
 
 def normalize_attendance_value(value: object) -> tuple[Decimal, str, str] | None:
-    """Return (hours, code, normalized display value). Blank means remove/missing."""
+    """Normalize Internal attendance through the shared backend contract."""
 
-    raw = str(value if value is not None else "").strip().upper()
-    if not raw:
-        return None
-    aliases = {
-        "P": "8",
-        "PRESENT": "8",
-        "ABSENT": AttendanceCode.ABSENT,
-        "LEAVE": AttendanceCode.LEAVE,
-        "SICK": AttendanceCode.SICK,
-        "HOLIDAY": AttendanceCode.HOLIDAY,
-        "OFFDAY": AttendanceCode.OFF,
-        "OFF DAY": AttendanceCode.OFF,
-    }
-    raw = aliases.get(raw, raw)
-    valid_codes = {value for value, _label in AttendanceCode.choices}
-    if raw in valid_codes:
-        return Decimal("0"), raw, raw
-    hours = _decimal(raw, "value")
-    if hours < 0 or hours > 24:
-        raise ValidationError({"value": "Attendance hours must be between 0 and 24."})
-    display = format(hours.normalize(), "f") if hours != hours.to_integral() else str(int(hours))
-    return hours, "", display
+    return normalize_payroll_attendance_value(
+        value, workspace=ATTENDANCE_WORKSPACE_INTERNAL, field="value"
+    )
 
 
 def _period_snapshot(period: AttendancePeriod) -> dict[str, object]:
@@ -543,7 +528,7 @@ def transition_attendance_period(
     request: HttpRequest | None = None,
 ) -> AttendancePeriod:
     company = actor_membership.company
-    normalized_action = action.strip().lower().replace("-", "_")
+    normalized_action = normalize_attendance_workflow_action(action)
     if normalized_action == "submit":
         _require_internal_edit(actor_membership)
     else:

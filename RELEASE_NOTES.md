@@ -1,3 +1,73 @@
+# 1.0.57 — Archive/Delete/Restore cascading integrity
+
+- Hardens the existing 30-day recoverable Delete model for Branch / Office, Department, Internal Employee, Manpower Supplier, Rental Worker and shared Project without turning historical payroll, attendance, timesheet, settlement, payment, inventory movement, document or audit records into destructive cascades. Parent-owned operational child masters continue to share the exact parent recovery window and restore atomically through `TrashCascadeLink`.
+- Fixes lifecycle API recovery for independently restored child records. An Internal Employee restored while its Branch/Department parent is still deleted, or a Rental Worker restored while its Manpower Supplier parent remains deleted, now returns a successful payload with the inherited parent Delete state instead of re-querying only currently visible rows and reporting an error after the restore succeeded.
+- Makes Project Archive/Delete an explicit inherited **assignment operational boundary** rather than falsely deleting the permanent Rental Worker master. Current effective-dated assignments remain intact for history/recovery; worker payloads now publish project lifecycle/operational state and assignment payloads retain project identity even when the deleted project is absent from the active project directory.
+- Updates the Rental Worker profile so a deleted/archived/on-hold project is shown as a retained assignment boundary. Transfer and Release remain available for safe recovery/redeployment, while project-local Trade/Rate changes are suppressed until the project is active again. Deleted projects are not exposed as broken profile links.
+- Corrects an outdated Internal API regression test that expected Department Delete not to soft-delete its current employee child; the test now enforces the same parent/child `deleted_at` and `purge_after` window used by the production service. Adds explicit API regressions for independent child restore under a deleted parent and a Rental project delete/restore regression proving the worker master and exact assignment survive.
+- Extends the packaged Payroll contract gate so future releases fail if inherited child recovery, project assignment lifecycle authority, or exact cascade test coverage is removed. No database migration is required.
+
+# 1.0.56 — Rental Manpower lifecycle completion
+
+- Makes the Rental settlement/project lifecycle backend-authoritative from locked timesheet through calculation, review, approval, supplier payment, and project-period closure. Project contexts now publish `allowedActions`, `nextAction`, and explicit action gates; the browser no longer derives settlement actions from display labels.
+- Makes supplier-payment result handling backend-authoritative. Payment rows now publish allowed result actions, retry eligibility, and receipt eligibility; the UI consumes those permissions for Paid/Failed/Cancelled/Reversed transitions and retry instead of inferring them from status text.
+- Advances `SupplierSettlement.revision` on review submission, return/rejection, approval, payment-status synchronization, and closure in addition to calculation, preserving a complete authoritative state-change sequence for downstream finance/document workflows. Canonical service aliases such as `submit_for_review`, `return_for_changes`, `close_period`, and payment result `complete` are accepted without changing stored lifecycle values.
+- Tightens Return for Changes so a project settlement group can only return when every supplier snapshot is in Review, preventing a mixed-state project group from partially rewinding.
+- Preserves historical finance completion after operational stop boundaries: terminating a supplier/worker or completing a project continues to block new operational assignments while already-approved settlement snapshots remain payable, documentable, reversible/retryable where allowed, and closable.
+- Confirms supplier invoice generation remains limited to Approved-or-later settlement snapshots and supplier payment receipts remain limited to Paid supplier payments; those document checks stay server enforced.
+- Extends the settlement progress display through Payment and Closed states and removes the unused browser `rentalSettlementHasDrift()` placeholder that falsely hardcoded no drift. Adds regression/static release coverage for lifecycle authority, revisions, document gates, and historical-finance continuity.
+- No database migration is required.
+
+# 1.0.55 — Internal Payroll lifecycle completion
+
+- Makes the Internal Payroll Run workflow backend-authoritative from calculation through review and approval. The period context now publishes allowed actions and explicit `canCalculate`, `canReset`, `canSubmitReview`, `canReturnForChanges`, and `canApprove` gates; the browser renders actions from that contract instead of inferring permission from display labels.
+- Advances `PayrollRun.revision` on every authoritative lifecycle mutation: calculation/recalculation, reset, review submission, return/rejection, approval, payment-processing start, Paid transition, Close, and Reopen. Workflow aliases such as `submit for review` and `reject` normalize at the service boundary without changing stored statuses.
+- Makes salary-payment batch actions backend-authoritative. Payment responses now publish `allowedActions`, `nextAction`, and row-level `canRetry`; the UI consumes those fields for Start, Import Results, Retry, Close, Cancel, and Reopen.
+- Exposes the existing controlled Cancel Batch and Reopen Payroll services in the production UI. Both reason-required transitions remain server validated; cancellation is limited to Prepared/Exported batches and reopen is limited to Closed batches.
+- Fixes stale Payroll Run state after payment processing by invalidating the selected-period payroll context whenever salary-payment state changes, forcing the next Payroll Run view to reload the server status instead of retaining an older Approved snapshot in browser memory.
+- Adds service/selector regression coverage for the complete approval and payment chains plus a packaged frontend contract that rejects a return to display-status action inference or loss of lifecycle authority.
+- No database migration is required.
+
+# 1.0.54 — Attendance/status contract hardening
+
+- Introduces one backend Payroll attendance contract shared by Internal Attendance and Rental Manpower Timesheets for allowed hours, explicit status codes, text aliases, workflow states, and canonical workflow actions. Blank remains the only incomplete attendance value; numeric 0–24 hours and every supported explicit status are complete values for Submit/Approve/Lock validation.
+- Internal Attendance exposes `A` Absent, `L` Leave, `S` Sick, `H` Holiday, and `OFF` through the backend contract. Rental Timesheets expose `A` Absent, `N` No Scope, `L` Leave, and `OFF`. API/import values such as `absent`, `holiday`, `no scope`, `off day`, and `present` normalize at the service boundary instead of relying on browser translation.
+- Publishes the authoritative attendance contract in Internal attendance responses and Rental master/timesheet contexts. The browser now normalizes inputs, renders legends/help text, and enables workflow actions from that server contract rather than maintaining separate hard-coded code lists.
+- Makes Internal and Rental workflow action aliases converge on `submit`, `approve`, `lock`, and `return_to_draft`; `submit_for_review`, `return`, and `reject` remain accepted service-boundary aliases. Rental revision numbers now advance on Submit, Approve, and Lock as well as correction returns so downstream settlement snapshots have a precise source revision.
+- Corrects the Rental bulk controls so `A` is Absent and numeric `0` is Zero hours, and exposes Leave/Off bulk actions. Valid alphabetic attendance statuses no longer appear as invalid merely because they are letters; unsupported text still fails with a controlled validation message.
+- Extends DEMO Internal attendance so the seeded grid includes Holiday in addition to Absent, Sick, Leave, Off, and worked-hour rows. Existing Rental DEMO data already covers Absent, No Scope, Leave, Off, and worked-hour rows.
+- Adds shared-contract, Internal alias/submission, Rental alias/reject/revision, seed, and packaged frontend authority regression guards. No database migration is required.
+
+# 1.0.53 — Server-side Payroll directory authority
+
+- Moves the six Payroll master registers—Branches / Offices, Departments, Internal Employees, Rental Projects, Manpower Suppliers, and Rental Workforce—onto company-scoped backend search/filter/sort/pagination APIs instead of filtering the visible register from browser master arrays.
+- Adds reusable browser directory loading with stale-response protection, loading/error/retry states, backend result counts, Previous/Next navigation, and 25/50/100 row page sizes while preserving existing profile/action navigation.
+- Extends Internal organization endpoints with server-derived employee counts and employee-count sorting. Employee list responses now carry selected-period payment-profile/WPS state so WPS filters and row badges use the same backend authority.
+- Extends Rental directory APIs with project↔supplier filters, payment-term/workforce/outstanding supplier filters, project client/manager filters, and worker operational-status/project/trade/rate-type filters. Project and supplier rows retain the 1.0.51 settlement financial authority for the selected period.
+- Stops embedding the duplicate all-employee organization-history map in the Payroll shell; organization history is loaded with the selected employee profile. Register mutations invalidate the affected server directory so create/edit/lifecycle/transfer/restore actions do not leave stale pages.
+- Adds Internal and Rental API regression coverage plus a packaged release contract that rejects removal of server directory pagination or a return to client-side register filtering.
+- The shell still retains compact master/reference data used by cross-workspace summaries and workflow pickers; the register rows themselves are server-paginated. Shell-wide reference-cache sizing remains part of the final performance/freeze pass rather than being coupled to this functional cutover.
+- No database migration is required.
+
+# 1.0.52 — Internal employee profile backend authority
+
+- Replaces the Internal Employee profile's browser placeholders for overtime, Payroll History, and Recent Activity with a dedicated company-scoped backend profile endpoint.
+- Current-period attendance/OT now reads persisted Attendance entries and overtime snapshots; the browser keeps live attendance as a temporary fallback only until the authoritative profile payload arrives.
+- Payroll History now reads immutable `PayrollRunLine` snapshots and exposes the related payment state/reference when a salary-payment row exists, so historical payroll no longer appears empty after real runs.
+- Recent Activity now reads append-only Internal Payroll audit events related to the employee, organization/salary changes, adjustments, attendance periods, payroll runs, salary-payment batches/rows, and payment-profile changes instead of manufacturing status messages in the browser.
+- Adds mutation-aware profile-cache invalidation after attendance/OT, workflow, payroll, payment, salary, organization, lifecycle, and employee master changes.
+- Adds selector/API regression coverage plus a packaged frontend/backend authority contract that rejects the former `otHours: 0`, `payrollHistory: []`, and `activity: []` placeholders.
+- No database migration is required.
+
+# 1.0.51 — Rental financial authority
+
+- Replaces Rental Project/Supplier financial zero placeholders with authoritative period aggregates from immutable supplier settlement snapshots and supplier-payment allocations.
+- Connects project lists, supplier lists, project profiles, supplier profiles, Rental overview controls, and selected-period refreshes to the same backend financial metrics for regular/OT hours, gross/net cost, advances, paid, processing, and outstanding.
+- Preserves current workforce/deployment counts from effective-dated assignments while retaining historical financial scopes after worker transfer or release.
+- Separates calculated settlement cost from payable exposure: Draft/Calculated settlements contribute cost, but payable/outstanding/available remain zero until Approved or a later payable state.
+- Adds reconciliation regression coverage and a release-time static contract that rejects a return of Rental financial zero placeholders or browser-only cost authority.
+- No database migration is required.
+
 # 1.0.50 — Idempotent DEMO history-period selection
 
 - Fixes a second or later `./scripts/deploy-production.sh --seed` run failing with `Unable to find a collision-free DEMO history month before existing non-DEMO employment` after the 1.0.48 workflow-ready lifecycle fixtures had already been created.

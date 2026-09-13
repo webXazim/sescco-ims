@@ -64,6 +64,83 @@ class InternalOrganizationApiTests(TestCase):
         self.assertEqual(payload["meta"]["sort"], "name")
         self.assertEqual(payload["meta"]["direction"], "desc")
 
+
+    def test_directory_endpoints_return_counts_filters_and_pagination(self):
+        employee = create_employee(
+            actor_membership=self.membership,
+            employee_number="0002",
+            full_name="Directory Employee",
+            joining_date=date(2024, 1, 1),
+            branch_id=self.branch.pk,
+            department_id=self.department.pk,
+            position="Coordinator",
+            status="Active",
+            national_id="DIR-0002",
+        )
+        branch_response = self.client.get(
+            reverse("internal_payroll:branches-api"),
+            {"status": "all", "sort": "employees", "direction": "desc", "page": 1, "page_size": 25},
+        )
+        self.assertEqual(branch_response.status_code, 200)
+        branch_row = next(row for row in branch_response.json()["results"] if row["id"] == str(self.branch.pk))
+        self.assertEqual(branch_row["employeeCount"], 1)
+        self.assertEqual(branch_row["activeEmployeeCount"], 1)
+
+        employee_response = self.client.get(
+            reverse("internal_payroll:employees-api"),
+            {
+                "branch": str(self.branch.pk),
+                "department": str(self.department.pk),
+                "period": "2026-08",
+                "page": 1,
+                "page_size": 1,
+            },
+        )
+        self.assertEqual(employee_response.status_code, 200)
+        payload = employee_response.json()
+        self.assertEqual(payload["meta"]["count"], 1)
+        self.assertEqual(payload["meta"]["pageSize"], 1)
+        self.assertEqual(payload["results"][0]["id"], str(employee.pk))
+
+    def test_employee_directory_includes_period_payment_profile(self):
+        from apps.internal_payroll.services import upsert_employee_payment_profile
+
+        employee = create_employee(
+            actor_membership=self.membership,
+            employee_number="0003",
+            full_name="Payment Directory Employee",
+            joining_date=date(2024, 1, 1),
+            branch_id=self.branch.pk,
+            department_id=self.department.pk,
+            position="Accountant",
+            status="Active",
+            national_id="DIR-0003",
+        )
+        upsert_employee_payment_profile(
+            actor_membership=self.membership,
+            employee_id=employee.pk,
+            values={
+                "destination_type": "iban",
+                "account_holder_name": employee.full_name,
+                "bank_name": "Directory Bank",
+                "bank_code": "DB01",
+                "iban": "SA1000000000000000000000",
+                "wps_enabled": True,
+                "is_active": True,
+                "mark_verified": True,
+            },
+        )
+        response = self.client.get(
+            reverse("internal_payroll:employees-api"),
+            {"q": "Payment Directory Employee", "period": "2026-08", "page": 1, "page_size": 25},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = response.json()["results"][0]
+        self.assertEqual(row["bank"], "Directory Bank")
+        self.assertEqual(row["paymentMethod"], "IBAN")
+        self.assertIn("paymentProfile", row)
+        self.assertTrue(row["account"])
+
     def test_branch_list_rejects_unknown_sort(self):
         response = self.client.get(reverse("internal_payroll:branches-api"), {"sort": "unsafe"})
         self.assertEqual(response.status_code, 400)
@@ -143,7 +220,34 @@ class InternalOrganizationApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.department.refresh_from_db(); employee.refresh_from_db()
         self.assertIsNotNone(self.department.deleted_at)
+        self.assertIsNotNone(employee.deleted_at)
+        self.assertEqual(employee.deleted_at, self.department.deleted_at)
+        self.assertEqual(employee.purge_after, self.department.purge_after)
+
+
+    def test_independent_employee_restore_under_deleted_parent_returns_inherited_delete_state(self):
+        employee = self._create_employee(number="0098", name="Cascade Recovery Employee")
+        deleted = self.client.delete(
+            reverse("internal_payroll:department-detail-api", kwargs={"department_id": self.department.pk}),
+            data=json.dumps({"confirmation": self.department.code, "reason": "TEST cascade parent"}),
+            content_type="application/json",
+        )
+        self.assertEqual(deleted.status_code, 200)
+        employee.refresh_from_db()
+        self.assertIsNotNone(employee.deleted_at)
+
+        restored = self.client.post(
+            reverse("internal_payroll:employee-lifecycle-api", kwargs={"employee_id": employee.pk}),
+            data=json.dumps({"action": "restore_trash"}),
+            content_type="application/json",
+        )
+        self.assertEqual(restored.status_code, 200)
+        payload = restored.json()["employee"]
+        employee.refresh_from_db()
         self.assertIsNone(employee.deleted_at)
+        self.assertTrue(payload["deleted"])
+        self.assertFalse(payload["deletedOwn"])
+        self.assertIn("department", payload["cascadeLifecycle"]["deleteSources"])
 
     def test_employee_lifecycle_termination_and_archive_filters(self):
         employee = self._create_employee()

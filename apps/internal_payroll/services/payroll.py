@@ -1092,6 +1092,7 @@ def reset_payroll_run(
     run.approved_at = None
     run.approved_by = None
     run.reviewer_note = ""
+    run.revision += 1
     run.full_clean()
     run.save()
     record_audit_event(
@@ -1122,7 +1123,14 @@ def transition_payroll_run(
 ) -> PayrollRun:
     company = actor_membership.company
     start, _end = month_bounds(period_start)
-    normalized = action.strip().lower().replace("-", "_")
+    normalized = action.strip().lower().replace("-", "_").replace(" ", "_")
+    normalized = {
+        "submit": "submit_review",
+        "submit_for_review": "submit_review",
+        "return": "return_for_changes",
+        "reject": "return_for_changes",
+        "return_to_calculated": "return_for_changes",
+    }.get(normalized, normalized)
     if normalized == "submit_review":
         _require_internal_edit(actor_membership)
     else:
@@ -1172,8 +1180,9 @@ def transition_payroll_run(
         run.reviewer_note = note.strip()
         audit_action = "internal.payroll_run.approved"
     else:
-        raise ValidationError({"action": "Unsupported payroll workflow action."})
+        raise ValidationError({"action": "Action must be submit_review, return_for_changes, or approve."})
 
+    run.revision += 1
     run.full_clean()
     run.save()
     record_audit_event(

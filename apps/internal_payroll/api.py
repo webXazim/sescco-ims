@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -18,6 +20,7 @@ from apps.internal_payroll.models import Branch, Department, EmploymentStatus, I
 from apps.internal_payroll.selectors import (
     branches_for_company,
     departments_for_company,
+    employee_profile_context,
     employees_for_company,
     serialize_branch,
     serialize_department,
@@ -46,6 +49,19 @@ from apps.internal_payroll.services import (
     update_department,
     update_employee,
 )
+
+
+def _employee_profile_period(value: str) -> date:
+    raw = (value or "").strip()
+    if len(raw) == 7:
+        raw = f"{raw}-01"
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValidationError({"period": "Period must use YYYY-MM format."}) from exc
+    if parsed.day != 1:
+        raise ValidationError({"period": "Period must identify a calendar month."})
+    return parsed
 
 
 def _employee_status_query(value: str) -> str:
@@ -95,6 +111,7 @@ def branches_api(request: HttpRequest) -> JsonResponse:
                 "location": "location",
                 "manager": "manager_name",
                 "status": "is_active",
+                "employees": "active_employee_count",
             }
             controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
             active, archived = _organization_master_filter(request.GET.get("status", ""))
@@ -173,7 +190,7 @@ def branch_lifecycle_api(request: HttpRequest, branch_id) -> JsonResponse:
 def departments_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
-            allowed_sorts = {"code": "code", "name": "name", "status": "is_active"}
+            allowed_sorts = {"code": "code", "name": "name", "status": "is_active", "employees": "active_employee_count"}
             controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
             active, archived = _organization_master_filter(request.GET.get("status", ""))
             rows = departments_for_company(
@@ -260,8 +277,51 @@ def employees_api(request: HttpRequest) -> JsonResponse:
                 department_id=request.GET.get("department") or None,
                 archived=_employee_archived_query(request.GET.get("archived", "")),
             )
+            wps_filter = str(request.GET.get("wps", "")).strip().lower().replace(" ", "_")
+            period_value = str(request.GET.get("period", "")).strip()
+            payment_context = None
+            if period_value or (wps_filter and wps_filter != "all"):
+                from apps.internal_payroll.selectors.payment import salary_payment_context
+                period_start = _employee_profile_period(period_value)
+                payment_context = salary_payment_context(company=request.company, period_start=period_start)
+            if wps_filter and wps_filter != "all":
+                if wps_filter not in {"ready", "needs_setup"}:
+                    raise ValidationError({"wps": "WPS filter must be ready, needs_setup, or all."})
+                ready_ids = {
+                    str(item.get("employeeId"))
+                    for item in (payment_context or {}).get("wpsReadiness", {}).get("employees", [])
+                    if item.get("status") == "Ready"
+                }
+                if wps_filter == "ready":
+                    rows = rows.filter(pk__in=ready_ids)
+                else:
+                    rows = rows.exclude(pk__in=ready_ids)
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
-            results, meta = serialize_list(rows, controls=controls, serializer=serialize_employee)
+
+            profiles = (payment_context or {}).get("profiles", {})
+            readiness_by_employee = {
+                str(item.get("employeeId")): item
+                for item in (payment_context or {}).get("wpsReadiness", {}).get("employees", [])
+            }
+
+            def serialize_directory_employee(employee):
+                result = serialize_employee(employee)
+                employee_id = str(employee.pk)
+                profile = profiles.get(employee_id)
+                readiness = readiness_by_employee.get(employee_id)
+                result["paymentProfile"] = profile
+                result["bank"] = profile.get("bankName", "") if profile else ""
+                result["account"] = profile.get("destinationMasked", "") if profile else ""
+                result["paymentMethod"] = profile.get("destinationLabel", "") if profile else "Not set"
+                if readiness:
+                    result["wps"] = readiness.get("status", "Needs setup")
+                elif profile:
+                    result["wps"] = "Pending" if profile.get("active") and profile.get("wpsEnabled") else "Not configured"
+                else:
+                    result["wps"] = "Needs setup"
+                return result
+
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_directory_employee)
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
         employee = create_employee(
@@ -279,7 +339,14 @@ def employees_api(request: HttpRequest) -> JsonResponse:
             employment_end_date=_optional_date(body.get("employment_end_date"), "employment_end_date"),
             request=request,
         )
-        employee = employees_for_company(company=request.company).get(pk=employee.pk)
+        # A child master may be restored independently while its Branch/Department
+        # parent is still in the 30-day Delete window.  Serialize that exact
+        # recovered row with inherited lifecycle state instead of re-querying only
+        # currently visible employees (which would turn a successful restore into
+        # a misleading API 404/500 after the transaction committed).
+        employee = employees_for_company(
+            company=request.company, archived=None, deleted=None
+        ).get(pk=employee.pk)
         history = employee.organization_history
         return JsonResponse(
             {
@@ -290,6 +357,24 @@ def employees_api(request: HttpRequest) -> JsonResponse:
             },
             status=201,
         )
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def employee_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
+    try:
+        employee = employees_for_company(company=request.company, archived=None).get(pk=employee_id)
+        period_start = _employee_profile_period(request.GET.get("period", ""))
+        return JsonResponse({
+            "ok": True,
+            "profile": employee_profile_context(
+                company=request.company,
+                employee=employee,
+                period_start=period_start,
+            ),
+        })
     except Exception as exc:
         return _handle_error(exc)
 

@@ -10,6 +10,7 @@ e9766edb8e5a3db267d277543b3ba18568fc13cde08eb6d7ce35c987951903de  static/payroll
 337a952eebdeca0290f70276ffdda00bcbc528e930e40d3761db86dbf0058438  static/payroll/css/v2/components/empty-state.css
 57741d16571a29ff617b4d32f17a00a15d3eb68587098a7574864d1241a01647  static/payroll/css/v2/components/form-drawer.css
 3fb27233975da7ccfcd847f04dbb6b096332aa2284d1f1e15b1eb2521b0590d3  static/payroll/css/v2/components/form.css
+5b1aafae0e4248bebc7023b0047518d544c8575e992d4eec581070d9222b69de  static/payroll/css/v2/components/lifecycle.css
 881c59fd9067d44a8beb7b8f373dee8252b8fa9dd3fe7f8fa728a42e36aa07f8  static/payroll/css/v2/components/menu.css
 d53251cb80c4ea63528b1cd935d97ee2c3f78397898cfab39dff2bb3dc402094  static/payroll/css/v2/components/search-hardening.css
 740f14d68949392830f465fa70a815a03d2f8d3f87e0f0dabc760d0d1345e187  static/payroll/css/v2/components/skeleton.css
@@ -51,5 +52,4 @@ f7726202d7ae2fef77cebb3393ea0abbc2630a323dc3cb875bf208ccb23c3562  static/payroll
 8893e50e77189677ea740608dd8894b1e23e6fc34f90ac9bbfe12fe73ed9ccbc  static/payroll/css/v2/prs-rental-operations-cutover.css
 ba72905d096d609036b1c17714547c3c63a93b0c02f98141c672855c5d344d13  static/payroll/css/v2/prs-rental-timesheet-cutover.css
 ea92ed324bce1510a253d46a75d727fdaccd3bbc2ab20ed350bef3536f8be3f4  static/payroll/css/v2/prs-shell-cutover.css
-a7c8a471a27e1fce95cc019b688944388893fa30a09343850121da8fbee88822  static/payroll/js/app.js
-5b1aafae0e4248bebc7023b0047518d544c8575e992d4eec581070d9222b69de  static/payroll/css/v2/components/lifecycle.css
+2dc9f6b930a487b890b9542d2a5249cc3b9ab8695e944743d08bf1c026d1b19f  static/payroll/js/app.js

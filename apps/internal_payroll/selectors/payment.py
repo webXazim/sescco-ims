@@ -12,7 +12,9 @@ from apps.internal_payroll.models import (
     PayrollRun,
     PayrollRunStatus,
     SalaryPaymentBatch,
+    SalaryPaymentBatchStatus,
     SalaryPaymentRow,
+    SalaryPaymentRowStatus,
 )
 from apps.internal_payroll.services.attendance import month_bounds
 from apps.internal_payroll.services.payment import _masked, payment_readiness
@@ -70,7 +72,7 @@ def serialize_export_template(template: BankExportTemplate) -> dict[str, object]
     }
 
 
-def serialize_payment_row(row: SalaryPaymentRow) -> dict[str, object]:
+def serialize_payment_row(row: SalaryPaymentRow, *, can_pay: bool = False) -> dict[str, object]:
     return {
         "id": str(row.pk),
         "employeeId": str(row.employee_id),
@@ -94,13 +96,27 @@ def serialize_payment_row(row: SalaryPaymentRow) -> dict[str, object]:
         "attempts": row.attempt_count,
         "paidAt": row.paid_at.isoformat() if row.paid_at else None,
         "lastResultAt": row.last_result_at.isoformat() if row.last_result_at else None,
+        "canRetry": bool(can_pay and row.status in {SalaryPaymentRowStatus.FAILED, SalaryPaymentRowStatus.REVERSED}),
     }
 
 
-def serialize_payment_batch(batch: SalaryPaymentBatch) -> dict[str, object]:
+def serialize_payment_batch(batch: SalaryPaymentBatch, *, membership=None) -> dict[str, object]:
     rows = getattr(batch, "payment_rows", None)
     if rows is None:
         rows = list(batch.rows.all().order_by("employee_number"))
+    can_pay = bool(membership and membership_has_capability(membership, Capability.PAY))
+    allowed_actions: list[str] = []
+    if can_pay and batch.status not in {SalaryPaymentBatchStatus.CANCELLED, SalaryPaymentBatchStatus.CLOSED}:
+        allowed_actions.append("export")
+    if can_pay and batch.status in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:
+        allowed_actions.extend(["start", "cancel"])
+    if can_pay and batch.status in {SalaryPaymentBatchStatus.PROCESSING, SalaryPaymentBatchStatus.PARTIALLY_PAID, SalaryPaymentBatchStatus.ATTENTION}:
+        allowed_actions.append("import_results")
+    if can_pay and batch.status == SalaryPaymentBatchStatus.PAID:
+        allowed_actions.append("close")
+    if can_pay and batch.status == SalaryPaymentBatchStatus.CLOSED:
+        allowed_actions.append("reopen")
+    next_action = next((item for item in ("start", "import_results", "close") if item in allowed_actions), None)
     return {
         "id": str(batch.pk),
         "reference": batch.reference,
@@ -123,7 +139,10 @@ def serialize_payment_batch(batch: SalaryPaymentBatch) -> dict[str, object]:
         "completedAt": batch.completed_at.isoformat() if batch.completed_at else None,
         "closedAt": batch.closed_at.isoformat() if batch.closed_at else None,
         "lastExportSha256": batch.last_export_sha256,
-        "rows": [serialize_payment_row(item) for item in rows],
+        "canPay": can_pay,
+        "allowedActions": allowed_actions,
+        "nextAction": next_action,
+        "rows": [serialize_payment_row(item, can_pay=can_pay) for item in rows],
     }
 
 
@@ -192,7 +211,7 @@ def salary_payment_context(*, company, period_start: date, membership=None, bank
         "settings": serialize_payment_settings(settings_row),
         "profiles": {str(item.employee_id): serialize_payment_profile(item) for item in profiles},
         "templates": [serialize_export_template(item) for item in templates],
-        "batches": [serialize_payment_batch(item) for item in batches],
+        "batches": [serialize_payment_batch(item, membership=membership) for item in batches],
         "bankReadinessTemplateId": str(active_bank_template.pk) if active_bank_template else None,
         "wpsReadinessTemplateId": str(active_wps_template.pk) if active_wps_template else None,
         "bankReadiness": _serialize_readiness(company=company, run=run, channel=BankExportChannel.BANK_CSV, template=active_bank_template),

@@ -34,6 +34,7 @@ urlpatterns = [
     path("api/internal/departments/<uuid:department_id>/", api.department_detail_api, name="department-detail-api"),
     path("api/internal/departments/<uuid:department_id>/lifecycle/", api.department_lifecycle_api, name="department-lifecycle-api"),
     path("api/internal/employees/", api.employees_api, name="employees-api"),
+    path("api/internal/employees/<uuid:employee_id>/profile/", api.employee_profile_api, name="employee-profile-api"),
     path("api/internal/employees/<uuid:employee_id>/", api.employee_detail_api, name="employee-detail-api"),
     path("api/internal/employees/<uuid:employee_id>/lifecycle/", api.employee_lifecycle_api, name="employee-lifecycle-api"),
     path("api/internal/employees/<uuid:employee_id>/organization/", api.employee_organization_api, name="employee-organization-api"),

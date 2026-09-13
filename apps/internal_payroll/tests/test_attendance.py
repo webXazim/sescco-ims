@@ -95,6 +95,26 @@ class AttendanceServiceTests(TestCase):
         )
         self.assertEqual(period.status, AttendancePeriodStatus.SUBMITTED)
 
+
+    def test_text_status_aliases_are_normalized_by_backend_and_do_not_block_submission(self):
+        aliases = ["8", "absent", "leave", "sick", "holiday", "off day"]
+        rows = []
+        day = self.period_start
+        index = 0
+        while day.month == self.period_start.month:
+            rows.append({
+                "employee_id": str(self.employee.pk),
+                "date": day.isoformat(),
+                "value": aliases[index % len(aliases)],
+            })
+            day += timedelta(days=1)
+            index += 1
+        save_attendance_entries(actor_membership=self.officer, period_start=self.period_start, entries=rows)
+        period = transition_attendance_period(
+            actor_membership=self.officer, period_start=self.period_start, action="submit_for_review"
+        )
+        self.assertEqual(period.status, AttendancePeriodStatus.SUBMITTED)
+
     def test_submitted_period_is_not_editable(self):
         self._complete_month()
         transition_attendance_period(actor_membership=self.officer, period_start=self.period_start, action="submit")

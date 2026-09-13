@@ -10,15 +10,26 @@ from io import StringIO
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
+from apps.projects.contracts import ProjectStatus
+from apps.rental_manpower.project_adapter import project_public_id
 from apps.rental_manpower.models import (
     RentalAdjustmentStatus,
     RentalSettlementStatus,
     SupplierPaymentStatus,
     SupplierSettlementLine,
 )
+from apps.rental_manpower.selectors.masters import rental_master_context
+from apps.rental_manpower.selectors.settlements import (
+    rental_financial_metrics_for_period,
+    rental_financial_metrics_from_settlements,
+    rental_settlement_context,
+    serialize_supplier_settlement,
+    settlements_for_period,
+)
 from apps.rental_manpower.services import (
     assign_worker,
     calculate_project_settlements,
+    change_supplier_lifecycle,
     create_project,
     create_rental_adjustment,
     create_supplier,
@@ -30,6 +41,7 @@ from apps.rental_manpower.services import (
     transition_rental_adjustment,
     transition_supplier_payment,
     transition_timesheet,
+    update_project,
 )
 
 
@@ -341,3 +353,195 @@ class RentalSettlementTests(TestCase):
         )
         settlement.refresh_from_db()
         self.assertEqual(settlement.status, RentalSettlementStatus.CLOSED)
+
+    def test_financial_metrics_are_authoritative_for_project_supplier_and_scope(self):
+        worker = self._worker("RW-FM", "Financial Metric Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "10"})])
+        advance = create_rental_adjustment(
+            actor_membership=self.owner,
+            worker_id=worker.pk,
+            project_id=self.project.pk,
+            transaction_date=date(2026, 8, 10),
+            period_start=date(2026, 8, 1),
+            adjustment_type="advance",
+            amount=Decimal("20"),
+            reason="Advance recovery",
+        )
+        transition_rental_adjustment(actor_membership=self.owner, adjustment_id=advance.pk, action="submit")
+        transition_rental_adjustment(actor_membership=self.owner, adjustment_id=advance.pk, action="approve")
+        bonus = create_rental_adjustment(
+            actor_membership=self.owner,
+            worker_id=worker.pk,
+            project_id=self.project.pk,
+            transaction_date=date(2026, 8, 11),
+            period_start=date(2026, 8, 1),
+            adjustment_type="bonus",
+            amount=Decimal("10"),
+            reason="Performance bonus",
+        )
+        transition_rental_adjustment(actor_membership=self.owner, adjustment_id=bonus.pk, action="submit")
+        transition_rental_adjustment(actor_membership=self.owner, adjustment_id=bonus.pk, action="approve")
+        settlement = self._approve_settlements()[0]
+        payment = record_supplier_payment(
+            actor_membership=self.owner,
+            settlement_id=settlement.pk,
+            payment_date=timezone.localdate(),
+            method="bank",
+            amount=Decimal("40"),
+            status="paid",
+            transaction_reference="BANK-METRIC-001",
+        )
+        self.assertEqual(payment.status, SupplierPaymentStatus.PAID)
+
+        settlements = settlements_for_period(company=self.company, period_start=date(2026, 8, 1))
+        metrics = rental_financial_metrics_from_settlements(settlements)
+        project_id = project_public_id(self.project)
+        supplier_id = str(self.supplier.pk)
+        project = metrics["projects"][project_id]
+        supplier = metrics["suppliers"][supplier_id]
+        scope = metrics["scopes"][f"{project_id}::{supplier_id}"]
+
+        for row in (project, supplier, scope, metrics["totals"]):
+            self.assertEqual(Decimal(row["hours"]), Decimal("10.00"))
+            self.assertEqual(Decimal(row["gross"]), Decimal("100.00"))
+            self.assertEqual(Decimal(row["advances"]), Decimal("20.00"))
+            self.assertEqual(Decimal(row["net"]), Decimal("90.00"))
+            self.assertEqual(Decimal(row["payable"]), Decimal("90.00"))
+            self.assertEqual(Decimal(row["paid"]), Decimal("40.00"))
+            self.assertEqual(Decimal(row["outstanding"]), Decimal("50.00"))
+
+        context = rental_settlement_context(company=self.company, period_start=date(2026, 8, 1), membership=self.owner)
+        self.assertEqual(context["financialMetrics"], metrics)
+        self.assertEqual(rental_financial_metrics_for_period(company=self.company, period_start=date(2026, 8, 1)), metrics)
+
+        master = rental_master_context(company=self.company, period_start=date(2026, 8, 1))
+        self.assertEqual(master["financialMetrics"], metrics)
+        project_master = next(row for row in master["projects"] if row["id"] == project_id)
+        supplier_master = next(row for row in master["suppliers"] if row["id"] == supplier_id)
+        self.assertEqual(Decimal(project_master["netCost"]), Decimal("90.00"))
+        self.assertEqual(Decimal(supplier_master["currentCost"]), Decimal("90.00"))
+        self.assertEqual(Decimal(supplier_master["outstanding"]), Decimal("50.00"))
+
+    def test_unapproved_settlement_cost_is_not_exposed_as_supplier_payable(self):
+        worker = self._worker("RW-DRAFT-M", "Draft Metric Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        calculate_project_settlements(
+            actor_membership=self.owner,
+            project_id=self.project.pk,
+            period_start=date(2026, 8, 1),
+        )
+        settlements = settlements_for_period(company=self.company, period_start=date(2026, 8, 1))
+        metrics = rental_financial_metrics_from_settlements(settlements)
+        project = metrics["projects"][project_public_id(self.project)]
+        self.assertEqual(Decimal(project["net"]), Decimal("80.00"))
+        self.assertEqual(Decimal(project["payable"]), Decimal("0.00"))
+        self.assertEqual(Decimal(project["outstanding"]), Decimal("0.00"))
+        serialized = serialize_supplier_settlement(settlements[0])
+        self.assertEqual(Decimal(serialized["totals"]["payable"]), Decimal("0.00"))
+        self.assertEqual(Decimal(serialized["totals"]["outstanding"]), Decimal("0.00"))
+        self.assertEqual(Decimal(serialized["totals"]["available"]), Decimal("0.00"))
+    def test_rental_settlement_and_payment_actions_are_server_authoritative_and_revisioned(self):
+        worker = self._worker("RW-AUTH", "Authority Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        project_id = project_public_id(self.project)
+        self.assertIn("calculate", context["projectWorkflows"][project_id]["allowedActions"])
+
+        settlement = calculate_project_settlements(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026, 8, 1)
+        )[0]
+        calculated_revision = settlement.revision
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        self.assertEqual(context["projectWorkflows"][project_id]["nextAction"], "submit")
+
+        transition_project_settlements(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026, 8, 1),
+            action="submit_for_review",
+        )
+        settlement.refresh_from_db()
+        self.assertGreater(settlement.revision, calculated_revision)
+        review_revision = settlement.revision
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        self.assertEqual(set(context["projectWorkflows"][project_id]["allowedActions"]), {"return", "approve"})
+
+        transition_project_settlements(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026, 8, 1),
+            action="approve", confirmed=True,
+        )
+        settlement.refresh_from_db()
+        self.assertGreater(settlement.revision, review_revision)
+        approved_revision = settlement.revision
+        serialized = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )["settlements"][0]
+        self.assertIn("pay", serialized["allowedActions"])
+
+        payment = record_supplier_payment(
+            actor_membership=self.owner, settlement_id=settlement.pk, payment_date=timezone.localdate(),
+            method="bank", amount=settlement.total_net, status="processing", note="Lifecycle authority test",
+        )
+        settlement.refresh_from_db()
+        self.assertGreater(settlement.revision, approved_revision)
+        processing_revision = settlement.revision
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        serialized_payment = next(item for item in context["payments"] if item["id"] == str(payment.pk))
+        self.assertEqual(set(serialized_payment["allowedActions"]), {"paid", "failed", "cancelled"})
+        self.assertFalse(serialized_payment["canRetry"])
+
+        transition_supplier_payment(
+            actor_membership=self.owner, payment_id=payment.pk, status="complete", transaction_reference="BANK-AUTH-1"
+        )
+        settlement.refresh_from_db()
+        self.assertGreater(settlement.revision, processing_revision)
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        self.assertEqual(context["projectWorkflows"][project_id]["nextAction"], "close")
+
+        paid_revision = settlement.revision
+        transition_project_settlements(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026, 8, 1), action="close_period"
+        )
+        settlement.refresh_from_db()
+        self.assertEqual(settlement.status, RentalSettlementStatus.CLOSED)
+        self.assertGreater(settlement.revision, paid_revision)
+
+    def test_operational_stop_does_not_block_historical_rental_finance_completion(self):
+        worker = self._worker("RW-HIST-FIN", "Historical Finance Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        settlement = self._approve_settlements()[0]
+
+        stop_date = timezone.localdate()
+        change_supplier_lifecycle(
+            actor_membership=self.owner, supplier_id=self.supplier.pk, action="terminate",
+            effective_date=stop_date, reason="Supplier contract completed after historical work",
+        )
+        update_project(
+            actor_membership=self.owner, project_id=self.project.reference, code=self.project.code,
+            name=self.project.name, start_date=self.project.start_date, end_date=stop_date,
+            status=ProjectStatus.COMPLETED, client_name=self.project.client_name, location=self.project.location,
+            manager_name=self.project.manager_name, notes=self.project.notes,
+        )
+
+        payment = record_supplier_payment(
+            actor_membership=self.owner, settlement_id=settlement.pk, payment_date=stop_date,
+            method="bank", amount=settlement.total_net, status="processing", note="Historical payable after operational stop",
+        )
+        transition_supplier_payment(
+            actor_membership=self.owner, payment_id=payment.pk, status="paid", transaction_reference="BANK-HIST-1"
+        )
+        transition_project_settlements(
+            actor_membership=self.owner, project_id=self.project.reference, period_start=date(2026, 8, 1), action="close"
+        )
+        settlement.refresh_from_db()
+        self.assertEqual(settlement.status, RentalSettlementStatus.CLOSED)
+

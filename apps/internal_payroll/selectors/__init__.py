@@ -1,3 +1,4 @@
+from .employee_profile import employee_profile_context
 from .attendance import (
     attendance_period_context,
     attendance_period_for_company,
@@ -34,6 +35,7 @@ from .payroll import (
 )
 
 __all__ = [
+    "employee_profile_context",
     "attendance_period_context",
     "attendance_period_for_company",
     "attendance_roster_for_company",

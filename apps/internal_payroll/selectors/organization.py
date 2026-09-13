@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, QuerySet
 
 from apps.core.models import Company
 from apps.core.services.lifecycle import lifecycle_capabilities
-from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, InternalEmployee
+from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, EmploymentStatus, InternalEmployee
 
 
 def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Branch]:
@@ -24,7 +24,27 @@ def branches_for_company(*, company: Company, query: str = "", active: bool | No
             | Q(address__icontains=query)
             | Q(manager_name__icontains=query)
         )
-    return rows.order_by("code", "name")
+    return rows.annotate(
+        employee_count=Count(
+            "employee_assignments__employee",
+            filter=Q(
+                employee_assignments__effective_to__isnull=True,
+                employee_assignments__employee__deleted_at__isnull=True,
+                employee_assignments__employee__archived_at__isnull=True,
+            ),
+            distinct=True,
+        ),
+        active_employee_count=Count(
+            "employee_assignments__employee",
+            filter=Q(
+                employee_assignments__effective_to__isnull=True,
+                employee_assignments__employee__deleted_at__isnull=True,
+                employee_assignments__employee__archived_at__isnull=True,
+                employee_assignments__employee__status=EmploymentStatus.ACTIVE,
+            ),
+            distinct=True,
+        ),
+    ).order_by("code", "name")
 
 
 def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Department]:
@@ -38,7 +58,27 @@ def departments_for_company(*, company: Company, query: str = "", active: bool |
     query = query.strip()
     if query:
         rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(notes__icontains=query))
-    return rows.order_by("code", "name")
+    return rows.annotate(
+        employee_count=Count(
+            "employee_assignments__employee",
+            filter=Q(
+                employee_assignments__effective_to__isnull=True,
+                employee_assignments__employee__deleted_at__isnull=True,
+                employee_assignments__employee__archived_at__isnull=True,
+            ),
+            distinct=True,
+        ),
+        active_employee_count=Count(
+            "employee_assignments__employee",
+            filter=Q(
+                employee_assignments__effective_to__isnull=True,
+                employee_assignments__employee__deleted_at__isnull=True,
+                employee_assignments__employee__archived_at__isnull=True,
+                employee_assignments__employee__status=EmploymentStatus.ACTIVE,
+            ),
+            distinct=True,
+        ),
+    ).order_by("code", "name")
 
 
 def employees_for_company(
@@ -123,6 +163,8 @@ def serialize_branch(branch: Branch) -> dict[str, object]:
         "deletedAt": branch.deleted_at.isoformat() if branch.deleted_at else None,
         "deletionReason": branch.deletion_reason,
         "purgeAfter": branch.purge_after.isoformat() if branch.purge_after else None,
+        "employeeCount": int(getattr(branch, "employee_count", 0)),
+        "activeEmployeeCount": 0 if (branch.archived_at or branch.deleted_at) else int(getattr(branch, "active_employee_count", 0)),
     }
 
 
@@ -140,6 +182,8 @@ def serialize_department(department: Department) -> dict[str, object]:
         "deletedAt": department.deleted_at.isoformat() if department.deleted_at else None,
         "deletionReason": department.deletion_reason,
         "purgeAfter": department.purge_after.isoformat() if department.purge_after else None,
+        "employeeCount": int(getattr(department, "employee_count", 0)),
+        "activeEmployeeCount": 0 if (department.archived_at or department.deleted_at) else int(getattr(department, "active_employee_count", 0)),
     }
 
 
@@ -247,14 +291,14 @@ def serialize_employee_lifecycle(employee: InternalEmployee) -> dict[str, object
 
     return lifecycle_capabilities(employee)
 
-def internal_master_context(*, company: Company) -> dict[str, object]:
+def internal_master_context(*, company: Company, include_histories: bool = True) -> dict[str, object]:
     branches = list(branches_for_company(company=company, archived=None))
     departments = list(departments_for_company(company=company, archived=None))
     employees = list(employees_for_company(company=company))
     histories = {
         str(employee.pk): [serialize_assignment(item) for item in _history_for_employee(employee)]
         for employee in employees
-    }
+    } if include_histories else {}
     return {
         "branches": [serialize_branch(item) for item in branches],
         "departments": [serialize_department(item) for item in departments],

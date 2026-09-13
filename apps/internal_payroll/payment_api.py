@@ -239,7 +239,13 @@ def salary_payment_batch_export_api(request: HttpRequest, batch_id) -> HttpRespo
 def salary_payment_batch_workflow_api(request: HttpRequest, batch_id) -> JsonResponse:
     try:
         body = json_body(request)
-        action = str(body.get("action") or "").strip().lower().replace("-", "_")
+        action = str(body.get("action") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        action = {
+            "start_processing": "start",
+            "cancel_batch": "cancel",
+            "close_payroll": "close",
+            "reopen_payroll": "reopen",
+        }.get(action, action)
         if action == "start":
             batch = start_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, request=request)
         elif action == "cancel":

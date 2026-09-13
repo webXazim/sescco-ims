@@ -34,6 +34,8 @@ __all__ = [
     "rental_adjustments_by_worker",
     "rental_adjustments_for_period",
     "rental_settlement_context",
+    "rental_financial_metrics_for_period",
+    "rental_financial_metrics_from_settlements",
     "serialize_rental_adjustment",
     "serialize_supplier_payment",
     "serialize_supplier_settlement",
@@ -45,6 +47,7 @@ from .timesheets import rental_timesheet_context
 
 from .settlements import (
     rental_adjustments_by_worker, rental_adjustments_for_period, rental_settlement_context,
+    rental_financial_metrics_for_period, rental_financial_metrics_from_settlements,
     serialize_rental_adjustment, serialize_supplier_payment, serialize_supplier_settlement,
     settlements_for_period, supplier_payments_for_period,
 )

@@ -36,10 +36,16 @@ class RentalTimesheetTests(TestCase):
     def test_full_period_can_submit_approve_and_lock(self):
         entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,day),'value':'OFF'} for day in range(1,32)]
         save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
+        draft_revision=period.revision
         period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='submit')
         self.assertEqual(period.status,RentalTimesheetStatus.SUBMITTED)
+        self.assertGreater(period.revision,draft_revision)
+        submitted_revision=period.revision
         period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='approve')
+        self.assertGreater(period.revision,submitted_revision)
+        approved_revision=period.revision
         period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='lock')
+        self.assertGreater(period.revision,approved_revision)
         self.assertEqual(period.status,RentalTimesheetStatus.LOCKED)
         with self.assertRaises(ValidationError):
             save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,1),'value':'8'}])
@@ -56,6 +62,23 @@ class RentalTimesheetTests(TestCase):
         RentalTimesheetEntry.objects.filter(period=period,worker=self.worker,work_date=date(2026,8,10)).delete()
         with self.assertRaises(ValidationError):
             transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='approve')
+
+
+    def test_backend_aliases_submit_and_reject_through_canonical_workflow(self):
+        aliases=['10','absent','no scope','leave','off day']
+        entries=[
+            {'worker_id':self.worker.pk,'work_date':date(2026,8,day),'value':aliases[(day-1)%len(aliases)]}
+            for day in range(1,32)
+        ]
+        period=save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
+        saved_revision=period.revision
+        period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='submit_for_review')
+        self.assertEqual(period.status,RentalTimesheetStatus.SUBMITTED)
+        self.assertGreater(period.revision,saved_revision)
+        submitted_revision=period.revision
+        period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='reject',reason='Correct source evidence')
+        self.assertEqual(period.status,RentalTimesheetStatus.DRAFT)
+        self.assertGreater(period.revision,submitted_revision)
 
     def test_monthly_overtime_rejects_midmonth_rate_change(self):
         change_worker_rate(actor_membership=self.owner,worker_id=self.worker.pk,rate_type='Hourly',rate='16',effective_date=date(2026,8,15),reason='Revision')

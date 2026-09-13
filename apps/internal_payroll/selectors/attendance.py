@@ -9,6 +9,7 @@ from django.db.models import Prefetch, Q
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
 from apps.core.models import Company
+from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_INTERNAL, attendance_contract_payload
 from apps.internal_payroll.models import (
     AttendanceEntry,
     AttendanceOvertimeEntry,
@@ -236,6 +237,7 @@ def attendance_period_context(*, company: Company, period_start: date, membershi
             )
 
     return {
+        "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_INTERNAL),
         "period": serialize_attendance_period(period, period_start=start, membership=membership),
         "roster": roster_payload,
         "records": records,

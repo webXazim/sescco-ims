@@ -130,6 +130,15 @@ def serialize_assignment(
         "projectId": project_public_id(assignment.project),
         "projectName": assignment.project.name,
         "projectCode": assignment.project.code,
+        "projectStatus": assignment.project.get_status_display(),
+        "projectStatusValue": assignment.project.status,
+        "projectArchived": bool(assignment.project.archived_at),
+        "projectDeleted": bool(assignment.project.deleted_at),
+        "projectOperational": bool(
+            assignment.project.status == assignment.project.Status.ACTIVE
+            and not assignment.project.archived_at
+            and not assignment.project.deleted_at
+        ),
         "trade": assignment.trade,
         "rateType": assignment.get_rate_type_display(),
         "rateTypeValue": assignment.rate_type,

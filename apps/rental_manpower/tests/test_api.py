@@ -7,7 +7,7 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.rental_manpower.services import create_supplier, create_worker
+from apps.rental_manpower.services import create_supplier, create_worker, delete_unused_supplier
 
 
 class RentalMasterApiTests(TestCase):
@@ -206,6 +206,57 @@ class RentalAssignmentApiTests(TestCase):
         self.assertEqual(len([row for row in payload["assignments"] if row["kind"] == "assignment"]), 1)
 
 
+
+    def test_directory_endpoints_filter_current_assignment_server_side(self):
+        assignment = self.client.post(
+            reverse("rental_manpower:assignments-api"),
+            data=json.dumps({
+                "action": "assign",
+                "worker_id": str(self.worker.pk),
+                "project_id": str(self.project.reference),
+                "trade": "Electrician",
+                "rate_type": "Hourly",
+                "rate": "21.50",
+                "effective_date": date.today().isoformat(),
+                "reason": "Directory filter coverage",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(assignment.status_code, 201)
+
+        worker_response = self.client.get(
+            reverse("rental_manpower:workers-api"),
+            {
+                "view_status": "assigned",
+                "supplier_id": str(self.supplier.pk),
+                "project_id": str(self.project.reference),
+                "trade": "Electrician",
+                "rate_type": "hourly",
+                "page": 1,
+                "page_size": 1,
+            },
+        )
+        self.assertEqual(worker_response.status_code, 200)
+        worker_payload = worker_response.json()
+        self.assertEqual(worker_payload["meta"]["count"], 1)
+        self.assertEqual(worker_payload["results"][0]["id"], str(self.worker.pk))
+
+        project_response = self.client.get(
+            reverse("rental_manpower:projects-api"),
+            {"supplier_id": str(self.supplier.pk), "period": f"{date.today():%Y-%m}", "page": 1, "page_size": 1},
+        )
+        self.assertEqual(project_response.status_code, 200)
+        self.assertEqual(project_response.json()["meta"]["count"], 1)
+        self.assertEqual(project_response.json()["results"][0]["id"], str(self.project.reference))
+
+        supplier_response = self.client.get(
+            reverse("rental_manpower:suppliers-api"),
+            {"project_id": str(self.project.reference), "workforce": "assigned", "period": f"{date.today():%Y-%m}", "page": 1, "page_size": 1},
+        )
+        self.assertEqual(supplier_response.status_code, 200)
+        self.assertEqual(supplier_response.json()["meta"]["count"], 1)
+        self.assertEqual(supplier_response.json()["results"][0]["id"], str(self.supplier.pk))
+
     def test_future_assignment_can_be_cancelled_without_effective_date(self):
         future_date = date.today() + timedelta(days=14)
         create_response = self.client.post(
@@ -255,6 +306,33 @@ class RentalAssignmentApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()["ok"])
+
+    def test_independent_worker_restore_under_deleted_supplier_returns_inherited_delete_state(self):
+        supplier = create_supplier(actor_membership=self.membership, code="SUP-CAS", name="Cascade Supplier")
+        worker = create_worker(
+            actor_membership=self.membership, supplier_id=supplier.pk,
+            worker_number="RW-CAS", full_name="Cascade Worker",
+        )
+        delete_unused_supplier(
+            actor_membership=self.membership, supplier_id=supplier.pk,
+            confirmation=supplier.code, reason="TEST supplier cascade",
+        )
+        worker.refresh_from_db()
+        self.assertIsNotNone(worker.deleted_at)
+
+        response = self.client.post(
+            reverse("rental_manpower:worker-lifecycle-api", kwargs={"worker_id": worker.pk}),
+            data=json.dumps({"action": "restore_trash"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["worker"]
+        worker.refresh_from_db()
+        self.assertIsNone(worker.deleted_at)
+        self.assertTrue(payload["deleted"])
+        self.assertFalse(payload["deletedOwn"])
+        self.assertEqual(payload["cascadeLifecycle"]["deleteSources"][0]["type"], "supplier")
+
     def test_supplier_and_worker_lifecycle_endpoints(self):
         supplier = create_supplier(actor_membership=self.membership, code="SUP-L", name="Lifecycle Supplier", status="Inactive")
         url=reverse("rental_manpower:supplier-lifecycle-api", kwargs={"supplier_id":supplier.pk})

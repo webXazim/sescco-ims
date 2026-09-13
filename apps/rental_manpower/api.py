@@ -32,6 +32,7 @@ from apps.rental_manpower.selectors import (
     suppliers_for_company,
     workers_for_company,
     rental_settlement_context,
+    rental_financial_metrics_for_period,
     serialize_rental_adjustment,
 )
 from apps.rental_manpower.services import (
@@ -124,9 +125,51 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
                 "projects": "active_project_count",
             }
             controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="code")
-            rows = suppliers_for_company(company=request.company, query=request.GET.get("q", ""), status=status, archived=_archived_query(request.GET.get("archived", "")))
+            project_id = request.GET.get("project_id") or None
+            project_pk = None
+            if project_id:
+                project_pk = rental_project_for_company(company=request.company, identifier=project_id).pk
+            payment_terms_raw = request.GET.get("payment_terms")
+            payment_terms = "" if payment_terms_raw is None else str(payment_terms_raw).strip()
+            payment_terms_blank = payment_terms == "__blank__"
+            if payment_terms_blank:
+                payment_terms = ""
+            workforce = str(request.GET.get("workforce", "")).strip().lower()
+            if workforce not in {"", "assigned", "available", "none"}:
+                raise ValidationError({"workforce": "Workforce filter must be assigned, available, none, or blank."})
+            rows = suppliers_for_company(
+                company=request.company, query=request.GET.get("q", ""), status=status,
+                archived=_archived_query(request.GET.get("archived", "")), project_id=project_pk,
+                payment_terms=payment_terms, workforce=workforce,
+            )
+            if payment_terms_blank:
+                rows = rows.filter(payment_terms="")
+            period_raw = str(request.GET.get("period", "")).strip()
+            metrics = rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw)) if period_raw else {"suppliers": {}}
+            outstanding_filter = str(request.GET.get("outstanding", "")).strip().lower()
+            if outstanding_filter not in {"", "open", "cleared"}:
+                raise ValidationError({"outstanding": "Outstanding filter must be open, cleared, or blank."})
+            if outstanding_filter:
+                supplier_metrics = metrics.get("suppliers", {})
+                matching_ids = [
+                    supplier_id for supplier_id, bucket in supplier_metrics.items()
+                    if (Decimal(str(bucket.get("outstanding") or 0)) > Decimal("0.005")) == (outstanding_filter == "open")
+                ]
+                if outstanding_filter == "cleared":
+                    # Suppliers with no settlement snapshot are also cleared / none.
+                    open_ids = [
+                        supplier_id for supplier_id, bucket in supplier_metrics.items()
+                        if Decimal(str(bucket.get("outstanding") or 0)) > Decimal("0.005")
+                    ]
+                    rows = rows.exclude(pk__in=open_ids)
+                else:
+                    rows = rows.filter(pk__in=matching_ids)
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
-            results, meta = serialize_list(rows, controls=controls, serializer=serialize_supplier)
+            supplier_metrics = metrics.get("suppliers", {})
+            results, meta = serialize_list(
+                rows, controls=controls,
+                serializer=lambda item: serialize_supplier(item, supplier_metrics.get(str(item.pk))),
+            )
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         supplier = create_supplier(
@@ -217,9 +260,23 @@ def projects_api(request: HttpRequest) -> JsonResponse:
             controls = parse_list_controls(
                 request, allowed_sorts=allowed_sorts, default_sort="start", default_direction="desc"
             )
-            rows = projects_for_company(company=request.company, query=request.GET.get("q", ""), status=status)
+            client_raw = request.GET.get("client")
+            manager_raw = request.GET.get("manager")
+            client = None if client_raw is None else ("" if client_raw == "__blank__" else str(client_raw))
+            manager = None if manager_raw is None else ("" if manager_raw == "__blank__" else str(manager_raw))
+            supplier_id = request.GET.get("supplier_id") or None
+            rows = projects_for_company(
+                company=request.company, query=request.GET.get("q", ""), status=status,
+                client=client, manager=manager, supplier_id=supplier_id,
+            )
+            period_raw = str(request.GET.get("period", "")).strip()
+            metrics = rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw)) if period_raw else {"projects": {}}
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
-            results, meta = serialize_list(rows, controls=controls, serializer=serialize_project)
+            project_metrics = metrics.get("projects", {})
+            results, meta = serialize_list(
+                rows, controls=controls,
+                serializer=lambda item: serialize_project(item, project_metrics.get(str(item.reference))),
+            )
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         project = create_project(
@@ -295,6 +352,12 @@ def project_lifecycle_api(request: HttpRequest, project_id) -> JsonResponse:
 def workers_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            view_status = str(request.GET.get("view_status", "")).strip().lower().replace(" ", "_")
+            archived_raw = request.GET.get("archived", "")
+            if view_status not in {"", "all", "assigned", "scheduled", "available", "inactive", "terminated", "archived"}:
+                raise ValidationError({"view_status": "Unknown rental worker status filter."})
+            if view_status == "archived":
+                archived_raw = "archived"
             status = _status_query(request.GET.get("status", ""), {item.value for item in RentalWorkerStatus})
             supplier_id = request.GET.get("supplier_id") or None
             allowed_sorts = {
@@ -304,12 +367,25 @@ def workers_api(request: HttpRequest) -> JsonResponse:
                 "status": "status",
             }
             controls = parse_list_controls(request, allowed_sorts=allowed_sorts, default_sort="worker")
+            project_raw = request.GET.get("project_id") or None
+            project_pk = None
+            if project_raw == "unassigned":
+                project_pk = "unassigned"
+            elif project_raw:
+                project_pk = rental_project_for_company(company=request.company, identifier=project_raw).pk
+            rate_type = str(request.GET.get("rate_type", "")).strip().lower()
+            if rate_type and rate_type not in {"hourly", "daily", "monthly"}:
+                raise ValidationError({"rate_type": "Rate type must be hourly, daily, monthly, or blank."})
             rows = workers_for_company(
                 company=request.company,
                 query=request.GET.get("q", ""),
                 status=status,
                 supplier_id=supplier_id,
-                archived=_archived_query(request.GET.get("archived", "")),
+                archived=_archived_query(archived_raw),
+                operational_status=view_status,
+                project_id=project_pk,
+                trade=str(request.GET.get("trade", "")).strip(),
+                rate_type=rate_type,
             )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_worker)
@@ -369,7 +445,11 @@ def worker_lifecycle_api(request: HttpRequest, worker_id) -> JsonResponse:
             worker=restore_worker_trash(actor_membership=request.company_membership, worker_id=worker_id, request=request)
         else:
             worker=change_worker_lifecycle(actor_membership=request.company_membership, worker_id=worker_id, action=action, effective_date=effective, reason=str(body.get("reason", "")), request=request)
-        worker=workers_for_company(company=request.company, archived=None).get(pk=worker.pk)
+        # Independent child recovery is valid while the supplier parent remains
+        # in Delete.  Include inherited lifecycle rows so the response reflects
+        # the worker as restored-own / inherited-deleted instead of failing after
+        # the restore has already committed.
+        worker=workers_for_company(company=request.company, archived=None, deleted=None).get(pk=worker.pk)
         return JsonResponse({"ok":True,"worker":serialize_worker(worker)})
     except Exception as exc: return handle_api_error(exc)
 

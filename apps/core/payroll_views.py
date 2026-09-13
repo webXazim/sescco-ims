@@ -90,7 +90,7 @@ def payroll_app(request):
     access_context["initial_workspace"] = initial_workspace
 
     internal_context = (
-        internal_master_context(company=request.company)
+        internal_master_context(company=request.company, include_histories=False)
         if can_internal
         else {"branches": [], "departments": [], "employees": [], "employeeOrganizationHistory": {}}
     )
@@ -170,7 +170,7 @@ def payroll_app(request):
     )
 
     rental_context = (
-        rental_master_context(company=request.company)
+        rental_master_context(company=request.company, period_start=current_month)
         if can_rental
         else {
             "suppliers": [],

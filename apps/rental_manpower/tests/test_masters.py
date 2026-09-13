@@ -7,7 +7,7 @@ from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditEvent, Company
 from apps.rental_manpower.models import ProjectStatus, RentalRateType, RentalWorker, RentalWorkerStatus, SupplierStatus, WorkerAssignment
-from apps.rental_manpower.selectors.masters import workers_for_company
+from apps.rental_manpower.selectors.masters import serialize_worker, workers_for_company
 from apps.rental_manpower.services import (
     create_project,
     assign_worker,
@@ -17,6 +17,7 @@ from apps.rental_manpower.services import (
     update_supplier,
     archive_supplier, restore_supplier_archive, restore_supplier_trash, delete_unused_supplier, change_supplier_lifecycle, change_worker_lifecycle, restore_worker_trash, delete_unused_worker,
 )
+from apps.projects.services import trash_unused_project, restore_project_trash
 
 
 class RentalMasterServiceTests(TestCase):
@@ -299,6 +300,43 @@ class RentalMasterServiceTests(TestCase):
         self.assertTrue(workers_for_company(company=self.company, archived=True).filter(pk=worker.pk).exists())
         restored=restore_supplier_archive(actor_membership=self.owner, supplier_id=archived.pk)
         self.assertIsNone(restored.archived_at); self.assertEqual(restored.status, SupplierStatus.ACTIVE)
+
+
+    def test_project_delete_stops_current_assignment_without_deleting_worker_and_restore_resumes_exact_assignment(self):
+        project = create_project(
+            actor_membership=self.owner, code="PR-CASCADE", name="Project Cascade",
+            start_date=date(2026, 1, 1),
+        )
+        worker = create_worker(
+            actor_membership=self.owner, supplier_id=self.supplier.pk,
+            worker_number="RW-PR-CASCADE", full_name="Project Cascade Worker",
+        )
+        assignment = assign_worker(
+            actor_membership=self.owner, worker_id=worker.pk, project_id=project.reference,
+            trade="Helper", rate_type="Hourly", rate="15", effective_date=date(2026, 1, 1),
+            reason="TEST project cascade",
+        )
+        trash_unused_project(
+            actor_membership=self.owner, project_id=project.reference,
+            confirmation=project.code, reason="TEST project recovery boundary",
+        )
+        worker.refresh_from_db()
+        self.assertIsNone(worker.deleted_at)
+        deleted_payload = serialize_worker(
+            workers_for_company(company=self.company, archived=None, deleted=None).get(pk=worker.pk)
+        )
+        self.assertEqual(deleted_payload["currentAssignmentId"], str(assignment.pk))
+        self.assertTrue(deleted_payload["assignmentLifecycle"]["projectDeleted"])
+        self.assertFalse(deleted_payload["assignmentLifecycle"]["operational"])
+        self.assertTrue(deleted_payload["operationallyStopped"])
+
+        restore_project_trash(actor_membership=self.owner, project_id=project.reference)
+        restored_payload = serialize_worker(
+            workers_for_company(company=self.company, archived=None, deleted=None).get(pk=worker.pk)
+        )
+        self.assertEqual(restored_payload["currentAssignmentId"], str(assignment.pk))
+        self.assertFalse(restored_payload["assignmentLifecycle"]["projectDeleted"])
+        self.assertTrue(restored_payload["assignmentLifecycle"]["operational"])
 
     def test_supplier_delete_with_worker_history_soft_deletes_and_restores_workers(self):
         worker=create_worker(actor_membership=self.owner, supplier_id=self.supplier.pk, worker_number="RW-HIST2", full_name="History Worker Two")

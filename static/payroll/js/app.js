@@ -125,6 +125,14 @@
     const index = collection.findIndex(item => item.id === record.id);
     if (index >= 0) collection.splice(index, 1, record);
     else collection.push(record);
+    if (state?.serverDirectories) {
+      if (collection === state.branches) invalidateServerDirectories('branches','employees');
+      else if (collection === state.departments) invalidateServerDirectories('departments','employees');
+      else if (collection === state.employees) invalidateServerDirectories('employees','branches','departments');
+      else if (collection === state.projects) invalidateServerDirectories('projects','suppliers','workers');
+      else if (collection === state.suppliers) invalidateServerDirectories('suppliers','projects','workers');
+      else if (collection === state.rentalWorkers) invalidateServerDirectories('workers','suppliers','projects');
+    }
   }
 
   const payrollTableSortPrefs = (() => {
@@ -982,6 +990,8 @@
     employeeProject: 'All projects',
     employeeWps: 'All',
     employeeTab: 'overview',
+    employeeProfileContexts: {},
+    employeeProfileLoading: new Set(),
     rentalSearch: '',
     rentalStatus: 'All',
     rentalSupplier: 'All suppliers',
@@ -1039,10 +1049,12 @@
     rentalSettlementStatus: 'All',
     rentalSettlements: {},
     rentalSettlementContexts: {},
+    rentalFinancialMetricsByPeriod: rentalMaster.financialPeriod ? { [rentalMaster.financialPeriod]: rentalMaster.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}} } : {},
     rentalSettlementLoadedPeriods: new Set(),
     rentalSettlementLoadingPeriod: null,
     rentalTimesheetScopes: [],
     rentalTimesheetMeta: {},
+    rentalAttendanceContract: rentalMaster.attendanceContract || null,
     timesheetSearch: '',
     timesheetProject: 'All projects',
     timesheetBranch: 'All branches',
@@ -1056,6 +1068,7 @@
     overtimeEntries: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: Object.fromEntries(Object.entries(attendanceBootstrap.overtime || {}).map(([employeeId,row]) => [employeeId, Number(row.hours || 0)])) } : {},
     timesheetStatuses: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.period.status || 'Draft' } : {},
     attendancePeriodMeta: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.period } : {},
+    internalAttendanceContract: attendanceBootstrap.attendanceContract || null,
     attendanceRoster: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.roster || [] } : {},
     attendanceOvertimeMeta: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.overtime || {} } : {},
     attendanceSummary: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.summary || {} } : {},
@@ -1132,8 +1145,163 @@
     salaryComponents: [...(salarySetup.salaryComponents || [])],
     overtimePolicies: [...(salarySetup.overtimePolicies || [])],
     salaryStructures: { ...(salarySetup.salaryStructures || {}) },
-    salaryStructureHistory: { ...(salarySetup.salaryStructureHistory || {}) }
+    salaryStructureHistory: { ...(salarySetup.salaryStructureHistory || {}) },
+    serverDirectories: {
+      branches:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
+      departments:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
+      employees:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:50},
+      projects:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
+      suppliers:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
+      workers:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:50}
+    }
   };
+
+  function directoryStore(kind) { return state.serverDirectories?.[kind] || null; }
+  function directoryMasterCollection(kind) {
+    return ({branches:state.branches,departments:state.departments,employees:state.employees,projects:state.projects,suppliers:state.suppliers,workers:state.rentalWorkers})[kind] || null;
+  }
+  function directoryEntityMerge(kind, rows) {
+    const collection = directoryMasterCollection(kind);
+    if (!collection) return;
+    (rows || []).forEach(record => {
+      const index = collection.findIndex(item => item.id === record.id);
+      if (index >= 0) collection.splice(index, 1, { ...collection[index], ...record });
+      else collection.push(record);
+    });
+    if (kind === 'employees') {
+      collection.forEach(employee => { employee.basicSalary = salaryBasicForEmployee(employee); });
+    }
+  }
+  function directoryFilterValueByName(collection, value, allLabel) {
+    if (!value || value === allLabel) return '';
+    const record = collection.find(item => item.id === value || item.name === value);
+    return record?.id || '';
+  }
+  function directorySortParts(value, fallback='code-asc') {
+    const [sort,direction] = String(value || fallback).split('-');
+    return { sort, direction: direction === 'desc' ? 'desc' : 'asc' };
+  }
+  function serverDirectoryRequest(kind) {
+    const store = directoryStore(kind);
+    if (!store) return null;
+    const params = new URLSearchParams();
+    let endpoint = '';
+    if (kind === 'branches') {
+      endpoint='/api/internal/branches/';
+      if (state.branchSearch.trim()) params.set('q',state.branchSearch.trim());
+      if (state.branchStatus !== 'All') params.set('status',state.branchStatus);
+      else params.set('status','all');
+      const sort=directorySortParts(state.branchSort); params.set('sort',sort.sort); params.set('direction',sort.direction);
+    } else if (kind === 'departments') {
+      endpoint='/api/internal/departments/';
+      if (state.departmentSearch.trim()) params.set('q',state.departmentSearch.trim());
+      if (state.departmentStatus !== 'All') params.set('status',state.departmentStatus);
+      else params.set('status','all');
+      const sort=directorySortParts(state.departmentSort); params.set('sort',sort.sort); params.set('direction',sort.direction);
+    } else if (kind === 'employees') {
+      endpoint='/api/internal/employees/';
+      if (state.employeeSearch.trim()) params.set('q',state.employeeSearch.trim());
+      if (state.employeeStatus === 'Archived') params.set('archived','archived');
+      else { params.set('archived','current'); if (state.employeeStatus !== 'All') params.set('status',state.employeeStatus); }
+      const branchId=directoryFilterValueByName(state.branches,state.employeeBranch,'All branches'); if(branchId)params.set('branch',branchId);
+      const departmentId=directoryFilterValueByName(state.departments,state.employeeDepartment,'All departments'); if(departmentId)params.set('department',departmentId);
+      if (state.employeeWps === 'WPS ready') params.set('wps','ready');
+      else if (state.employeeWps === 'Needs setup') params.set('wps','needs_setup');
+      params.set('period',periodKeyFromLabel(state.period));
+      params.set('sort','employee'); params.set('direction','asc');
+    } else if (kind === 'projects') {
+      endpoint='/api/rental/projects/';
+      if (state.projectSearch.trim()) params.set('q',state.projectSearch.trim());
+      if (state.projectStatus !== 'All') params.set('status',state.projectStatus);
+      if (state.projectClient !== 'All clients') params.set('client',state.projectClient === 'Client not set' ? '__blank__' : state.projectClient);
+      if (state.projectManager !== 'All managers') params.set('manager',state.projectManager === 'Manager not set' ? '__blank__' : state.projectManager);
+      if (state.projectSupplier !== 'All suppliers') params.set('supplier_id',state.projectSupplier);
+      params.set('period',periodKeyFromLabel(state.period)); params.set('sort','start'); params.set('direction','desc');
+    } else if (kind === 'suppliers') {
+      endpoint='/api/rental/suppliers/';
+      if (state.supplierSearch.trim()) params.set('q',state.supplierSearch.trim());
+      if (state.supplierStatus === 'Archived') params.set('archived','archived');
+      else { params.set('archived','current'); if (state.supplierStatus !== 'All') params.set('status',state.supplierStatus); }
+      if (state.supplierProject !== 'All projects') params.set('project_id',state.supplierProject);
+      if (state.supplierPaymentTerm !== 'All payment terms') params.set('payment_terms',state.supplierPaymentTerm === 'Payment terms not set' ? '__blank__' : state.supplierPaymentTerm);
+      if (state.supplierWorkforce === 'Assigned workers') params.set('workforce','assigned');
+      else if (state.supplierWorkforce === 'Available workers') params.set('workforce','available');
+      else if (state.supplierWorkforce === 'No active workers') params.set('workforce','none');
+      if (state.supplierOutstanding === 'Open payable') params.set('outstanding','open');
+      else if (state.supplierOutstanding === 'Cleared / none') params.set('outstanding','cleared');
+      params.set('period',periodKeyFromLabel(state.period)); params.set('sort','code'); params.set('direction','asc');
+    } else if (kind === 'workers') {
+      endpoint='/api/rental/workers/';
+      if (state.rentalSearch.trim()) params.set('q',state.rentalSearch.trim());
+      if (state.rentalStatus !== 'All') params.set('view_status',state.rentalStatus);
+      if (state.rentalSupplier !== 'All suppliers') params.set('supplier_id',state.rentalSupplier);
+      if (state.rentalProject === 'Unassigned / available') params.set('project_id','unassigned');
+      else if (state.rentalProject !== 'All projects') params.set('project_id',state.rentalProject);
+      if (state.rentalTrade !== 'All trades') params.set('trade',state.rentalTrade);
+      if (state.rentalRateType !== 'All rate types') params.set('rate_type',String(state.rentalRateType).toLowerCase());
+      params.set('sort','worker'); params.set('direction','asc');
+    }
+    const filterKey=`${endpoint}?${params.toString()}`;
+    if (store.filterKey && store.filterKey !== filterKey) store.page=1;
+    store.filterKey=filterKey;
+    params.set('page',String(store.page)); params.set('page_size',String(store.pageSize));
+    const url=`${endpoint}?${params.toString()}`;
+    return {endpoint,url,key:url};
+  }
+  function directoryRouteActive(kind) {
+    const route=currentRoute();
+    return (kind==='branches'&&route==='branches'&&!currentBranchId())
+      || (kind==='departments'&&route==='departments'&&!currentDepartmentId())
+      || (kind==='employees'&&route==='internal-employees'&&!currentEmployeeId())
+      || (kind==='projects'&&route==='projects'&&!currentProjectId())
+      || (kind==='suppliers'&&route==='suppliers'&&!currentSupplierId())
+      || (kind==='workers'&&route==='rental-workforce'&&!currentRentalWorkerId());
+  }
+  async function loadServerDirectory(kind,{force=false}={}) {
+    const store=directoryStore(kind); const request=serverDirectoryRequest(kind);
+    if(!store||!request)return null;
+    if(!force && (store.key===request.key || store.pendingKey===request.key)) return store;
+    store.pendingKey=request.key; store.loading=true; store.error='';
+    try {
+      const payload=await appApi(request.url);
+      // Ignore stale responses after a fast search/filter change.
+      if(store.pendingKey!==request.key) return store;
+      store.results=[...(payload.results||[])]; store.meta={...(payload.meta||{})};
+      store.page=Number(store.meta.page||store.page||1); store.key=request.key; store.error='';
+      directoryEntityMerge(kind,store.results);
+      if(directoryRouteActive(kind)) renderRoute();
+      return store;
+    } catch(error) {
+      if(store.pendingKey===request.key){store.error=error.message||'Directory data unavailable.'; if(directoryRouteActive(kind))renderRoute();}
+      return null;
+    } finally {
+      if(store.pendingKey===request.key){store.pendingKey='';store.loading=false;}
+    }
+  }
+  function serverDirectoryView(kind) {
+    const store=directoryStore(kind); const request=serverDirectoryRequest(kind);
+    if(!store||!request)return {rows:[],meta:{},loading:false,error:''};
+    if(store.key!==request.key && store.pendingKey!==request.key) queueMicrotask(()=>loadServerDirectory(kind));
+    const current=store.key===request.key;
+    return {rows:current?store.results:[],meta:current?store.meta:{},loading:store.loading||store.pendingKey===request.key,error:current?store.error:''};
+  }
+  function invalidateServerDirectories(...kinds) {
+    const targets=kinds.length?kinds:Object.keys(state.serverDirectories||{});
+    targets.forEach(kind=>{const store=directoryStore(kind);if(store){store.key='';store.pendingKey='';store.error='';}});
+  }
+  function directoryPagination(kind,meta={}) {
+    const store=directoryStore(kind); if(!store)return '';
+    const count=Number(meta.count||0), page=Number(meta.page||store.page||1), totalPages=Number(meta.totalPages||0), pageSize=Number(meta.pageSize||store.pageSize||50);
+    if(!count && totalPages<=1)return '';
+    const start=count?((page-1)*pageSize+1):0, end=Math.min(count,page*pageSize);
+    return `<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${start.toLocaleString()}</strong>–<strong>${end.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-directory-page="${kind}|${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${Math.max(totalPages,1)}</span><button type="button" data-directory-page="${kind}|${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select data-directory-page-size="${kind}" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div>`;
+  }
+  function directoryEmptyState(kind,view,emptyHtml) {
+    if(view.loading) return `<div class="table-empty"><strong>Loading directory…</strong><span>Reading the filtered records from the payroll backend.</span></div>`;
+    if(view.error) return `<div class="table-empty"><strong>Directory unavailable</strong><span>${escapeHtml(view.error)}</span><button type="button" class="btn btn--secondary btn--sm" data-directory-retry="${kind}">Retry</button></div>`;
+    return emptyHtml;
+  }
+
   if (!state.projects.some(item => item.id === state.rentalTimesheetProject)) state.rentalTimesheetProject = preferredRentalProjectId(state.projects);
   if (!/^\w+ \d{4}$/.test(state.rentalTimesheetPeriod || '')) state.rentalTimesheetPeriod = defaultInternalPeriod;
 
@@ -1426,8 +1594,24 @@
     </section>`;
   }
 
+  function rentalFinancialContext(period = state.period) {
+    return state.rentalFinancialMetricsByPeriod?.[period] || { projects:{}, suppliers:{}, scopes:{}, totals:{} };
+  }
+
+  function rentalProjectFinancial(projectId, period = state.period) {
+    return rentalFinancialContext(period).projects?.[projectId] || null;
+  }
+
+  function rentalSupplierFinancial(supplierId, period = state.period) {
+    return rentalFinancialContext(period).suppliers?.[supplierId] || null;
+  }
+
+  function rentalScopeFinancial(projectId, supplierId, period = state.period) {
+    return rentalFinancialContext(period).scopes?.[`${projectId}::${supplierId}`] || null;
+  }
+
   function rentalProjectControlRows() {
-    const projects = state.projects.filter(project => project.status === 'Active' && !project.legacyInternal);
+    const projects = state.projects.filter(project => !project.legacyInternal);
     const projectMetrics = new Map(projects.map(project => [project.id, { workers:0, suppliers:new Set() }]));
     state.rentalWorkers.forEach(worker => {
       if (worker.status !== 'Assigned') return;
@@ -1437,14 +1621,6 @@
       metric.workers += 1;
       if (worker.supplierId) metric.suppliers.add(worker.supplierId);
     });
-    const payablesByProject = new Map();
-    supplierPayables(state.period).forEach(row => {
-      const metric = payablesByProject.get(row.projectId) || { payable:0, paid:0, outstanding:0 };
-      metric.payable += Number(row.amount || 0);
-      metric.paid += Number(row.paid || 0);
-      metric.outstanding += Number(row.outstanding || 0);
-      payablesByProject.set(row.projectId, metric);
-    });
     const settlementByProject = new Map();
     Object.values(state.rentalSettlements || {}).forEach(row => {
       if (row.period !== state.period) return;
@@ -1453,17 +1629,21 @@
     });
     return projects.map(project => {
       const workforce = projectMetrics.get(project.id) || { workers:0, suppliers:new Set() };
-      const payable = payablesByProject.get(project.id) || { payable:0, paid:0, outstanding:0 };
+      const financial = rentalProjectFinancial(project.id) || {};
       return {
         project,
         workers: workforce.workers,
         suppliers: workforce.suppliers.size,
         timesheet: rentalTimesheetStatus(state.period, project.id),
         settlement: settlementByProject.get(project.id)?.status || 'Not started',
-        payable: payable.payable,
-        paid: payable.paid,
-        outstanding: payable.outstanding,
-        cost: payable.payable
+        payable: Number(financial.payable || 0),
+        paid: Number(financial.paid || 0),
+        outstanding: Number(financial.outstanding || 0),
+        cost: Number(financial.net || 0),
+        hours: Number(financial.hours || 0),
+        otHours: Number(financial.otHours || 0),
+        gross: Number(financial.gross || 0),
+        advances: Number(financial.advances || 0)
       };
     });
   }
@@ -1481,25 +1661,22 @@
         metric.available += 1;
       }
     });
-    const payableBySupplier = new Map();
-    supplierPayables(state.period).forEach(row => {
-      const metric = payableBySupplier.get(row.supplierId) || { payable:0, paid:0, outstanding:0 };
-      metric.payable += Number(row.amount || 0);
-      metric.paid += Number(row.paid || 0);
-      metric.outstanding += Number(row.outstanding || 0);
-      payableBySupplier.set(row.supplierId, metric);
-    });
-    return state.suppliers.filter(supplier => supplier.status === 'Active').map(supplier => {
+    return state.suppliers.map(supplier => {
       const workforce = supplierMetrics.get(supplier.id) || { assigned:0, available:0, projects:new Set() };
-      const payable = payableBySupplier.get(supplier.id) || { payable:0, paid:0, outstanding:0 };
+      const financial = rentalSupplierFinancial(supplier.id) || {};
       return {
         supplier,
         assigned: workforce.assigned,
         available: workforce.available,
         projects: workforce.projects.size,
-        payable: payable.payable,
-        paid: payable.paid,
-        outstanding: payable.outstanding
+        payable: Number(financial.payable || 0),
+        paid: Number(financial.paid || 0),
+        outstanding: Number(financial.outstanding || 0),
+        cost: Number(financial.net || 0),
+        hours: Number(financial.hours || 0),
+        otHours: Number(financial.otHours || 0),
+        gross: Number(financial.gross || 0),
+        advances: Number(financial.advances || 0)
       };
     });
   }
@@ -1510,13 +1687,14 @@
     const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
     const activeProjects = state.projects.filter(project => project.status === 'Active' && !project.legacyInternal);
     const activeSuppliers = state.suppliers.filter(supplier => supplier.status === 'Active');
-    const projectRows = rentalProjectControlRows();
-    const supplierRows = rentalSupplierControlRows();
+    const projectRows = rentalProjectControlRows().filter(row => row.project.status === 'Active');
+    const supplierRows = rentalSupplierControlRows().filter(row => row.supplier.status === 'Active');
     const payables = supplierPayables(state.period);
     const payableSummary = supplierPaymentSummary(payables);
     const activity = rentalAssignmentActivityRows().slice(0,5);
-    const periodHours = Object.values(state.rentalSettlements || {}).filter(row=>row.period===state.period).reduce((sum,row)=>sum+Number(row.totals?.regularHours||0),0);
-    const periodNet = payableSummary.payable;
+    const periodFinancial = rentalFinancialContext(state.period).totals || {};
+    const periodHours = Number(periodFinancial.hours || 0);
+    const periodNet = Number(periodFinancial.net || 0);
     const timesheetAttention = projectRows.filter(row=>!['Approved','Locked'].includes(row.timesheet)).length;
     const settlementAttention = projectRows.filter(row=>row.settlement === 'Not started' || row.settlement === 'Draft').length;
     return `<section class="page workspace-overview workspace-overview--rental rental-control-overview">
@@ -1665,6 +1843,8 @@
   }
 
   function employeeOrganizationHistory(employee) {
+    const serverHistory = employeeProfileServerContext(employee.id, state.period)?.organizationHistory;
+    if (Array.isArray(serverHistory) && serverHistory.length) return [...serverHistory].sort((a,b) => String(b.effective || '').localeCompare(String(a.effective || '')));
     const saved = Array.isArray(state.employeeOrganizationHistory?.[employee.id]) ? state.employeeOrganizationHistory[employee.id] : [];
     if (saved.length) return [...saved].sort((a,b) => String(b.effective || '').localeCompare(String(a.effective || '')));
     const branch = state.branches.find(item => item.id === employee.branchId);
@@ -1683,25 +1863,10 @@
   }
 
   function branchesTemplate() {
-    const q = state.branchSearch.trim().toLowerCase();
-    const branchActiveCounts = new Map();
-    state.employees.forEach(employee => {
-      if (employee.deleted || employee.archived || employee.status !== 'Active' || !employee.branchId) return;
-      branchActiveCounts.set(employee.branchId, (branchActiveCounts.get(employee.branchId) || 0) + 1);
-    });
-    const branches = state.branches.filter(branch => {
-      const statusMatch = state.branchStatus === 'All' || branch.status === state.branchStatus;
-      const text = `${branch.name} ${branch.code} ${branch.location} ${branch.address} ${branch.manager || ''}`.toLowerCase();
-      return statusMatch && (!q || text.includes(q));
-    });
-    const [branchSortKey, branchSortDirection] = String(state.branchSort || 'code-asc').split('-');
-    branches.sort((left, right) => {
-      const values = branchSortKey === 'employees'
-        ? [branchActiveCounts.get(left.id) || 0, branchActiveCounts.get(right.id) || 0]
-        : [String(left[branchSortKey] || '').toLowerCase(), String(right[branchSortKey] || '').toLowerCase()];
-      const cmp = typeof values[0] === 'number' ? values[0] - values[1] : values[0].localeCompare(values[1], undefined, { numeric:true, sensitivity:'base' });
-      return branchSortDirection === 'desc' ? -cmp : cmp;
-    });
+    const directory = serverDirectoryView('branches');
+    const branches = directory.rows;
+    const branchActiveCounts = new Map(branches.map(branch => [branch.id, Number(branch.activeEmployeeCount || 0)]));
+    const largestBranchActive = Math.max(0, ...state.branches.map(branch => Number(branch.activeEmployeeCount || 0)));
     if (!branches.some(item => item.id === state.branchSelectedId)) state.branchSelectedId = branches[0]?.id || '';
     const selected = branches.find(item => item.id === state.branchSelectedId) || branches[0] || null;
     const active = state.branches.filter(branch => branch.status === 'Active').length;
@@ -1712,12 +1877,13 @@
     const selectedReady = selectedEmployees.filter(employee => employee.wps === 'Ready').length;
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Branches & Offices</h1><p class="ui-v2-body">Company offices are organization masters for internal employees. Inactive values remain in history but are unavailable for new assignments.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="departments">Departments</button><button class="btn btn--primary" data-quick-add="branch">${icon('plus')} Add Branch / Office</button></div></div>
-      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.filter(employee=>!employee.deleted).length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All current employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${Math.max(0, ...branchActiveCounts.values())}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Reversible cascade</strong><small>Archive or 30-day Delete</small></div></div>
+      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.filter(employee=>!employee.deleted).length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All current employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${largestBranchActive}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Reversible cascade</strong><small>Archive or 30-day Delete</small></div></div>
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter branch status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'Active' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
       ${branches.length ? `<div class="ui-v2-payroll-master-grid">
         <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.type || 'Branch')} · ${escapeHtml(branch.location || 'Location not set')}${branch.status !== 'Active' ? ` · ${escapeHtml(branch.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
         <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore previous state':'Archive branch / office and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
-      </div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div></section>`}
+      </div>` : `<section class="ui-v2-payroll-panel">${directoryEmptyState('branches',directory,'<div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div>')}</section>`}
+      ${directoryPagination('branches',directory.meta)}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branches and offices are company-controlled masters. Moving an employee creates effective-dated organization history rather than rewriting prior payroll context.</span></div>
     </section>`;
   }
@@ -1750,30 +1916,14 @@
   }
 
   function departmentsTemplate() {
-    const q = state.departmentSearch.trim().toLowerCase();
-    const departmentActiveCounts = new Map();
-    state.employees.forEach(employee => {
-      if (employee.deleted || employee.archived || employee.status !== 'Active') return;
-      const key = employee.departmentId || departmentByName(employee.department)?.id;
-      if (key) departmentActiveCounts.set(key, (departmentActiveCounts.get(key) || 0) + 1);
-    });
-    const departments = state.departments.filter(item => {
-      const statusMatch = state.departmentStatus === 'All' || item.status === state.departmentStatus;
-      return statusMatch && (!q || `${item.name} ${item.code} ${item.notes || ''}`.toLowerCase().includes(q));
-    });
-    const [departmentSortKey, departmentSortDirection] = String(state.departmentSort || 'code-asc').split('-');
-    departments.sort((left, right) => {
-      const values = departmentSortKey === 'employees'
-        ? [departmentActiveCounts.get(left.id) || 0, departmentActiveCounts.get(right.id) || 0]
-        : [String(left[departmentSortKey] || '').toLowerCase(), String(right[departmentSortKey] || '').toLowerCase()];
-      const cmp = typeof values[0] === 'number' ? values[0] - values[1] : values[0].localeCompare(values[1], undefined, { numeric:true, sensitivity:'base' });
-      return departmentSortDirection === 'desc' ? -cmp : cmp;
-    });
+    const directory = serverDirectoryView('departments');
+    const departments = directory.rows;
+    const departmentActiveCounts = new Map(departments.map(department => [department.id, Number(department.activeEmployeeCount || 0)]));
     if (!departments.some(item => item.id === state.departmentSelectedId)) state.departmentSelectedId = departments[0]?.id || '';
     const selected = departments.find(item => item.id === state.departmentSelectedId) || departments[0] || null;
     const active = state.departments.filter(item=>item.status==='Active').length;
     const assigned = state.employees.filter(item=>item.department).length;
-    const counts = [...departmentActiveCounts.values()];
+    const counts = state.departments.map(department => Number(department.activeEmployeeCount || 0));
     const selectedEmployees = selected ? departmentEmployees(selected.id) : [];
     const selectedBranches = new Set(selectedEmployees.map(employee=>employee.branchId).filter(Boolean)).size;
     const selectedTotals = selected ? departmentPayrollTotals(selected.id) : payrollTotals([]);
@@ -1781,7 +1931,8 @@
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Departments</h1><p class="ui-v2-body">Departments are published organization masters used across employee assignment, filtering and reporting. Inactive values remain available to historical records.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="branches">Branches & Offices</button><button class="btn btn--primary" data-quick-add="department">${icon('plus')} Add Department</button></div></div>
       <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${state.departments.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>Internal company records</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest department</span><strong>${Math.max(0,...counts)}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter department status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'Active' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
-      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel"><div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div></section>`}
+      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel">${directoryEmptyState('departments',directory,'<div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div>')}</section>`}
+      ${directoryPagination('departments',directory.meta)}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department edits affect the current master only; employee organization history and closed payroll snapshots remain attributable to their original effective records.</span></div>
     </section>`;
   }
@@ -1842,17 +1993,7 @@
   }
 
   function getFilteredEmployees() {
-    const q = state.employeeSearch.trim().toLowerCase();
-    return state.employees.filter(employee => {
-      if (employee.deleted) return false;
-      const archiveMatch = state.employeeStatus === 'Archived' ? !!employee.archived : !employee.archived;
-      const statusMatch = state.employeeStatus === 'All' || state.employeeStatus === 'Archived' || employee.status === state.employeeStatus;
-      const branchMatch = state.employeeBranch === 'All branches' || employee.branch === state.employeeBranch;
-      const departmentMatch = state.employeeDepartment === 'All departments' || employee.department === state.employeeDepartment;
-      const wpsMatch = state.employeeWps === 'All' || (state.employeeWps === 'WPS ready' ? employee.wps === 'Ready' : employee.wps !== 'Ready');
-      const text = `${employee.employeeId} ${employee.name} ${employee.position} ${employee.department} ${employee.branch} ${employee.status} ${employee.archivedReason || ''}`.toLowerCase();
-      return archiveMatch && statusMatch && branchMatch && departmentMatch && wpsMatch && (!q || text.includes(q));
-    });
+    return serverDirectoryView('employees').rows;
   }
 
   function salaryBasicComponent(salary) {
@@ -1868,7 +2009,8 @@
   state.employees.forEach(employee => { employee.basicSalary = salaryBasicForEmployee(employee); });
 
   function internalEmployeesTemplate() {
-    const employees = getFilteredEmployees();
+    const directory = serverDirectoryView('employees');
+    const employees = directory.rows;
     const currentEmployees = state.employees.filter(e => !e.deleted && !e.archived);
     const archivedCount = state.employees.filter(e => !e.deleted && e.archived).length;
     const active = currentEmployees.filter(e => e.status === 'Active').length;
@@ -1901,31 +2043,90 @@
           <select id="employeeWpsFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter by WPS readiness"><option ${state.employeeWps === 'All' ? 'selected' : ''}>All</option><option ${state.employeeWps === 'WPS ready' ? 'selected' : ''}>WPS ready</option><option ${state.employeeWps === 'Needs setup' ? 'selected' : ''}>Needs setup</option></select>
           <button class="btn btn--secondary btn--sm" type="button" data-employee-filter-reset>Reset</button>
         </div>
-        <div class="table-meta ui-v2-payroll-table-meta"><span><strong>${employees.length}</strong> employee${employees.length === 1 ? '' : 's'}</span><span>Organization filters use the employee's current effective branch and department assignment.</span></div>
+        <div class="table-meta ui-v2-payroll-table-meta"><span><strong>${Number(directory.meta.count ?? employees.length).toLocaleString()}</strong> employee${Number(directory.meta.count ?? employees.length) === 1 ? '' : 's'}</span><span>Organization filters use the employee's current effective branch and department assignment.</span></div>
         <div class="table-scroll ui-v2-table-wrap ui-v2-payroll-table-wrap">
           <table class="data-table ui-v2-table ui-v2-payroll-table employee-table"><thead><tr><th>Employee</th><th>Organization</th><th>Position</th><th>Salary base</th><th>WPS</th><th>Status</th><th aria-label="Open"></th></tr></thead>
-          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${salaryBasicForEmployee(employee) != null ? formatCurrency(salaryBasicForEmployee(employee)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${employee.archived ? statusBadge('Archived') : statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7"><div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div></td></tr>`}</tbody></table>
+          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${salaryBasicForEmployee(employee) != null ? formatCurrency(salaryBasicForEmployee(employee)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${employee.archived ? statusBadge('Archived') : statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7">${directoryEmptyState('employees',directory,'<div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div>')}</td></tr>`}</tbody></table>
         </div>
       </section>
+      ${directoryPagination('employees',directory.meta)}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Employee master records are company-scoped and organization changes are preserved as effective-dated history.</span></div>
     </section>`;
   }
 
+  function employeeProfileContextKey(employeeId, period = state.period) {
+    return `${employeeId}:${periodKeyFromLabel(period)}`;
+  }
+
+  function employeeProfileServerContext(employeeId, period = state.period) {
+    return state.employeeProfileContexts[employeeProfileContextKey(employeeId, period)] || null;
+  }
+
+  function invalidateEmployeeProfile(employeeId = null) {
+    if (!employeeId) {
+      state.employeeProfileContexts = {};
+      state.employeeProfileLoading.clear();
+      return;
+    }
+    Object.keys(state.employeeProfileContexts).forEach(key => {
+      if (key.startsWith(`${employeeId}:`)) delete state.employeeProfileContexts[key];
+    });
+    [...state.employeeProfileLoading].forEach(key => {
+      if (key.startsWith(`${employeeId}:`)) state.employeeProfileLoading.delete(key);
+    });
+  }
+
+  async function loadEmployeeProfileContext(employeeId, period = state.period, { force = false, render = true } = {}) {
+    const key = employeeProfileContextKey(employeeId, period);
+    if (!force && state.employeeProfileContexts[key]) return state.employeeProfileContexts[key];
+    if (state.employeeProfileLoading.has(key)) return null;
+    state.employeeProfileLoading.add(key);
+    try {
+      const periodKey = periodKeyFromLabel(period);
+      const payload = await appApi(`/api/internal/employees/${encodeURIComponent(employeeId)}/profile/?period=${encodeURIComponent(periodKey)}`);
+      state.employeeProfileContexts[key] = payload.profile || null;
+      if (render && currentEmployeeId() === employeeId && state.period === period) renderRoute();
+      return payload.profile || null;
+    } catch (error) {
+      showToast('Employee profile data unavailable', error.message);
+      return null;
+    } finally {
+      state.employeeProfileLoading.delete(key);
+    }
+  }
+
   function employeeProfileData(employee) {
-    const salary = state.salaryStructures[employee?.id] || null;
-    const timesheetRecord = state.timesheets?.[state.period]?.[employee?.id];
-    const timesheetSummary = timesheetRecord ? summarizeAttendanceRecord(timesheetRecord, state.period) : null;
+    const employeeId = employee?.id || '';
+    const salary = state.salaryStructures[employeeId] || null;
+    const serverProfile = employeeId ? employeeProfileServerContext(employeeId, state.period) : null;
+    const serverAttendance = serverProfile?.attendance || null;
+    const timesheetRecord = state.timesheets?.[state.period]?.[employeeId];
+    const timesheetSummary = timesheetRecord ? summarizeAttendanceRecord(timesheetRecord, state.period, employee) : null;
+    const liveOtHours = overtimeHoursFor(employeeId, state.period);
+    const attendance = serverAttendance ? {
+      present: Number(serverAttendance.present || 0),
+      absent: Number(serverAttendance.absent || 0),
+      leave: Number(serverAttendance.leave || 0) + Number(serverAttendance.sick || 0),
+      off: Number(serverAttendance.off || 0) + Number(serverAttendance.holiday || 0),
+      regularHours: Number(serverAttendance.regularHours || 0),
+      otHours: Number(serverAttendance.otHours || 0),
+      status: serverAttendance.status || '',
+      available: !!serverAttendance.available
+    } : timesheetSummary ? {
+      present: timesheetSummary.present, absent: timesheetSummary.absent,
+      leave: timesheetSummary.leave + timesheetSummary.sick, off: timesheetSummary.off + timesheetSummary.holiday,
+      regularHours: timesheetSummary.regularHours, otHours: liveOtHours,
+      status: attendanceMeta(state.period).status || '', available: true
+    } : { present:0, absent:0, leave:0, off:0, regularHours:0, otHours:liveOtHours, status:attendanceMeta(state.period).status || '', available:liveOtHours > 0 };
+    const documents = (state.businessDocuments || []).filter(doc => doc.workspace === 'internal' && doc.type === 'salary_slip' && doc.entityReference === employee?.employeeId);
     return {
+      loaded: !!serverProfile,
       salary,
-      attendance: timesheetSummary ? {
-        present: timesheetSummary.present, absent: timesheetSummary.absent,
-        leave: timesheetSummary.leave + timesheetSummary.sick, off: timesheetSummary.off + timesheetSummary.holiday,
-        regularHours: timesheetSummary.regularHours, otHours: 0, available: true
-      } : { present:0, absent:0, leave:0, off:0, regularHours:0, otHours:0, available:false },
-      adjustments: (state.internalAdjustments?.[employee?.id] || []),
-      payrollHistory: [],
-      documents: [],
-      activity: []
+      attendance,
+      adjustments: (state.internalAdjustments?.[employeeId] || []),
+      payrollHistory: serverProfile?.payrollHistory || [],
+      documents,
+      activity: serverProfile?.activity || []
     };
   }
 
@@ -1980,11 +2181,7 @@
           <section class="panel panel--flush">
             <div class="panel__head panel__head--padded"><div><h2>Recent activity</h2><p>Employee-specific audit trail preview.</p></div></div>
             <div class="employee-activity-list">
-              ${(profile.activity.length ? profile.activity : [
-                { title: 'Employee record available', meta: 'Employee master record' },
-                { title: branch ? 'Branch assignment linked' : 'Branch assignment pending', meta: branch ? branch.name : 'No branch' },
-                { title: employee.wps === 'Ready' ? 'WPS profile ready' : 'WPS setup pending', meta: employee.wps === 'Ready' ? 'Required payment profile fields are available' : 'Complete the payment profile before export' }
-              ]).map(item => `<div><span></span><p><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.meta)}</small></p></div>`).join('')}
+              ${!profile.loaded ? `<div><span></span><p><strong>Loading employee activity…</strong><small>Reading the server audit trail.</small></p></div>` : profile.activity.length ? profile.activity.map(item => `<div><span></span><p><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml([item.actor, item.at ? payrollTimestamp(item.at) : '', item.note].filter(Boolean).join(' · '))}</small></p></div>`).join('') : `<div><span></span><p><strong>No employee audit events yet</strong><small>New employee, salary, attendance, payroll and payment activity will appear here when recorded.</small></p></div>`}
             </div>
           </section>
         </div>
@@ -2080,8 +2277,8 @@
     const rows = profile.payrollHistory || [];
     return `
       <section class="panel panel--flush">
-        <div class="section-headline"><div><h2>Payroll history</h2><p>Historical payroll remains immutable after closing; corrections use explicit revision workflows.</p></div><button class="btn btn--secondary btn--sm" data-route-link="payroll-runs">Open Payroll Runs</button></div>
-        ${rows.length ? `<div class="table-scroll"><table class="data-table payroll-history-table"><thead><tr><th>Period</th><th>Basic</th><th>Allowances / OT</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Payment</th><th>Status</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${escapeHtml(r.period)}</strong><small class="table-secondary">${escapeHtml(r.reference || '')}</small></td><td class="table-money">${formatCurrency(r.basic)}</td><td class="table-money">${formatCurrency(r.extras||0)}</td><td class="table-money">${formatCurrency(r.gross)}</td><td class="table-money">${formatCurrency(r.deductions||0)}</td><td class="table-money"><strong>${formatCurrency(r.net)}</strong></td><td>${escapeHtml(r.payment||'—')}</td><td>${statusBadge(r.status)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="table-empty table-empty--card"><strong>No structured payroll runs yet</strong><span>Payroll history will populate when calculated monthly runs are approved and closed.</span></div>`}
+        <div class="section-headline"><div><h2>Payroll history</h2><p>Historical payroll is read from immutable employee payroll snapshots; corrections use explicit revision workflows.</p></div><button class="btn btn--secondary btn--sm" data-route-link="payroll-runs">Open Payroll Runs</button></div>
+        ${!profile.loaded ? `<div class="table-empty table-empty--card"><strong>Loading payroll history…</strong><span>Reading employee payroll snapshots and payment status from the server.</span></div>` : rows.length ? `<div class="table-scroll"><table class="data-table payroll-history-table"><thead><tr><th>Period</th><th>Basic</th><th>Allowances / OT</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Payment</th><th>Status</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${escapeHtml(r.period)}</strong><small class="table-secondary">${escapeHtml(r.reference || '')}</small></td><td class="table-money">${formatCurrency(r.basic)}</td><td class="table-money">${formatCurrency(r.extras||0)}</td><td class="table-money">${formatCurrency(r.gross)}</td><td class="table-money">${formatCurrency(r.deductions||0)}</td><td class="table-money"><strong>${formatCurrency(r.net)}</strong></td><td>${escapeHtml(r.payment||'—')}</td><td>${statusBadge(r.status)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="table-empty table-empty--card"><strong>No payroll snapshots yet</strong><span>This employee has not been included in a saved calculated payroll run yet.</span></div>`}
       </section>`;
   }
 
@@ -2134,33 +2331,18 @@
 
 
   function getFilteredProjects() {
-    const q = state.projectSearch.trim().toLowerCase();
-    const supplierProjectIds = new Set();
-    if (state.projectSupplier !== 'All suppliers') {
-      state.rentalWorkers.forEach(worker => {
-        if (worker.supplierId !== state.projectSupplier || worker.status !== 'Assigned') return;
-        const projectId = rentalWorkerCurrentSnapshot(worker).project?.id || worker.projectId;
-        if (projectId) supplierProjectIds.add(projectId);
-      });
-    }
-    return state.projects.filter(project => {
-      if (project.legacyInternal) return false;
-      const statusMatch = state.projectStatus === 'All' || project.status === state.projectStatus;
-      const clientMatch = state.projectClient === 'All clients' || (state.projectClient === 'Client not set' ? !project.client : project.client === state.projectClient);
-      const managerMatch = state.projectManager === 'All managers' || (state.projectManager === 'Manager not set' ? !project.manager : project.manager === state.projectManager);
-      const supplierMatch = state.projectSupplier === 'All suppliers' || supplierProjectIds.has(project.id);
-      const text = `${project.name} ${project.code} ${project.client || ''} ${project.location || ''} ${project.manager || ''}`.toLowerCase();
-      return statusMatch && clientMatch && managerMatch && supplierMatch && (!q || text.includes(q));
-    });
+    return serverDirectoryView('projects').rows;
   }
 
   function projectsTemplate() {
-    const projects = getFilteredProjects();
+    if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
+    const directory = serverDirectoryView('projects');
+    const projects = directory.rows;
     const rentalProjects = state.projects.filter(p => !p.legacyInternal);
     const active = rentalProjects.filter(p => p.status === 'Active').length;
     const rental = rentalProjects.reduce((sum, p) => sum + Number(p.rentalWorkers || 0), 0);
     const supplierCount = state.suppliers.filter(s=>s.status==='Active').length;
-    const knownCost = rentalProjects.reduce((sum, p) => sum + Number(p.netCost || 0), 0);
+    const knownCost = rentalProjects.reduce((sum, p) => sum + Number(rentalProjectFinancial(p.id)?.net || 0), 0);
     const clientOptions = [...new Set(rentalProjects.map(project => project.client).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     const managerOptions = [...new Set(rentalProjects.map(project => project.manager).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     const projectAdvancedCount = [
@@ -2207,7 +2389,7 @@
             <button class="btn btn--secondary" type="button" data-project-advanced-reset>Clear advanced</button>
           </div>` : ''}
 
-          <div class="table-meta"><span><strong>${projects.length}</strong> project${projects.length === 1 ? '' : 's'}</span><span>Names are clickable; project profiles preserve workforce and cost context.</span></div>
+          <div class="table-meta"><span><strong>${Number(directory.meta.count ?? projects.length).toLocaleString()}</strong> project${Number(directory.meta.count ?? projects.length) === 1 ? '' : 's'}</span><span>Names are clickable; project profiles preserve workforce and cost context.</span></div>
 
           <div class="table-scroll">
             <table class="data-table project-table">
@@ -2223,15 +2405,16 @@
                     <td><div class="table-primary">${escapeHtml(project.client)}</div><div class="table-secondary">${escapeHtml(project.location)}</div></td>
                     <td><span class="table-number">${project.rentalWorkers}</span></td>
                     <td><span class="table-number">${project.suppliers}</span></td>
-                    <td><div class="table-primary">${project.netCost ? formatCurrency(project.netCost) : '—'}</div><div class="table-secondary">${project.netCost ? 'Current known period' : 'No cost posted'}</div></td>
+                    <td>${(()=>{const cost=Number(project.netCost ?? rentalProjectFinancial(project.id)?.net ?? 0);return `<div class="table-primary">${cost ? formatCurrency(cost) : '—'}</div><div class="table-secondary">${cost ? escapeHtml(state.period) : 'No cost posted'}</div>`;})()}</td>
                     <td>${statusBadge(project.status)}</td>
                     <td class="table-actions">${lifecycleActionsMenu([{label:'Open project',hint:'Open the full project profile',iconName:'project',attrs:`data-route-link="projects/${escapeHtml(project.id)}"`},{label:'Edit project',hint:'Update project master data',iconName:'edit',attrs:`data-project-edit-id="${escapeHtml(project.id)}"`},'separator',{label:project.archived?'Restore from archive':'Archive project',hint:'Archive preserves all project history',iconName:'archive',attrs:`data-project-lifecycle="${project.archived?'restore':'archive'}" data-project-lifecycle-id="${escapeHtml(project.id)}"`},{label:'Delete',hint:'Delete with 30-day recovery',iconName:'trash',danger:true,attrs:`data-project-lifecycle="delete" data-project-lifecycle-id="${escapeHtml(project.id)}"`}],{compact:true,label:'Actions'})}</td>
-                  </tr>`).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No projects match these filters.</strong><span>Change the search/status filter or add a new project.</span></div></td></tr>`}
+                  </tr>`).join('') : `<tr><td colspan="8">${directoryEmptyState('projects',directory,'<div class="table-empty"><strong>No projects match these filters.</strong><span>Change the search/status filter or add a new project.</span></div>')}</td></tr>`}
               </tbody>
             </table>
           </div>
         </section>
 
+        ${directoryPagination('projects',directory.meta)}
         <div class="source-banner">${icon('info')}<span>Projects are company-controlled rental-manpower masters. Worker deployment, trade and commercial rates are maintained separately as effective-dated assignments.</span></div>
       </section>`;
   }
@@ -2263,23 +2446,42 @@
     const groups = new Map();
     state.rentalWorkers.filter(worker => worker.status === 'Assigned' && rentalWorkerCurrentSnapshot(worker).project?.id === project.id).forEach(worker => {
       const supplier = rentalWorkerSupplier(worker); if (!supplier) return;
-      if (!groups.has(supplier.id)) groups.set(supplier.id,{ id:supplier.id,name:supplier.name,workers:0,hours:0,currentCost:0,status:'Active',note:'Current deployment from rental worker assignment master.' });
+      if (!groups.has(supplier.id)) groups.set(supplier.id,{ id:supplier.id,name:supplier.name,workers:0,hours:0,otHours:0,currentCost:0,outstanding:0,status:supplier.status || 'Active',note:'Current deployment from rental worker assignment master.' });
       groups.get(supplier.id).workers += 1;
     });
-    return [...groups.values()];
+    Object.values(rentalFinancialContext(state.period).scopes || {}).filter(scope => scope.projectId === project.id).forEach(scope => {
+      const supplier = state.suppliers.find(item => item.id === scope.supplierId);
+      const row = groups.get(scope.supplierId) || { id:scope.supplierId,name:supplier?.name || scope.supplier || 'Supplier',workers:0,hours:0,otHours:0,currentCost:0,outstanding:0,status:supplier?.status || 'Active',note:`${state.period} settlement snapshot; no current deployment.` };
+      row.hours = Number(scope.hours || 0);
+      row.otHours = Number(scope.otHours || 0);
+      row.currentCost = Number(scope.net || 0);
+      row.outstanding = Number(scope.outstanding || 0);
+      groups.set(scope.supplierId, row);
+    });
+    return [...groups.values()].sort((a,b)=>b.workers-a.workers || a.name.localeCompare(b.name));
   }
 
   function supplierProjectsForProfile(supplierId) {
     const groups = new Map();
     state.rentalWorkers.filter(worker => worker.supplierId === supplierId && worker.status === 'Assigned').forEach(worker => {
       const snapshot = rentalWorkerCurrentSnapshot(worker); const project=snapshot.project; if(!project) return;
-      if(!groups.has(project.id)) groups.set(project.id,{projectId:project.id,project:project.name,workers:0,hours:0,otHours:0,cost:0,status:project.status || 'Active'});
+      if(!groups.has(project.id)) groups.set(project.id,{projectId:project.id,project:project.name,workers:0,hours:0,otHours:0,cost:0,outstanding:0,status:project.status || 'Active'});
       groups.get(project.id).workers += 1;
+    });
+    Object.values(rentalFinancialContext(state.period).scopes || {}).filter(scope => scope.supplierId === supplierId).forEach(scope => {
+      const project = state.projects.find(item => item.id === scope.projectId);
+      const row = groups.get(scope.projectId) || {projectId:scope.projectId,project:project?.name || scope.project || 'Project',workers:0,hours:0,otHours:0,cost:0,outstanding:0,status:project?.status || 'Active'};
+      row.hours = Number(scope.hours || 0);
+      row.otHours = Number(scope.otHours || 0);
+      row.cost = Number(scope.net || 0);
+      row.outstanding = Number(scope.outstanding || 0);
+      groups.set(scope.projectId,row);
     });
     return [...groups.values()].sort((a,b)=>b.workers-a.workers || a.project.localeCompare(b.project));
   }
 
   function projectProfileTemplate(project) {
+    if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
     if (!project) return missingProjectTemplate();
     const workers = projectRentalWorkersForProfile(project);
     const suppliers = projectSuppliersForProfile(project);
@@ -2484,47 +2686,19 @@
     if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
     const controlRows = rentalSupplierControlRows();
     const controlBySupplier = new Map(controlRows.map(row => [row.supplier.id, row]));
-    const workforceBySupplier = new Map(state.suppliers.map(supplier => [supplier.id, { total:0, assigned:0, available:0, released:0, projects:new Set() }]));
-    state.rentalWorkers.forEach(worker => {
-      const metric = workforceBySupplier.get(worker.supplierId);
-      if (!metric) return;
-      metric.total += 1;
-      if (worker.status === 'Assigned') { metric.assigned += 1; if (worker.projectId) metric.projects.add(worker.projectId); }
-      else if (worker.status === 'Available') metric.available += 1;
-      else if (worker.status === 'Released') metric.released += 1;
-    });
-    const supplierStats = supplierId => { const metric=workforceBySupplier.get(supplierId)||{total:0,assigned:0,available:0,released:0,projects:new Set()}; return { ...metric, activeProjects:metric.projects.size }; };
-    const supplierProjectIds = new Map();
-    state.rentalWorkers.forEach(worker => {
-      if (worker.status !== 'Assigned' || !worker.supplierId) return;
-      const projectId = rentalWorkerCurrentSnapshot(worker).project?.id || worker.projectId;
-      if (!projectId) return;
-      if (!supplierProjectIds.has(worker.supplierId)) supplierProjectIds.set(worker.supplierId, new Set());
-      supplierProjectIds.get(worker.supplierId).add(projectId);
-    });
-    const q = state.supplierSearch.trim().toLowerCase();
-    const suppliers = state.suppliers.filter(supplier => {
-      const matchesStatus = state.supplierStatus === 'All' || supplier.status === state.supplierStatus;
-      const stats = supplierStats(supplier.id);
-      const control = controlBySupplier.get(supplier.id);
-      const projectMatch = state.supplierProject === 'All projects' || supplierProjectIds.get(supplier.id)?.has(state.supplierProject);
-      const paymentTerm = supplier.paymentTerms || 'Payment terms not set';
-      const paymentTermMatch = state.supplierPaymentTerm === 'All payment terms' || paymentTerm === state.supplierPaymentTerm;
-      const workforceMatch = state.supplierWorkforce === 'Any workforce'
-        || (state.supplierWorkforce === 'Assigned workers' && stats.assigned > 0)
-        || (state.supplierWorkforce === 'Available workers' && stats.available > 0)
-        || (state.supplierWorkforce === 'No active workers' && stats.assigned + stats.available === 0);
-      const outstanding = Number(control?.outstanding || 0);
-      const outstandingMatch = state.supplierOutstanding === 'Any balance'
-        || (state.supplierOutstanding === 'Open payable' && outstanding > .005)
-        || (state.supplierOutstanding === 'Cleared / none' && outstanding <= .005);
-      const haystack = `${supplier.name} ${supplier.code} ${supplier.contact || ''} ${supplier.phone || ''} ${supplier.address || ''} ${supplier.email || ''} ${supplier.cr || ''} ${supplier.vat || ''}`.toLowerCase();
-      return matchesStatus && projectMatch && paymentTermMatch && workforceMatch && outstandingMatch && (!q || haystack.includes(q));
-    });
+    const directory = serverDirectoryView('suppliers');
+    const suppliers = directory.rows;
+    const supplierStats = supplierId => {
+      const supplier = suppliers.find(item => item.id === supplierId) || state.suppliers.find(item => item.id === supplierId) || {};
+      return {
+        total:Number(supplier.totalWorkers || 0), assigned:Number(supplier.activeWorkers || 0),
+        available:Number(supplier.availableWorkers || 0), released:0, activeProjects:Number(supplier.activeProjects || 0)
+      };
+    };
     const active = state.suppliers.filter(s => s.status === 'Active').length;
     const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
     const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
-    const currentCost = controlRows.reduce((sum, row) => sum + Number(row.payable || 0), 0);
+    const currentCost = controlRows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
     const paymentTermOptions = [...new Set(state.suppliers.map(s => s.paymentTerms || 'Payment terms not set'))].sort((a,b)=>a.localeCompare(b));
     const supplierAdvancedCount = [
       state.supplierProject !== 'All projects',
@@ -2571,28 +2745,29 @@
             <label><span>Payable</span><select id="supplierOutstandingFilter" class="ui-v2-select">${['Any balance','Open payable','Cleared / none'].map(value=>`<option ${state.supplierOutstanding===value?'selected':''}>${value}</option>`).join('')}</select></label>
             <button class="btn btn--secondary" type="button" data-supplier-advanced-reset>Clear advanced</button>
           </div>` : ''}
-          <div class="table-meta"><span><strong>${suppliers.length}</strong> supplier${suppliers.length === 1 ? '' : 's'}</span><span>Open a supplier to see workers, projects, settlements and payments.</span></div>
+          <div class="table-meta"><span><strong>${Number(directory.meta.count ?? suppliers.length).toLocaleString()}</strong> supplier${Number(directory.meta.count ?? suppliers.length) === 1 ? '' : 's'}</span><span>Open a supplier to see workers, projects, settlements and payments.</span></div>
           <div class="table-scroll">
             <table class="data-table supplier-table">
               <thead><tr><th>Supplier</th><th>Contact</th><th>Assigned</th><th>Available</th><th>Projects</th><th>Current Cost</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                ${suppliers.length ? suppliers.map(supplier => { const stats = supplierStats(supplier.id); const control=controlBySupplier.get(supplier.id); return `
+                ${suppliers.length ? suppliers.map(supplier => { const stats = supplierStats(supplier.id); const control=controlBySupplier.get(supplier.id); const currentCost=Number(supplier.currentCost ?? control?.cost ?? 0); const outstanding=Number(supplier.outstanding ?? control?.outstanding ?? 0); return `
                   <tr>
                     <td><button class="entity-link entity-link--stack" data-open-supplier="${supplier.id}"><strong>${escapeHtml(supplier.name)}</strong><span>${escapeHtml(supplier.code)} · ${escapeHtml(supplier.paymentTerms || 'Payment terms not set')}</span></button></td>
                     <td><div class="table-primary">${escapeHtml(supplier.contact || '—')}</div><div class="table-secondary">${escapeHtml(supplier.phone || '—')}</div></td>
                     <td><span class="table-number">${stats.assigned}</span></td>
                     <td><span class="table-number">${stats.available}</span></td>
                     <td><span class="table-number">${stats.activeProjects}</span></td>
-                    <td><div class="table-primary">${control?.payable ? formatCurrency(control.payable) : '—'}</div><div class="table-secondary">${escapeHtml(state.period)}</div></td>
-                    <td><div class="table-primary">${formatCurrency(control?.outstanding || 0)}</div><div class="table-secondary">${control?.outstanding > .005 ? 'Open payable' : 'Cleared / none'}</div></td>
+                    <td><div class="table-primary">${currentCost ? formatCurrency(currentCost) : '—'}</div><div class="table-secondary">${escapeHtml(state.period)}</div></td>
+                    <td><div class="table-primary">${formatCurrency(outstanding)}</div><div class="table-secondary">${outstanding > .005 ? 'Open payable' : 'Cleared / none'}</div></td>
                     <td>${statusBadge(supplier.status)}</td>
                     <td class="table-actions"><button class="icon-btn icon-btn--sm" type="button" data-supplier-row-menu="${supplier.id}" aria-label="Supplier actions">${icon('more')}</button></td>
-                  </tr>`; }).join('') : `<tr><td colspan="9"><div class="table-empty"><strong>No suppliers match these filters.</strong><span>Change the search/status filter or add a manpower supplier.</span></div></td></tr>`}
+                  </tr>`; }).join('') : `<tr><td colspan="9">${directoryEmptyState('suppliers',directory,'<div class="table-empty"><strong>No suppliers match these filters.</strong><span>Change the search/status filter or add a manpower supplier.</span></div>')}</td></tr>`}
               </tbody>
             </table>
           </div>
         </section>
 
+        ${directoryPagination('suppliers',directory.meta)}
         <div class="source-banner">${icon('info')}<span>Supplier companies are managed masters. Stop activity is temporary; Terminate ends the relationship; Archive and 30-day Delete preserve worker, assignment, settlement and payment history.</span></div>
       </section>`;
   }
@@ -2669,8 +2844,8 @@
             <div class="project-kpis supplier-kpis">
               <div><span>Assigned</span><strong>${assigned}</strong><small>Working on projects</small></div>
               <div><span>Available</span><strong>${available}</strong><small>Ready to assign</small></div>
-              <div><span>Hours</span><strong>${supplier.hours ? supplier.hours.toLocaleString() : '—'}</strong><small>Current known period</small></div>
-              <div><span>OT hours</span><strong>${supplier.otHours || '—'}</strong><small>Approved / known</small></div>
+              <div><span>Hours</span><strong>${control?.hours ? control.hours.toLocaleString('en-SA',{maximumFractionDigits:2}) : '—'}</strong><small>${escapeHtml(state.period)}</small></div>
+              <div><span>OT hours</span><strong>${control?.otHours ? control.otHours.toLocaleString('en-SA',{maximumFractionDigits:2}) : '—'}</strong><small>${escapeHtml(state.period)}</small></div>
             </div>
             <div class="supplier-project-list">
               ${projects.length ? projects.map(project => `<button class="supplier-deployment-row" data-route-link="projects/${project.projectId}"><span class="supplier-deployment-row__icon">${icon('project')}</span><span><strong>${escapeHtml(project.project)}</strong><small>${project.workers} workers · ${project.hours.toLocaleString()} hrs</small></span><span class="supplier-deployment-row__amount">${formatCurrency(project.cost)}</span>${icon('chevron')}</button>`).join('') : `<div class="empty-inline">No active project deployment.</div>`}
@@ -2680,7 +2855,7 @@
           <section class="panel panel--flush">
             <div class="panel__head panel__head--padded"><div><h2>Commercial snapshot</h2><p>Settlement context without mixing supplier cost into internal payroll.</p></div><button class="text-link" data-supplier-tab-jump="settlements">Open settlements →</button></div>
             <div class="cost-detail-grid supplier-commercial-grid">
-              <div><span>Current manpower cost</span><strong>${control?.payable ? formatCurrency(control.payable) : '—'}</strong></div>
+              <div><span>Current manpower cost</span><strong>${control?.cost ? formatCurrency(control.cost) : '—'}</strong></div>
               <div><span>Outstanding payable</span><strong>${formatCurrency(control?.outstanding || 0)}</strong></div>
               <div><span>Payment terms</span><strong>${escapeHtml(supplier.paymentTerms || '—')}</strong></div>
               <div><span>Latest settlement</span><strong>${settlements[0]?.period || '—'}</strong></div>
@@ -2759,7 +2934,7 @@
     return `
       <section class="data-panel">
         <div class="section-headline"><div><h2>Supplier settlements</h2><p>Approved financial snapshots remain linked to their project timesheet and payment ledger.</p></div><button class="btn btn--primary" data-open-rental-settlement-supplier="${escapeHtml(supplier.id)}">${icon('plus')} Open Settlement Workspace</button></div>
-        <div class="settlement-summary"><div><span>Settlement records</span><strong>${settlements.length}</strong></div><div><span>Net payable</span><strong>${settlements.length ? formatCurrency(total) : '—'}</strong></div><div><span>Outstanding</span><strong>${formatCurrency(outstanding)}</strong></div></div>
+        <div class="settlement-summary"><div><span>Settlement records</span><strong>${settlements.length}</strong></div><div><span>Settlement cost</span><strong>${settlements.length ? formatCurrency(total) : '—'}</strong></div><div><span>Outstanding</span><strong>${formatCurrency(outstanding)}</strong></div></div>
         <div class="table-scroll"><table class="data-table"><thead><tr><th>Settlement</th><th>Project</th><th>Workers</th><th>Gross</th><th>Adjustments</th><th>Net</th><th>Status</th><th></th></tr></thead><tbody>
           ${settlements.length ? settlements.map(item => `<tr><td><button class="entity-link entity-link--stack" data-open-rental-settlement-project="${escapeHtml(item.projectId)}" data-settlement-supplier="${escapeHtml(supplier.id)}" data-settlement-period="${escapeHtml(item.period)}"><strong>${escapeHtml(item.number || item.period)}</strong><span>${escapeHtml(item.period)} · Timesheet rev ${Number(item.sourceTimesheetRevision||0)}</span></button></td><td>${escapeHtml(item.project)}</td><td>${Number(item.totals?.workers||0)}</td><td>${formatCurrency(Number(item.totals?.gross||0))}</td><td>${formatCurrency(Number(item.totals?.adjustments||0))}</td><td><strong>${formatCurrency(Number(item.totals?.net||0))}</strong></td><td>${rentalSettlementStatusBadge(item.status)}</td><td class="table-actions"><button class="btn btn--ghost" data-open-rental-settlement-project="${escapeHtml(item.projectId)}" data-settlement-supplier="${escapeHtml(supplier.id)}" data-settlement-period="${escapeHtml(item.period)}">Open</button></td></tr>`).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No settlements yet.</strong><span>Locked project timesheets can be calculated in the Supplier Settlements workspace.</span></div></td></tr>`}
         </tbody></table></div>
@@ -2985,6 +3160,7 @@
     state.timesheets[label] = payload.records || {};
     state.timesheetStatuses[label] = payload.period?.status || 'Draft';
     state.attendancePeriodMeta[label] = payload.period || {};
+    if (payload.attendanceContract) state.internalAttendanceContract = payload.attendanceContract;
     state.attendanceRoster[label] = payload.roster || [];
     state.attendanceOvertimeMeta[label] = payload.overtime || {};
     state.attendanceSummary[label] = payload.summary || {};
@@ -3014,6 +3190,7 @@
       body: { entries }
     });
     applyAttendancePayload(payload, period);
+    entries.forEach(entry => invalidateEmployeeProfile(entry.employee_id || entry.employeeId || null));
     return payload;
   }
 
@@ -3023,6 +3200,7 @@
       body: { period: periodKeyFromLabel(period), entries: [{ employee_id: employeeId, hours }] }
     });
     applyAttendancePayload(payload, period);
+    invalidateEmployeeProfile(employeeId);
     return payload;
   }
 
@@ -3032,6 +3210,7 @@
       body: { period: periodKeyFromLabel(period), action, reason }
     });
     applyAttendancePayload(payload, period);
+    invalidateEmployeeProfile();
     return payload;
   }
 
@@ -3069,22 +3248,47 @@
   }
 
   function attendanceMeta(period = state.period) {
-    return state.attendancePeriodMeta[period] || { status:'Draft', canEdit:roleCanEdit('internal'), canApprove:roleCanApprove(), nextAction:roleCanEdit('internal') ? 'submit' : null };
+    return state.attendancePeriodMeta[period] || { status:'Draft', canEdit:false, canApprove:false, nextAction:null, revision:0 };
   }
 
   function attendanceRosterForPeriod(period = state.period) {
     return state.attendanceRoster[period] || [];
   }
 
-  function normalizeAttendanceValue(value) {
-    const raw = String(value ?? '').trim().toUpperCase();
+  function normalizeAttendanceByContract(value, contract) {
+    let raw = String(value ?? '').trim().toUpperCase();
     if (!raw) return '';
-    const aliases = { P: '8', PRESENT: '8', ABSENT: 'A', LEAVE: 'L', SICK: 'S', HOLIDAY: 'H', OFFDAY: 'OFF', 'OFF DAY': 'OFF' };
-    if (aliases[raw]) return aliases[raw];
-    if (['A','L','S','H','OFF'].includes(raw)) return raw;
+    const aliases = contract?.aliases || {};
+    if (Object.prototype.hasOwnProperty.call(aliases, raw)) raw = String(aliases[raw]).toUpperCase();
+    const codes = new Set((contract?.codes || []).map(item => String(item.value || '').toUpperCase()).filter(Boolean));
+    if (codes.has(raw)) return raw;
     const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0 && n <= 24) return String(Math.round(n * 100) / 100);
+    const min = Number(contract?.minHours ?? 0);
+    const max = Number(contract?.maxHours ?? 24);
+    const precision = Math.max(0, Math.min(4, Number(contract?.hoursPrecision ?? 2)));
+    if (Number.isFinite(n) && n >= min && n <= max) {
+      const factor = 10 ** precision;
+      return String(Math.round(n * factor) / factor);
+    }
     return null;
+  }
+
+  function attendanceContractCodes(contract) {
+    return (contract?.codes || []).map(item => String(item.value || '')).filter(Boolean);
+  }
+
+  function attendanceContractHint(contract) {
+    const codes = attendanceContractCodes(contract);
+    const statusText = codes.length ? codes.join(' / ') : 'explicit status codes';
+    return `${statusText} are valid explicit statuses; only blank required days block submission. Enter ${contract?.minHours ?? 0}–${contract?.maxHours ?? 24} hours for worked days.`;
+  }
+
+  function attendanceLegendItems(contract) {
+    return (contract?.codes || []).map(item => `<span><i class="is-${escapeHtml(item.tone || 'status')}"></i>${escapeHtml(item.value)} · ${escapeHtml(item.label)}</span>`).join('');
+  }
+
+  function normalizeAttendanceValue(value) {
+    return normalizeAttendanceByContract(value, state.internalAttendanceContract);
   }
 
   function attendanceHours(value) {
@@ -3094,13 +3298,10 @@
 
   function attendanceTone(value) {
     const normalized = String(value || '').toUpperCase();
-    if (normalized === 'A') return 'absent';
-    if (normalized === 'L') return 'leave';
-    if (normalized === 'S') return 'sick';
-    if (normalized === 'H') return 'holiday';
-    if (normalized === 'OFF') return 'off';
+    const code = (state.internalAttendanceContract?.codes || []).find(item => String(item.value || '').toUpperCase() === normalized);
+    if (code?.tone) return code.tone;
     if (attendanceHours(normalized) > 0) return 'worked';
-    return 'empty';
+    return normalized === '0' ? 'zero' : 'empty';
   }
 
   function employeeEmployedOnDay(employee, day, period = state.period) {
@@ -3117,30 +3318,38 @@
     let sick = 0;
     let holiday = 0;
     let off = 0;
+    let zero = 0;
     let missing = 0;
     for (let day = 1; day <= info.days; day += 1) {
       if (employee && !employeeEmployedOnDay(employee, day, period)) continue;
       const value = record[day] ?? record[String(day)] ?? '';
+      const raw = String(value ?? '').trim().toUpperCase();
       const hours = attendanceHours(value);
       regularHours += hours;
-      if (hours > 0) present += 1;
-      else if (value === 'A') absent += 1;
-      else if (value === 'L') leave += 1;
-      else if (value === 'S') sick += 1;
-      else if (value === 'H') holiday += 1;
-      else if (value === 'OFF') off += 1;
-      else missing += 1;
+      if (!raw) missing += 1;
+      else if (hours > 0) present += 1;
+      else if (raw === 'A') absent += 1;
+      else if (raw === 'L') leave += 1;
+      else if (raw === 'S') sick += 1;
+      else if (raw === 'H') holiday += 1;
+      else if (raw === 'OFF') off += 1;
+      else if (Number.isFinite(Number(raw)) && Number(raw) === 0) zero += 1;
+      // Any additional server-advertised explicit status is complete, never missing.
     }
-    return { regularHours, present, absent, leave, sick, holiday, off, missing };
+    return { regularHours, present, absent, leave, sick, holiday, off, zero, missing };
   }
 
   function timesheetStatus(period = state.period) {
     return attendanceMeta(period).status || state.timesheetStatuses[period] || 'Draft';
   }
 
+  function timesheetStatusValue(period = state.period) {
+    return String(attendanceMeta(period).statusValue || 'draft').toLowerCase();
+  }
+
   function timesheetCanEdit(period = state.period) {
     const meta = attendanceMeta(period);
-    return meta.status === 'Draft' && meta.canEdit === true;
+    return timesheetStatusValue(period) === 'draft' && meta.canEdit === true;
   }
 
   function timesheetStatusBadge(status) {
@@ -3188,10 +3397,12 @@
   }
 
   function timesheetWorkflow() {
-    const status = timesheetStatus();
-    const steps = ['Draft','Submitted','Approved','Locked'];
-    const currentIndex = Math.max(0, steps.indexOf(status));
-    return `<div class="ui-v2-payroll-workflow-steps" aria-label="Timesheet approval status">${steps.map((step,index) => `<div class="${index < currentIndex ? 'is-done' : ''} ${index === currentIndex ? 'is-current' : ''}"><span>${index < currentIndex ? '✓' : index + 1}</span><strong>${step}</strong></div>`).join('')}</div>`;
+    const steps = state.internalAttendanceContract?.workflow?.statuses || [
+      {value:'draft',label:'Draft'},{value:'submitted',label:'Submitted'},{value:'approved',label:'Approved'},{value:'locked',label:'Locked'}
+    ];
+    const currentValue = timesheetStatusValue();
+    const currentIndex = Math.max(0, steps.findIndex(step => String(step.value).toLowerCase() === currentValue));
+    return `<div class="ui-v2-payroll-workflow-steps" aria-label="Timesheet approval status">${steps.map((step,index) => `<div class="${index < currentIndex ? 'is-done' : ''} ${index === currentIndex ? 'is-current' : ''}"><span>${index < currentIndex ? '✓' : index + 1}</span><strong>${escapeHtml(step.label)}</strong></div>`).join('')}</div>`;
   }
 
   function internalTimesheetPageData() {
@@ -3341,7 +3552,7 @@
       <section class="ui-v2-payroll-panel ui-v2-payroll-timesheet-lifecycle"><header><div><span>Period control</span><h2>Monthly attendance lifecycle</h2></div>${v2TimesheetStatusBadge(status)}</header>${timesheetWorkflow()}</section>
       <section class="ui-v2-payroll-attendance-control-strip">
         <div class="ui-v2-payroll-attendance-control-strip__state"><span class="ui-v2-payroll-attendance-control-icon is-${escapeHtml(status.toLowerCase().replace(/\s+/g,'-'))}">${status === 'Approved' || status === 'Locked' ? '✓' : icon('timesheet')}</span><div><strong>${escapeHtml(status)}</strong><span>${escapeHtml(attendanceStatusDescription(status))}</span></div></div>
-        <div class="ui-v2-payroll-attendance-control-strip__actions">${missingCount ? `<span class="ui-v2-payroll-attendance-exception-link">${missingCount.toLocaleString()} missing entr${missingCount === 1 ? 'y' : 'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${attendanceMeta().canApprove && ['Submitted','Approved'].includes(status) ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-return>Return to Draft</button>' : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-timesheet-workflow ${next.next ? '' : 'disabled'}>${escapeHtml(next.label)}</button></div>
+        <div class="ui-v2-payroll-attendance-control-strip__actions">${missingCount ? `<span class="ui-v2-payroll-attendance-exception-link">${missingCount.toLocaleString()} missing entr${missingCount === 1 ? 'y' : 'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${attendanceMeta().canApprove && ['submitted','approved'].includes(timesheetStatusValue()) ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-return>Return to Draft</button>' : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-timesheet-workflow ${next.next ? '' : 'disabled'}>${escapeHtml(next.label)}</button></div>
       </section>
       <section class="ui-v2-payroll-panel ui-v2-payroll-register ui-v2-payroll-timesheet-workspace ${state.timesheetFullscreen ? 'is-fullscreen' : ''}" aria-label="Internal company attendance workspace">
         <div class="ui-v2-payroll-register__toolbar ui-v2-payroll-timesheet-toolbar">
@@ -3352,7 +3563,7 @@
           <div class="ui-v2-payroll-timesheet-file-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-import>Import</button>' : ''}<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-export>Export</button></div>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-payroll-timesheet-fullscreen" data-timesheet-fullscreen aria-pressed="${state.timesheetFullscreen ? 'true' : 'false'}"><span>${icon(state.timesheetFullscreen ? 'collapse' : 'expand')}</span>${state.timesheetFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
         </div>
-        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-absent"></i>A · Absent</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-sick"></i>S · Sick</span><span><i class="is-holiday"></i>H · Holiday</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span></div><span>A / L / S / H / OFF are valid explicit statuses; only blank required days block submission. Enter 0–24 hours for worked days.</span></div>
+        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span>${attendanceLegendItems(state.internalAttendanceContract)}<span><i class="is-weekend"></i>Weekend</span></div><span>${escapeHtml(attendanceContractHint(state.internalAttendanceContract))}</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-timesheet-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of employees" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${employees.length} employees`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${employees.filter(employee=>state.timesheetSelected.has(employee.id)).length} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredEmployees.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
@@ -3457,6 +3668,7 @@
     const key = rentalTimesheetRecordKey(periodLabel, projectId);
     state.rentalTimesheetStatuses[key] = payload.period?.status || 'Draft';
     state.rentalTimesheetMeta[key] = payload.period || {};
+    if (payload.attendanceContract) state.rentalAttendanceContract = payload.attendanceContract;
     state.rentalOvertime[key] = Object.fromEntries(Object.entries(payload.overtime || {}).map(([workerId,row]) => [workerId,{hours:Number(row.hours||0),rate:Number(row.rate||0)}]));
     state.rentalTimesheetLoaded ||= new Set();
     state.rentalTimesheetLoaded.add(key);
@@ -3501,37 +3713,41 @@
     return state.rentalTimesheetStatuses[rentalTimesheetRecordKey(period, projectId)] || 'Draft';
   }
 
-  function rentalTimesheetNextAction(status) {
-    if (status === 'Draft') return { label:'Submit Timesheet', next:'Submitted' };
-    if (status === 'Submitted') return { label:'Approve Timesheet', next:'Approved' };
-    if (status === 'Approved') return { label:'Lock Timesheet', next:'Locked' };
-    return { label:'Timesheet Locked', next:null };
+  function rentalTimesheetStatusValue(period = state.period, projectId = state.rentalTimesheetProject) {
+    const meta = state.rentalTimesheetMeta[rentalTimesheetRecordKey(period, projectId)] || {};
+    return String(meta.statusValue || 'draft').toLowerCase();
   }
 
-  function rentalTimesheetWorkflow(status = rentalTimesheetStatus()) {
-    const steps = ['Draft','Submitted','Approved','Locked'];
-    const currentIndex = Math.max(0, steps.indexOf(status));
-    return `<div class="ui-v2-payroll-workflow-steps" aria-label="Rental timesheet approval status">${steps.map((step,index) => `<div class="${index < currentIndex ? 'is-done' : ''} ${index === currentIndex ? 'is-current' : ''}"><span>${index < currentIndex ? '✓' : index + 1}</span><strong>${step}</strong></div>`).join('')}</div>`;
+  function rentalTimesheetNextAction(status = rentalTimesheetStatus()) {
+    const meta = state.rentalTimesheetMeta[rentalTimesheetRecordKey()] || {};
+    const action = meta.nextAction || null;
+    if (action === 'submit') return { label:'Submit for Review', next:'Submitted', action:'submit' };
+    if (action === 'approve') return { label:'Approve Timesheet', next:'Approved', action:'approve' };
+    if (action === 'lock') return { label:'Lock Timesheet', next:'Locked', action:'lock' };
+    if (status === 'Submitted') return { label:'Awaiting Approval', next:null, action:null };
+    if (status === 'Approved') return { label:'Approved', next:null, action:null };
+    if (status === 'Locked') return { label:'Period Locked', next:null, action:null };
+    return { label:'Loading authority…', next:null, action:null };
+  }
+
+  function rentalTimesheetWorkflow() {
+    const steps = state.rentalAttendanceContract?.workflow?.statuses || [
+      {value:'draft',label:'Draft'},{value:'submitted',label:'Submitted'},{value:'approved',label:'Approved'},{value:'locked',label:'Locked'}
+    ];
+    const currentValue = rentalTimesheetStatusValue();
+    const currentIndex = Math.max(0, steps.findIndex(step => String(step.value).toLowerCase() === currentValue));
+    return `<div class="ui-v2-payroll-workflow-steps" aria-label="Rental timesheet approval status">${steps.map((step,index) => `<div class="${index < currentIndex ? 'is-done' : ''} ${index === currentIndex ? 'is-current' : ''}"><span>${index < currentIndex ? '✓' : index + 1}</span><strong>${escapeHtml(step.label)}</strong></div>`).join('')}</div>`;
   }
 
   function normalizeRentalTimesheetValue(value) {
-    const raw = String(value ?? '').trim().toUpperCase();
-    if (!raw) return '';
-    const aliases = { ABSENT:'A', SICK:'A', LEAVE:'L', 'NO SCOPE':'N', NOSCOPE:'N', 'NO WORK':'N', OFFDAY:'OFF', 'OFF DAY':'OFF' };
-    if (aliases[raw]) return aliases[raw];
-    if (['A','N','L','OFF'].includes(raw)) return raw;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0 && n <= 24) return String(Math.round(n * 100) / 100);
-    return null;
+    return normalizeAttendanceByContract(value, state.rentalAttendanceContract);
   }
 
   function rentalTimesheetTone(value) {
     const raw = String(value ?? '').trim().toUpperCase();
-    if (raw === 'A') return 'absent';
-    if (raw === 'N') return 'noscope';
-    if (raw === 'L') return 'leave';
-    if (raw === 'OFF') return 'off';
-    if (raw === '0') return 'unexcused';
+    const code = (state.rentalAttendanceContract?.codes || []).find(item => String(item.value || '').toUpperCase() === raw);
+    if (code?.tone) return code.tone;
+    if (raw === '0') return 'zero';
     if (Number(raw) > 0) return 'worked';
     return 'empty';
   }
@@ -3545,22 +3761,24 @@
     ensureRentalTimesheet(period, projectId);
     const record = state.rentalTimesheets?.[period]?.[projectId]?.[worker.id] || {};
     const info = periodInfo(period);
-    let hours = 0, workDays = 0, absent = 0, noScope = 0, leave = 0, off = 0, missing = 0;
+    let hours = 0, workDays = 0, absent = 0, noScope = 0, leave = 0, off = 0, zero = 0, missing = 0;
     for (let day = 1; day <= info.days; day += 1) {
       const assignment = rentalAssignmentForDate(worker, projectId, day, period);
       if (!assignment) continue;
       const value = record[day] ?? record[String(day)] ?? '';
+      const raw = String(value ?? '').trim().toUpperCase();
       const h = rentalTimesheetHours(value);
       hours += h;
-      if (h > 0) workDays += 1;
-      else if (String(value) === 'A') absent += 1;
-      else if (String(value) === 'N') noScope += 1;
-      else if (String(value) === 'L') leave += 1;
-      else if (String(value) === 'OFF') off += 1;
-      else if (String(value) === '0') absent += 1;
-      else missing += 1;
+      if (!raw) missing += 1;
+      else if (h > 0) workDays += 1;
+      else if (raw === 'A') absent += 1;
+      else if (raw === 'N') noScope += 1;
+      else if (raw === 'L') leave += 1;
+      else if (raw === 'OFF') off += 1;
+      else if (Number.isFinite(Number(raw)) && Number(raw) === 0) zero += 1;
+      // Any additional server-advertised explicit status is complete, never missing.
     }
-    return { hours, workDays, absent, noScope, leave, off, missing };
+    return { hours, workDays, absent, noScope, leave, off, zero, missing };
   }
 
   function rentalOvertimeFor(worker, period = state.period, projectId = state.rentalTimesheetProject) {
@@ -3607,7 +3825,8 @@
   }
 
   function rentalTimesheetCanEdit() {
-    return rentalTimesheetStatus() === 'Draft' && !rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject) && roleCanEdit('rental');
+    const meta = state.rentalTimesheetMeta[rentalTimesheetRecordKey()] || {};
+    return rentalTimesheetStatusValue() === 'draft' && meta.canEdit === true && !rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject);
   }
 
   function rentalTimesheetPageData() {
@@ -3722,6 +3941,7 @@
     const filteredWorkers = page.all;
     const totals = rentalTimesheetProjectTotals(filteredWorkers);
     const status = rentalTimesheetStatus();
+    const statusValue = rentalTimesheetStatusValue();
     const next = rentalTimesheetNextAction(status);
     const project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     const projectWorkers = state.rentalWorkers.filter(worker => rentalAssignmentsInProjectPeriod(worker,state.rentalTimesheetProject,state.period).length);
@@ -3745,8 +3965,8 @@
       </div>
       <section class="ui-v2-payroll-panel ui-v2-payroll-timesheet-lifecycle"><header><div><span>Project period control</span><h2>${escapeHtml(project?.name || 'Project')} timesheet lifecycle</h2></div>${v2TimesheetStatusBadge(status)}</header>${rentalTimesheetWorkflow(status)}</section>
       <section class="ui-v2-payroll-attendance-control-strip ui-v2-prs-rental-control-strip">
-        <div class="ui-v2-payroll-attendance-control-strip__state"><span class="ui-v2-payroll-attendance-control-icon is-${escapeHtml(status.toLowerCase().replace(/\s+/g,'-'))}">${status === 'Approved' || status === 'Locked' ? '✓' : icon('timesheet')}</span><div><strong>${escapeHtml(status)}</strong><span>${escapeHtml(settlementProtected && status === 'Draft' ? 'A calculated supplier settlement protects this project-period snapshot. Return the settlement before editing or resubmitting.' : rentalTimesheetStatusDescription(status))}</span></div></div>
-        <div class="ui-v2-payroll-attendance-control-strip__actions">${totals.missing ? `<span class="ui-v2-payroll-attendance-exception-link">${totals.missing.toLocaleString()} missing entr${totals.missing===1?'y':'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${['Submitted','Approved'].includes(status) && roleCanApprove() ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-return>Return to Draft</button>' : ''}${['Approved','Locked'].includes(status) ? `<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-open-rental-settlement-project="${escapeHtml(state.rentalTimesheetProject)}" data-settlement-period="${escapeHtml(state.period)}">Open Settlement</button>` : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-rental-timesheet-workflow ${next.next && !(settlementProtected && status === 'Draft') ? '' : 'disabled'}>${escapeHtml(settlementProtected && status === 'Draft' ? 'Settlement Protected' : next.label)}</button></div>
+        <div class="ui-v2-payroll-attendance-control-strip__state"><span class="ui-v2-payroll-attendance-control-icon is-${escapeHtml(status.toLowerCase().replace(/\s+/g,'-'))}">${status === 'Approved' || status === 'Locked' ? '✓' : icon('timesheet')}</span><div><strong>${escapeHtml(status)}</strong><span>${escapeHtml(settlementProtected && statusValue === 'draft' ? 'A calculated supplier settlement protects this project-period snapshot. Return the settlement before editing or resubmitting.' : rentalTimesheetStatusDescription(status))}</span></div></div>
+        <div class="ui-v2-payroll-attendance-control-strip__actions">${totals.missing ? `<span class="ui-v2-payroll-attendance-exception-link">${totals.missing.toLocaleString()} missing entr${totals.missing===1?'y':'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${['submitted','approved'].includes(statusValue) && meta.canApprove ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-return>Return to Draft</button>' : ''}${['approved','locked'].includes(statusValue) ? `<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-open-rental-settlement-project="${escapeHtml(state.rentalTimesheetProject)}" data-settlement-period="${escapeHtml(state.period)}">Open Settlement</button>` : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-rental-timesheet-workflow ${next.next && !(settlementProtected && statusValue === 'draft') ? '' : 'disabled'}>${escapeHtml(settlementProtected && statusValue === 'draft' ? 'Settlement Protected' : next.label)}</button></div>
       </section>
       <section class="ui-v2-payroll-panel ui-v2-payroll-register ui-v2-payroll-timesheet-workspace ui-v2-prs-rental-timesheet-workspace ${state.timesheetFullscreen ? 'is-fullscreen' : ''}" aria-label="Rental project manpower timesheet workspace">
         <div class="ui-v2-payroll-register__toolbar ui-v2-payroll-timesheet-toolbar">
@@ -3757,11 +3977,11 @@
           <div class="ui-v2-payroll-timesheet-file-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-import>Import</button>' : ''}<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-export>Export</button></div>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-payroll-timesheet-fullscreen" data-timesheet-fullscreen aria-pressed="${state.timesheetFullscreen ? 'true' : 'false'}"><span>${icon(state.timesheetFullscreen ? 'collapse' : 'expand')}</span>${state.timesheetFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
         </div>
-        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span><span><i class="is-absent"></i>A · Absent</span><span><i class="is-noscope"></i>N · No scope</span><span><i class="is-leave"></i>L · Leave</span><span><i class="is-off"></i>OFF</span><span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>A / N / L / OFF are valid explicit statuses; only blank assigned worker-days block submission. Enter 0–24 hours for worked days.</span></div>
+        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span>${attendanceLegendItems(state.rentalAttendanceContract)}<span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>${escapeHtml(attendanceContractHint(state.rentalAttendanceContract).replace("required days", "assigned worker-days"))}</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-rental-ts-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of workers" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-rental-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredWorkers.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
-          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="rentalTimesheetBulkDay" class="ui-v2-select ui-v2-payroll-dense-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day=>`<option value="${day}" ${Number(state.rentalTimesheetBulkDay)===day?'selected':''}>${day} · ${weekdayShort(day,state.period)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="A" ${selectedCount && editable ? '' : 'disabled'}>Sick absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="0" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="N" ${selectedCount && editable ? '' : 'disabled'}>No scope</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="copy" ${selectedCount && editable && Number(state.rentalTimesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-rental-ts-bulk="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
+          <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="rentalTimesheetBulkDay" class="ui-v2-select ui-v2-payroll-dense-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day=>`<option value="${day}" ${Number(state.rentalTimesheetBulkDay)===day?'selected':''}>${day} · ${weekdayShort(day,state.period)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="A" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="0" ${selectedCount && editable ? '' : 'disabled'}>Zero hours</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="N" ${selectedCount && editable ? '' : 'disabled'}>No scope</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="L" ${selectedCount && editable ? '' : 'disabled'}>Leave</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="OFF" ${selectedCount && editable ? '' : 'disabled'}>Off</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="copy" ${selectedCount && editable && Number(state.rentalTimesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-rental-ts-bulk="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
         </div>
         ${workers.length ? rentalTimesheetGrid(workers) : `<div class="ui-v2-payroll-table-empty"><strong>No rental workers overlap this project period.</strong><span>Assign workers to this project, change the supplier filter, or choose another project.</span></div>`}
         <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredWorkers.length.toLocaleString()}</strong> workers <i></i> <strong>${supplierCount.toLocaleString()}</strong> supplier${supplierCount===1?'':'s'} <i></i> <strong>${totals.missing.toLocaleString()}</strong> missing <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-save>Save draft</button>' : ''}</div></div>
@@ -3831,6 +4051,7 @@
       run: { id:null, exists:false, label:period, statusValue:'draft', status:'Draft', revision:0, calculatedAt:null, submittedAt:null, approvedAt:null, reviewerNote:'', canEdit:false, canApprove:false, totals:{} },
       rows: [], sourceErrors: [], policy: { prorationMethod:'not_configured', prorationLabel:'Not configured', configured:false },
       adjustments: [], adjustmentsByEmployee: {}, reviewHistory: [], attendanceStatus:'Not created', attendanceLocked:false,
+      workflow:{statusValue:'draft',allowedActions:[],nextAction:null,canCalculate:false,canReset:false,canSubmitReview:false,canReturnForChanges:false,canApprove:false,sourceClear:false,attendanceCalculable:false,attendanceLocked:false},
       previous: { label:payrollPreviousPeriod(period), run:null, rows:[] }
     };
   }
@@ -3863,6 +4084,7 @@
     state.payrollRuns[label] = normalizedPayrollRun(payload);
     if (label === state.period) state.internalAdjustments = payload.adjustmentsByEmployee || {};
     const previous = payload?.previous;
+    invalidateEmployeeProfile();
     if (previous?.label) {
       const previousContext = {
         run: previous.run || { label:previous.label, status:'Draft', statusValue:'draft' },
@@ -4096,7 +4318,8 @@
     const filteredIssues = state.payrollReviewSeverity === 'All' ? review.issues : review.issues.filter(issue => issue.severity === state.payrollReviewSeverity);
     const critical = counts.Critical || 0;
     const comparison = review.comparison;
-    const canApprove = run.status === 'Review' && critical === 0;
+    const workflow = payrollContextForPeriod().workflow || {};
+    const canApprove = !!workflow.canApprove && critical === 0;
     const previousNet = comparison.previousTotals?.net ?? null;
     const currentNet = comparison.currentTotals.net;
     const netDelta = previousNet === null ? null : currentNet - previousNet;
@@ -4164,7 +4387,7 @@
 
           <section class="data-panel review-decision-card">
             <div class="panel__head panel__head--padded"><div><h2>Reviewer decision</h2><p>${run.status === 'Review' ? 'Decisions are recorded in the run audit trail.' : 'Submit the calculated run to Review before a final decision.'}</p></div></div>
-            <div class="review-decision-actions"><button class="btn btn--secondary" data-review-return ${run.status === 'Review' ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${canApprove ? '' : 'disabled'}>Approve Payroll</button></div>
+            <div class="review-decision-actions"><button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${canApprove ? '' : 'disabled'}>Approve Payroll</button></div>
             ${critical ? `<span class="review-decision-help">Resolve all critical exceptions before approval.</span>` : run.status !== 'Review' ? `<span class="review-decision-help">Approval becomes available after submission to Review.</span>` : ''}
           </section>
         </aside>
@@ -4186,7 +4409,8 @@
     const tsStatus = context.attendanceStatus || 'Not created';
     const calculationInputReady = ['Approved','Locked'].includes(tsStatus);
     const inputReady = !!context.attendanceLocked;
-    const canReview = run.status === 'Calculated' && totals.blocked === 0 && inputReady;
+    const workflow = context.workflow || {};
+    const canReview = !!workflow.canSubmitReview;
     const calculated = run.status !== 'Draft' && !!run.snapshot;
     const sourceErrors = Array.isArray(context.sourceErrors) ? context.sourceErrors : [];
     const policy = context.policy || { configured:false, prorationLabel:'Not configured' };
@@ -4204,7 +4428,7 @@
           <div class="page-head__actions payroll-head-actions">
             <button class="btn btn--secondary" data-route-link="timesheets">Open Timesheets</button>
             <button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button>
-            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${canReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return>Return for Changes</button><button class="btn btn--primary" data-review-approve ${payrollReviewCounts(payrollReviewIssues(allRows).issues).Critical ? 'disabled' : ''}>Approve Payroll</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : run.status === 'Paid' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
+            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${workflow.canSubmitReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${workflow.canApprove && !payrollReviewCounts(payrollReviewIssues(allRows).issues).Critical ? '' : 'disabled'}>Approve Payroll</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : ['Payment Processing','Paid','Closed'].includes(run.status) ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
           </div>
         </div>
 
@@ -4262,7 +4486,7 @@
                 ${rows.length ? `<tfoot><tr><td colspan="2"><strong>Visible rows</strong><small>${rows.length} employee${rows.length === 1 ? '' : 's'}</small></td><td class="num table-money">${formatCurrency(payrollTotals(rows).basic)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).allowances)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).overtime)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).otherEarnings)}</td><td class="num table-money"><strong>${formatCurrency(payrollTotals(rows).gross)}</strong></td><td class="num table-money">${formatCurrency(payrollTotals(rows).advances)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).deductions)}</td><td class="num table-money"><strong>${formatCurrency(payrollTotals(rows).net)}</strong></td><td colspan="2"></td></tr></tfoot>` : ''}
               </table>
             </div>
-            <div class="payroll-table-footer"><span>Amounts are shown in ${escapeHtml(currencyCode())}. Blocked rows never silently become zero-pay employees.</span>${run.status === 'Calculated' ? `<button class="text-link" data-payroll-reset-run>Reset run to Draft</button>` : ''}</div>
+            <div class="payroll-table-footer"><span>Amounts are shown in ${escapeHtml(currencyCode())}. Blocked rows never silently become zero-pay employees.</span>${workflow.canReset ? `<button class="text-link" data-payroll-reset-run>Reset run to Draft</button>` : ''}</div>
           </section>
 
           <aside class="payroll-side-stack">
@@ -4401,11 +4625,19 @@
     state.paymentBatches = [...(payload.batches || [])];
     state.bankBatches = state.paymentBatches.filter(item => item.channelValue === 'bank_csv');
     state.wpsBatches = state.paymentBatches.filter(item => item.channelValue === 'wps');
+    // Payment processing advances the PayrollRun lifecycle on the server. Drop the cached
+    // payroll-period view so returning to Payroll Runs cannot show an old Approved status.
+    Object.keys(state.payrollContexts).filter(label => periodKeyFromLabel(label) === payload.period).forEach(label => {
+      state.payrollLoadedPeriods.delete(label);
+      delete state.payrollContexts[label];
+      delete state.payrollRuns[label];
+    });
     const bankTemplates = state.bankTemplates.filter(item => item.channel === 'bank_csv' && item.active && !item.archived);
     if (!bankTemplates.some(item => item.id === state.bankTemplateId)) state.bankTemplateId = bankTemplates[0]?.id || null;
     const wpsTemplates = state.bankTemplates.filter(item => item.channel === 'wps' && item.active && !item.archived);
     if (!wpsTemplates.some(item => item.id === state.wpsTemplateId)) state.wpsTemplateId = wpsTemplates[0]?.id || null;
     syncEmployeePaymentProfiles(payload);
+    invalidateEmployeeProfile();
   }
 
   async function loadSalaryPayments(period = state.period, { force = false } = {}) {
@@ -4558,9 +4790,17 @@
 
   async function runPaymentBatchWorkflow(batchId, action, extra = {}) {
     try {
+      if (['cancel','reopen'].includes(action) && !String(extra.reason || '').trim()) {
+        const label = action === 'cancel' ? 'cancellation' : 'reopen';
+        const reason = String(window.prompt(`Enter the reason for this payment batch ${label}:`) || '').trim();
+        if (!reason) return false;
+        extra = {...extra, reason};
+      }
       await appApi(`/api/internal/salary-payments/batches/${encodeURIComponent(batchId)}/workflow/`, {method:'POST', body:{action,...extra}});
       await loadSalaryPayments(state.period, { force:true });
       renderRoute();
+      const messages = { start:'Payment processing started', cancel:'Payment batch cancelled', close:'Payroll closed', reopen:'Payroll reopened' };
+      if (messages[action]) showToast(messages[action], 'The server-authoritative payment lifecycle has been updated.');
       return true;
     } catch (error) { showToast('Payment action blocked', error.message); return false; }
   }
@@ -4625,8 +4865,8 @@
   }
 
   function bankReconciliationTemplate() {
-    const batches=[...bankBatchesForPeriod()].filter(batch=>!['Cancelled'].includes(batch.status)); const latest=batches[0]||null; const summary=paymentBatchSummary(latest);
-    return `${latest?`<div class="payment-summary-strip"><div><span>Tracking batch</span><strong>${escapeHtml(latest.reference)}</strong><small>${escapeHtml(latest.status)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${latest.rows.length} employees</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Needs action</span><strong>${summary.failedCount+summary.reversedCount}</strong><small>Failed / reversed</small></div></div>`:''}<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank result reconciliation</h2><p>Import bank-return results. Paid/failed/reversed states are recorded against the existing payment attempt; failed rows can be retried without creating another payroll.</p></div>${latest?`<div class="payment-head-actions">${bankBatchStatusBadge(latest.status)}${['Processing','Partially Paid','Needs Attention'].includes(latest.status)?`<label class="btn btn--secondary bank-result-import">Import Result CSV<input id="bankResultFile" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}</div>`:''}</div>${latest?paymentRowsTable(latest):`<div class="table-empty table-empty--card"><strong>No bank batch available for reconciliation.</strong><span>Prepare and start a payment batch first.</span></div>`}</section><section class="source-note">${icon('info')}<span><strong>Result import fields</strong>Employee ID and Status are required. Paid rows require a transaction reference; Failed/Reversed rows require a reason. Raw result files are not retained after reconciliation—only their SHA-256 and import metadata are stored.</span></section>`;
+    const batches=[...bankBatchesForPeriod()].filter(batch=>!['Cancelled'].includes(batch.status)); const latest=batches[0]||null; const summary=paymentBatchSummary(latest); const actions=new Set(latest?.allowedActions||[]);
+    return `${latest?`<div class="payment-summary-strip"><div><span>Tracking batch</span><strong>${escapeHtml(latest.reference)}</strong><small>${escapeHtml(latest.status)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${latest.rows.length} employees</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Needs action</span><strong>${summary.failedCount+summary.reversedCount}</strong><small>Failed / reversed</small></div></div>`:''}<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank result reconciliation</h2><p>Import bank-return results. Paid/failed/reversed states are recorded against the existing payment attempt; failed rows can be retried without creating another payroll.</p></div>${latest?`<div class="payment-head-actions">${bankBatchStatusBadge(latest.status)}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Result CSV<input id="bankResultFile" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(latest.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(latest.id)}">Reopen Payroll</button>`:''}</div>`:''}</div>${latest?paymentRowsTable(latest):`<div class="table-empty table-empty--card"><strong>No bank batch available for reconciliation.</strong><span>Prepare and start a payment batch first.</span></div>`}</section><section class="source-note">${icon('info')}<span><strong>Result import fields</strong>Employee ID and Status are required. Paid rows require a transaction reference; Failed/Reversed rows require a reason. Raw result files are not retained after reconciliation—only their SHA-256 and import metadata are stored.</span></section>`;
   }
 
   function bankExportTemplate() {
@@ -4674,12 +4914,14 @@
   }
 
   function openBankBatchDrawer(batchId) {
-    const batch=state.paymentBatches.find(item=>item.id===batchId); if(!batch)return; state.drawerType='bank-batch'; state.drawerContext=batchId; drawerSave.hidden=true; drawerTitle.textContent=batch.reference;
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Salary payment batch</strong>${bankBatchStatusBadge(batch.status)}</div><div class="detail-grid"><div><span>Period</span><strong>${escapeHtml(batch.period)}</strong></div><div><span>Channel</span><strong>${escapeHtml(batch.channel)}</strong></div><div><span>Template</span><strong>${escapeHtml(batch.templateName)}</strong></div><div><span>Employees</span><strong>${batch.employeeCount}</strong></div><div><span>Total</span><strong>${formatCurrency(Number(batch.total||0))}</strong></div><div><span>Paid</span><strong>${formatCurrency(Number(batch.paidAmount||0))}</strong></div></div></section><section class="payroll-detail-actions">${!['Cancelled','Closed'].includes(batch.status)?`<button class="btn btn--secondary" data-payment-export="${escapeHtml(batch.id)}">Export File</button>`:''}${['Prepared','Exported'].includes(batch.status)?`<button class="btn btn--primary" data-payment-start-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${batch.status==='Paid'?`<button class="btn btn--primary" data-payment-close-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}</section>`;
+    const batch=state.paymentBatches.find(item=>item.id===batchId); if(!batch)return; const actions=new Set(batch.allowedActions||[]); state.drawerType='bank-batch'; state.drawerContext=batchId; drawerSave.hidden=true; drawerTitle.textContent=batch.reference;
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Salary payment batch</strong>${bankBatchStatusBadge(batch.status)}</div><div class="detail-grid"><div><span>Period</span><strong>${escapeHtml(batch.period)}</strong></div><div><span>Channel</span><strong>${escapeHtml(batch.channel)}</strong></div><div><span>Template</span><strong>${escapeHtml(batch.templateName)}</strong></div><div><span>Employees</span><strong>${batch.employeeCount}</strong></div><div><span>Total</span><strong>${formatCurrency(Number(batch.total||0))}</strong></div><div><span>Paid</span><strong>${formatCurrency(Number(batch.paidAmount||0))}</strong></div></div></section><section class="payroll-detail-actions">${actions.has('export')?`<button class="btn btn--secondary" data-payment-export="${escapeHtml(batch.id)}">Export File</button>`:''}${actions.has('start')?`<button class="btn btn--primary" data-payment-start-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${actions.has('cancel')?`<button class="btn btn--danger" data-payment-cancel-batch="${escapeHtml(batch.id)}">Cancel Batch</button>`:''}${actions.has('close')?`<button class="btn btn--primary" data-payment-close-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(batch.id)}">Reopen Payroll</button>`:''}</section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
     drawerBody.querySelector('[data-payment-export]')?.addEventListener('click',()=>exportPaymentBatch(batch.id));
     drawerBody.querySelector('[data-payment-start-batch]')?.addEventListener('click',()=>runPaymentBatchWorkflow(batch.id,'start'));
+    drawerBody.querySelector('[data-payment-cancel-batch]')?.addEventListener('click',()=>runPaymentBatchWorkflow(batch.id,'cancel'));
     drawerBody.querySelector('[data-payment-close-batch]')?.addEventListener('click',()=>runPaymentBatchWorkflow(batch.id,'close'));
+    drawerBody.querySelector('[data-payment-reopen-batch]')?.addEventListener('click',()=>runPaymentBatchWorkflow(batch.id,'reopen'));
   }
 
   function paymentBatchSummary(batch) {
@@ -4689,13 +4931,13 @@
 
   function paymentRowsTable(batch) {
     const q=state.paymentSearch.trim().toLowerCase(); const rows=(batch?.rows||[]).filter(row=>{const statusMatch=state.paymentStatusFilter==='All'||row.status===state.paymentStatusFilter;return statusMatch&&(!q||`${row.employeeCode} ${row.name} ${row.bank} ${row.reference||''}`.toLowerCase().includes(q));});
-    return `<div class="table-wrap"><table class="data-table payment-table"><thead><tr><th>Employee</th><th>Bank / Destination</th><th class="num">Amount</th><th>Status</th><th>Transaction Reference</th><th>Attempts</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'—')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(Number(row.amount||0))}</strong></td><td>${wpsBatchStatusBadge(row.status)}</td><td><span class="mono-cell">${escapeHtml(row.reference||'—')}</span>${row.failureReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.failureReason)}</small>`:''}</td><td>${Number(row.attempts||0)}</td><td><div class="table-row-actions">${['Failed','Reversed'].includes(row.status)?`<button class="btn btn--ghost btn--sm" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-payment-row="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">${icon('chevron')}</button></div></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No payment rows match this filter.</strong><span>Reset filters to see the batch.</span></div></td></tr>`}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="data-table payment-table"><thead><tr><th>Employee</th><th>Bank / Destination</th><th class="num">Amount</th><th>Status</th><th>Transaction Reference</th><th>Attempts</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'—')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(Number(row.amount||0))}</strong></td><td>${wpsBatchStatusBadge(row.status)}</td><td><span class="mono-cell">${escapeHtml(row.reference||'—')}</span>${row.failureReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.failureReason)}</small>`:''}</td><td>${Number(row.attempts||0)}</td><td><div class="table-row-actions">${row.canRetry?`<button class="btn btn--ghost btn--sm" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-payment-row="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">${icon('chevron')}</button></div></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No payment rows match this filter.</strong><span>Reset filters to see the batch.</span></div></td></tr>`}</tbody></table></div>`;
   }
 
   function paymentsInternalTemplate() {
     const key=paymentPeriodKey(); if(!state.paymentLoadedPeriods.has(key)){loadSalaryPayments(state.period);return `<div class="table-empty table-empty--card"><strong>Loading salary payments…</strong><span>Fetching payment batches and reconciliation state.</span></div>`;}
-    const batches=[...paymentBatchesForPeriod()].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))); if(!state.selectedInternalPaymentBatchId||!batches.some(item=>item.id===state.selectedInternalPaymentBatchId))state.selectedInternalPaymentBatchId=batches[0]?.id||null; const batch=batches.find(item=>item.id===state.selectedInternalPaymentBatchId)||batches[0]||null; const summary=paymentBatchSummary(batch);
-    return `${batch?`<div class="payment-summary-strip"><div><span>Payment batch</span><strong>${escapeHtml(batch.reference)}</strong><small>${escapeHtml(batch.channel)} · ${escapeHtml(batch.templateName)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${batch.rows.length} employee payments</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Remaining</span><strong>${formatCurrency(summary.remaining)}</strong><small>${summary.failedCount||summary.reversedCount?`${summary.failedCount} failed · ${summary.reversedCount} reversed`:`${summary.pendingCount+summary.processingCount} pending / processing`}</small></div></div>`:`<div class="payment-empty-hero"><div class="payment-empty-hero__icon">${icon('wallet')}</div><div><span class="eyebrow">Internal salary payments</span><h2>No payment batch for ${escapeHtml(state.period)}</h2><p>Prepare a controlled Bank or WPS batch from the approved payroll.</p></div><button class="btn btn--primary" data-route-link="bank-export">Open Bank / WPS</button></div>`}${batch?`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary payment register</h2><p>Bank-return outcomes and retry attempts are server controlled.</p></div><div class="payment-head-actions">${batches.length>1?`<select class="select payment-batch-select" id="internalPaymentBatchSelect">${batches.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===batch.id?'selected':''}>${escapeHtml(item.reference)} · ${escapeHtml(item.channel)}</option>`).join('')}</select>`:''}${wpsBatchStatusBadge(batch.status)}${['Prepared','Exported'].includes(batch.status)?`<button class="btn btn--primary" data-payment-start data-payment-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${['Processing','Partially Paid','Needs Attention'].includes(batch.status)?`<label class="btn btn--secondary bank-result-import">Import Results<input class="payment-result-file" data-result-batch="${escapeHtml(batch.id)}" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${batch.status==='Paid'?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}</div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search employee, bank or reference…"></div><select class="select" id="paymentStatusFilter"><option>All</option>${['Pending','Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div>${paymentRowsTable(batch)}</section>`:''}`;
+    const batches=[...paymentBatchesForPeriod()].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))); if(!state.selectedInternalPaymentBatchId||!batches.some(item=>item.id===state.selectedInternalPaymentBatchId))state.selectedInternalPaymentBatchId=batches[0]?.id||null; const batch=batches.find(item=>item.id===state.selectedInternalPaymentBatchId)||batches[0]||null; const summary=paymentBatchSummary(batch); const actions=new Set(batch?.allowedActions||[]);
+    return `${batch?`<div class="payment-summary-strip"><div><span>Payment batch</span><strong>${escapeHtml(batch.reference)}</strong><small>${escapeHtml(batch.channel)} · ${escapeHtml(batch.templateName)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${batch.rows.length} employee payments</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Remaining</span><strong>${formatCurrency(summary.remaining)}</strong><small>${summary.failedCount||summary.reversedCount?`${summary.failedCount} failed · ${summary.reversedCount} reversed`:`${summary.pendingCount+summary.processingCount} pending / processing`}</small></div></div>`:`<div class="payment-empty-hero"><div class="payment-empty-hero__icon">${icon('wallet')}</div><div><span class="eyebrow">Internal salary payments</span><h2>No payment batch for ${escapeHtml(state.period)}</h2><p>Prepare a controlled Bank or WPS batch from the approved payroll.</p></div><button class="btn btn--primary" data-route-link="bank-export">Open Bank / WPS</button></div>`}${batch?`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary payment register</h2><p>Bank-return outcomes and retry attempts are server controlled.</p></div><div class="payment-head-actions">${batches.length>1?`<select class="select payment-batch-select" id="internalPaymentBatchSelect">${batches.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===batch.id?'selected':''}>${escapeHtml(item.reference)} · ${escapeHtml(item.channel)}</option>`).join('')}</select>`:''}${wpsBatchStatusBadge(batch.status)}${actions.has('start')?`<button class="btn btn--primary" data-payment-start data-payment-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${actions.has('cancel')?`<button class="btn btn--danger" data-payment-cancel-batch="${escapeHtml(batch.id)}">Cancel Batch</button>`:''}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Results<input class="payment-result-file" data-result-batch="${escapeHtml(batch.id)}" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(batch.id)}">Reopen Payroll</button>`:''}</div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search employee, bank or reference…"></div><select class="select" id="paymentStatusFilter"><option>All</option>${['Pending','Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div>${paymentRowsTable(batch)}</section>`:''}`;
   }
 
   function persistSupplierPayments() {}
@@ -4756,6 +4998,8 @@
           outstanding,
           available,
           settlementStatus: record.status,
+          allowedActions: record.allowedActions || [],
+          canPay: (record.allowedActions || []).includes('pay'),
           paymentStatus: record.status === 'Paid' || record.status === 'Closed' ? 'Paid' : paid > .005 ? 'Part paid' : processing > .005 ? 'Processing' : 'Open'
         };
       });
@@ -4810,12 +5054,12 @@
     if(state.paymentStatusFilter!=='All') payments=payments.filter(row=>row.status===state.paymentStatusFilter);
     const q=state.paymentSearch.trim().toLowerCase();
     if(q) payments=payments.filter(row=>`${row.ref||''} ${row.supplier||''} ${row.transactionReference||''} ${row.resultReason||''}`.toLowerCase().includes(q));
-    const open=allFiltered.filter(row=>row.available>.005);
+    const open=allFiltered.filter(row=>row.canPay&&row.available>.005);
     const processingCount=payments.filter(row=>row.status==='Processing').length;
     const attentionCount=payments.filter(row=>['Failed','Reversed'].includes(row.status)).length;
     return `<section class="payment-summary-strip supplier-payment-summary ui-v2-payroll-rental-payment-summary"><article><span>Approved payables</span><strong>${formatCurrency(summary.payable)}</strong><small>${allFiltered.length} settlement payable${allFiltered.length===1?'':'s'}</small></article><article><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>Confirmed supplier payments</small></article><article class="is-emphasis"><span>Outstanding</span><strong>${formatCurrency(summary.outstanding)}</strong><small>${summary.open} open · ${summary.partial} part paid</small></article><article><span>In processing</span><strong>${processingCount}</strong><small>Reserved payment records</small></article><article class="${attentionCount?'is-attention':''}"><span>Needs attention</span><strong>${attentionCount}</strong><small>Failed / reversed records</small></article></section>
-      <section class="panel panel--flush ui-v2-payroll-panel ui-v2-payroll-register ui-v2-prs-supplier-payables"><div class="panel__head panel__head--padded"><div><span class="ui-v2-prs-panel-kicker">Supplier reconciliation</span><h2>Supplier payables</h2><p>Approved rental settlements become controlled payables. Processing allocations reserve only the available balance; failed/reversed results release it without changing the approved settlement snapshot.</p></div><button class="btn btn--primary" data-supplier-payment-new ${open.length?'':'disabled'}>${icon('plus')} Record Supplier Payment</button></div><div class="toolbar toolbar--table payment-supplier-toolbar ui-v2-payroll-register__toolbar"><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentSupplierFilter"><option value="All suppliers">All suppliers</option>${state.suppliers.map(s=>`<option value="${escapeHtml(s.id)}" ${state.paymentSupplierFilter===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><div class="segmented compact-segmented ui-v2-payroll-view-tabs is-compact">${['Open','Part paid','Paid','All'].map(x=>`<button data-payment-payable="${x}" class="${state.paymentPayableFilter===x?'is-active':''}">${x}</button>`).join('')}</div></div><div class="table-meta ui-v2-payroll-table-meta"><span><strong>${payables.length}</strong> payable${payables.length===1?'':'s'} in this view</span><span>Available excludes money already reserved by Processing payments.</span></div><div class="table-wrap ui-v2-payroll-table-wrap"><table class="data-table supplier-payable-table ui-v2-payroll-rental-payment-table"><thead><tr><th>Supplier</th><th>Project</th><th>Settlement</th><th class="num">Net Payable</th><th class="num">Paid</th><th class="num">Processing</th><th class="num">Available</th><th>Status</th><th></th></tr></thead><tbody>${payables.length?payables.map(row=>`<tr><td><button class="entity-link" data-open-supplier="${escapeHtml(row.supplierId)}">${escapeHtml(row.supplier)}</button></td><td><button class="entity-link" data-route-link="projects/${escapeHtml(row.projectId)}">${escapeHtml(row.project)}</button></td><td><div class="table-primary">${escapeHtml(row.settlementNumber||row.period)}</div><div class="table-secondary ui-v2-payroll-muted">${escapeHtml(row.settlementStatus)}</div></td><td class="num table-money">${formatCurrency(row.amount)}</td><td class="num table-money">${formatCurrency(row.paid)}</td><td class="num table-money">${formatCurrency(row.processing)}</td><td class="num table-money"><strong>${formatCurrency(row.available)}</strong></td><td>${row.paymentStatus==='Paid'?supplierPaymentStatusBadge('Paid'):row.paymentStatus==='Part paid'?'<span class="status status--warning"><span></span>Part paid</span>':row.paymentStatus==='Processing'?'<span class="status status--warning"><span></span>Processing</span>':'<span class="status status--neutral"><span></span>Open</span>'}</td><td>${row.available>.005?`<button class="btn btn--ghost btn--sm" data-pay-supplier-settlement="${escapeHtml(row.settlementId)}">Pay</button>`:'—'}</td></tr>`).join(''):`<tr><td colspan="9"><div class="table-empty ui-v2-payroll-table-empty"><strong>No supplier payables match this view.</strong><span>Only approved settlement snapshots enter the payment ledger.</span></div></td></tr>`}</tbody></table></div></section>
-      <section class="panel panel--flush ui-v2-payroll-panel ui-v2-payroll-register ui-v2-prs-supplier-payment-register"><div class="panel__head panel__head--padded"><div><span class="ui-v2-prs-panel-kicker">Payment evidence</span><h2>Supplier payment register</h2><p>Payment outcomes remain immutable history. Failed or reversed payments are retried as new payment records.</p></div><button class="btn btn--secondary" data-route-link="rental-settlements">Open Settlements</button></div><div class="toolbar toolbar--table payment-register-toolbar ui-v2-payroll-register__toolbar"><div class="search-field ui-v2-filter-bar__search">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search payment, supplier or transaction reference…"></div><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentMethodFilter"><option>All methods</option>${['Bank','Cash','Cheque'].map(x=>`<option ${state.paymentMethodFilter===x?'selected':''}>${x}</option>`).join('')}</select><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentStatusFilter"><option>All</option>${['Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div><div class="table-meta ui-v2-payroll-table-meta"><span><strong>${payments.length}</strong> matching payment record${payments.length===1?'':'s'}</span><span>Failed/reversed records remain retained evidence.</span></div><div class="table-wrap ui-v2-payroll-table-wrap"><table class="data-table supplier-payment-table ui-v2-payroll-rental-payment-table"><thead><tr><th>Payment</th><th>Supplier</th><th>Project / Settlement</th><th>Date</th><th>Method</th><th class="num">Amount</th><th>Status</th><th>Reference / Result</th><th></th></tr></thead><tbody>${payments.length?payments.map(row=>{const allocation=(row.allocations||[])[0];return `<tr><td><button class="entity-link" data-supplier-payment-open="${escapeHtml(row.id)}">${escapeHtml(row.ref||row.id)}</button>${row.retryOf?'<span class="source-mini">Retry</span>':''}</td><td><button class="entity-link" data-open-supplier="${escapeHtml(row.supplierId)}">${escapeHtml(row.supplier)}</button></td><td>${allocation?`<button class="entity-link entity-link--stack ui-v2-payroll-table-entity" data-route-link="projects/${escapeHtml(allocation.projectId)}"><strong>${escapeHtml(allocation.project)}</strong><span>${escapeHtml(allocation.settlementNumber)}</span></button>`:'—'}</td><td>${escapeHtml(paymentDateDisplay(row.date))}</td><td>${escapeHtml(row.method||'—')}</td><td class="num table-money"><strong>${formatCurrency(row.amount)}</strong></td><td>${supplierPaymentStatusBadge(row.status)}</td><td><span class="mono-cell ui-v2-payroll-rental-payment-reference">${escapeHtml(row.transactionReference||'—')}</span>${row.resultReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.resultReason)}</small>`:''}</td><td><div class="table-row-actions ui-v2-payroll-rental-payment-row-actions">${['Failed','Reversed'].includes(row.status)?`<button class="btn btn--ghost btn--sm" data-supplier-payment-retry="${escapeHtml(row.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-supplier-payment-open="${escapeHtml(row.id)}">${icon('chevron')}</button></div></td></tr>`}).join(''):`<tr><td colspan="9"><div class="table-empty ui-v2-payroll-table-empty"><strong>No supplier payments recorded for ${escapeHtml(state.period)}.</strong><span>Choose an approved settlement above to create the first controlled payment.</span></div></td></tr>`}</tbody></table></div></section>`;
+      <section class="panel panel--flush ui-v2-payroll-panel ui-v2-payroll-register ui-v2-prs-supplier-payables"><div class="panel__head panel__head--padded"><div><span class="ui-v2-prs-panel-kicker">Supplier reconciliation</span><h2>Supplier payables</h2><p>Approved rental settlements become controlled payables. Processing allocations reserve only the available balance; failed/reversed results release it without changing the approved settlement snapshot.</p></div><button class="btn btn--primary" data-supplier-payment-new ${open.length?'':'disabled'}>${icon('plus')} Record Supplier Payment</button></div><div class="toolbar toolbar--table payment-supplier-toolbar ui-v2-payroll-register__toolbar"><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentSupplierFilter"><option value="All suppliers">All suppliers</option>${state.suppliers.map(s=>`<option value="${escapeHtml(s.id)}" ${state.paymentSupplierFilter===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><div class="segmented compact-segmented ui-v2-payroll-view-tabs is-compact">${['Open','Part paid','Paid','All'].map(x=>`<button data-payment-payable="${x}" class="${state.paymentPayableFilter===x?'is-active':''}">${x}</button>`).join('')}</div></div><div class="table-meta ui-v2-payroll-table-meta"><span><strong>${payables.length}</strong> payable${payables.length===1?'':'s'} in this view</span><span>Available excludes money already reserved by Processing payments.</span></div><div class="table-wrap ui-v2-payroll-table-wrap"><table class="data-table supplier-payable-table ui-v2-payroll-rental-payment-table"><thead><tr><th>Supplier</th><th>Project</th><th>Settlement</th><th class="num">Net Payable</th><th class="num">Paid</th><th class="num">Processing</th><th class="num">Available</th><th>Status</th><th></th></tr></thead><tbody>${payables.length?payables.map(row=>`<tr><td><button class="entity-link" data-open-supplier="${escapeHtml(row.supplierId)}">${escapeHtml(row.supplier)}</button></td><td><button class="entity-link" data-route-link="projects/${escapeHtml(row.projectId)}">${escapeHtml(row.project)}</button></td><td><div class="table-primary">${escapeHtml(row.settlementNumber||row.period)}</div><div class="table-secondary ui-v2-payroll-muted">${escapeHtml(row.settlementStatus)}</div></td><td class="num table-money">${formatCurrency(row.amount)}</td><td class="num table-money">${formatCurrency(row.paid)}</td><td class="num table-money">${formatCurrency(row.processing)}</td><td class="num table-money"><strong>${formatCurrency(row.available)}</strong></td><td>${row.paymentStatus==='Paid'?supplierPaymentStatusBadge('Paid'):row.paymentStatus==='Part paid'?'<span class="status status--warning"><span></span>Part paid</span>':row.paymentStatus==='Processing'?'<span class="status status--warning"><span></span>Processing</span>':'<span class="status status--neutral"><span></span>Open</span>'}</td><td>${row.canPay&&row.available>.005?`<button class="btn btn--ghost btn--sm" data-pay-supplier-settlement="${escapeHtml(row.settlementId)}">Pay</button>`:'—'}</td></tr>`).join(''):`<tr><td colspan="9"><div class="table-empty ui-v2-payroll-table-empty"><strong>No supplier payables match this view.</strong><span>Only approved settlement snapshots enter the payment ledger.</span></div></td></tr>`}</tbody></table></div></section>
+      <section class="panel panel--flush ui-v2-payroll-panel ui-v2-payroll-register ui-v2-prs-supplier-payment-register"><div class="panel__head panel__head--padded"><div><span class="ui-v2-prs-panel-kicker">Payment evidence</span><h2>Supplier payment register</h2><p>Payment outcomes remain immutable history. Failed or reversed payments are retried as new payment records.</p></div><button class="btn btn--secondary" data-route-link="rental-settlements">Open Settlements</button></div><div class="toolbar toolbar--table payment-register-toolbar ui-v2-payroll-register__toolbar"><div class="search-field ui-v2-filter-bar__search">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search payment, supplier or transaction reference…"></div><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentMethodFilter"><option>All methods</option>${['Bank','Cash','Cheque'].map(x=>`<option ${state.paymentMethodFilter===x?'selected':''}>${x}</option>`).join('')}</select><select class="ui-v2-select ui-v2-payroll-operational-select" id="paymentStatusFilter"><option>All</option>${['Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div><div class="table-meta ui-v2-payroll-table-meta"><span><strong>${payments.length}</strong> matching payment record${payments.length===1?'':'s'}</span><span>Failed/reversed records remain retained evidence.</span></div><div class="table-wrap ui-v2-payroll-table-wrap"><table class="data-table supplier-payment-table ui-v2-payroll-rental-payment-table"><thead><tr><th>Payment</th><th>Supplier</th><th>Project / Settlement</th><th>Date</th><th>Method</th><th class="num">Amount</th><th>Status</th><th>Reference / Result</th><th></th></tr></thead><tbody>${payments.length?payments.map(row=>{const allocation=(row.allocations||[])[0];return `<tr><td><button class="entity-link" data-supplier-payment-open="${escapeHtml(row.id)}">${escapeHtml(row.ref||row.id)}</button>${row.retryOf?'<span class="source-mini">Retry</span>':''}</td><td><button class="entity-link" data-open-supplier="${escapeHtml(row.supplierId)}">${escapeHtml(row.supplier)}</button></td><td>${allocation?`<button class="entity-link entity-link--stack ui-v2-payroll-table-entity" data-route-link="projects/${escapeHtml(allocation.projectId)}"><strong>${escapeHtml(allocation.project)}</strong><span>${escapeHtml(allocation.settlementNumber)}</span></button>`:'—'}</td><td>${escapeHtml(paymentDateDisplay(row.date))}</td><td>${escapeHtml(row.method||'—')}</td><td class="num table-money"><strong>${formatCurrency(row.amount)}</strong></td><td>${supplierPaymentStatusBadge(row.status)}</td><td><span class="mono-cell ui-v2-payroll-rental-payment-reference">${escapeHtml(row.transactionReference||'—')}</span>${row.resultReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.resultReason)}</small>`:''}</td><td><div class="table-row-actions ui-v2-payroll-rental-payment-row-actions">${row.canRetry?`<button class="btn btn--ghost btn--sm" data-supplier-payment-retry="${escapeHtml(row.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-supplier-payment-open="${escapeHtml(row.id)}">${icon('chevron')}</button></div></td></tr>`}).join(''):`<tr><td colspan="9"><div class="table-empty ui-v2-payroll-table-empty"><strong>No supplier payments recorded for ${escapeHtml(state.period)}.</strong><span>Choose an approved settlement above to create the first controlled payment.</span></div></td></tr>`}</tbody></table></div></section>`;
   }
   function paymentsReceiptsTemplate() {
     const receipts=paymentReceiptsForPeriod();
@@ -4881,7 +5125,7 @@
     const row = batch.rows.find(item => item.id === rowId);
     if (!row) return;
     state.drawerType='payment-row'; state.drawerContext={ batchId:batch.id, rowId }; drawerSave.hidden=true; drawerTitle.textContent=`${row.name} · Payment`;
-    drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Payment snapshot</strong>${wpsBatchStatusBadge(row.status)}</div><div class="detail-grid"><div><span>Batch</span><strong>${escapeHtml(batch.reference)}</strong></div><div><span>Amount</span><strong>${formatCurrency(Number(row.amount||0))}</strong></div><div><span>Bank / issuer</span><strong>${escapeHtml(row.bank||'—')}</strong></div><div><span>Destination</span><strong class="mono-cell">${escapeHtml(row.account||'—')}</strong></div><div><span>Transaction reference</span><strong class="mono-cell">${escapeHtml(row.reference||'—')}</strong></div><div><span>Attempts</span><strong>${Number(row.attempts||0)}</strong></div></div></section>${row.failureReason?`<section class="payroll-detail-alert payroll-detail-alert--danger"><strong>Bank result</strong><span>${escapeHtml(row.failureReason)}</span></section>`:''}<section class="payroll-detail-actions">${['Failed','Reversed'].includes(row.status)?`<button class="btn btn--primary" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry Payment</button>`:''}</section><section class="source-note">${icon('info')}<span><strong>Controlled reconciliation</strong>Payment results are changed only by an imported bank/WPS result file. Failed or reversed rows create a new retry attempt against this same approved payroll line.</span></section>`;
+    drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Payment snapshot</strong>${wpsBatchStatusBadge(row.status)}</div><div class="detail-grid"><div><span>Batch</span><strong>${escapeHtml(batch.reference)}</strong></div><div><span>Amount</span><strong>${formatCurrency(Number(row.amount||0))}</strong></div><div><span>Bank / issuer</span><strong>${escapeHtml(row.bank||'—')}</strong></div><div><span>Destination</span><strong class="mono-cell">${escapeHtml(row.account||'—')}</strong></div><div><span>Transaction reference</span><strong class="mono-cell">${escapeHtml(row.reference||'—')}</strong></div><div><span>Attempts</span><strong>${Number(row.attempts||0)}</strong></div></div></section>${row.failureReason?`<section class="payroll-detail-alert payroll-detail-alert--danger"><strong>Bank result</strong><span>${escapeHtml(row.failureReason)}</span></section>`:''}<section class="payroll-detail-actions">${row.canRetry?`<button class="btn btn--primary" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry Payment</button>`:''}</section><section class="source-note">${icon('info')}<span><strong>Controlled reconciliation</strong>Payment results are changed only by an imported bank/WPS result file. Failed or reversed rows create a new retry attempt against this same approved payroll line.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
     drawerBody.querySelector('[data-payment-retry]')?.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(row.id)}/retry/`,{method:'POST',body:{}});applyPaymentPayload(payload);closeDrawer();renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}});
   }
@@ -4895,7 +5139,7 @@
     if(amount){amount.max=String(payable.available);if(!amount.value||Number(amount.value)>payable.available)amount.value=payable.available.toFixed(2);}
   }
   function openSupplierPaymentDrawer(settlementId=null) {
-    const payables=supplierPayables(state.period).filter(item=>item.available>.005);
+    const payables=supplierPayables(state.period).filter(item=>item.canPay&&item.available>.005);
     if(!payables.length){showToast('No available supplier payable',`There is no approved rental settlement with an unreserved balance in ${state.period}.`);return;}
     const selected=payables.find(item=>item.settlementId===settlementId)||payables[0];
     state.drawerType='supplier-payment';state.drawerContext=selected.settlementId;drawerSave.hidden=false;drawerSave.textContent='Record Payment';drawerTitle.textContent='Record supplier payment';
@@ -4906,13 +5150,16 @@
   function openSupplierPaymentDetailDrawer(paymentId) {
     const found=supplierPaymentById(paymentId); if(!found) return; const {payment,supplierId}=found;
     const allocation=(payment.allocations||[])[0];
-    state.drawerType=payment.status==='Processing'||payment.status==='Paid'?'supplier-payment-result':'supplier-payment-readonly';
+    const actions=new Set(payment.allowedActions||[]);
+    const resultActions=['paid','failed','cancelled','reversed'].filter(action=>actions.has(action));
+    state.drawerType=resultActions.length?'supplier-payment-result':'supplier-payment-readonly';
     state.drawerContext={paymentId,supplierId};
     drawerSave.hidden=state.drawerType==='supplier-payment-readonly';
     drawerSave.textContent='Save Payment Result';
     drawerTitle.textContent=payment.ref||'Supplier payment';
-    const allowed=payment.status==='Processing'?['Processing','Paid','Failed','Cancelled']:payment.status==='Paid'?['Paid','Reversed']:[payment.status];
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Supplier payment</strong><span>${supplierPaymentStatusBadge(payment.status)}</span></div><div class="detail-grid"><div><span>Supplier</span><strong>${escapeHtml(payment.supplier||supplierId)}</strong></div><div><span>Settlement</span><strong>${escapeHtml(allocation?.settlementNumber||'—')}</strong></div><div><span>Project</span><strong>${escapeHtml(allocation?.project||'—')}</strong></div><div><span>Amount</span><strong>${formatCurrency(payment.amount)}</strong></div><div><span>Method</span><strong>${escapeHtml(payment.method||'—')}</strong></div><div><span>Payment date</span><strong>${escapeHtml(paymentDateDisplay(payment.date))}</strong></div></div></section>${state.drawerType==='supplier-payment-readonly'?`<section class="source-note">${icon('info')}<span><strong>Immutable payment outcome.</strong>${escapeHtml(payment.resultReason||'Create a retry for failed/reversed payments instead of rewriting this record.')}</span></section>`:`<section class="form-section"><div class="form-section__head"><strong>Payment result</strong><span>Controlled state transition</span></div><div class="form-grid"><label class="form-field"><span>Status</span><select name="supplier-payment-result-status">${allowed.map(status=>`<option ${payment.status===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select></label><label class="form-field"><span>Transaction / cheque reference</span><input name="supplier-payment-result-reference" value="${escapeHtml(payment.transactionReference||'')}"></label><label class="form-field form-field--full"><span>Failure / reversal reason</span><textarea name="supplier-payment-result-note" placeholder="Required for Failed or Reversed">${escapeHtml(payment.resultReason||'')}</textarea></label></div></section>`}<section class="payroll-detail-actions">${['Failed','Reversed'].includes(payment.status)?`<button class="btn btn--secondary" data-supplier-payment-retry="${escapeHtml(paymentId)}">Create Retry</button>`:''}</section>`;
+    const statusLabels={paid:'Paid',failed:'Failed',cancelled:'Cancelled',reversed:'Reversed'};
+    const allowed=[payment.status,...resultActions.map(action=>statusLabels[action])].filter((value,index,array)=>value&&array.indexOf(value)===index);
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Supplier payment</strong><span>${supplierPaymentStatusBadge(payment.status)}</span></div><div class="detail-grid"><div><span>Supplier</span><strong>${escapeHtml(payment.supplier||supplierId)}</strong></div><div><span>Settlement</span><strong>${escapeHtml(allocation?.settlementNumber||'—')}</strong></div><div><span>Project</span><strong>${escapeHtml(allocation?.project||'—')}</strong></div><div><span>Amount</span><strong>${formatCurrency(payment.amount)}</strong></div><div><span>Method</span><strong>${escapeHtml(payment.method||'—')}</strong></div><div><span>Payment date</span><strong>${escapeHtml(paymentDateDisplay(payment.date))}</strong></div></div></section>${state.drawerType==='supplier-payment-readonly'?`<section class="source-note">${icon('info')}<span><strong>Immutable payment outcome.</strong>${escapeHtml(payment.resultReason||'Create a retry for failed/reversed payments instead of rewriting this record.')}</span></section>`:`<section class="form-section"><div class="form-section__head"><strong>Payment result</strong><span>Controlled state transition</span></div><div class="form-grid"><label class="form-field"><span>Status</span><select name="supplier-payment-result-status">${allowed.map(status=>`<option ${payment.status===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select></label><label class="form-field"><span>Transaction / cheque reference</span><input name="supplier-payment-result-reference" value="${escapeHtml(payment.transactionReference||'')}"></label><label class="form-field form-field--full"><span>Failure / reversal reason</span><textarea name="supplier-payment-result-note" placeholder="Required for Failed or Reversed">${escapeHtml(payment.resultReason||'')}</textarea></label></div></section>`}<section class="payroll-detail-actions">${payment.canRetry?`<button class="btn btn--secondary" data-supplier-payment-retry="${escapeHtml(paymentId)}">Create Retry</button>`:''}</section>`;
     drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
   }
   function printPaymentReceipt(receipt) {
@@ -5058,16 +5305,39 @@
       rateType:worker?.rateType || 'Hourly',
       rateValue:worker?.rateValue,
       since:worker?.since || '',
-      status:worker?.status || 'Available'
+      status:worker?.status || 'Available',
+      projectOperational:true,
+      projectLifecycleLabel:''
     };
+    const directoryProject = state.projects.find(item => item.id === current.projectId) || null;
+    const fallbackProject = current.projectId ? {
+      id:current.projectId,
+      name:current.projectName || 'Retained project',
+      code:current.projectCode || '',
+      status:current.projectStatus || '',
+      statusValue:current.projectStatusValue || '',
+      archived:!!current.projectArchived,
+      deleted:!!current.projectDeleted
+    } : null;
+    const project = directoryProject || fallbackProject;
+    const projectOperational = current.projectOperational !== undefined
+      ? !!current.projectOperational
+      : !(current.projectDeleted || current.projectArchived || (current.projectStatusValue && current.projectStatusValue !== 'active'));
+    const projectLifecycleLabel = current.projectDeleted
+      ? 'Project deleted · assignment retained for recovery/history'
+      : current.projectArchived
+        ? 'Project archived · assignment retained'
+        : (!projectOperational ? `Project ${current.projectStatus || 'not active'} · assignment retained` : '');
     return {
-      project:state.projects.find(item => item.id === current.projectId) || null,
+      project,
       trade:current.trade || '—',
       rate:rentalRateLabelFromParts(current.rateType, current.rateValue, current.rateLabel),
       rateType:current.rateType || 'Hourly',
       rateValue:current.rateValue,
       since:current.start || '',
-      status:'Assigned'
+      status:'Assigned',
+      projectOperational,
+      projectLifecycleLabel
     };
   }
 
@@ -5121,9 +5391,9 @@
     return `<div class="rental-profile-grid">
       <div class="profile-main-stack">
         <section class="panel panel--flush"><div class="section-headline"><div><h2>Worker overview</h2><p>Permanent worker identity stays separate from changing project, trade and rate assignments.</p></div><button class="btn btn--secondary btn--sm" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit worker</button></div><div class="worker-overview-grid"><div><span>Worker ID</span><strong>${escapeHtml(rentalWorkerCode(worker))}</strong></div><div><span>Iqama / National ID</span><strong>${escapeHtml(worker.nationalId || 'Not recorded')}</strong></div><div><span>Phone</span><strong>${escapeHtml(worker.phone || 'Not recorded')}</strong></div><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || 'Not linked')}</strong></div><div><span>Master status</span><strong>${escapeHtml(worker.masterStatus || 'Active')}</strong>${worker.terminatedOn?`<small>Terminated ${escapeHtml(rentalDisplayDate(worker.terminatedOn))}</small>`:worker.inactiveOn?`<small>Stopped ${escapeHtml(rentalDisplayDate(worker.inactiveOn))}</small>`:''}</div><div><span>Assignment changes</span><strong>${changes}</strong></div></div></section>
-        <section class="panel panel--flush"><div class="section-headline"><div><h2>Current assignment</h2><p>Current state is resolved from effective-dated assignment history.</p></div>${snapshot.project ? `<button class="text-link" data-open-project="${escapeHtml(snapshot.project.id)}">Open project →</button>` : ''}</div><div class="current-assignment-card ${snapshot.project ? '' : 'is-pool'}"><div class="current-assignment-card__icon">${snapshot.project ? 'PR' : 'AV'}</div><div><span class="eyebrow">${snapshot.project ? 'Active project assignment' : 'Supplier worker pool'}</span><h3>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive / not available' : worker.status === 'Scheduled' ? `Scheduled for ${worker.nextProject || 'project assignment'}` : 'Available for assignment'))}</h3><div class="assignment-preview__meta"><span>${escapeHtml(snapshot.trade)}</span><span>${escapeHtml(snapshot.rate)}</span>${snapshot.since ? `<span>From ${escapeHtml(rentalDisplayDate(snapshot.since))}</span>` : ''}</div></div><div class="current-assignment-card__action">${snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project</button>` : ''}</div></div></section>
+        <section class="panel panel--flush"><div class="section-headline"><div><h2>Current assignment</h2><p>Current state is resolved from effective-dated assignment history.</p></div>${snapshot.project && !snapshot.project.deleted ? `<button class="text-link" data-open-project="${escapeHtml(snapshot.project.id)}">Open project →</button>` : ''}</div><div class="current-assignment-card ${snapshot.project ? '' : 'is-pool'}"><div class="current-assignment-card__icon">${snapshot.project ? 'PR' : 'AV'}</div><div><span class="eyebrow">${snapshot.project ? (snapshot.projectOperational ? 'Active project assignment' : 'Retained project assignment') : 'Supplier worker pool'}</span><h3>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive / not available' : worker.status === 'Scheduled' ? `Scheduled for ${worker.nextProject || 'project assignment'}` : 'Available for assignment'))}</h3><div class="assignment-preview__meta"><span>${escapeHtml(snapshot.trade)}</span><span>${escapeHtml(snapshot.rate)}</span>${snapshot.since ? `<span>From ${escapeHtml(rentalDisplayDate(snapshot.since))}</span>` : ''}</div></div><div class="current-assignment-card__action">${snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project</button>` : ''}</div></div>${snapshot.project && !snapshot.projectOperational ? `<div class="source-note source-note--compact">${icon('info')}<span><strong>Project lifecycle boundary.</strong> ${escapeHtml(snapshot.projectLifecycleLabel || 'This assignment is retained for history, but project-local operational changes are stopped until the project is restored/active or the worker is transferred/released.')}</span></div>` : ''}</section>
       </div>
-      <aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Master links</h3></div><div class="rental-master-links">${supplier ? `<button class="mini-entity" data-open-supplier="${escapeHtml(supplier.id)}"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Manpower supplier</small></span>${icon('chevron')}</button>` : ''}${snapshot.project ? `<button class="mini-entity" data-open-project="${escapeHtml(snapshot.project.id)}"><span class="mini-entity__icon">PR</span><span><strong>${escapeHtml(snapshot.project.name)}</strong><small>Current project</small></span>${icon('chevron')}</button>` : ''}</div></section><section class="detail-card"><div class="detail-card__head"><h3>Worker controls</h3></div><div class="rental-worker-actions-list">${snapshot.project && !worker.nextAssignmentId ? `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Change trade <span>→</span></button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Change rate <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>` : worker.status === 'Available' ? `<button data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project <span>→</span></button>` : ''}${worker.nextAssignmentId ? `<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel latest scheduled change <span>→</span></button>` : ''}<button data-rental-worker-action="advance" data-worker-id="${escapeHtml(worker.id)}">Record advance <span>→</span></button></div></section></aside>
+      <aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Master links</h3></div><div class="rental-master-links">${supplier ? `<button class="mini-entity" data-open-supplier="${escapeHtml(supplier.id)}"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Manpower supplier</small></span>${icon('chevron')}</button>` : ''}${snapshot.project && !snapshot.project.deleted ? `<button class="mini-entity" data-open-project="${escapeHtml(snapshot.project.id)}"><span class="mini-entity__icon">PR</span><span><strong>${escapeHtml(snapshot.project.name)}</strong><small>Current project</small></span>${icon('chevron')}</button>` : ''}</div></section><section class="detail-card"><div class="detail-card__head"><h3>Worker controls</h3></div><div class="rental-worker-actions-list">${snapshot.project && !worker.nextAssignmentId ? (snapshot.projectOperational ? `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Change trade <span>→</span></button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Change rate <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>` : `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>`) : worker.status === 'Available' ? `<button data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project <span>→</span></button>` : ''}${worker.nextAssignmentId ? `<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel latest scheduled change <span>→</span></button>` : ''}<button data-rental-worker-action="advance" data-worker-id="${escapeHtml(worker.id)}">Record advance <span>→</span></button></div></section></aside>
     </div>`;
   }
 
@@ -5163,18 +5433,7 @@
   }
 
   function rentalWorkforceRows() {
-    const q = state.rentalSearch.trim().toLowerCase();
-    return state.rentalWorkers.filter(worker => {
-      const supplier = rentalWorkerSupplier(worker);
-      const project = rentalWorkerCurrentProject(worker);
-      const statusMatch = state.rentalStatus === 'All' || worker.status === state.rentalStatus;
-      const supplierMatch = state.rentalSupplier === 'All suppliers' || worker.supplierId === state.rentalSupplier;
-      const projectMatch = state.rentalProject === 'All projects' || (state.rentalProject === 'Unassigned / available' ? !worker.projectId : worker.projectId === state.rentalProject);
-      const tradeMatch = state.rentalTrade === 'All trades' || worker.trade === state.rentalTrade;
-      const rateMatch = state.rentalRateType === 'All rate types' || worker.rateType === state.rentalRateType;
-      const searchMatch = !q || `${worker.name} ${rentalWorkerCode(worker)} ${worker.trade} ${supplier?.name || worker.supplier || ''} ${project?.name || worker.project || ''} ${rentalWorkerRate(worker)}`.toLowerCase().includes(q);
-      return statusMatch && supplierMatch && projectMatch && tradeMatch && rateMatch && searchMatch;
-    });
+    return serverDirectoryView('workers').rows;
   }
 
 
@@ -5334,7 +5593,8 @@
   }
 
   function rentalWorkforceTemplate() {
-    const rows = rentalWorkforceRows();
+    const directory = serverDirectoryView('workers');
+    const rows = directory.rows;
     const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
     const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
     const scheduled = state.rentalWorkers.filter(worker => worker.status === 'Scheduled').length;
@@ -5342,7 +5602,7 @@
     const activeProjectIds = new Set(state.rentalWorkers.filter(worker => worker.status === 'Assigned' && worker.projectId).map(worker => worker.projectId));
     const trades = [...new Set(state.rentalWorkers.map(worker => worker.trade).filter(Boolean))].sort((a,b) => a.localeCompare(b));
     const activeMasters = state.rentalWorkers.filter(worker => worker.masterStatus === 'Active').length;
-    const filtered = rows.length !== state.rentalWorkers.length;
+    const filtered = !!state.rentalSearch || state.rentalStatus !== 'All' || state.rentalSupplier !== 'All suppliers' || state.rentalProject !== 'All projects' || state.rentalTrade !== 'All trades' || state.rentalRateType !== 'All rate types';
 
     return `<section class="page rental-workforce-page">
       <div class="page-head rental-workforce-head">
@@ -5371,7 +5631,7 @@
       <section class="panel panel--flush rental-directory-panel">
         <div class="panel__head panel__head--padded rental-directory-head">
           <div><h2>Worker master</h2><p>Filter the complete rental roster by assignment, supplier, project, trade or rate type.</p></div>
-          <div class="rental-directory-meta"><strong>${rows.length}</strong><span>${filtered ? 'matching workers' : 'workers in master'}</span></div>
+          <div class="rental-directory-meta"><strong>${Number(directory.meta.count ?? rows.length).toLocaleString()}</strong><span>${filtered ? 'matching workers' : 'workers in master'}</span></div>
         </div>
 
         <div class="rental-filterbar">
@@ -5404,9 +5664,10 @@
               <td>${statusBadge(worker.status || 'Available')}</td>
               <td class="table-actions"><button class="icon-btn icon-btn--sm" data-rental-worker-menu="${escapeHtml(worker.id)}" aria-label="Worker actions">${icon('more')}</button></td>
             </tr>`;
-          }).join('') : `<tr><td colspan="8"><div class="table-empty"><strong>No workers match these filters.</strong><span>Reset the filters or add a new rental worker from a managed manpower supplier.</span></div></td></tr>`}
+          }).join('') : `<tr><td colspan="8">${directoryEmptyState('workers',directory,'<div class="table-empty"><strong>No workers match these filters.</strong><span>Reset the filters or add a new rental worker from a managed manpower supplier.</span></div>')}</td></tr>`}
         </tbody></table></div>
       </section>
+      ${directoryPagination('workers',directory.meta)}
 
       <div class="rental-workforce-footer-grid">
         <section class="detail-card"><div class="detail-card__head"><h3>Master-data rule</h3><span class="status status--success"><span></span>Controlled</span></div><div class="rental-rule-list"><div><strong>Supplier</strong><span>Selected from Manpower Suppliers; never repeated free text.</span></div><div><strong>Project</strong><span>Selected from Projects; transfer creates history instead of overwriting.</span></div><div><strong>Worker</strong><span>Created once and reused across every project assignment.</span></div></div></section>
@@ -5586,6 +5847,7 @@
   function applyRentalSettlementPayload(payload) {
     const label = payload.label || state.period;
     state.rentalSettlementContexts[label] = payload;
+    state.rentalFinancialMetricsByPeriod[label] = payload.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}};
     state.rentalTimesheetScopes = payload.timesheetScopes || [];
     Object.keys(state.rentalSettlements).forEach(key => {
       if (state.rentalSettlements[key]?.period === label) delete state.rentalSettlements[key];
@@ -5628,6 +5890,11 @@
   function rentalTimesheetScope(projectId, period = state.period) {
     const context = state.rentalSettlementContexts[period];
     return (context?.timesheetScopes || []).find(item => item.projectId === projectId) || null;
+  }
+
+  function rentalSettlementProjectWorkflow(projectId = state.rentalSettlementProject, period = state.period) {
+    const context = state.rentalSettlementContexts[period];
+    return context?.projectWorkflows?.[projectId] || {allowedActions:[],nextAction:null,canCalculate:false,canSubmit:false,canReturn:false,canApprove:false,canClose:false};
   }
 
   function rentalSettlementRelevantWorkers(projectId, supplierId = 'All suppliers', period = state.period) {
@@ -5708,7 +5975,6 @@
     return Object.values(state.rentalSettlements || {}).some(record => record.period === period && record.projectId === projectId && rentalSettlementStage(record.status) >= rentalSettlementStage('Calculated'));
   }
 
-  function rentalSettlementHasDrift() { return false; }
 
   function rentalSettlementReadiness(groups) {
     const projectIds = [...new Set(groups.map(group => group.projectId))];
@@ -5716,31 +5982,30 @@
     return { ready: statuses.length > 0 && statuses.every(item => item.status === 'Locked'), statuses };
   }
 
-  async function progressRentalSettlement(nextStatus) {
+  async function progressRentalSettlement(action) {
     const groups = rentalSettlementCurrentGroups();
-    if (!groups.length) { showToast('No settlement scope','Choose a project with a locked rental timesheet and supplier workers.'); return; }
+    const workflow = rentalSettlementProjectWorkflow();
+    const allowed = new Set(workflow.allowedActions || []);
+    if (!groups.length && action !== 'calculate') { showToast('No settlement scope','Choose a project with a locked rental timesheet and supplier workers.'); return; }
+    if (!allowed.has(action)) { showToast('Settlement action blocked','The server does not allow this settlement action in the current lifecycle state.'); return; }
     try {
       let payload;
-      if (nextStatus === 'Calculated') {
-        const readiness = rentalSettlementReadiness(groups);
-        if (!readiness.ready) {
-          const pending = readiness.statuses.map(item => `${state.projects.find(p=>p.id===item.projectId)?.name || 'Project'} (${item.status})`).join(', ');
-          showToast('Locked timesheet required', `Settlement calculation requires the locked project timesheet. ${pending}`);
-          return;
-        }
+      if (action === 'calculate') {
         payload = await appApi('/api/rental/settlements/calculate/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject } });
-      } else if (nextStatus === 'Review') {
-        payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action:'submit' } });
-      } else if (nextStatus === 'Approved') {
+      } else if (action === 'approve') {
         if (!window.confirm('Approve these supplier settlement snapshots? Approved settlements cannot be recalculated or edited.')) return;
-        payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action:'approve', confirmed:true } });
-      } else return;
+        payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action, confirmed:true } });
+      } else {
+        payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action } });
+      }
       applyRentalSettlementPayload(payload); renderRoute();
-      showToast(`Settlement ${nextStatus.toLowerCase()}`, `${state.period} supplier settlement state was updated by the server.`);
+      const labels={calculate:'calculated',submit:'submitted for review',approve:'approved',close:'closed'};
+      showToast(`Settlement ${labels[action] || action}`, `${state.period} supplier settlement state was updated by the server.`);
     } catch (error) { showToast('Settlement action blocked', error.message); }
   }
 
   async function returnRentalSettlementForChanges() {
+    if (!(rentalSettlementProjectWorkflow().allowedActions || []).includes('return')) { showToast('Settlement return blocked','The server does not allow Return for Changes in the current state.'); return; }
     const reason = window.prompt('Enter the finance correction reason for returning this settlement:');
     if (!reason?.trim()) return;
     try {
@@ -5751,6 +6016,7 @@
   }
 
   async function closeRentalSettlementPeriod() {
+    if (!(rentalSettlementProjectWorkflow().allowedActions || []).includes('close')) { showToast('Settlement close blocked','The server does not allow closing this project settlement period yet.'); return; }
     if (!window.confirm('Close this fully paid project settlement period? Closed settlements remain immutable unless a paid supplier payment is later reversed.')) return;
     try {
       const payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action:'close' } });
@@ -5788,9 +6054,17 @@
   }
 
   function rentalSettlementWorkflow(status) {
-    const steps=['Draft','Calculated','Review','Approved'];
-    const current=Math.max(0,steps.indexOf(status));
-    return `<div class="settlement-workflow ui-v2-payroll-rental-settlement-workflow">${steps.map((step,index)=>`<div class="settlement-workflow__step ${index<=current?'is-complete':''} ${index===current?'is-current':''}"><span>${index<current?'✓':index+1}</span><strong>${step}</strong></div>`).join('')}</div>`;
+    const steps=[
+      {label:'Draft',states:['Draft']},
+      {label:'Calculated',states:['Calculated']},
+      {label:'Review',states:['Review']},
+      {label:'Approved',states:['Approved']},
+      {label:'Payment',states:['Payment Processing','Partially Paid','Paid']},
+      {label:'Closed',states:['Closed']},
+    ];
+    let current=steps.findIndex(step=>step.states.includes(status));
+    if (current < 0) current=0;
+    return `<div class="settlement-workflow ui-v2-payroll-rental-settlement-workflow">${steps.map((step,index)=>`<div class="settlement-workflow__step ${index<=current?'is-complete':''} ${index===current?'is-current':''}"><span>${index<current?'✓':index+1}</span><strong>${step.label}</strong></div>`).join('')}</div>`;
   }
   function rentalSettlementProjectView() {
     const project = state.projects.find(item => item.id === state.rentalSettlementProject);
@@ -5806,14 +6080,17 @@
     const groupStatus=rentalSettlementGroupStatus(groups);
     const readiness=rentalSettlementReadiness(groups);
     const approvedCount=groups.filter(group=>rentalSettlementStage(group.status)>=rentalSettlementStage('Approved')).length;
-    const next = groupStatus==='Draft' ? 'Calculated' : groupStatus==='Calculated' ? 'Review' : groupStatus==='Review' ? 'Approved' : null;
-    const actionLabel = next==='Calculated' ? 'Calculate Settlement' : next==='Review' ? 'Submit for Review' : next==='Approved' ? 'Approve Settlement' : ['Paid','Closed'].includes(groupStatus)?'Settlement Complete':'Settlement Approved';
+    const workflow=rentalSettlementProjectWorkflow(project.id,state.period);
+    const allowedActions=new Set(workflow.allowedActions||[]);
+    const next=workflow.nextAction || null;
+    const idleLabel={Approved:'Awaiting Supplier Payment','Payment Processing':'Payment in Progress','Partially Paid':'Partially Paid',Paid:'Ready to Close',Closed:'Settlement Complete'}[groupStatus] || 'No action available';
+    const actionLabel={calculate:'Calculate Settlement',submit:'Submit for Review',approve:'Approve Settlement',close:'Close Project Period'}[next] || idleLabel;
     return `
       <div class="settlement-control-grid ui-v2-payroll-rental-settlement-control-grid">
         <section class="panel panel--flush settlement-lifecycle-card ui-v2-payroll-panel"><div class="panel__head panel__head--padded"><div><span class="ui-v2-prs-panel-kicker">Settlement control</span><h2>${escapeHtml(project.name)}</h2><p>${escapeHtml(state.period)} · ${groups.length} supplier snapshot${groups.length===1?'':'s'}</p></div>${rentalSettlementStatusBadge(groupStatus)}</div>
           ${rentalSettlementWorkflow(groupStatus)}
           <div class="settlement-readiness ui-v2-payroll-rental-settlement-readiness ${readiness.ready?'is-ready':'is-blocked'}">${icon(readiness.ready?'info':'clock')}<div><strong>${readiness.ready?'Locked timesheet snapshot ready':'Locked timesheet required'}</strong><span>${readiness.statuses.map(item=>`${escapeHtml(state.projects.find(p=>p.id===item.projectId)?.name || 'Project')}: ${escapeHtml(item.status)}`).join(' · ')}</span></div>${!readiness.ready?`<button class="btn btn--secondary btn--sm" data-open-rental-timesheet-project="${escapeHtml(project.id)}" data-timesheet-period="${escapeHtml(state.period)}">Open Timesheet</button>`:''}</div>
-          <div class="settlement-actions ui-v2-payroll-rental-settlement-actions">${groupStatus==='Review'?`<button class="btn btn--ghost" data-settlement-return>Return for Changes</button>`:''}${groupStatus==='Paid'?`<button class="btn btn--primary" data-settlement-close>Close Project Period</button>`:`<button class="btn btn--primary" data-settlement-progress="${next||''}" ${!next || (next==='Calculated' && !readiness.ready) ? 'disabled':''}>${escapeHtml(actionLabel)}</button>`}</div>
+          <div class="settlement-actions ui-v2-payroll-rental-settlement-actions">${allowedActions.has('return')?`<button class="btn btn--ghost" data-settlement-return>Return for Changes</button>`:''}${next==='close'?`<button class="btn btn--primary" data-settlement-close>Close Project Period</button>`:`<button class="btn btn--primary" data-settlement-progress="${escapeHtml(next||'')}" ${!next ? 'disabled':''}>${escapeHtml(actionLabel)}</button>`}</div>
         </section>
         <div class="ui-v2-payroll-rental-settlement-overview-stack">
           <section class="settlement-summary-grid ui-v2-payroll-rental-settlement-summary-grid"><div><span>Workers</span><strong>${totals.workers}</strong><small>${groups.length} supplier settlement${groups.length===1?'':'s'}</small></div><div><span>Regular / OT hours</span><strong>${totals.hours.toLocaleString('en-SA',{maximumFractionDigits:2})} / ${totals.otHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Locked project snapshot</small></div><div><span>Gross manpower</span><strong>${formatCurrency(totals.gross)}</strong><small>Base + overtime</small></div><div><span>Additions / deductions</span><strong>+ ${formatCurrency(totals.adjustmentEarnings)} / − ${formatCurrency(totals.adjustments)}</strong><small>Approved rental adjustments</small></div><div class="is-total"><span>Net payable</span><strong>${formatCurrency(totals.net)}</strong><small>${approvedCount}/${groups.length} supplier snapshots approved or later</small></div></section>
@@ -6508,6 +6785,10 @@
     } else if (route === 'departments') pageRoot.innerHTML = departmentsTemplate();
     else if (route === 'internal-employees' && employeeId) {
       const employee = state.employees.find(item => item.id === employeeId);
+      const profileKey = employeeProfileContextKey(employeeId, state.period);
+      if (employee && !state.employeeProfileContexts[profileKey] && !state.employeeProfileLoading.has(profileKey)) {
+        loadEmployeeProfileContext(employeeId, state.period, { render:true });
+      }
       pageRoot.innerHTML = employeeRecordPreviewTemplate(employee);
       title = employee?.name || 'Employee';
     } else if (route === 'internal-employees') pageRoot.innerHTML = internalEmployeesTemplate();
@@ -6577,6 +6858,17 @@
   }
 
   function wireDynamicActions() {
+    document.querySelectorAll('[data-directory-page]').forEach(btn => btn.addEventListener('click', () => {
+      const [kind,pageRaw]=String(btn.dataset.directoryPage||'').split('|'); const store=directoryStore(kind); const page=Number(pageRaw);
+      if(!store||!Number.isFinite(page)||page<1)return; store.page=page; renderRoute();
+    }));
+    document.querySelectorAll('[data-directory-page-size]').forEach(select => select.addEventListener('change', () => {
+      const store=directoryStore(select.dataset.directoryPageSize); const pageSize=Number(select.value);
+      if(!store||![25,50,100].includes(pageSize))return; store.pageSize=pageSize; store.page=1; renderRoute();
+    }));
+    document.querySelectorAll('[data-directory-retry]').forEach(btn => btn.addEventListener('click', () => {
+      const kind=btn.dataset.directoryRetry; const store=directoryStore(kind); if(store){store.key='';store.pendingKey='';store.error='';loadServerDirectory(kind,{force:true});renderRoute();}
+    }));
     document.querySelectorAll('[data-timesheet-fullscreen]').forEach(btn => btn.addEventListener('click', toggleTimesheetFullscreen));
     document.querySelectorAll('[data-route-link]').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.routeLink)));
     document.querySelectorAll('[data-record-bin-restore]').forEach(btn => btn.addEventListener('click', async () => {
@@ -6999,9 +7291,9 @@
 
     document.querySelectorAll('[data-rental-ts-input]').forEach(input => {
       input.addEventListener('change', () => {
-        if (rentalTimesheetStatus() !== 'Draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('Timesheet protected', rentalTimesheetStatus() !== 'Draft' ? 'Submitted, Approved and Locked rental attendance cannot be edited. Return it to Draft through the controlled workflow first.' : 'A calculated rental settlement already uses this project-period snapshot. Return the settlement for changes before editing hours.'); renderRoute(); return; }
+        if (rentalTimesheetStatusValue() !== 'draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('Timesheet protected', rentalTimesheetStatusValue() !== 'draft' ? 'Submitted, Approved and Locked rental attendance cannot be edited. Return it to Draft through the controlled workflow first.' : 'A calculated rental settlement already uses this project-period snapshot. Return the settlement for changes before editing hours.'); renderRoute(); return; }
         const normalized = normalizeRentalTimesheetValue(input.value);
-        if (normalized == null) { showToast('Invalid timesheet value','Enter 0–24 hours or A, N, L or OFF.'); renderRoute(); return; }
+        if (normalized == null) { showToast('Invalid timesheet value', attendanceContractHint(state.rentalAttendanceContract)); renderRoute(); return; }
         const workerId=input.dataset.rentalTsInput; const day=Number(input.dataset.day);
         input.disabled=true;
         saveRentalTimesheetEntries([{worker_id:workerId,work_date:rentalTimesheetDate(day),value:normalized}]).catch(error=>{ showToast('Timesheet update failed',error.message); loadRentalTimesheet(); });
@@ -7053,7 +7345,7 @@
     const rentalTimesheetBulkDay = document.getElementById('rentalTimesheetBulkDay');
     if (rentalTimesheetBulkDay) rentalTimesheetBulkDay.addEventListener('change', () => { state.rentalTimesheetBulkDay = Number(rentalTimesheetBulkDay.value) || 1; });
     document.querySelectorAll('[data-rental-ts-bulk]').forEach(btn => btn.addEventListener('click', () => {
-      if (rentalTimesheetStatus() !== 'Draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('Timesheet protected', rentalTimesheetStatus() !== 'Draft' ? 'Only Draft rental timesheets can be edited.' : 'A calculated settlement protects this timesheet snapshot. Return the settlement for changes before bulk editing.'); return; }
+      if (rentalTimesheetStatusValue() !== 'draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('Timesheet protected', rentalTimesheetStatusValue() !== 'draft' ? 'Only Draft rental timesheets can be edited.' : 'A calculated settlement protects this timesheet snapshot. Return the settlement for changes before bulk editing.'); return; }
       if (!state.rentalTimesheetSelected.size) return;
       ensureRentalTimesheet();
       const action = btn.dataset.rentalTsBulk;
@@ -7080,14 +7372,14 @@
     }));
 
     document.querySelectorAll('[data-rental-ot-hours]').forEach(input => input.addEventListener('change', () => {
-      if (rentalTimesheetStatus() !== 'Draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('OT protected', rentalTimesheetStatus() !== 'Draft' ? 'Only Draft rental timesheet overtime can be edited.' : 'A calculated settlement already uses these OT values. Return the settlement for changes before editing OT.'); renderRoute(); return; }
+      if (rentalTimesheetStatusValue() !== 'draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('OT protected', rentalTimesheetStatusValue() !== 'draft' ? 'Only Draft rental timesheet overtime can be edited.' : 'A calculated settlement already uses these OT values. Return the settlement for changes before editing OT.'); renderRoute(); return; }
       const hours = Number(input.value || 0);
       if (!Number.isFinite(hours) || hours < 0 || hours > 500) { showToast('Invalid OT hours','Enter a non-negative overtime-hour value.'); renderRoute(); return; }
       const workerId=input.dataset.rentalOtHours; const key=rentalTimesheetRecordKey(); const current=state.rentalOvertime[key]?.[workerId]||{};
       appApi('/api/rental/timesheets/overtime/',{method:'PATCH',body:{project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),worker_id:workerId,hours,rate:current.rate||null}}).then(payload=>{applyRentalTimesheetPayload(payload);renderRoute();}).catch(error=>{showToast('OT update failed',error.message);loadRentalTimesheet();});
     }));
     document.querySelectorAll('[data-rental-ot-rate]').forEach(input => input.addEventListener('change', () => {
-      if (rentalTimesheetStatus() !== 'Draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('OT protected', rentalTimesheetStatus() !== 'Draft' ? 'Only Draft rental timesheet overtime can be edited.' : 'A calculated settlement already uses these OT values. Return the settlement for changes before editing OT.'); renderRoute(); return; }
+      if (rentalTimesheetStatusValue() !== 'draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('OT protected', rentalTimesheetStatusValue() !== 'draft' ? 'Only Draft rental timesheet overtime can be edited.' : 'A calculated settlement already uses these OT values. Return the settlement for changes before editing OT.'); renderRoute(); return; }
       const rate = Number(input.value || 0);
       if (!Number.isFinite(rate) || rate < 0 || rate > 10000) { showToast('Invalid OT rate','Enter a non-negative OT rate.'); renderRoute(); return; }
       const workerId=input.dataset.rentalOtRate; const key=rentalTimesheetRecordKey(); const current=state.rentalOvertime[key]?.[workerId]||{};
@@ -7101,12 +7393,12 @@
       const current = rentalTimesheetStatus();
       const action = rentalTimesheetNextAction(current);
       if (!action.next) return;
-      const actionName=current==='Draft'?'submit':current==='Submitted'?'approve':current==='Approved'?'lock':null; if(!actionName)return;
+      const actionName=action.action; if(!actionName)return;
       appApi('/api/rental/timesheets/workflow/',{method:'POST',body:{project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),action:actionName}}).then(payload=>{applyRentalTimesheetPayload(payload);if(actionName==='lock')state.rentalTimesheetSelected.clear();showToast('Rental timesheet updated',`Timesheet moved to ${payload.period.status}.`);renderRoute();}).catch(error=>showToast('Workflow update failed',error.message));
     }));
     document.querySelectorAll('[data-rental-timesheet-return]').forEach(btn => btn.addEventListener('click', () => {
       const reason=window.prompt('Reason for returning this timesheet to Draft:','')?.trim(); if(!reason)return;
-      appApi('/api/rental/timesheets/workflow/',{method:'POST',body:{project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),action:'return',reason}}).then(payload=>{applyRentalTimesheetPayload(payload);showToast('Timesheet returned','The period is Draft again and the correction reason is audited.');renderRoute();}).catch(error=>showToast('Return failed',error.message));
+      appApi('/api/rental/timesheets/workflow/',{method:'POST',body:{project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),action:'return_to_draft',reason}}).then(payload=>{applyRentalTimesheetPayload(payload);showToast('Timesheet returned','The period is Draft again and the correction reason is audited.');renderRoute();}).catch(error=>showToast('Return failed',error.message));
     }));
 
     document.querySelectorAll('[data-rental-timesheet-import]').forEach(btn => btn.addEventListener('click', () => {
@@ -7141,7 +7433,7 @@
       if (!timesheetCanEdit()) { showToast('Attendance is read only', 'Only Draft attendance periods can be edited.'); renderRoute(); return; }
       const normalized = normalizeAttendanceValue(input.value);
       if (normalized == null) {
-        showToast('Invalid attendance value', 'Enter 0–24 hours or one of A, L, S, H or OFF.');
+        showToast('Invalid attendance value', attendanceContractHint(state.internalAttendanceContract));
         renderRoute();
         return;
       }
@@ -7239,7 +7531,7 @@
       renderRoute();
     }));
     document.querySelectorAll('[data-timesheet-return]').forEach(btn => btn.addEventListener('click', () => {
-      if (!attendanceMeta().canApprove || !['Submitted','Approved'].includes(timesheetStatus())) return;
+      if (!attendanceMeta().canApprove || !['submitted','approved'].includes(timesheetStatusValue())) return;
       openQuickDrawer('attendance-return', { period:state.period });
     }));
 
@@ -7474,7 +7766,9 @@
     document.querySelectorAll('[data-payment-settings]').forEach(btn=>btn.addEventListener('click',openCompanyPaymentSettingsDrawer));
     document.querySelectorAll('[data-payment-export]').forEach(btn=>btn.addEventListener('click',()=>exportPaymentBatch(btn.dataset.paymentExport)));
     document.querySelectorAll('[data-payment-start-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentStartBatch,'start')));
+    document.querySelectorAll('[data-payment-cancel-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentCancelBatch||btn.dataset.paymentBatch,'cancel')));
     document.querySelectorAll('[data-payment-close-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentCloseBatch,'close')));
+    document.querySelectorAll('[data-payment-reopen-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentReopenBatch||btn.dataset.paymentBatch,'reopen')));
     document.querySelectorAll('.payment-result-file').forEach(input=>input.addEventListener('change',async()=>{const file=input.files?.[0];if(file)await importPaymentResults(input.dataset.resultBatch,file);}));
     document.querySelectorAll('[data-payment-retry]').forEach(btn=>btn.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(btn.dataset.paymentRetry)}/retry/`,{method:'POST',body:{}});applyPaymentPayload(payload);renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}}));
     document.querySelectorAll('[data-payment-close-payroll]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentBatch||latestPaymentBatch()?.id,'close')));
@@ -9040,6 +9334,7 @@
         state.salaryStructureHistory[employeeId] = payload.history || [payload.structure];
         if (payload.current) state.salaryStructures[employeeId] = payload.current;
         else delete state.salaryStructures[employeeId];
+        invalidateEmployeeProfile(employeeId);
         employee.basicSalary = salaryBasicForEmployee(employee);
         closeDrawer();
         showToast('Salary structure saved', `${employee.name} has a salary structure effective from ${effective}.`);
@@ -9288,6 +9583,7 @@
           method:'POST', body:{branch_id:branch.id,department_id:department.id,position,effective_from:effective,reason}
         });
         replaceStateRecord(state.employees, payload.employee);
+        invalidateEmployeeProfile(employee.id);
         state.employeeOrganizationHistory[employee.id]=payload.history || [];
         closeDrawer(); renderRoute();
         showToast('Organization assignment updated', `${payload.employee.name} → ${payload.employee.branch} · ${payload.employee.department}. Previous assignment history is preserved.`);
@@ -9336,6 +9632,7 @@
         drawerSave.disabled = true;
         const payload=await appApi(`/api/internal/employees/${employee.id}/lifecycle/`, {method:'POST',body:{action,effective_date:effective,reason}});
         replaceStateRecord(state.employees,payload.employee);
+        invalidateEmployeeProfile(employee.id);
         if (payload.history) state.employeeOrganizationHistory[employee.id]=payload.history;
         closeDrawer(); renderRoute();
         const labels={leave:'Employee placed on leave',activate:'Employee reactivated',deactivate:'Employee deactivated',terminate:'Employment terminated'};
@@ -9362,6 +9659,7 @@
         const lifecycleAction = action === 'restore' ? 'restore_archive' : 'archive';
         const payload=await appApi(`/api/internal/employees/${employee.id}/lifecycle/`, {method:'POST',body:{action:lifecycleAction,reason}});
         replaceStateRecord(state.employees,payload.employee);
+        invalidateEmployeeProfile(employee.id);
         if (payload.history) state.employeeOrganizationHistory[employee.id]=payload.history;
         closeDrawer();
         if (action === 'archive') { reloadIntoRoute('archive'); return; }
@@ -9380,7 +9678,7 @@
           employee_number:get('employee-id'), full_name:get('employee-name'), joining_date:get('employee-joining'),
           national_id:get('employee-national-id'), phone:get('employee-phone'), address:get('employee-address')
         }});
-        replaceStateRecord(state.employees,payload.employee); closeDrawer(); renderRoute();
+        replaceStateRecord(state.employees,payload.employee); invalidateEmployeeProfile(employee.id); closeDrawer(); renderRoute();
         showToast('Employee updated', `${payload.employee.name}'s master details were saved.`);
       } catch(error) { showToast('Employee not updated', error.message); }
       finally { drawerSave.disabled = false; }
@@ -9501,7 +9799,7 @@
   function permissionGuardAction(target) {
     if (!target) return null;
     if (target.matches('[data-settings-save]') && !roleCanSettings()) return 'settings';
-    if (target.matches('[data-payment-start],[data-payment-start-batch],[data-payment-export],[data-payment-retry],[data-payment-close-payroll],[data-payment-close-batch],[data-supplier-payment-new],[data-pay-supplier-settlement],[data-supplier-payment-retry],[data-settlement-close]') && !roleCanPay()) return 'payment';
+    if (target.matches('[data-payment-start],[data-payment-start-batch],[data-payment-export],[data-payment-retry],[data-payment-cancel-batch],[data-payment-close-payroll],[data-payment-close-batch],[data-payment-reopen-batch],[data-supplier-payment-new],[data-pay-supplier-settlement],[data-supplier-payment-retry],[data-settlement-close]') && !roleCanPay()) return 'payment';
     if (target.matches('[data-review-approve],[data-review-return]') && !roleCanApprove()) return 'approval';
     if (target.matches('[data-adjustment-action="approve"]') && !roleCanApprove()) return 'approval';
     if (target.matches('[data-settlement-return]') && !roleCanApprove()) return 'approval';

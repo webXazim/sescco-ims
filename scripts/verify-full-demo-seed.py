@@ -124,17 +124,25 @@ for rel, text in (
     (seed_rel, '"DEMO-192": D("2800")'),
     (seed_rel, '"rental_worker_days_added"'),
     ("apps/rental_manpower/services/timesheets.py", "def validate_timesheet_for_submission("),
-    ("apps/rental_manpower/services/timesheets.py", "A / N / L / OFF"),
+    ("apps/rental_manpower/services/timesheets.py", "normalize_payroll_attendance_value("),
+    ("apps/core/payroll_attendance_contract.py", 'ATTENDANCE_WORKSPACE_INTERNAL: ('),
+    ("apps/core/payroll_attendance_contract.py", '("H", "Holiday", "holiday")'),
+    ("apps/core/payroll_attendance_contract.py", 'ATTENDANCE_WORKSPACE_RENTAL: ('),
+    ("apps/core/payroll_attendance_contract.py", '("N", "No Scope", "noscope")'),
     ("static/payroll/js/app.js", "function preferredRentalProjectId("),
-    ("static/payroll/js/app.js", "A / L / S / H / OFF are valid explicit statuses; only blank required days block submission."),
-    ("static/payroll/js/app.js", "A / N / L / OFF are valid explicit statuses; only blank assigned worker-days block submission."),
+    ("static/payroll/js/app.js", "function normalizeAttendanceByContract("),
+    ("static/payroll/js/app.js", "attendanceContractHint(state.internalAttendanceContract)"),
+    ("static/payroll/js/app.js", "attendanceContractHint(state.rentalAttendanceContract)"),
     ("static/payroll/js/app.js", "0 · Zero hours"),
-    ("static/payroll/js/app.js", "A · Absent"),
 ):
     require(rel, text)
 
-if "A · Sick absence" in frontend or "0 · Absent" in frontend:
-    fail("rental attendance legend has regressed to the old incorrect code labels")
+if "A · Sick absence" in frontend or ">Sick absent</button>" in frontend or ">Absent</button><button class=\"ui-v2-button ui-v2-button--secondary ui-v2-button--sm\" data-rental-ts-bulk=\"N\"" in frontend:
+    fail("rental attendance controls have regressed to the old incorrect code labels")
+if "else if (String(value) === '0') absent += 1;" in frontend:
+    fail("rental zero-hours attendance has regressed to Absent semantics")
+if frontend.count("else if (Number.isFinite(Number(raw)) && Number(raw) === 0) zero += 1;") < 2:
+    fail("Internal/Rental zero-hours summaries are not aligned with the backend attendance contract")
 internal_create_start = frontend.find("'internal-employee': {")
 branch_template_start = frontend.find("'branch': {", internal_create_start)
 if internal_create_start < 0 or branch_template_start < 0:
