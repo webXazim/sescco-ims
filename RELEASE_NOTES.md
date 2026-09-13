@@ -1,3 +1,11 @@
+# 1.0.50 — Idempotent DEMO history-period selection
+
+- Fixes a second or later `./scripts/deploy-production.sh --seed` run failing with `Unable to find a collision-free DEMO history month before existing non-DEMO employment` after the 1.0.48 workflow-ready lifecycle fixtures had already been created.
+- Root cause: `_safe_history_period()` used the latest joining date from **every** `DEMO-*` Internal Employee as the lower bound for the closed historical month. Current-period lifecycle fixtures such as `DEMO-190` / `DEMO-192` intentionally join in the live Draft month, so after a successful seed they made the previous closed month look invalid on the next idempotent run.
+- Historical period selection now derives its DEMO lower bound only from the 18 base Internal Payroll seed employees (`DEMO-101…DEMO-118`) that actually participate in the finalized historical payroll. Lifecycle/cascade fixtures remain current-period-only and no longer influence historical-month discovery.
+- Keeps the non-DEMO safety boundary intact: the history month still must precede real employee employment and remain free of non-DEMO attendance/payroll rows. This change does not relax production payroll isolation.
+- Adds static and Django contract coverage so the broad `DEMO-*` lower-bound query cannot return and the historical cohort remains exactly aligned with `INTERNAL_EMPLOYEES`. No database migration or reseeding cleanup is required.
+
 # 1.0.49 — Payroll Run review UI + calculation-detail integrity
 
 - Fixes the Payroll Run header action group wrapping the final **Approve Payroll** action onto a second desktop row. Wide desktop layouts now keep lifecycle actions together; medium layouts intentionally stack the header before controls become cramped.

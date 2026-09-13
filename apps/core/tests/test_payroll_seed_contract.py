@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 
 from apps.core.management.commands.seed_payroll_test_data import (
     INTERNAL_EMPLOYEES,
+    INTERNAL_HISTORY_EMPLOYEE_NUMBERS,
     RENTAL_WORKERS,
     WPS_HEADERS,
     _demo_iban,
@@ -19,6 +20,12 @@ class PayrollSeedContractTests(SimpleTestCase):
         self.assertEqual(len(RENTAL_WORKERS), 30)
         self.assertEqual(len({row[0] for row in INTERNAL_EMPLOYEES}), 18)
         self.assertEqual(len({row[0] for row in RENTAL_WORKERS}), 30)
+
+    def test_history_cohort_is_only_the_base_internal_payroll_population(self):
+        self.assertEqual(INTERNAL_HISTORY_EMPLOYEE_NUMBERS, tuple(row[0] for row in INTERNAL_EMPLOYEES))
+        self.assertEqual(len(INTERNAL_HISTORY_EMPLOYEE_NUMBERS), 18)
+        self.assertNotIn("DEMO-190", INTERNAL_HISTORY_EMPLOYEE_NUMBERS)
+        self.assertNotIn("DEMO-192", INTERNAL_HISTORY_EMPLOYEE_NUMBERS)
 
     def test_seed_wps_header_contract_matches_supported_source_shape(self):
         self.assertEqual(WPS_HEADERS, [

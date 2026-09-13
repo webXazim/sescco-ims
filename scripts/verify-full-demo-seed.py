@@ -53,6 +53,23 @@ for text in (
 ):
     require(seed_rel, text)
 
+
+# History-period discovery must stay idempotent after current-period lifecycle fixtures
+# (DEMO-190+) already exist. Only the 18 base payroll employees are allowed to set
+# the DEMO joining-date lower bound; non-DEMO safety checks remain independent.
+safe_start = seed.find("    def _safe_history_period(")
+safe_end = seed.find("    def _demo_history_is_safe(", safe_start)
+if safe_start < 0 or safe_end < 0:
+    fail("safe DEMO history selector boundary is missing")
+safe_history = seed[safe_start:safe_end]
+if 'filter(employee_number__startswith="DEMO-")' in safe_history:
+    fail("historical lower bound must not include current-period DEMO lifecycle fixtures")
+for text in (
+    "INTERNAL_HISTORY_EMPLOYEE_NUMBERS = tuple(row[0] for row in INTERNAL_EMPLOYEES)",
+    "filter(employee_number__in=INTERNAL_HISTORY_EMPLOYEE_NUMBERS)",
+):
+    require(seed_rel, text)
+
 # Every report exposed by the three Payroll report workspaces must have deterministic data.
 for text in (
     '"workforce-cost"',

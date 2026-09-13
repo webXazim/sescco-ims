@@ -159,6 +159,8 @@ INTERNAL_EMPLOYEES = (
     ("DEMO-118", "Md Mokaremuzzaman", "Civil Engineer", "ENG", D("4200")),
 )
 
+INTERNAL_HISTORY_EMPLOYEE_NUMBERS = tuple(row[0] for row in INTERNAL_EMPLOYEES)
+
 DEPARTMENTS = {
     "MGMT": ("DEMO-MGMT", "Management"),
     "SALES": ("DEMO-SALES", "Sales"),
@@ -414,9 +416,11 @@ class Command(BaseCommand):
 
         A complete seed must exercise approval, WPS, documents and reports.  We therefore
         need one finalized payroll period even when the company already contains non-DEMO
-        masters.  The chosen month must be after all existing DEMO employee joining dates,
+        masters.  The chosen month must be after the base DEMO payroll cohort joining dates,
         before the earliest non-DEMO employee joining date, and free from non-DEMO payroll/
-        attendance history.  A previously seeded DEMO-only run is deliberately reused.
+        attendance history.  Current-period lifecycle fixtures (DEMO-190+) are deliberately
+        excluded from the historical lower bound so rerunning --seed remains idempotent after
+        those fixtures have been created.  A previously seeded DEMO-only run is reused.
         """
         real_join = (
             InternalEmployee.objects.for_company(company)
@@ -428,7 +432,8 @@ class Command(BaseCommand):
         )
         demo_latest_join = (
             InternalEmployee.objects.for_company(company)
-            .filter(employee_number__startswith="DEMO-")
+            .filter(employee_number__in=INTERNAL_HISTORY_EMPLOYEE_NUMBERS)
+            .exclude(joining_date__isnull=True)
             .order_by("-joining_date")
             .values_list("joining_date", flat=True)
             .first()
