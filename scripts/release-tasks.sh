@@ -4,6 +4,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
 seed_requested=0
 seed_profile="${IMS_SEED_PROFILE:-functional}"
+allow_mixed_scale_seed="${IMS_ALLOW_MIXED_SCALE_SEED:-0}"
 while (( $# )); do
   case "$1" in
     --seed) seed_requested=1 ;;
@@ -15,6 +16,10 @@ while (( $# )); do
       ;;
     --seed-profile=*)
       seed_profile="${1#*=}"
+      seed_requested=1
+      ;;
+    --allow-mixed-scale-seed)
+      allow_mixed_scale_seed=1
       seed_requested=1
       ;;
     *) fatal "Unknown release-task option: $1" ;;
@@ -57,6 +62,9 @@ if (( seed_requested )); then
     seed_args+=(--period "${IMS_SEED_PERIOD}")
   fi
   seed_args+=(--profile "${seed_profile}")
+  if [[ "${allow_mixed_scale_seed}" == "1" ]]; then
+    seed_args+=(--allow-mixed-scale-seed)
+  fi
   if [[ -n "${IMS_SEED_BATCH_SIZE:-}" ]]; then
     seed_args+=(--seed-batch-size "${IMS_SEED_BATCH_SIZE}")
   fi

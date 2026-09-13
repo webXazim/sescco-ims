@@ -96,18 +96,27 @@ for required in (
     'seed_payroll_scale_data(',
     'batch_size=options["seed_batch_size"]',
     'High-cardinality profiles deliberately commit in bounded chunks',
+    '"--allow-mixed-scale-seed"',
+    'self._assert_mixed_scale_window_is_safe(company, history_start, profile)',
+    'Mixed scale seed refused because target benchmark months contain non-DEMO Internal payroll/attendance ',
 ):
     if required not in command:
         fail(f"seed command missing scale-profile contract: {required}")
 
 for source, name in ((deploy, "deploy-production.sh"), (release_tasks, "release-tasks.sh")):
-    for required in ("--seed-profile", "functional|realistic|benchmark"):
+    for required in ("--seed-profile", "functional|realistic|benchmark", "--allow-mixed-scale-seed"):
         if required not in source:
             fail(f"{name} missing {required}")
 if '--seed --seed-profile "${seed_profile}"' not in deploy:
     fail("deploy script does not forward the selected scale profile")
 if 'seed_args+=(--profile "${seed_profile}")' not in release_tasks:
     fail("release tasks do not pass the scale profile to Django")
+if 'release_args+=(--allow-mixed-scale-seed)' not in deploy:
+    fail("deploy script does not forward mixed-scale override")
+if 'seed_args+=(--allow-mixed-scale-seed)' not in release_tasks:
+    fail("release tasks do not forward mixed-scale override to Django")
+if contract.get("safety", {}).get("mixed_override_refuses_non_demo_internal_history_overlap") is not True:
+    fail("scale-seed contract must require mixed-company history collision refusal")
 if "verify-payroll-scale-seed.py" not in freeze:
     fail("production freeze does not run the scale-seed verifier")
 

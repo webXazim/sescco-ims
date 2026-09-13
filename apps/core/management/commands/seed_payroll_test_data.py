@@ -44,6 +44,7 @@ from apps.internal_payroll.models import (
     PayrollAdjustmentType,
     PayrollProrationMethod,
     PayrollRun,
+    PayrollRunLine,
     PayrollRunStatus,
     SalaryComponent,
     SalaryComponentCalculation,
@@ -347,6 +348,15 @@ class Command(BaseCommand):
             default=int(os.getenv("IMS_SEED_BATCH_SIZE", "5000")),
             help="Bulk insert batch size used by realistic/benchmark profiles (default: 5000).",
         )
+        parser.add_argument(
+            "--allow-mixed-scale-seed",
+            action="store_true",
+            default=os.getenv("IMS_ALLOW_MIXED_SCALE_SEED", "0").strip().lower() in {"1", "true", "yes", "on"},
+            help=(
+                "Allow realistic/benchmark DEMO scale fixtures in a company that already has non-DEMO masters. "
+                "The command still refuses any scale month containing non-DEMO Internal attendance/payroll data."
+            ),
+        )
 
     def handle(self, *args, **options):
         company = self._company(options["company_slug"])
@@ -357,10 +367,14 @@ class Command(BaseCommand):
         profile = options["profile"]
 
         if profile != "functional" and not clean_demo_company:
-            raise CommandError(
-                "The realistic/benchmark payroll seed is intentionally limited to a dedicated DEMO tenant with no "
-                "non-DEMO Internal or Rental worker masters. Use --profile functional on mixed/production-like data."
-            )
+            if not options["allow_mixed_scale_seed"]:
+                raise CommandError(
+                    "This company already contains non-DEMO Internal or Rental worker masters. "
+                    "For a disposable/test installation, rerun with --allow-mixed-scale-seed; the command will "
+                    "only add DEMO/RDEMO namespaced scale data and will refuse scale months containing non-DEMO "
+                    "Internal attendance/payroll history. Otherwise use --profile functional or a dedicated DEMO tenant."
+                )
+            self._assert_mixed_scale_window_is_safe(company, history_start, profile)
         if options["seed_batch_size"] < 500:
             raise CommandError("--seed-batch-size must be at least 500.")
 
@@ -519,6 +533,44 @@ class Command(BaseCommand):
         real_internal = InternalEmployee.objects.for_company(company).exclude(employee_number__startswith="DEMO-").exists()
         real_rental = RentalWorker.objects.for_company(company).exclude(worker_number__startswith="RDEMO-").exists()
         return not real_internal and not real_rental
+
+
+    def _assert_mixed_scale_window_is_safe(self, company: Company, anchor_period: date, profile: str) -> None:
+        """Refuse mixed-company scale seeding when company-level Internal periods contain real data.
+
+        Scale employee/worker/project/supplier identities are DEMO/RDEMO-prefixed, but Internal AttendancePeriod
+        and PayrollRun are company/month authorities. On mixed test companies we therefore allow the explicit
+        override only when every target scale month is free of non-DEMO Internal attendance/payroll rows.
+        """
+        from apps.core.management.payroll_seed_scale import get_scale_profile, scale_months
+
+        months = scale_months(anchor_period, get_scale_profile(profile).months)
+        attendance_conflicts = (
+            AttendanceEntry.objects.for_company(company)
+            .filter(period__period_start__in=months)
+            .exclude(employee__employee_number__startswith="DEMO-")
+            .values_list("period__period_start", flat=True)
+            .distinct()
+        )
+        payroll_conflicts = (
+            PayrollRunLine.objects.for_company(company)
+            .filter(run__period_start__in=months)
+            .exclude(employee_number__startswith="DEMO-")
+            .values_list("run__period_start", flat=True)
+            .distinct()
+        )
+        conflicts = sorted(set(attendance_conflicts) | set(payroll_conflicts))
+        if conflicts:
+            preview = ", ".join(value.strftime("%Y-%m") for value in conflicts[:12])
+            suffix = "..." if len(conflicts) > 12 else ""
+            raise CommandError(
+                "Mixed scale seed refused because target benchmark months contain non-DEMO Internal payroll/attendance "
+                f"history: {preview}{suffix}. Use a dedicated DEMO tenant/database for benchmark seeding."
+            )
+        self.stdout.write(self.style.WARNING(
+            "Mixed-company scale override enabled: only DEMO/RDEMO-prefixed scale masters will be added; "
+            "non-DEMO masters are not modified by the scale generator."
+        ))
 
     def _seed_document_branding(self, company: Company, clean_demo_company: bool) -> None:
         if not clean_demo_company:

@@ -27,7 +27,6 @@
     }
   },
   "safety": {
-    "scale_profiles_require_demo_only_tenant": true,
     "stable_prefixes": [
       "DEMO-SCALE-I-",
       "RDEMO-SCALE-",
@@ -40,7 +39,11 @@
     "chunked_bulk_inserts": true,
     "monotonic_profile_promotion": true,
     "financial_aggregate_reconciliation": true,
-    "production_data_reused": false
+    "production_data_reused": false,
+    "default_requires_demo_only_tenant": true,
+    "mixed_company_override": true,
+    "mixed_override_requires_explicit_flag": "--allow-mixed-scale-seed",
+    "mixed_override_refuses_non_demo_internal_history_overlap": true
   },
   "coverage": [
     "internal employees / branches / departments / organization history",

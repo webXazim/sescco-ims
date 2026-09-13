@@ -157,3 +157,13 @@ Never use `docker compose down -v` in production.
 ## Merged Payroll platform
 
 The merged platform now includes the production Internal and Rental Payroll backends plus the DocGen V2 Payroll frontend. Inventory and Payroll share the authenticated Company context and the Upgrade 10 Business/Area switcher. Production deployments must configure a stable `PAYROLL_FIELD_ENCRYPTION_KEY`; see `docs/MERGE_UPGRADE_6.md` and `merge/platform-shell-map.md`.
+
+### Benchmark seeding on an existing test company
+
+`realistic` and `benchmark` remain demo-only by default. For an existing **disposable/test** company that already contains normal employee/worker masters, use the explicit guarded override:
+
+```bash
+./scripts/deploy-production.sh --seed --seed-profile benchmark --allow-mixed-scale-seed
+```
+
+The override only permits namespaced `DEMO-*` / `RDEMO-*` scale records and refuses the seed if a target scale month contains non-DEMO Internal attendance/payroll history.

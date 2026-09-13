@@ -1,5 +1,7 @@
 # 1.0.64 — Production freeze / release candidate
 
+- Seed hotfix: adds an explicit `--allow-mixed-scale-seed` test-only override so realistic/benchmark DEMO/RDEMO fixtures can be added beside existing test masters while refusing any target month that contains non-DEMO Internal attendance/payroll history.
+
 - Freezes the SESCCO MS Payroll integration sequence after the 1.0.58 frontend/backend action-parity, 1.0.59 server data-authority, 1.0.60 output E2E, 1.0.61 scale-seed, 1.0.62 performance, and 1.0.63 production-E2E certification upgrades.
 - Adds `merge/release-candidate.json` and `scripts/verify-release-candidate.py` to bind the final release identity, the exact 1.0.63 predecessor archive checksum, required static/runtime gates, supported seed profiles and canonical deployment entrypoint.
 - Carries the frozen Payroll production-E2E contract forward to release 1.0.64 and requires the release-candidate verifier from both the packaged production-freeze gate and the production release-task pipeline.

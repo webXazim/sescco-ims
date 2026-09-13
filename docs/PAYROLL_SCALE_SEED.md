@@ -41,3 +41,17 @@ The functional E2E seed remains transactionally controlled. Scale history is del
 ## Safety boundary
 
 Do not use `realistic` or `benchmark` on production or on a tenant containing real/non-DEMO Internal employees or Rental workers. The command refuses that case. The scale generator never copies uploaded identity/bank information; names, IDs, phones, IBANs, suppliers, projects and financial references are synthetic.
+
+## Mixed-company test override (1.0.64 seed hotfix)
+
+By default, `realistic` and `benchmark` still refuse a company that already contains non-DEMO
+Internal or Rental masters. On a disposable/test installation, an explicit override is available:
+
+```bash
+./scripts/deploy-production.sh --seed --seed-profile benchmark --allow-mixed-scale-seed
+```
+
+The override does **not** turn off collision protection. The scale generator remains DEMO/RDEMO
+namespaced and the seed command refuses to proceed if any target scale month contains non-DEMO
+Internal attendance or payroll-run lines. Use a dedicated demo database/tenant instead when that
+collision check fails.

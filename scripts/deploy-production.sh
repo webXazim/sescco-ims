@@ -4,6 +4,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
 seed_requested=0
 seed_profile="${IMS_SEED_PROFILE:-functional}"
+allow_mixed_scale_seed="${IMS_ALLOW_MIXED_SCALE_SEED:-0}"
 while (( $# )); do
   case "$1" in
     --seed) seed_requested=1 ;;
@@ -17,14 +18,21 @@ while (( $# )); do
       seed_profile="${1#*=}"
       seed_requested=1
       ;;
+    --allow-mixed-scale-seed)
+      allow_mixed_scale_seed=1
+      seed_requested=1
+      ;;
     -h|--help)
       cat <<'EOF'
-Usage: scripts/deploy-production.sh [--seed] [--seed-profile functional|realistic|benchmark]
+Usage: scripts/deploy-production.sh [--seed] [--seed-profile functional|realistic|benchmark] [--allow-mixed-scale-seed]
 
   --seed                 Seed complete idempotent functional DEMO Payroll/WPS/report/lifecycle fixtures.
   --seed-profile PROFILE Also add restart-safe scale fixtures. realistic = 250 internal / 750 rental / 6 months;
                          benchmark = 2,000 internal / 5,000 rental / 12 months.
                          Optional env: IMS_SEED_COMPANY_SLUG, IMS_SEED_PERIOD, IMS_SEED_BATCH_SIZE.
+  --allow-mixed-scale-seed
+                         Explicitly allow namespaced realistic/benchmark DEMO data beside existing test masters.
+                         The Django seed command still refuses target months containing non-DEMO Internal history.
 EOF
       exit 0
       ;;
@@ -68,6 +76,9 @@ info "Preparing the release before replacing the web container"
 release_args=()
 if (( seed_requested )); then
   release_args+=(--seed --seed-profile "${seed_profile}")
+  if [[ "${allow_mixed_scale_seed}" == "1" ]]; then
+    release_args+=(--allow-mixed-scale-seed)
+  fi
 fi
 bash "${PROJECT_ROOT}/scripts/release-tasks.sh" "${release_args[@]}"
 
