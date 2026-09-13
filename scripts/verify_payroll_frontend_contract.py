@@ -93,6 +93,9 @@ required_ui_contracts = {
     "supplier workforce filters": "id=\"supplierWorkerProjectFilter\"",
     "branch explicit sorting": "id=\"branchSortFilter\"",
     "department explicit sorting": "id=\"departmentSortFilter\"",
+    "readonly payroll detail drawer": "configureDrawerPresentation({ eyebrow:'Payroll run', ariaLabel:'Payroll calculation details', footerVisible:false })",
+    "numeric payroll detail deductions": "const totalDeductions = advances + otherDeductions;",
+    "payroll detail register reconciliation": "Same saved row used by Payroll Register",
 }
 for label, marker in required_ui_contracts.items():
     if marker not in JS:

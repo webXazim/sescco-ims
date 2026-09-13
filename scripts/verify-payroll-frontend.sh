@@ -36,8 +36,9 @@ shared = text.index("platform/css/select-controls.css")
 validation = text.index("platform/css/form-validation.css")
 canonical = text.index("payroll/css/v2/payroll-controls.css")
 assert shared < canonical and validation < canonical, "canonical Payroll controls must load after shared/platform form CSS"
-assert "?v=1.0.43" in text, "Payroll control asset must carry the 1.0.43 cache buster"
-assert "payroll/js/app.js' %}?v=1.0.43" in text, "Payroll JS asset must carry the 1.0.43 cache buster"
+version = Path('VERSION').read_text(encoding='utf-8').strip()
+assert f"payroll-controls.css' %}}?v={version}" in text, "Payroll control asset must use the packaged VERSION cache buster"
+assert f"payroll/js/app.js' %}}?v={version}" in text, "Payroll JS asset must use the packaged VERSION cache buster"
 PY_ORDER
 
 printf 'Checking Payroll workspace navigation contract...\n'

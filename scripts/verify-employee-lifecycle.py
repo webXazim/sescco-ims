@@ -5,6 +5,7 @@ import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def fail(message: str) -> None:
@@ -57,8 +58,8 @@ for rel, text in [
     ("static/payroll/js/app.js", "employee-record-confirmation"),
     ("static/payroll/js/app.js", "employee-profile-page ui-v2-prs-internal-page"),
     ("static/payroll/css/v2/payroll-controls.css", "padding: 16px 18px !important;"),
-    ("templates/payroll/app.html", "payroll/css/v2/payroll-controls.css' %}?v=1.0.43"),
-    ("templates/payroll/app.html", "payroll/js/app.js' %}?v=1.0.43"),
+    ("templates/payroll/app.html", f"payroll/css/v2/payroll-controls.css' %}}?v={VERSION}"),
+    ("templates/payroll/app.html", f"payroll/js/app.js' %}}?v={VERSION}"),
 ]:
     require(rel, text)
 

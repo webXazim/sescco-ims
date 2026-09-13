@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def fail(message: str) -> None:
@@ -52,7 +53,7 @@ for rel, text in [
     ("static/payroll/js/app.js", "documentBrandingMode"),
     ("apps/core/management/commands/seed_payroll_test_data.py", "_seed_document_branding"),
     ("apps/core/management/commands/seed_payroll_test_data.py", "DEMO-letterhead.png"),
-    ("templates/payroll/app.html", "?v=1.0.43"),
+    ("templates/payroll/app.html", f"?v={VERSION}"),
 ]:
     require_text(rel, text)
 

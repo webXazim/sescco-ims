@@ -10,7 +10,7 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.48 — workflow-ready Internal Attendance and Rental Timesheets, complete current-period DEMO seed coverage, and corrected attendance status guidance**.
+Current packaged release: **SESCCO MS 1.0.49 — Payroll Run review UI integrity, readonly calculation details, and snapshot-consistent totals**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 

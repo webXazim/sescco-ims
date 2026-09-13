@@ -1,3 +1,13 @@
+# 1.0.49 — Payroll Run review UI + calculation-detail integrity
+
+- Fixes the Payroll Run header action group wrapping the final **Approve Payroll** action onto a second desktop row. Wide desktop layouts now keep lifecycle actions together; medium layouts intentionally stack the header before controls become cramped.
+- Fixes the Review status card text collapsing word-by-word. The V2 bridge previously applied a three-column grid to a two-child DOM, squeezing the full status copy into a 34px column; the review card now maps to its real `copy + snapshot` structure.
+- Converts employee Payroll calculation opening into a true **read-only Payroll Run detail** drawer. The drawer is labeled `Payroll run`, does not expose the generic Quick Add footer, and can no longer leak a stale `Create component` action from Salary Setup.
+- Makes the native `hidden` state authoritative for Payroll drawer save/footer controls so author CSS cannot accidentally display hidden actions. This also hardens other readonly Payroll drawers.
+- Fixes `Total deductions` in the calculation detail drawer producing `SAR NaN` when server snapshot amounts are serialized as decimal strings. Advance recovery and other deductions are normalized to numbers before summing.
+- The detail drawer now explicitly reads the same server-authoritative row used by Payroll Register / Review and shows a compact Basic / Allowances / Overtime / Other Earnings reconciliation strip before the saved salary-component snapshot.
+- Adds frontend contract checks for readonly Payroll details, numeric deduction reconciliation and shared snapshot sourcing. No database migration is required.
+
 # 1.0.48 — Workflow-ready Internal + Rental current-period seed
 
 - Fixes the seeded September Internal Attendance period being blocked at **Submit for Review** by 36 genuinely missing rows. The status letters were not the problem: `A`, `L`, `S`, `H` and `OFF` are valid explicit attendance values. The missing rows came from lifecycle fixtures created after the original 18-employee attendance grid (`DEMO-190` added 30 required days and `DEMO-192` added 6 employed days).

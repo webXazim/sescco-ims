@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
 
 fail() { printf 'select/timesheet UX verification failed: %s\n' "$*" >&2; exit 1; }
 require_text() {
@@ -19,7 +20,7 @@ reject_text() {
 require_text templates/base.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "platform/css/select-controls.css"
 require_text templates/payroll/app.html "payroll/css/v2/payroll-controls.css"
-require_text templates/payroll/app.html "?v=1.0.43"
+require_text templates/payroll/app.html "?v=$VERSION"
 
 # Shared file is intentionally cross-app only.
 require_text static/platform/css/select-controls.css "appearance: none;"

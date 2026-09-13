@@ -250,7 +250,9 @@
   const drawer = document.getElementById('quickDrawer');
   const drawerScrim = document.getElementById('drawerScrim');
   const drawerTitle = document.getElementById('drawerTitle');
+  const drawerEyebrow = document.getElementById('drawerEyebrow');
   const drawerBody = document.getElementById('drawerBody');
+  const drawerFooter = document.getElementById('drawerFooter');
   const drawerSave = document.getElementById('drawerSave');
   const toastStack = document.getElementById('toastStack');
 
@@ -4299,15 +4301,22 @@
   }
 
   function openPayrollDetailDrawer(employeeId) {
+    // Always read the same server-authoritative row used by the visible Payroll Register / Review table.
+    // A calculated/reviewed run is therefore shown from its saved snapshot, never from a separate live recomputation.
     const row = payrollRowsForDisplay().find(item => item.employeeId === employeeId) || livePayrollRows().find(item => item.employeeId === employeeId);
     if (!row) return;
     state.drawerType = 'payroll-detail';
     state.drawerContext = employeeId;
+    configureDrawerPresentation({ eyebrow:'Payroll run', ariaLabel:'Payroll calculation details', footerVisible:false });
     drawerTitle.textContent = `${row.name} · Payroll calculation`;
-    drawerSave.hidden = true;
-    const components = row.salaryComponents || [];
-    const earningComponents = components.filter(item => item.type === 'earning');
-    const deductionComponents = components.filter(item => item.type === 'deduction');
+
+    const money = value => Number(value || 0);
+    const advances = money(row.advances);
+    const otherDeductions = money(row.deductions);
+    const totalDeductions = advances + otherDeductions;
+    const components = Array.isArray(row.salaryComponents) ? row.salaryComponents : [];
+    const earningComponents = components.filter(item => String(item.type || '').toLowerCase() === 'earning');
+    const deductionComponents = components.filter(item => String(item.type || '').toLowerCase() === 'deduction');
     drawerBody.innerHTML = `
       <section class="payroll-detail-hero">
         <div><span>EMP ${escapeHtml(row.employeeCode)}</span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.position)} · ${escapeHtml(row.branch || 'Branch not set')}</small></div>
@@ -4315,7 +4324,13 @@
       </section>
       ${row.blockers?.length ? `<section class="payroll-detail-alert payroll-detail-alert--danger"><strong>Calculation blocked</strong>${row.blockers.map(issue => `<span>• ${escapeHtml(issue)}</span>`).join('')}</section>` : ''}
       ${row.warnings?.length ? `<section class="payroll-detail-alert"><strong>Attention</strong>${row.warnings.map(issue => `<span>• ${escapeHtml(issue)}</span>`).join('')}</section>` : ''}
-      <section class="form-section"><div class="form-section__head"><strong>Effective salary snapshot</strong><span>Stored calculation basis</span></div>
+      <section class="payroll-detail-reconciliation" aria-label="Payroll register reconciliation">
+        <div><span>Basic</span><strong>${formatCurrency(row.basic)}</strong></div>
+        <div><span>Allowances</span><strong>${formatCurrency(row.allowances)}</strong></div>
+        <div><span>Overtime</span><strong>${formatCurrency(row.overtime)}</strong></div>
+        <div><span>Other earnings</span><strong>${formatCurrency(row.otherEarnings)}</strong></div>
+      </section>
+      <section class="form-section"><div class="form-section__head"><strong>Effective salary snapshot</strong><span>Same saved row used by Payroll Register</span></div>
         <div class="payroll-detail-lines">
           ${earningComponents.length ? earningComponents.map(item => `<div><span>${escapeHtml(item.name)}</span><strong>${formatCurrency(item.amount)}</strong></div>`).join('') : '<div><span>Recurring earnings</span><strong>Not configured</strong></div>'}
           ${deductionComponents.map(item => `<div class="is-deduction"><span>${escapeHtml(item.name)}</span><strong>− ${formatCurrency(item.amount)}</strong></div>`).join('')}
@@ -4323,17 +4338,17 @@
       </section>
       <section class="form-section"><div class="form-section__head"><strong>Period variables</strong><span>${escapeHtml(state.period)}</span></div>
         <div class="payroll-detail-lines">
-          <div><span>Overtime</span><strong>${row.otHours ? `${row.otHours}h · ${formatCurrency(row.overtime)}` : formatCurrency(0)}</strong></div>
-          <div><span>OT policy</span><strong>${escapeHtml(row.otPolicy)}</strong></div>
+          <div><span>Overtime</span><strong>${money(row.otHours) ? `${escapeHtml(row.otHours)}h · ${formatCurrency(row.overtime)}` : formatCurrency(0)}</strong></div>
+          <div><span>OT policy</span><strong>${escapeHtml(row.otPolicy || 'Not assigned')}</strong></div>
           <div><span>Other earnings</span><strong>${formatCurrency(row.otherEarnings)}</strong></div>
-          <div class="is-deduction"><span>Advance recovery</span><strong>− ${formatCurrency(row.advances)}</strong></div>
-          <div class="is-deduction"><span>Other deductions</span><strong>− ${formatCurrency(row.deductions)}</strong></div>
+          <div class="is-deduction"><span>Advance recovery</span><strong>− ${formatCurrency(advances)}</strong></div>
+          <div class="is-deduction"><span>Other deductions</span><strong>− ${formatCurrency(otherDeductions)}</strong></div>
         </div>
-        ${row.pendingAdjustments?.length ? `<div class="payroll-pending-note"><strong>Pending adjustments are excluded</strong><span>${row.pendingAdjustments.map(item => `${escapeHtml(item.type)} · ${formatCurrency(Math.abs(item.amount))} · ${escapeHtml(item.status)}`).join('<br>')}</span></div>` : ''}
+        ${row.pendingAdjustments?.length ? `<div class="payroll-pending-note"><strong>Pending adjustments are excluded</strong><span>${row.pendingAdjustments.map(item => `${escapeHtml(item.type)} · ${formatCurrency(Math.abs(Number(item.amount || 0)))} · ${escapeHtml(item.status)}`).join('<br>')}</span></div>` : ''}
       </section>
       <section class="payroll-detail-total">
         <div><span>Gross earnings</span><strong>${formatCurrency(row.gross)}</strong></div>
-        <div><span>Total deductions</span><strong>− ${formatCurrency(row.advances + row.deductions)}</strong></div>
+        <div><span>Total deductions</span><strong>− ${formatCurrency(totalDeductions)}</strong></div>
         <div class="is-net"><span>Net payable</span><strong>${formatCurrency(row.net)}</strong></div>
       </section>
       <section class="payroll-detail-actions"><button class="btn btn--secondary" data-payroll-open-employee>Open Employee Profile</button><button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button></section>`;
@@ -8437,12 +8452,19 @@
     drawer.setAttribute('aria-hidden','false');
   }
 
+  function configureDrawerPresentation({ eyebrow='Quick add', ariaLabel='Quick add', footerVisible=true } = {}) {
+    if (drawerEyebrow) drawerEyebrow.textContent = eyebrow;
+    if (drawerFooter) drawerFooter.hidden = !footerVisible;
+    drawer.setAttribute('aria-label', ariaLabel);
+  }
+
   function openQuickDrawer(type, context = null) {
     document.querySelectorAll('[data-dropdown].is-open').forEach(d => d.classList.remove('is-open'));
     if (type === 'rental-worker' && !context?.resumeInline) state.inlineRentalDraft = null;
     if (type === 'internal-employee' && !context?.resumeInline) state.inlineInternalDraft = null;
     state.drawerType = type;
     state.drawerContext = context;
+    configureDrawerPresentation();
     const spec = drawerTemplates[type] || drawerTemplates.project;
     drawerTitle.textContent = spec.title;
     drawerSave.hidden = false;
@@ -8474,6 +8496,7 @@
     drawer.setAttribute('aria-hidden', 'true');
     state.drawerType = null;
     state.drawerContext = null;
+    configureDrawerPresentation();
     drawerSave.hidden = false;
     drawerSave.disabled = false;
     drawerSave.classList.remove('is-lifecycle-danger');
