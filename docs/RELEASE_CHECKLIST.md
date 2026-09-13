@@ -25,3 +25,18 @@
 - [ ] Private attachment URLs require authentication.
 - [ ] Backup checksum verification passes.
 - [ ] A restore test has been completed in an isolated environment.
+
+## Final production freeze / release candidate (1.0.64)
+
+- Run `python3 scripts/verify-release-candidate.py` and `./scripts/verify-production-freeze.sh` against the exact packaged source tree.
+- Confirm `VERSION` is `1.0.64` and the Payroll static cache-busters are `1.0.64`.
+- Confirm the predecessor artifact SHA-256 is `8291351ac88c883796d899f31fbffbb32416b79f53e1ad8be1d3485fd0049d9e` for `sescco-ims-1.0.63-full-payroll-production-e2e-certification.zip`.
+- Do not add features, schema changes or Payroll formula changes after the final freeze is generated. Any such change requires a new release/version.
+- Before production cutover, run the isolated rehearsal so deployment checks, zero migration drift, curated Payroll E2E tests and the full Django suite produce runtime evidence.
+
+## Payroll production E2E certification (1.0.63)
+
+- Run `python3 scripts/verify-payroll-production-e2e.py` before image build.
+- In an environment with Django/PostgreSQL available, run `bash scripts/certify-payroll-production-e2e.sh` against an isolated test database.
+- Production rehearsal must retain `payroll-e2e-certification.txt` alongside the other migration/reconciliation evidence.
+- Do not certify the final release from static checks alone; the dedicated Django suite must pass in the release/rehearsal environment.

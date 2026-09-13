@@ -1,0 +1,1039 @@
+{
+  "version": 1,
+  "purpose": "Machine-readable frontend-to-backend mutation contract for the SESCCO MS Payroll workspace.",
+  "rules": [
+    {
+      "id": "internal.branch.create",
+      "client": [
+        "data-quick-add=\"branch\"",
+        "'/api/internal/branches/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "branches_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.branch.update",
+      "client": [
+        "data-edit-branch",
+        "/api/internal/branches/${existing.id}/",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "branch_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.branch.delete",
+      "client": [
+        "state.drawerType === 'organization-lifecycle'",
+        "/api/internal/branches/${id}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "branch_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.branch.lifecycle",
+      "client": [
+        "state.drawerType === 'organization-lifecycle'",
+        "/api/internal/branches/${id}/lifecycle/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "branch_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.department.create",
+      "client": [
+        "data-quick-add=\"department\"",
+        "'/api/internal/departments/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "departments_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.department.update",
+      "client": [
+        "data-edit-department",
+        "/api/internal/departments/${existing.id}/",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "department_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.department.delete",
+      "client": [
+        "state.drawerType === 'organization-lifecycle'",
+        "/api/internal/departments/${id}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "department_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.department.lifecycle",
+      "client": [
+        "state.drawerType === 'organization-lifecycle'",
+        "/api/internal/departments/${id}/lifecycle/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "department_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.employee.create",
+      "client": [
+        "state.drawerType === 'internal-employee'",
+        "'/api/internal/employees/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employees_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.employee.update",
+      "client": [
+        "state.drawerType === 'internal-employee-edit'",
+        "/api/internal/employees/${employee.id}/",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.employee.delete",
+      "client": [
+        "state.drawerType === 'employee-record-lifecycle'",
+        "/api/internal/employees/${employee.id}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.employee.lifecycle",
+      "client": [
+        "state.drawerType === 'employee-lifecycle'",
+        "/api/internal/employees/${employee.id}/lifecycle/",
+        "method:'POST'",
+        "data-employee-lifecycle"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.employee.record-lifecycle",
+      "client": [
+        "state.drawerType === 'employee-record-lifecycle'",
+        "/api/internal/employees/${employee.id}/lifecycle/",
+        "method:'POST'",
+        "data-employee-record-action"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.employee.organization",
+      "client": [
+        "state.drawerType === 'employee-organization'",
+        "/api/internal/employees/${employee.id}/organization/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_organization_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.attendance.save",
+      "client": [
+        "data-timesheet-save",
+        "'/api/internal/attendance/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/attendance_api.py",
+        "function": "attendance_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.attendance.overtime",
+      "client": [
+        "'/api/internal/attendance/overtime/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/attendance_api.py",
+        "function": "overtime_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.attendance.workflow",
+      "client": [
+        "data-timesheet-workflow",
+        "'/api/internal/attendance/workflow/'",
+        "method:'POST'",
+        "data-timesheet-return"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/attendance_api.py",
+        "function": "attendance_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.attendance.import",
+      "client": [
+        "data-timesheet-import",
+        "'/api/internal/attendance/import/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/attendance_api.py",
+        "function": "attendance_import_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payroll.calculate",
+      "client": [
+        "data-payroll-calculate",
+        "'/api/internal/payroll/calculate/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_calculate_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payroll.workflow",
+      "client": [
+        "data-payroll-submit-review",
+        "'/api/internal/payroll/workflow/'",
+        "method:'POST'",
+        "data-payroll-reset-run",
+        "data-review-approve",
+        "data-review-return"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payroll.policy",
+      "client": [
+        "data-payroll-policy",
+        "'/api/internal/payroll/policy/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_policy_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.adjustment.create",
+      "client": [
+        "'/api/internal/adjustments/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_adjustments_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.adjustment.update",
+      "client": [
+        "/api/internal/adjustments/${encodeURIComponent",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_adjustment_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.adjustment.workflow",
+      "client": [
+        "/api/internal/adjustments/${encodeURIComponent(found.item.id)}/workflow/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payroll_api.py",
+        "function": "payroll_adjustment_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.salary-component.create",
+      "client": [
+        "state.drawerType === 'salary-component'",
+        "'/api/internal/salary/components/'",
+        "method: existing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "salary_components_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.salary-component.update",
+      "client": [
+        "/api/internal/salary/components/${existing.id}/",
+        "method: existing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "salary_component_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.salary-component.delete",
+      "client": [
+        "kind==='component'",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "salary_component_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.salary-component.lifecycle",
+      "client": [
+        "kind==='component'",
+        "lifecycleEndpoint",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "salary_component_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.overtime-policy.create",
+      "client": [
+        "state.drawerType === 'overtime-policy'",
+        "'/api/internal/salary/overtime-policies/'",
+        "method: existing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "overtime_policies_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.overtime-policy.update",
+      "client": [
+        "/api/internal/salary/overtime-policies/${existing.id}/",
+        "method: existing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "overtime_policy_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.overtime-policy.delete",
+      "client": [
+        "kind==='overtime'",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "overtime_policy_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.overtime-policy.lifecycle",
+      "client": [
+        "kind==='overtime'",
+        "lifecycleEndpoint",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "overtime_policy_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.salary-structure.create",
+      "client": [
+        "state.drawerType === 'salary-structure'",
+        "'/api/internal/salary/structures/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/salary_api.py",
+        "function": "salary_structures_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-profile.update",
+      "client": [
+        "/api/internal/salary-payments/profiles/${encodeURIComponent(employeeId)}/",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "employee_payment_profile_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.payment-profile.delete",
+      "client": [
+        "kind==='payment-profile'",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "employee_payment_profile_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.payment-settings.update",
+      "client": [
+        "'/api/internal/salary-payments/settings/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "salary_payment_settings_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.export-template.create",
+      "client": [
+        "'/api/internal/salary-payments/templates/'",
+        "method:existingId?'PATCH':'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "bank_export_templates_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.export-template.update",
+      "client": [
+        "/api/internal/salary-payments/templates/${encodeURIComponent(existingId)}/",
+        "method:existingId?'PATCH':'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "bank_export_template_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "internal.export-template.delete",
+      "client": [
+        "kind==='template'",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "bank_export_template_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.export-template.lifecycle",
+      "client": [
+        "kind==='template'",
+        "lifecycleEndpoint",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "bank_export_template_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-batch.prepare",
+      "client": [
+        "data-bank-batch-prepare",
+        "'/api/internal/salary-payments/batches/'",
+        "method:'POST'",
+        "data-wps-prepare"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "prepare_salary_payment_batch_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-batch.export",
+      "client": [
+        "data-payment-export",
+        "/api/internal/salary-payments/batches/${encodeURIComponent(batchId)}/export/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "salary_payment_batch_export_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-batch.workflow",
+      "client": [
+        "data-payment-start",
+        "/api/internal/salary-payments/batches/${encodeURIComponent(batchId)}/workflow/",
+        "method:'POST'",
+        "data-payment-cancel-batch",
+        "data-payment-close-payroll",
+        "data-payment-reopen-batch"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "salary_payment_batch_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-batch.results",
+      "client": [
+        "data-result-batch",
+        "/api/internal/salary-payments/batches/${encodeURIComponent(batchId)}/results/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "salary_payment_results_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.payment-row.retry",
+      "client": [
+        "data-payment-retry",
+        "/api/internal/salary-payments/rows/${encodeURIComponent",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/payment_api.py",
+        "function": "salary_payment_row_retry_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier.create",
+      "client": [
+        "state.drawerType === 'supplier'",
+        "'/api/rental/suppliers/'",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "suppliers_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier.update",
+      "client": [
+        "/api/rental/suppliers/${current.id}/",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.supplier.delete",
+      "client": [
+        "kind==='supplier'",
+        "/api/rental/suppliers/${id}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "rental.supplier.lifecycle",
+      "client": [
+        "kind==='supplier'",
+        "/api/rental/suppliers/${id}/lifecycle/",
+        "method:'POST'",
+        "data-supplier-action"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.project.create",
+      "client": [
+        "state.drawerType === 'project'",
+        "'/api/rental/projects/'",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "projects_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.project.update",
+      "client": [
+        "/api/rental/projects/${current.id}/",
+        "method: editing ? 'PATCH' : 'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "project_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.project.delete",
+      "client": [
+        "state.drawerType === 'project-lifecycle'",
+        "/api/rental/projects/${encodeURIComponent(project.id)}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "project_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "rental.project.lifecycle",
+      "client": [
+        "state.drawerType === 'project-lifecycle'",
+        "/api/rental/projects/${encodeURIComponent(project.id)}/lifecycle/",
+        "method:'POST'",
+        "data-project-action"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "project_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.worker.create",
+      "client": [
+        "'/api/rental/workers/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "workers_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.worker.update",
+      "client": [
+        "/api/rental/workers/${encodeURIComponent(worker.id)}/",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "worker_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.worker.delete",
+      "client": [
+        "kind==='worker'",
+        "/api/rental/workers/${id}/",
+        "method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "worker_detail_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "rental.worker.lifecycle",
+      "client": [
+        "kind==='worker'",
+        "/api/rental/workers/${id}/lifecycle/",
+        "method:'POST'",
+        "data-rental-worker-action"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "worker_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.worker.import",
+      "client": [
+        "data-onboarding-import",
+        "'/api/rental/workers/import/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "workers_import_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.assignment.create",
+      "client": [
+        "state.drawerType === 'rental-assignment-action'",
+        "'/api/rental/assignments/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "assignments_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.timesheet.save",
+      "client": [
+        "data-rental-timesheet-save",
+        "'/api/rental/timesheets/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_timesheets_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.timesheet.overtime",
+      "client": [
+        "'/api/rental/timesheets/overtime/'",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_timesheet_overtime_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.timesheet.workflow",
+      "client": [
+        "data-rental-timesheet-workflow",
+        "'/api/rental/timesheets/workflow/'",
+        "method:'POST'",
+        "data-rental-timesheet-return"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_timesheet_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.settlement.calculate",
+      "client": [
+        "'/api/rental/settlements/calculate/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_settlements_calculate_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.settlement.workflow",
+      "client": [
+        "'/api/rental/settlements/workflow/'",
+        "method:'POST'",
+        "data-settlement-return",
+        "data-settlement-close"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_settlements_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.adjustment.create",
+      "client": [
+        "'/api/rental/adjustments/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_adjustments_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.adjustment.update",
+      "client": [
+        "/api/rental/adjustments/${encodeURIComponent",
+        "method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_adjustment_detail_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "rental.adjustment.workflow",
+      "client": [
+        "/api/rental/adjustments/${encodeURIComponent(found.item.id)}/workflow/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "rental_adjustment_workflow_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier-payment.create",
+      "client": [
+        "data-supplier-payment-new",
+        "'/api/rental/supplier-payments/'",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_payments_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier-payment.result",
+      "client": [
+        "/api/rental/supplier-payments/${encodeURIComponent(payment.id)}/result/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_payment_result_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier-payment.retry",
+      "client": [
+        "data-supplier-payment-retry",
+        "/api/rental/supplier-payments/${encodeURIComponent(btn.dataset.supplierPaymentRetry)}/retry/",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_payment_retry_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "documents.finalize",
+      "client": [
+        "data-document-generate",
+        "appApi('/api/documents/',{method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/documents/api.py",
+        "function": "documents_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "settings.company.update",
+      "client": [
+        "data-settings-save",
+        "appApi('/api/settings/',{method:'PATCH'"
+      ],
+      "backend": {
+        "file": "apps/core/settings_api.py",
+        "function": "company_settings_api",
+        "method": "PATCH"
+      }
+    },
+    {
+      "id": "settings.branding.upload",
+      "client": [
+        "data-brand-upload",
+        "appMultipartApi(`/api/settings/branding/${encodeURIComponent(kind)}/`,{method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/core/settings_api.py",
+        "function": "company_branding_asset_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "settings.branding.delete",
+      "client": [
+        "data-brand-clear",
+        "appMultipartApi(`/api/settings/branding/${encodeURIComponent(kind)}/`,{method:'DELETE'"
+      ],
+      "backend": {
+        "file": "apps/core/settings_api.py",
+        "function": "company_branding_asset_api",
+        "method": "DELETE"
+      }
+    },
+    {
+      "id": "internal.branch.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "branch:`/api/internal/branches/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "branch_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.department.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "department:`/api/internal/departments/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "department_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "internal.employee.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "employee:`/api/internal/employees/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/internal_payroll/api.py",
+        "function": "employee_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.supplier.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "supplier:`/api/rental/suppliers/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "supplier_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.worker.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "worker:`/api/rental/workers/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "worker_lifecycle_api",
+        "method": "POST"
+      }
+    },
+    {
+      "id": "rental.project.restore-bin",
+      "client": [
+        "data-record-bin-restore",
+        "async function restoreRecordFromBin",
+        "project:`/api/rental/projects/${encodeURIComponent(id)}/lifecycle/`",
+        "method:'POST'"
+      ],
+      "backend": {
+        "file": "apps/rental_manpower/api.py",
+        "function": "project_lifecycle_api",
+        "method": "POST"
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "release": "1.0.62",
+  "benchmark_profile": {
+    "internal_employees": 2000,
+    "rental_workers": 5000,
+    "months": 12
+  },
+  "query_budgets": {
+    "internal_context_max_queries": 40,
+    "rental_context_max_queries": 40
+  },
+  "hardening": [
+    "attendance_salary_prefetch",
+    "payroll_setwise_source_locks",
+    "payroll_bulk_snapshot_persistence",
+    "payroll_setwise_snapshot_fingerprint",
+    "overtime_setwise_salary_sources",
+    "rental_timesheet_linear_assignment_grouping",
+    "rental_settlement_scope_batching",
+    "rental_settlement_bulk_snapshot_persistence",
+    "rental_settlement_setwise_snapshot_fingerprint",
+    "rental_adjustment_single_fetch"
+  ],
+  "runtime_report": "python manage.py payroll_performance_report --fail-on-query-budget"
+}

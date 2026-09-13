@@ -62,12 +62,23 @@ def attendance_roster_for_company(*, company: Company, period_start: date) -> li
         .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=start))
         .order_by("-effective_from", "-created_at")
     )
+    salary_lines = SalaryStructureLine.objects.for_company(company).order_by("component_category", "component_code")
+    salary_structures = (
+        SalaryStructure.objects.for_company(company)
+        .filter(effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=end))
+        .prefetch_related(Prefetch("lines", queryset=salary_lines, to_attr="attendance_salary_lines"))
+        .order_by("-effective_from", "-created_at")
+    )
     return list(
         operational_internal_employees(company=company)
         .filter(joining_date__lte=end)
         .filter(Q(employment_end_date__isnull=True) | Q(employment_end_date__gte=start))
         .exclude(status=EmploymentStatus.INACTIVE)
-        .prefetch_related(Prefetch("organization_assignments", queryset=assignments, to_attr="attendance_org_history"))
+        .prefetch_related(
+            Prefetch("organization_assignments", queryset=assignments, to_attr="attendance_org_history"),
+            Prefetch("salary_structures", queryset=salary_structures, to_attr="attendance_salary_structures"),
+        )
         .order_by("employee_number", "full_name")
     )
 
@@ -125,6 +136,16 @@ def serialize_attendance_period(period: AttendancePeriod | None, *, period_start
 
 
 def _salary_structure_as_of(*, company: Company, employee: InternalEmployee, as_of: date) -> SalaryStructure | None:
+    prefetched = getattr(employee, "attendance_salary_structures", None)
+    if prefetched is not None:
+        return next(
+            (
+                item
+                for item in prefetched
+                if item.effective_from <= as_of and (item.effective_to is None or item.effective_to >= as_of)
+            ),
+            None,
+        )
     lines = SalaryStructureLine.objects.for_company(company).order_by("component_category", "component_code")
     return (
         SalaryStructure.objects.for_company(company)

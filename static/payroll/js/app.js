@@ -121,6 +121,25 @@
     return payload;
   }
 
+  // Server-backed Payroll data is the authority. Reads capture a generation ticket;
+  // any newer server payload for the same scope supersedes older in-flight reads so a
+  // slow GET cannot overwrite a mutation that already completed.
+  const payrollAuthorityGeneration = new Map();
+  function payrollAuthorityKey(domain, scope = '') { return `${domain}:${String(scope || '')}`; }
+  function payrollAuthorityTicket(domain, scope = '') {
+    const key = payrollAuthorityKey(domain, scope);
+    return { key, generation:Number(payrollAuthorityGeneration.get(key) || 0) };
+  }
+  function payrollAuthorityIsCurrent(ticket) {
+    return Number(payrollAuthorityGeneration.get(ticket.key) || 0) === ticket.generation;
+  }
+  function supersedePayrollAuthority(domain, scope = '') {
+    const key = payrollAuthorityKey(domain, scope);
+    const next = Number(payrollAuthorityGeneration.get(key) || 0) + 1;
+    payrollAuthorityGeneration.set(key, next);
+    return next;
+  }
+
   function replaceStateRecord(collection, record) {
     const index = collection.findIndex(item => item.id === record.id);
     if (index >= 0) collection.splice(index, 1, record);
@@ -2944,16 +2963,18 @@
   function supplierPaymentsTab(supplier, payments) {
     return `
       <section class="data-panel">
-        <div class="section-headline"><div><h2>Supplier payments</h2><p>Payments link back to a settlement and retain bank/cash/cheque references.</p></div><button class="btn btn--secondary" data-route-link="payments">Open Payments</button></div>
+        <div class="section-headline"><div><h2>Supplier payments</h2><p>Payments link back to a settlement and retain bank/cash/cheque references.</p></div><button class="btn btn--secondary" data-open-supplier-payments="${escapeHtml(supplier.id)}">Open Payments</button></div>
         <div class="table-scroll"><table class="data-table"><thead><tr><th>Reference</th><th>Date</th><th>Method</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
-          ${payments.length ? payments.map(item => `<tr><td><button class="entity-link" data-route-link="payments">${escapeHtml(item.ref)}</button></td><td>${escapeHtml(item.date)}</td><td>${escapeHtml(item.method)}</td><td><strong>${formatCurrency(item.amount)}</strong></td><td>${statusBadge(item.status)}</td><td class="table-actions"><button class="btn btn--ghost" data-route-link="payments">View</button></td></tr>`).join('') : `<tr><td colspan="6"><div class="table-empty"><strong>No supplier payments posted.</strong><span>Once a settlement is approved, payments and receipts will appear here.</span></div></td></tr>`}
+          ${payments.length ? payments.map((item,index) => { const paymentId=item.id || `${supplier.id}-${item.ref || index}`; return `<tr><td><button class="entity-link" data-supplier-payment-open="${escapeHtml(paymentId)}">${escapeHtml(item.ref)}</button></td><td>${escapeHtml(item.date)}</td><td>${escapeHtml(item.method)}</td><td><strong>${formatCurrency(item.amount)}</strong></td><td>${statusBadge(item.status)}</td><td class="table-actions"><button class="btn btn--ghost" data-supplier-payment-open="${escapeHtml(paymentId)}">View</button></td></tr>`; }).join('') : `<tr><td colspan="6"><div class="table-empty"><strong>No supplier payments posted.</strong><span>Once a settlement is approved, payments and receipts will appear here.</span></div></td></tr>`}
         </tbody></table></div>
       </section>`;
   }
 
   function supplierDocumentsTab(supplier) {
-    const docs = [['ST','Supplier Statement','Settlements + payment history','Statement'],['RS','Rental Settlement','Monthly manpower calculation','Settlement'],['IN','Manpower Invoice','Letterhead document output','Invoice'],['RC','Payment Receipt','Payment acknowledgement','Receipt']];
-    return `<section class="data-panel"><div class="section-headline"><div><h2>Supplier documents</h2><p>Every generated document stays linked to this supplier and its source settlement/payment.</p></div><button class="btn btn--secondary" data-route-link="documents">Document Center</button></div><div class="document-grid">${docs.map(([code,name,meta,type]) => `<button class="document-tile" data-route-link="documents"><span>${code}</span><div><strong>${name}</strong><small>${meta}</small></div><em>${type}</em>${icon('chevron')}</button>`).join('')}</div></section>`;
+    const docs = (state.businessDocuments || [])
+      .filter(doc => doc.workspace === 'rental' && doc.entityReference === supplier.code && ['supplier_settlement','supplier_invoice','supplier_payment_receipt'].includes(doc.type))
+      .sort((a,b)=>String(b.finalizedAt||'').localeCompare(String(a.finalizedAt||'')));
+    return `<section class="data-panel"><div class="section-headline"><div><h2>Supplier documents</h2><p>Finalized settlement, invoice and payment-receipt snapshots linked to this supplier.</p></div><button class="btn btn--secondary" data-open-supplier-documents="${escapeHtml(supplier.id)}">Document Center</button></div>${docs.length?`<div class="document-grid">${docs.map(doc => `<button class="document-tile" data-document-open="${escapeHtml(doc.id)}"><span>${escapeHtml(documentTypeCode(doc.type))}</span><div><strong>${escapeHtml(doc.number)}</strong><small>${escapeHtml(doc.sourceReference||doc.title||documentTypeLabel(doc.type))} · ${escapeHtml(doc.period||'')}</small></div><em>${escapeHtml(documentTypeLabel(doc.type))}</em>${icon('chevron')}</button>`).join('')}</div>`:`<div class="table-empty table-empty--card"><strong>No finalized supplier documents yet.</strong><span>Finalize an approved settlement, supplier invoice or Paid supplier-payment receipt from the Document Center.</span><button class="btn btn--secondary btn--sm" data-open-supplier-documents="${escapeHtml(supplier.id)}">Open Document Center</button></div>`}</section>`;
   }
 
   function salarySetupTemplate() {
@@ -3155,8 +3176,9 @@
     return [isWeekendDay(day, period) ? 'is-weekend' : '', date.getDay() === 6 ? 'is-week-boundary' : '', dateIso === todayIso ? 'is-today' : ''].filter(Boolean).join(' ');
   }
 
-  function applyAttendancePayload(payload, period = state.period) {
+  function applyAttendancePayload(payload, period = state.period, { supersede = true } = {}) {
     const label = payload.period?.label || period;
+    if (supersede) supersedePayrollAuthority('internal-attendance', label);
     state.timesheets[label] = payload.records || {};
     state.timesheetStatuses[label] = payload.period?.status || 'Draft';
     state.attendancePeriodMeta[label] = payload.period || {};
@@ -3171,10 +3193,12 @@
   async function loadInternalAttendancePeriod(period = state.period, { force = false } = {}) {
     if (!force && state.attendanceLoadedPeriods.has(period)) return;
     if (state.attendanceLoadingPeriod === period) return;
+    const authorityTicket = payrollAuthorityTicket('internal-attendance', period);
     state.attendanceLoadingPeriod = period;
     try {
       const payload = await appApi(`/api/internal/attendance/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
-      applyAttendancePayload(payload, period);
+      if (!payrollAuthorityIsCurrent(authorityTicket)) return null;
+      applyAttendancePayload(payload, period, { supersede:false });
     } catch (error) {
       showToast('Attendance not loaded', error.message);
     } finally {
@@ -3659,10 +3683,11 @@
     return rentalTimesheetPeriodRange(period).start;
   }
 
-  function applyRentalTimesheetPayload(payload) {
+  function applyRentalTimesheetPayload(payload, { supersede = true } = {}) {
     const periodLabel = payload.period?.label || state.period;
     const projectId = payload.period?.projectId || state.rentalTimesheetProject;
     if (!projectId) return;
+    if (supersede) supersedePayrollAuthority('rental-timesheet', rentalTimesheetRecordKey(periodLabel, projectId));
     state.rentalTimesheets[periodLabel] ||= {};
     state.rentalTimesheets[periodLabel][projectId] = payload.records || {};
     const key = rentalTimesheetRecordKey(periodLabel, projectId);
@@ -3675,12 +3700,18 @@
   }
 
   async function loadRentalTimesheet({ render = true } = {}) {
-    if (!state.rentalTimesheetProject) return;
+    const projectId = state.rentalTimesheetProject;
+    const period = state.period;
+    if (!projectId) return;
+    const scopeKey = rentalTimesheetRecordKey(period, projectId);
+    const authorityTicket = payrollAuthorityTicket('rental-timesheet', scopeKey);
     try {
-      const payload = await appApi(`/api/rental/timesheets/?project_id=${encodeURIComponent(state.rentalTimesheetProject)}&period=${encodeURIComponent(rentalTimesheetApiPeriod())}`);
-      applyRentalTimesheetPayload(payload);
-      if (render) renderRoute();
-    } catch (error) { showToast('Could not load project timesheet', error.message); }
+      const payload = await appApi(`/api/rental/timesheets/?project_id=${encodeURIComponent(projectId)}&period=${encodeURIComponent(rentalTimesheetApiPeriod(period))}`);
+      if (!payrollAuthorityIsCurrent(authorityTicket)) return null;
+      applyRentalTimesheetPayload(payload, { supersede:false });
+      if (render && state.rentalTimesheetProject === projectId && state.period === period) renderRoute();
+      return payload;
+    } catch (error) { showToast('Could not load project timesheet', error.message); return null; }
   }
 
   async function saveRentalTimesheetEntries(entries, { render = true } = {}) {
@@ -3690,9 +3721,6 @@
     return payload;
   }
 
-  function persistRentalTimesheets() {}
-  function persistRentalTimesheetStatuses() {}
-  function persistRentalOvertime() {}
 
   function ensureRentalTimesheet(period = state.period, projectId = state.rentalTimesheetProject) {
     if (!projectId) return {};
@@ -4077,8 +4105,9 @@
     return run;
   }
 
-  function applyPayrollPayload(payload, fallbackPeriod = state.period) {
+  function applyPayrollPayload(payload, fallbackPeriod = state.period, { supersede = true } = {}) {
     const label = payload?.run?.label || fallbackPeriod;
+    if (supersede) supersedePayrollAuthority('internal-payroll', label);
     state.payrollContexts[label] = payload;
     state.payrollLoadedPeriods.add(label);
     state.payrollRuns[label] = normalizedPayrollRun(payload);
@@ -4099,15 +4128,17 @@
     return payload;
   }
 
-  if (payrollBootstrap.run?.label) applyPayrollPayload(payrollBootstrap, payrollBootstrap.run.label);
+  if (payrollBootstrap.run?.label) applyPayrollPayload(payrollBootstrap, payrollBootstrap.run.label, { supersede:false });
 
   async function loadInternalPayrollPeriod(period = state.period, { force = false } = {}) {
     if (!force && state.payrollLoadedPeriods.has(period)) return state.payrollContexts[period];
     if (state.payrollLoadingPeriod === period) return null;
+    const authorityTicket = payrollAuthorityTicket('internal-payroll', period);
     state.payrollLoadingPeriod = period;
     try {
       const payload = await appApi(`/api/internal/payroll/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
-      applyPayrollPayload(payload, period);
+      if (!payrollAuthorityIsCurrent(authorityTicket)) return state.payrollContexts[period] || null;
+      applyPayrollPayload(payload, period, { supersede:false });
       if (state.workspace === 'internal' && state.period === period && ['payroll-runs','adjustments'].includes(currentRoute())) renderRoute();
       return payload;
     } catch (error) {
@@ -4616,11 +4647,13 @@
     });
   }
 
-  function applyPaymentPayload(payload) {
+  function applyPaymentPayload(payload, { activate = true, supersede = true } = {}) {
     if (!payload?.period) return;
-    state.paymentContext = payload;
+    if (supersede) supersedePayrollAuthority('salary-payments', payload.period);
     state.paymentContexts[payload.period] = payload;
     state.paymentLoadedPeriods.add(payload.period);
+    if (!activate) return;
+    state.paymentContext = payload;
     state.bankTemplates = [...(payload.templates || [])];
     state.paymentBatches = [...(payload.batches || [])];
     state.bankBatches = state.paymentBatches.filter(item => item.channelValue === 'bank_csv');
@@ -4642,19 +4675,26 @@
 
   async function loadSalaryPayments(period = state.period, { force = false } = {}) {
     const key = paymentPeriodKey(period);
-    if (!force && state.paymentLoadedPeriods.has(key)) return paymentContextForPeriod(period);
+    if (!force && state.paymentLoadedPeriods.has(key)) {
+      const cached = state.paymentContexts[key] || null;
+      if (cached && paymentPeriodKey(state.period) === key) applyPaymentPayload(cached, { activate:true, supersede:false });
+      return cached;
+    }
     if (state.paymentLoadingPeriod === key) return null;
+    const authorityTicket = payrollAuthorityTicket('salary-payments', key);
     state.paymentLoadingPeriod = key;
     try {
       const params=new URLSearchParams({period:key}); if(state.bankTemplateId)params.set('bank_template_id',state.bankTemplateId); if(state.wpsTemplateId)params.set('wps_template_id',state.wpsTemplateId); const payload = await appApi(`/api/internal/salary-payments/?${params.toString()}`);
-      applyPaymentPayload(payload);
-      if (state.period === period) renderRoute();
+      if (!payrollAuthorityIsCurrent(authorityTicket)) return state.paymentContexts[key] || null;
+      const activate = paymentPeriodKey(state.period) === key;
+      applyPaymentPayload(payload, { activate, supersede:false });
+      if (activate) renderRoute();
       return payload;
     } catch (error) {
       showToast('Salary payment data unavailable', error.message);
       return null;
     } finally {
-      state.paymentLoadingPeriod = null;
+      if (state.paymentLoadingPeriod === key) state.paymentLoadingPeriod = null;
     }
   }
 
@@ -4940,7 +4980,6 @@
     return `${batch?`<div class="payment-summary-strip"><div><span>Payment batch</span><strong>${escapeHtml(batch.reference)}</strong><small>${escapeHtml(batch.channel)} · ${escapeHtml(batch.templateName)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${batch.rows.length} employee payments</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Remaining</span><strong>${formatCurrency(summary.remaining)}</strong><small>${summary.failedCount||summary.reversedCount?`${summary.failedCount} failed · ${summary.reversedCount} reversed`:`${summary.pendingCount+summary.processingCount} pending / processing`}</small></div></div>`:`<div class="payment-empty-hero"><div class="payment-empty-hero__icon">${icon('wallet')}</div><div><span class="eyebrow">Internal salary payments</span><h2>No payment batch for ${escapeHtml(state.period)}</h2><p>Prepare a controlled Bank or WPS batch from the approved payroll.</p></div><button class="btn btn--primary" data-route-link="bank-export">Open Bank / WPS</button></div>`}${batch?`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary payment register</h2><p>Bank-return outcomes and retry attempts are server controlled.</p></div><div class="payment-head-actions">${batches.length>1?`<select class="select payment-batch-select" id="internalPaymentBatchSelect">${batches.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===batch.id?'selected':''}>${escapeHtml(item.reference)} · ${escapeHtml(item.channel)}</option>`).join('')}</select>`:''}${wpsBatchStatusBadge(batch.status)}${actions.has('start')?`<button class="btn btn--primary" data-payment-start data-payment-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${actions.has('cancel')?`<button class="btn btn--danger" data-payment-cancel-batch="${escapeHtml(batch.id)}">Cancel Batch</button>`:''}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Results<input class="payment-result-file" data-result-batch="${escapeHtml(batch.id)}" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(batch.id)}">Reopen Payroll</button>`:''}</div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search employee, bank or reference…"></div><select class="select" id="paymentStatusFilter"><option>All</option>${['Pending','Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div>${paymentRowsTable(batch)}</section>`:''}`;
   }
 
-  function persistSupplierPayments() {}
   function supplierPaymentRecords() {
     return Object.entries(state.supplierPayments || {}).flatMap(([supplierId, payments]) => (payments || []).map((payment, index) => {
       const allocation=(payment.allocations||[])[0];
@@ -5341,7 +5380,6 @@
     };
   }
 
-  function persistRentalWorkerState() {}
   function refreshRentalMasterCounts() {
     state.suppliers.forEach(supplier => {
       const rows = state.rentalWorkers.filter(worker => worker.supplierId === supplier.id);
@@ -5838,41 +5876,52 @@
   }
 
 
-  function persistRentalSettlements() {}
 
   function rentalSettlementKey(period, projectId, supplierId) {
     return `${period}::${projectId}::${supplierId}`;
   }
 
-  function applyRentalSettlementPayload(payload) {
+  function applyRentalSettlementPayload(payload, { activate = true, supersede = true } = {}) {
     const label = payload.label || state.period;
+    if (supersede) supersedePayrollAuthority('rental-settlements', label);
     state.rentalSettlementContexts[label] = payload;
     state.rentalFinancialMetricsByPeriod[label] = payload.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}};
-    state.rentalTimesheetScopes = payload.timesheetScopes || [];
+    if (activate) state.rentalTimesheetScopes = payload.timesheetScopes || [];
     Object.keys(state.rentalSettlements).forEach(key => {
       if (state.rentalSettlements[key]?.period === label) delete state.rentalSettlements[key];
     });
     (payload.settlements || []).forEach(record => {
       state.rentalSettlements[rentalSettlementKey(record.period, record.projectId, record.supplierId)] = record;
     });
-    state.rentalAdjustments = payload.adjustmentsByWorker || {};
-    state.supplierPayments = {};
-    (payload.payments || []).forEach(payment => {
-      state.supplierPayments[payment.supplierId] ||= [];
-      state.supplierPayments[payment.supplierId].push(payment);
-    });
+    if (activate) {
+      state.rentalAdjustments = payload.adjustmentsByWorker || {};
+      state.supplierPayments = {};
+      (payload.payments || []).forEach(payment => {
+        state.supplierPayments[payment.supplierId] ||= [];
+        state.supplierPayments[payment.supplierId].push(payment);
+      });
+    }
     state.rentalSettlementLoadedPeriods.add(label);
   }
 
-  async function loadRentalSettlementContext(period = state.period, { render = true } = {}) {
-    if (state.rentalSettlementLoadingPeriod === period) return;
+  async function loadRentalSettlementContext(period = state.period, { render = true, force = false } = {}) {
+    if (!force && state.rentalSettlementLoadedPeriods.has(period) && state.rentalSettlementContexts[period]) {
+      if (state.period === period) applyRentalSettlementPayload(state.rentalSettlementContexts[period], { activate:true, supersede:false });
+      return state.rentalSettlementContexts[period];
+    }
+    if (state.rentalSettlementLoadingPeriod === period) return null;
+    const authorityTicket = payrollAuthorityTicket('rental-settlements', period);
     state.rentalSettlementLoadingPeriod = period;
     try {
       const payload = await appApi(`/api/rental/settlements/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
-      applyRentalSettlementPayload(payload);
-      if (render) renderRoute();
+      if (!payrollAuthorityIsCurrent(authorityTicket)) return state.rentalSettlementContexts[period] || null;
+      const activate = state.period === period;
+      applyRentalSettlementPayload(payload, { activate, supersede:false });
+      if (render && activate) renderRoute();
+      return payload;
     } catch (error) {
       showToast('Could not load rental settlements', error.message);
+      return null;
     } finally {
       if (state.rentalSettlementLoadingPeriod === period) state.rentalSettlementLoadingPeriod = null;
     }
@@ -6548,8 +6597,9 @@
   }
 
   function exportCurrentReport() {
-    const url=`/api/reports/export.csv?workspace=${encodeURIComponent(state.workspace)}&type=${encodeURIComponent(state.reportType)}&period=${encodeURIComponent(periodKeyFromLabel(state.reportPeriod))}`;
-    const a=document.createElement('a');a.href=url;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
+    const params=new URLSearchParams({workspace:state.workspace,type:state.reportType,period:periodKeyFromLabel(state.reportPeriod)});
+    const query=state.reportSearch.trim();if(query)params.set('q',query);
+    const a=document.createElement('a');a.href=`/api/reports/export.csv?${params.toString()}`;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
   }
 
   function printCurrentReport() {
@@ -7669,7 +7719,9 @@
       else if (action === 'new-settlement') showToast('New settlement', 'Open Supplier Settlements to calculate from a locked project timesheet.');
       else showToast('Supplier actions', 'Deactivate, statement and supplier lifecycle actions preserve worker and payment history.');
     }));
-    document.querySelectorAll('[data-supplier-settlement]').forEach(btn => btn.addEventListener('click', () => showToast('Settlement detail', `${btn.dataset.supplierSettlement} settlement detail will be fully interactive with rental settlement processing.`)));
+    document.querySelectorAll('[data-open-supplier-payments]').forEach(btn => btn.addEventListener('click', () => { state.paymentSupplierFilter=btn.dataset.openSupplierPayments;state.paymentTab='supplier';state.paymentSearch='';state.paymentStatusFilter='All';navigate('payments'); }));
+    document.querySelectorAll('[data-open-supplier-documents]').forEach(btn => btn.addEventListener('click', () => { const supplier=state.suppliers.find(item=>item.id===btn.dataset.openSupplierDocuments);state.documentSearch=supplier?.code||supplier?.name||'';state.documentTab='all';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';navigate('documents'); }));
+    document.querySelectorAll('[data-document-open]').forEach(btn => btn.addEventListener('click', () => { state.selectedDocumentId=btn.dataset.documentOpen;state.documentSearch='';state.documentTab='all';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';navigate('documents'); }));
     document.querySelectorAll('[data-supplier-export]').forEach(btn => btn.addEventListener('click', () => { state.reportType='supplier-cost';state.reportPeriod=state.period;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);navigate('reports'); }));
     document.querySelectorAll('[data-supplier-filter]').forEach(btn => btn.addEventListener('click', () => { state.supplierFiltersOpen = !state.supplierFiltersOpen; renderRoute(); }));
     const supplierProjectFilter=document.getElementById('supplierProjectFilter'); if(supplierProjectFilter) supplierProjectFilter.addEventListener('change',()=>{state.supplierProject=supplierProjectFilter.value;renderRoute();});

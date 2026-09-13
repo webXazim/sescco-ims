@@ -332,6 +332,21 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--company-slug", default=os.getenv("IMS_SEED_COMPANY_SLUG", ""))
         parser.add_argument("--period", default=os.getenv("IMS_SEED_PERIOD", ""), help="Draft test period as YYYY-MM.")
+        parser.add_argument(
+            "--profile",
+            choices=("functional", "realistic", "benchmark"),
+            default=os.getenv("IMS_SEED_PROFILE", "functional").strip().lower() or "functional",
+            help=(
+                "Seed volume profile. functional keeps the deterministic E2E fixture; realistic and benchmark "
+                "add restart-safe high-cardinality DEMO/RDEMO history for load testing."
+            ),
+        )
+        parser.add_argument(
+            "--seed-batch-size",
+            type=int,
+            default=int(os.getenv("IMS_SEED_BATCH_SIZE", "5000")),
+            help="Bulk insert batch size used by realistic/benchmark profiles (default: 5000).",
+        )
 
     def handle(self, *args, **options):
         company = self._company(options["company_slug"])
@@ -339,8 +354,19 @@ class Command(BaseCommand):
         period_start = self._period(company, options["period"])
         history_start = self._safe_history_period(company, period_start)
         clean_demo_company = self._demo_history_is_safe(company)
+        profile = options["profile"]
 
-        self.stdout.write(self.style.WARNING("Seeding explicit TEST payroll data; DEMO/RDEMO records are not production payroll records."))
+        if profile != "functional" and not clean_demo_company:
+            raise CommandError(
+                "The realistic/benchmark payroll seed is intentionally limited to a dedicated DEMO tenant with no "
+                "non-DEMO Internal or Rental worker masters. Use --profile functional on mixed/production-like data."
+            )
+        if options["seed_batch_size"] < 500:
+            raise CommandError("--seed-batch-size must be at least 500.")
+
+        self.stdout.write(self.style.WARNING(
+            f"Seeding explicit TEST payroll data using profile={profile}; DEMO/RDEMO records are not production payroll records."
+        ))
         try:
             with transaction.atomic():
                 self._seed_document_branding(company, clean_demo_company)
@@ -352,6 +378,23 @@ class Command(BaseCommand):
                 documents = self._verify_document_coverage(company, history_start)
         except ValidationError as exc:
             raise CommandError(f"Payroll test seed failed validation: {exc}") from exc
+
+        scale = {}
+        if profile != "functional":
+            # High-cardinality profiles deliberately commit in bounded chunks instead of one giant transaction.
+            # Stable DEMO/RDEMO identities and unique references make an interrupted run safe to resume.
+            from apps.core.management.payroll_seed_scale import seed_payroll_scale_data
+
+            try:
+                scale = seed_payroll_scale_data(
+                    company=company,
+                    actor=membership,
+                    anchor_period=history_start,
+                    profile_name=profile,
+                    batch_size=options["seed_batch_size"],
+                )
+            except ValidationError as exc:
+                raise CommandError(f"Payroll {profile} scale seed failed validation: {exc}") from exc
 
         self.stdout.write(self.style.SUCCESS(
             f"Payroll test seed complete for {company.slug}: "
@@ -374,6 +417,11 @@ class Command(BaseCommand):
             f"Closed end-to-end DEMO history is available for {history_start:%Y-%m}; "
             "the seed chooses a collision-free period before non-DEMO employment begins."
         ))
+        if scale:
+            self.stdout.write(self.style.SUCCESS(
+                "Scale profile verified: "
+                + ", ".join(f"{name}={count}" for name, count in scale.items())
+            ))
 
     def _company(self, slug: str) -> Company:
         qs = Company.objects.filter(

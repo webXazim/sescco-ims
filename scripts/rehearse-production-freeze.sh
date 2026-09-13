@@ -197,6 +197,11 @@ info "Collecting release static assets before template-render bootstrap checks"
 run_manage collectstatic --noinput
 run_manage payroll_bootstrap_report --fail-on-errors > "${evidence_dir}/payroll-bootstrap-report.txt"
 
+info "Running dedicated Payroll production-E2E certification in the isolated test database"
+compose_rehearsal run --rm --no-deps -T -e RUN_STARTUP_TASKS=0 \
+  ims_web bash scripts/certify-payroll-production-e2e.sh \
+  > "${evidence_dir}/payroll-e2e-certification.txt"
+
 info "Running deployment checks, schema drift check and full Django regression suite"
 run_manage check --deploy --fail-level ERROR
 run_manage makemigrations --check --dry-run

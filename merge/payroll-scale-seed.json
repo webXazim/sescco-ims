@@ -1,0 +1,57 @@
+{
+  "release": "1.0.61",
+  "default_profile": "functional",
+  "profiles": {
+    "functional": {
+      "purpose": "deterministic end-to-end workflow fixture",
+      "internal_employees": 18,
+      "rental_workers": 30
+    },
+    "realistic": {
+      "internal_employees": 250,
+      "rental_workers": 750,
+      "branches": 6,
+      "departments": 12,
+      "suppliers": 8,
+      "projects": 12,
+      "months": 6
+    },
+    "benchmark": {
+      "internal_employees": 2000,
+      "rental_workers": 5000,
+      "branches": 15,
+      "departments": 24,
+      "suppliers": 30,
+      "projects": 40,
+      "months": 12
+    }
+  },
+  "safety": {
+    "scale_profiles_require_demo_only_tenant": true,
+    "stable_prefixes": [
+      "DEMO-SCALE-I-",
+      "RDEMO-SCALE-",
+      "DEMO-SCALE-BR-",
+      "DEMO-SCALE-DEP-",
+      "DEMO-SCALE-SUP-",
+      "DEMO-SCALE-P-"
+    ],
+    "restart_safe": true,
+    "chunked_bulk_inserts": true,
+    "monotonic_profile_promotion": true,
+    "financial_aggregate_reconciliation": true,
+    "production_data_reused": false
+  },
+  "coverage": [
+    "internal employees / branches / departments / organization history",
+    "salary structures and payment profiles",
+    "daily internal attendance and overtime",
+    "approved payroll adjustments / advances",
+    "closed payroll runs and WPS payment rows",
+    "rental suppliers / projects / workers / transfer history",
+    "daily rental timesheets and overtime",
+    "approved rental adjustments / advances",
+    "closed supplier settlements and settlement lines",
+    "paid supplier-payment allocations"
+  ]
+}

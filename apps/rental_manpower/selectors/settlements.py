@@ -423,6 +423,7 @@ def settlements_for_period(*, company, period_start: date, project_id=None, supp
 
 def serialize_supplier_payment(payment: SupplierPayment, *, membership=None) -> dict[str, object]:
     allocations = getattr(payment, "snapshot_allocations", [])
+    allowed_actions = supplier_payment_allowed_actions(payment, membership=membership)
     return {
         "id": str(payment.pk), "ref": payment.payment_number, "supplierId": str(payment.supplier_id), "supplier": payment.supplier_name,
         "date": payment.payment_date.isoformat(), "methodValue": payment.method, "method": payment.get_method_display(),
@@ -431,9 +432,9 @@ def serialize_supplier_payment(payment: SupplierPayment, *, membership=None) -> 
         "paidAt": payment.paid_at.isoformat() if payment.paid_at else None, "reversedAt": payment.reversed_at.isoformat() if payment.reversed_at else None,
         "cancelledAt": payment.cancelled_at.isoformat() if payment.cancelled_at else None,
         "retryOf": str(payment.retry_of_id) if payment.retry_of_id else None,
-        "allowedActions": supplier_payment_allowed_actions(payment, membership=membership),
-        "nextAction": (supplier_payment_allowed_actions(payment, membership=membership) or [None])[0],
-        "canRetry": "retry" in supplier_payment_allowed_actions(payment, membership=membership),
+        "allowedActions": allowed_actions,
+        "nextAction": (allowed_actions or [None])[0],
+        "canRetry": "retry" in allowed_actions,
         "canGenerateReceipt": payment.status == SupplierPaymentStatus.PAID,
         "allocations": [
             {
@@ -462,19 +463,27 @@ def rental_settlement_context(*, company, period_start: date, membership=None, p
     start, _end = _month_bounds(period_start)
     settlements = settlements_for_period(company=company, period_start=start, project_id=project_id, supplier_id=supplier_id)
     adjustments = rental_adjustments_for_period(company=company, period_start=start)
+    adjustments_by_worker: dict[str, list[dict[str, object]]] = {}
+    for adjustment in adjustments:
+        adjustments_by_worker.setdefault(str(adjustment.worker_id), []).append(serialize_rental_adjustment(adjustment))
     payments = supplier_payments_for_period(company=company, period_start=start)
     timesheet_scopes = []
     project_workflows: dict[str, dict[str, object]] = {}
     periods = list(RentalTimesheetPeriod.objects.for_company(company).filter(period_start=start).select_related("project").order_by("project__code"))
+    period_ids = [item.pk for item in periods]
+    supplier_scope_rows = list(
+        RentalTimesheetEntry.objects.for_company(company).filter(period_id__in=period_ids)
+        .values("period_id", "worker__supplier_id", "worker__supplier__code", "worker__supplier__name").distinct()
+        .order_by("period_id", "worker__supplier__code")
+    ) if period_ids else []
+    suppliers_by_period: dict[object, list[dict[str, object]]] = {}
+    for row in supplier_scope_rows:
+        suppliers_by_period.setdefault(row["period_id"], []).append(row)
     settlements_by_project: dict[object, list[SupplierSettlement]] = {}
     for settlement in settlements:
         settlements_by_project.setdefault(settlement.project_id, []).append(settlement)
     for ts_period in periods:
-        supplier_rows = list(
-            RentalTimesheetEntry.objects.for_company(company).filter(period=ts_period)
-            .values("worker__supplier_id", "worker__supplier__code", "worker__supplier__name").distinct()
-            .order_by("worker__supplier__code")
-        )
+        supplier_rows = suppliers_by_period.get(ts_period.pk, [])
         timesheet_scopes.append({
             "projectId": project_public_id(ts_period.project), "project": ts_period.project.name, "projectCode": ts_period.project.code,
             "statusValue": ts_period.status, "status": ts_period.get_status_display(), "revision": ts_period.revision,
@@ -489,7 +498,7 @@ def rental_settlement_context(*, company, period_start: date, membership=None, p
         "settlements": [serialize_supplier_settlement(row, membership=membership) for row in settlements],
         "financialMetrics": financial_metrics,
         "adjustments": [serialize_rental_adjustment(row) for row in adjustments],
-        "adjustmentsByWorker": rental_adjustments_by_worker(company=company, period_start=start),
+        "adjustmentsByWorker": adjustments_by_worker,
         "payments": [serialize_supplier_payment(row, membership=membership) for row in payments],
         "timesheetScopes": timesheet_scopes,
         "projectWorkflows": project_workflows,

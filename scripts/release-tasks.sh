@@ -3,14 +3,36 @@ set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
 seed_requested=0
-for arg in "$@"; do
-  case "$arg" in
+seed_profile="${IMS_SEED_PROFILE:-functional}"
+while (( $# )); do
+  case "$1" in
     --seed) seed_requested=1 ;;
-    *) fatal "Unknown release-task option: $arg" ;;
+    --seed-profile)
+      shift
+      [[ $# -gt 0 ]] || fatal "--seed-profile requires a value."
+      seed_profile="$1"
+      seed_requested=1
+      ;;
+    --seed-profile=*)
+      seed_profile="${1#*=}"
+      seed_requested=1
+      ;;
+    *) fatal "Unknown release-task option: $1" ;;
   esac
+  shift
 done
+case "${seed_profile}" in
+  functional|realistic|benchmark) ;;
+  *) fatal "Unknown payroll seed profile: ${seed_profile}." ;;
+esac
 
 require_environment
+
+info "Verifying final SESCCO MS release-candidate contract"
+python3 "${PROJECT_ROOT}/scripts/verify-release-candidate.py"
+
+info "Verifying frozen Payroll production-E2E certification contract"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-production-e2e.py"
 
 run_manage() {
   compose run --rm --no-deps -T -e RUN_STARTUP_TASKS=0 ims_web python manage.py "$@"
@@ -33,6 +55,10 @@ if (( seed_requested )); then
   fi
   if [[ -n "${IMS_SEED_PERIOD:-}" ]]; then
     seed_args+=(--period "${IMS_SEED_PERIOD}")
+  fi
+  seed_args+=(--profile "${seed_profile}")
+  if [[ -n "${IMS_SEED_BATCH_SIZE:-}" ]]; then
+    seed_args+=(--seed-batch-size "${IMS_SEED_BATCH_SIZE}")
   fi
   run_manage seed_payroll_test_data "${seed_args[@]}"
 fi

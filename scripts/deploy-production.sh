@@ -3,21 +3,39 @@ set -Eeuo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
 seed_requested=0
-for arg in "$@"; do
-  case "$arg" in
+seed_profile="${IMS_SEED_PROFILE:-functional}"
+while (( $# )); do
+  case "$1" in
     --seed) seed_requested=1 ;;
+    --seed-profile)
+      shift
+      [[ $# -gt 0 ]] || fatal "--seed-profile requires functional, realistic, or benchmark."
+      seed_profile="$1"
+      seed_requested=1
+      ;;
+    --seed-profile=*)
+      seed_profile="${1#*=}"
+      seed_requested=1
+      ;;
     -h|--help)
       cat <<'EOF'
-Usage: scripts/deploy-production.sh [--seed]
+Usage: scripts/deploy-production.sh [--seed] [--seed-profile functional|realistic|benchmark]
 
-  --seed  Seed complete idempotent DEMO Payroll/WPS/report/lifecycle fixtures after migrations.
-          Optional: IMS_SEED_COMPANY_SLUG=<slug> IMS_SEED_PERIOD=YYYY-MM
+  --seed                 Seed complete idempotent functional DEMO Payroll/WPS/report/lifecycle fixtures.
+  --seed-profile PROFILE Also add restart-safe scale fixtures. realistic = 250 internal / 750 rental / 6 months;
+                         benchmark = 2,000 internal / 5,000 rental / 12 months.
+                         Optional env: IMS_SEED_COMPANY_SLUG, IMS_SEED_PERIOD, IMS_SEED_BATCH_SIZE.
 EOF
       exit 0
       ;;
-    *) fatal "Unknown deploy option: $arg" ;;
+    *) fatal "Unknown deploy option: $1" ;;
   esac
+  shift
 done
+case "${seed_profile}" in
+  functional|realistic|benchmark) ;;
+  *) fatal "Unknown payroll seed profile: ${seed_profile}. Use functional, realistic, or benchmark." ;;
+esac
 
 require_environment
 require_command curl
@@ -49,7 +67,7 @@ fi
 info "Preparing the release before replacing the web container"
 release_args=()
 if (( seed_requested )); then
-  release_args+=(--seed)
+  release_args+=(--seed --seed-profile "${seed_profile}")
 fi
 bash "${PROJECT_ROOT}/scripts/release-tasks.sh" "${release_args[@]}"
 

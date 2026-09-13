@@ -26,6 +26,9 @@ def rental_timesheet_context(*, company, project_id, period_start: date, members
     if project:
         assignments=list(WorkerAssignment.objects.for_company(company).select_related('worker','worker__supplier','project').filter(project=project,cancelled_at__isnull=True,effective_from__lte=end).filter(Q(effective_to__isnull=True)|Q(effective_to__gte=start)).order_by('worker__worker_number','effective_from'))
     workers={str(a.worker_id):a.worker for a in assignments}
+    assignments_by_worker={}
+    for assignment in assignments:
+        assignments_by_worker.setdefault(str(assignment.worker_id), []).append(assignment)
     entries=list(RentalTimesheetEntry.objects.for_company(company).filter(period=period).select_related('worker','assignment') if period else [])
     overtime=list(RentalTimesheetOvertime.objects.for_company(company).filter(period=period).select_related('worker','assignment') if period else [])
     records={}
@@ -38,8 +41,7 @@ def rental_timesheet_context(*, company, project_id, period_start: date, members
     roster=[]
     for wid,w in sorted(workers.items(),key=lambda item:item[1].worker_number):
         segments=[]
-        for a in assignments:
-            if str(a.worker_id)!=wid: continue
+        for a in assignments_by_worker.get(wid, []):
             segments.append({'id':str(a.pk),'projectId':project_public_id(a.project),'start':a.effective_from.isoformat(),'end':a.effective_to.isoformat() if a.effective_to else None,'trade':a.trade,'rateType':a.rate_type,'rate':str(a.rate),'supplierId':str(a.worker.supplier_id),'supplierName':a.worker.supplier.name})
         roster.append({'id':wid,'workerId':w.worker_number,'name':w.full_name,'supplierId':str(w.supplier_id),'supplierName':w.supplier.name,'assignments':segments})
     regular_hours=sum((e.regular_hours for e in entries),Decimal('0')); ot_hours=sum((o.hours for o in overtime),Decimal('0'))

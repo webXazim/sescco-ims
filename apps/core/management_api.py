@@ -108,10 +108,14 @@ def report_export_api(request: HttpRequest) -> HttpResponse:
     except Exception as exc:
         return _error(exc)
     report = payload["report"]
+    query = request.GET.get("q", "").strip().casefold()
+    rows = report["rows"]
+    if query:
+        rows = [row for row in rows if query in " ".join(str(value or "") for value in row).casefold()]
     output = StringIO()
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow([_csv_cell(value) for value in report["columns"]])
-    writer.writerows([[_csv_cell(value) for value in row] for row in report["rows"]])
+    writer.writerows([[_csv_cell(value) for value in row] for row in rows])
     filename = f"{request.GET.get('type','report')}-{request.GET.get('period','period')}.csv"
     response = HttpResponse(output.getvalue(), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'

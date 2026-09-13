@@ -1,0 +1,34 @@
+{
+  "release": "1.0.64",
+  "product": "SESCCO MS \u2014 Management System",
+  "release_type": "production-freeze-release-candidate",
+  "previous_release": "1.0.63",
+  "previous_archive_sha256": "8291351ac88c883796d899f31fbffbb32416b79f53e1ad8be1d3485fd0049d9e",
+  "feature_freeze": true,
+  "schema_change_in_release": false,
+  "payroll_formula_change_in_release": false,
+  "required_static_gates": [
+    "scripts/verify-payroll-action-parity.py",
+    "scripts/verify-payroll-data-authority.py",
+    "scripts/verify-payroll-output-e2e.py",
+    "scripts/verify-payroll-scale-seed.py",
+    "scripts/verify-payroll-performance.py",
+    "scripts/verify-payroll-production-e2e.py",
+    "scripts/verify-lifecycle-retention-contract.py",
+    "scripts/verify-production-infrastructure.sh"
+  ],
+  "required_runtime_gates": [
+    "python manage.py check --deploy --fail-level ERROR",
+    "python manage.py makemigrations --check --dry-run",
+    "bash scripts/certify-payroll-production-e2e.sh",
+    "python manage.py test --noinput"
+  ],
+  "required_seed_profiles": [
+    "functional",
+    "realistic",
+    "benchmark"
+  ],
+  "deployment_entrypoint": "scripts/deploy-production.sh",
+  "freeze_verifier": "scripts/verify-production-freeze.sh",
+  "runtime_certification_evidence": "payroll-e2e-certification.txt"
+}

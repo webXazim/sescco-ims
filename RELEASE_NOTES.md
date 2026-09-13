@@ -1,3 +1,78 @@
+# 1.0.64 — Production freeze / release candidate
+
+- Freezes the SESCCO MS Payroll integration sequence after the 1.0.58 frontend/backend action-parity, 1.0.59 server data-authority, 1.0.60 output E2E, 1.0.61 scale-seed, 1.0.62 performance, and 1.0.63 production-E2E certification upgrades.
+- Adds `merge/release-candidate.json` and `scripts/verify-release-candidate.py` to bind the final release identity, the exact 1.0.63 predecessor archive checksum, required static/runtime gates, supported seed profiles and canonical deployment entrypoint.
+- Carries the frozen Payroll production-E2E contract forward to release 1.0.64 and requires the release-candidate verifier from both the packaged production-freeze gate and the production release-task pipeline.
+- Updates Payroll static cache-busters and package documentation to 1.0.64 without changing Payroll formulas, database schema, lifecycle semantics, permissions or user-facing workflow behavior.
+- Runtime certification remains mandatory in the isolated Docker/PostgreSQL rehearsal environment: deployment checks, zero migration drift, the curated Payroll E2E Django suite, and the full Django regression suite must pass before production cutover.
+- Regenerates the complete source/configuration SHA-256 production freeze after all final release metadata and verification changes.
+
+# 1.0.63 — Full Payroll production E2E certification
+
+- Adds a single frozen production-E2E certification contract at `merge/payroll-production-e2e.json` spanning 11 high-risk scenarios and 75 critical existing Django regression tests across Internal Payroll, Rental Manpower, Documents and platform access boundaries.
+- Adds `scripts/certify-payroll-production-e2e.sh`, which first verifies the frozen certification contract, then runs `check --deploy`, rejects migration drift, and executes the curated 13-label Django Payroll suite against Django's isolated test database.
+- Certification coverage explicitly includes owner/officer authorization and forbidden access, attendance status normalization/submission, payroll review/approval integrity, WPS/payment reconciliation, Rental assignment/timesheet/settlement/payment workflows, invalid transitions, lifecycle/archive/delete/restore recovery, reports/documents, tenant isolation, benchmark seed shape and performance regression guards.
+- Adds `scripts/verify-payroll-production-e2e.py` and a Django contract wrapper. The static verifier fails if a required scenario loses its referenced regression test, a prerequisite release verifier disappears, or the runtime/rehearsal certification path is removed.
+- Wires the production-E2E contract into Payroll frontend verification, release tasks and the production-freeze gate. Production rehearsal now runs the dedicated certification suite separately and stores `payroll-e2e-certification.txt` as evidence before the full Django regression suite.
+- No Payroll calculation formula, schema, or user-facing workflow is changed in this certification release. The 1.0.62 query hardening and 1.0.61 benchmark profiles remain intact.
+- The package can statically verify certification completeness in environments without Django; runtime certification remains mandatory in the release/rehearsal environment where Django/PostgreSQL are available.
+
+# 1.0.62 — Payroll performance & query hardening
+
+- Converts the highest-cardinality Internal Payroll calculation sources from per-employee database access to set-wise locked loads for organization assignments, salary structures/lines, attendance entries and overtime snapshots while preserving the existing transaction and `SELECT FOR UPDATE` authority.
+- Makes Internal Attendance roster rendering prefetch effective salary structures and salary lines so overtime readiness does not issue salary queries per employee; overtime save/submission validation also resolves effective structures and base components set-wise.
+- Reworks Payroll calculation snapshot creation to validate generated line/component/adjustment objects in memory and persist them with bounded `bulk_create` batches. Snapshot fingerprint verification now fetches line children set-wise instead of querying components and adjustments for every Payroll line.
+- Removes an O(workers × assignments) Rental Timesheet roster scan by grouping effective assignments by worker before segment construction.
+- Hardens Rental settlement context by loading supplier scopes for all project-periods in one query and reusing the already-loaded adjustment set. Settlement snapshot lines/rates/adjustments are persisted in bounded batches and fingerprint verification groups child rows set-wise.
+- Adds `python manage.py payroll_performance_report` with SQL query counting and elapsed-time diagnostics for Internal Attendance, Internal Payroll preflight, the largest Rental project timesheet and Rental settlement context. `--fail-on-query-budget` enforces the release query budgets (40 queries per measured Internal/Rental path by default).
+- Adds `merge/payroll-performance.json`, `scripts/verify-payroll-performance.py` and a Django regression wrapper, and wires the static performance contract into the production-freeze gate so cardinality-dependent query patterns cannot silently return.
+- Keeps the 1.0.61 functional/realistic/benchmark seed profiles unchanged. No schema migration is required; the high-volume query shapes use the existing Payroll indexes and uniqueness constraints.
+
+# 1.0.61 — Large test & benchmark Payroll seed profiles
+
+- Keeps the existing `functional` DEMO seed as the default and adds explicit `realistic` and `benchmark` volume profiles without changing production Payroll behavior.
+- Adds a realistic profile with 250 Internal employees, 750 Rental workers, 6 branches, 12 departments, 8 suppliers, 12 projects and six months of scale history.
+- Adds a benchmark profile with 2,000 Internal employees, 5,000 Rental workers, 15 branches, 24 departments, 30 suppliers, 40 projects and twelve months of scale history.
+- Seeds high-cardinality daily Internal Attendance and Rental Timesheet rows, overtime, approved advances/adjustments, closed Payroll snapshots, WPS salary-payment rows, worker transfer history, supplier settlements, settlement lines and paid supplier-payment allocations.
+- Uses stable `DEMO-SCALE-*` / `RDEMO-SCALE-*` identities, unique financial references, conflict-safe bulk inserts and post-seed population verification so interrupted large seeds can be resumed safely by rerunning the same profile.
+- Makes scale seeding monotonic: `benchmark` expands an existing `realistic` dataset, while later smaller-profile runs never shrink or rewrite the larger benchmark history.
+- Keeps the canonical functional Draft + closed E2E month separate from scale history so benchmark rows do not change the known workflow fixture used for functional testing.
+- Blocks `realistic` / `benchmark` on a tenant containing non-DEMO Internal employees or Rental workers to prevent accidental benchmark pollution of production-like payroll data.
+- Adds `--seed-profile functional|realistic|benchmark` to production deploy/release scripts, plus `IMS_SEED_PROFILE` and `IMS_SEED_BATCH_SIZE` operator controls.
+- Adds a frozen scale-seed contract, regression coverage, operator documentation and a production-freeze verifier. No database migration is required.
+
+# 1.0.60 — Payroll reports, WPS, payments and documents E2E completion
+
+- Freezes the Payroll output path after the 1.0.58 action-parity and 1.0.59 data-authority upgrades: server-generated reports, Internal WPS/salary-payment reconciliation, Rental supplier settlement/payment finance, and immutable final documents are now covered by one release contract.
+- Replaces the supplier-profile payment/document shortcuts with real finance drill-downs. Supplier payment rows open the authoritative payment detail, the Payments workspace opens pre-filtered to that supplier, and the supplier Documents tab renders actual finalized Django document records instead of static placeholder tiles.
+- Makes report CSV export match the visible report search filter by sending the active search query to the backend export endpoint and filtering the authoritative server report rows before CSV serialization. Existing spreadsheet-formula neutralization remains in force.
+- Adds `merge/payroll-output-e2e.json` and `scripts/verify-payroll-output-e2e.py`, covering 12 workspace/report routes, 6 Internal payment/WPS endpoints, 6 Rental settlement/payment endpoints and all 7 final document types.
+- The output verifier rejects a return of the old supplier-settlement placeholder toast and enforces document eligibility gates: Locked timesheets, Approved-or-later settlements, and Paid payment receipts.
+- Adds a Django `SimpleTestCase` wrapper for the output verifier and wires the gate into both Payroll frontend verification and the packaged production-freeze verification. Existing 80-mutation action parity, 30-key browser-storage authority, 67 URL contracts and complete DEMO report/WPS/document seed coverage remain intact.
+- No database migration or payroll-calculation formula change is required.
+
+# 1.0.59 — Payroll mutation and data authority completion
+
+- Makes the browser explicitly a cache/render layer for Payroll business data; Django/PostgreSQL remains authoritative for masters, attendance/timesheets, payroll calculations, adjustments, settlements, payments, documents and lifecycle state.
+- Adds generation-based stale-response protection for Internal Attendance, Internal Payroll, Salary Payments, Rental Timesheets and Rental Settlements. A slow GET that started before a newer server mutation is now discarded instead of overwriting the mutation result in browser memory.
+- Hardens Salary Payments period switching so an older-period response may be cached but cannot replace the active period's payment/template/readiness arrays. Cached periods are re-activated deliberately when selected again.
+- Hardens Rental Settlements the same way: period-specific settlement/financial snapshots remain cached by period, while active adjustment/payment/timesheet-scope arrays are only activated for the currently selected period.
+- Captures Rental Timesheet project/period scope before loading and only re-renders when that same scope is still active, preventing late project/period responses from hijacking the visible sheet.
+- Removes obsolete empty browser persistence placeholders for Rental Timesheets, Rental Overtime, Supplier Payments, Rental Worker state and Rental Settlements so future work cannot mistake them for supported persistence paths.
+- Adds `merge/payroll-data-authority.json`, documenting the 30 allowed `payroll-ui-*` browser-storage keys. These are UI preferences/selections only; business ledgers and master records are forbidden from localStorage.
+- Adds `scripts/verify-payroll-data-authority.py`, a Django regression wrapper, and production/frontend release gates that enforce browser-storage scope plus stale-response guards across the five authoritative domains.
+- No database migration is required. Existing server-side lifecycle, calculation and payment semantics remain unchanged.
+
+# 1.0.58 — Payroll frontend/backend action parity
+
+- Adds a machine-readable Payroll mutation contract at `merge/payroll-action-parity.json` covering 80 user-triggered Internal Payroll, Rental Manpower, Documents and Payroll Settings mutations.
+- Adds `scripts/verify-payroll-action-parity.py`, which proves every registered mutation still has visible client wiring, handler-bound `data-*` controls where applicable, a mounted Django backend function, and the exact POST/PATCH/DELETE method accepted by that function's `require_http_methods` contract.
+- Extends the existing frontend verification beyond URL existence. The previous gate still verifies 67 browser URL contracts; the new gate additionally verifies 80 mutations against 73 backend method contracts and 40 bound action selectors.
+- Explicitly protects multi-action workflow controls including attendance submit/return, payroll calculate/reset/review/approve/return, payment prepare/export/start/cancel/import/close/reopen/retry, Rental timesheet submit/return, settlement calculate/return/close, supplier payment result/retry, lifecycle Archive/Delete/Restore, and Archive/Delete-bin restore.
+- Adds a Django regression test that runs the action-parity verifier inside the normal test suite and fails if high-risk Payroll actions leave the registry.
+- Wires the action-parity gate into both `verify-payroll-frontend.sh` and the production-freeze verifier so a production-looking button can no longer ship merely because its URL happens to exist.
+- No database migration or payroll calculation change is required; this upgrade hardens the UI-to-backend execution contract before the 1.0.59 mutation/data-authority pass.
+
 # 1.0.57 — Archive/Delete/Restore cascading integrity
 
 - Hardens the existing 30-day recoverable Delete model for Branch / Office, Department, Internal Employee, Manpower Supplier, Rental Worker and shared Project without turning historical payroll, attendance, timesheet, settlement, payment, inventory movement, document or audit records into destructive cascades. Parent-owned operational child masters continue to share the exact parent recovery window and restore atomically through `TrashCascadeLink`.

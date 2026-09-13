@@ -469,7 +469,9 @@ docker system prune --volumes
 Those commands could destroy persistent data.
 ## Complete DEMO test seed
 
-Use `./scripts/deploy-production.sh --seed` when this installation is intended to contain test records. The seed is idempotent and creates DEMO/RDEMO Internal Payroll and Rental Manpower data for attendance/timesheets, overtime, adjustments, payroll runs, supplier settlements, WPS export + result reconciliation, payments, reports, finalized output documents, transfer/rate changes, and lifecycle Stop/Termination/Archive/Delete scenarios.
+Use `./scripts/deploy-production.sh --seed` when this installation is intended to contain test records. The default `functional` seed is idempotent and creates DEMO/RDEMO Internal Payroll and Rental Manpower data for attendance/timesheets, overtime, adjustments, payroll runs, supplier settlements, WPS export + result reconciliation, payments, reports, finalized output documents, transfer/rate changes, and lifecycle Stop/Termination/Archive/Delete scenarios.
 
-The finalized synthetic payroll uses a collision-safe historical month that excludes non-DEMO employment. If no safe month can be proven, deployment stops at the seed step instead of inserting real employees into a DEMO payroll run. Do not use `--seed` on an installation where visible DEMO test records are not wanted.
+For load testing, `./scripts/deploy-production.sh --seed --seed-profile realistic` creates 250 Internal employees and 750 Rental workers over six scale-history months. `--seed-profile benchmark` expands the same restart-safe population to 2,000 Internal employees and 5,000 Rental workers over 12 months, with daily attendance/timesheet rows plus payroll/WPS and supplier-settlement/payment history. `IMS_SEED_BATCH_SIZE` may tune the default 5,000-row bulk insert chunks. Large profiles are allowed only on a DEMO-only tenant; the command refuses to mix them with non-DEMO Internal or Rental worker masters.
+
+The functional finalized synthetic payroll uses a collision-safe historical month that excludes non-DEMO employment. If no safe month can be proven, deployment stops at the seed step instead of inserting real employees into a DEMO payroll run. Do not use any seed option on an installation where visible DEMO test records are not wanted. See `docs/PAYROLL_SCALE_SEED.md` for scale-profile behavior and restart rules.
 

@@ -1,0 +1,38 @@
+{
+  "release": "1.0.60",
+  "purpose": "Freeze server-backed Payroll reports, WPS/payment reconciliation, supplier finance drill-downs and immutable document output paths.",
+  "reports": {
+    "types": {
+      "management": ["workforce-cost"],
+      "internal": ["internal-payroll", "overtime", "advances", "payments", "wps"],
+      "rental": ["rental-project-cost", "supplier-cost", "overtime", "advances", "transfers", "payments"]
+    },
+    "api": ["reports_api", "report_export_api"]
+  },
+  "internal_payment_flow": [
+    "salary_payments_api",
+    "prepare_salary_payment_batch_api",
+    "salary_payment_batch_export_api",
+    "salary_payment_batch_workflow_api",
+    "salary_payment_results_api",
+    "salary_payment_row_retry_api"
+  ],
+  "rental_payment_flow": [
+    "rental_settlements_api",
+    "rental_settlements_calculate_api",
+    "rental_settlements_workflow_api",
+    "supplier_payments_api",
+    "supplier_payment_result_api",
+    "supplier_payment_retry_api"
+  ],
+  "document_types": [
+    "SALARY_SLIP",
+    "INTERNAL_TIMESHEET",
+    "SALARY_PAYMENT_RECEIPT",
+    "RENTAL_TIMESHEET",
+    "SUPPLIER_SETTLEMENT",
+    "SUPPLIER_INVOICE",
+    "SUPPLIER_PAYMENT_RECEIPT"
+  ],
+  "document_flow": ["documents_api", "document_sources_api", "document_detail_api", "print_document"]
+}

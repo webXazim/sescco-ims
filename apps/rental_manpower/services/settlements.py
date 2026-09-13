@@ -336,21 +336,32 @@ def settlement_source_fingerprint(*, period: RentalTimesheetPeriod, supplier: Ma
 
 
 def _snapshot_payload(settlement: SupplierSettlement) -> dict[str, object]:
-    lines = []
-    for line in (
+    settlement_lines = list(
         SupplierSettlementLine.objects.for_company(settlement.company)
         .filter(settlement=settlement).order_by("worker_number", "worker_id")
-    ):
-        rates = list(
-            SupplierSettlementRateLine.objects.for_company(settlement.company)
-            .filter(settlement_line=line).order_by("effective_from", "assignment_id")
-            .values("assignment_id", "effective_from", "effective_to", "trade", "rate_type", "rate", "regular_hours", "billable_days", "calendar_days", "base_amount")
-        )
-        adjustments = list(
-            SupplierSettlementAdjustmentLine.objects.for_company(settlement.company)
-            .filter(settlement_line=line).order_by("transaction_date", "adjustment_id")
-            .values("adjustment_id", "adjustment_type", "adjustment_label", "effect", "amount", "reason", "reference", "transaction_date")
-        )
+    )
+    line_ids = [line.pk for line in settlement_lines]
+    rate_rows = list(
+        SupplierSettlementRateLine.objects.for_company(settlement.company)
+        .filter(settlement_line_id__in=line_ids).order_by("settlement_line_id", "effective_from", "assignment_id")
+        .values("settlement_line_id", "assignment_id", "effective_from", "effective_to", "trade", "rate_type", "rate", "regular_hours", "billable_days", "calendar_days", "base_amount")
+    ) if line_ids else []
+    adjustment_rows = list(
+        SupplierSettlementAdjustmentLine.objects.for_company(settlement.company)
+        .filter(settlement_line_id__in=line_ids).order_by("settlement_line_id", "transaction_date", "adjustment_id")
+        .values("settlement_line_id", "adjustment_id", "adjustment_type", "adjustment_label", "effect", "amount", "reason", "reference", "transaction_date")
+    ) if line_ids else []
+    rates_by_line: dict[object, list[dict[str, object]]] = defaultdict(list)
+    adjustments_by_line: dict[object, list[dict[str, object]]] = defaultdict(list)
+    for row in rate_rows:
+        line_id = row.pop("settlement_line_id")
+        rates_by_line[line_id].append(row)
+    for row in adjustment_rows:
+        line_id = row.pop("settlement_line_id")
+        adjustments_by_line[line_id].append(row)
+
+    lines = []
+    for line in settlement_lines:
         lines.append({
             "worker_id": str(line.worker_id), "worker_number": line.worker_number, "worker_name": line.worker_name,
             "supplier_code": line.supplier_code, "supplier_name": line.supplier_name,
@@ -360,7 +371,7 @@ def _snapshot_payload(settlement: SupplierSettlement) -> dict[str, object]:
             "overtime_hours": str(line.overtime_hours), "base_amount": str(line.base_amount),
             "overtime_amount": str(line.overtime_amount), "gross_amount": str(line.gross_amount),
             "adjustment_earnings": str(line.adjustment_earnings), "adjustment_deductions": str(line.adjustment_deductions),
-            "net_amount": str(line.net_amount), "rates": rates, "adjustments": adjustments,
+            "net_amount": str(line.net_amount), "rates": rates_by_line.get(line.pk, []), "adjustments": adjustments_by_line.get(line.pk, []),
         })
     return {
         "settlement_number": settlement.settlement_number,
@@ -439,6 +450,9 @@ def _calculate_supplier_snapshot(*, settlement: SupplierSettlement) -> None:
     totals = defaultdict(lambda: Decimal("0"))
     total_days = 0
     month_days = Decimal(monthrange(period.period_start.year, period.period_start.month)[1])
+    settlement_lines: list[SupplierSettlementLine] = []
+    rate_snapshot_lines: list[SupplierSettlementRateLine] = []
+    adjustment_snapshot_lines: list[SupplierSettlementAdjustmentLine] = []
 
     for worker_id, worker_entries in by_worker.items():
         worker = worker_entries[0].worker
@@ -512,19 +526,17 @@ def _calculate_supplier_snapshot(*, settlement: SupplierSettlement) -> None:
             base_amount=base, overtime_amount=overtime_amount, gross_amount=gross,
             adjustment_earnings=earning, adjustment_deductions=deduction, net_amount=net,
         )
-        line.full_clean(); line.save()
+        settlement_lines.append(line)
         for item in rate_calculations:
-            rate_line = SupplierSettlementRateLine(company=company, settlement_line=line, **item)
-            rate_line.full_clean(); rate_line.save()
+            rate_snapshot_lines.append(SupplierSettlementRateLine(company=company, settlement_line=line, **item))
         for adjustment in adj_by_worker.get(worker_id, []):
             effect = rental_adjustment_effect(adjustment.adjustment_type)
-            adj_line = SupplierSettlementAdjustmentLine(
+            adjustment_snapshot_lines.append(SupplierSettlementAdjustmentLine(
                 company=company, settlement_line=line, adjustment=adjustment,
                 adjustment_type=adjustment.adjustment_type, adjustment_label=adjustment.get_adjustment_type_display(),
                 effect=effect, amount=adjustment.amount, reason=adjustment.reason, reference=adjustment.reference,
                 transaction_date=adjustment.transaction_date,
-            )
-            adj_line.full_clean(); adj_line.save()
+            ))
         totals["regular_hours"] += regular_hours
         totals["overtime_hours"] += ot_hours
         totals["base"] += base
@@ -534,6 +546,16 @@ def _calculate_supplier_snapshot(*, settlement: SupplierSettlement) -> None:
         totals["deduction"] += deduction
         totals["net"] += net
         total_days += work_days
+
+    # Snapshot rows are derived from the locked timesheet/adjustment sources above.
+    # UUID primary keys are assigned before INSERT, so children can be staged and
+    # persisted in bounded batches without one INSERT round trip per worker/segment.
+    if settlement_lines:
+        SupplierSettlementLine.objects.bulk_create(settlement_lines, batch_size=1000)
+    if rate_snapshot_lines:
+        SupplierSettlementRateLine.objects.bulk_create(rate_snapshot_lines, batch_size=1000)
+    if adjustment_snapshot_lines:
+        SupplierSettlementAdjustmentLine.objects.bulk_create(adjustment_snapshot_lines, batch_size=1000)
 
     settlement.worker_count = len(by_worker)
     settlement.total_regular_hours = totals["regular_hours"].quantize(CENT)

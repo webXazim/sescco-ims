@@ -317,14 +317,24 @@ def _salary_structure_for_overtime(*, company, employee: InternalEmployee, perio
     return structure
 
 
-def _overtime_calculation(*, company, employee: InternalEmployee, period: AttendancePeriod, hours: Decimal) -> dict[str, object]:
-    structure = _salary_structure_for_overtime(company=company, employee=employee, period=period)
-    line = (
-        SalaryStructureLine.objects.select_for_update()
-        .for_company(company)
-        .filter(structure=structure, component_code=structure.overtime_base_component_code)
-        .first()
-    )
+def _overtime_calculation(
+    *,
+    company,
+    employee: InternalEmployee,
+    period: AttendancePeriod,
+    hours: Decimal,
+    structure: SalaryStructure | None = None,
+    base_line: SalaryStructureLine | None = None,
+) -> dict[str, object]:
+    structure = structure or _salary_structure_for_overtime(company=company, employee=employee, period=period)
+    line = base_line
+    if line is None:
+        line = (
+            SalaryStructureLine.objects.select_for_update()
+            .for_company(company)
+            .filter(structure=structure, component_code=structure.overtime_base_component_code)
+            .first()
+        )
     if line is None:
         raise ValidationError({"overtime": f"{employee.employee_number} overtime base component is missing from the effective salary structure."})
     divisor = Decimal(structure.overtime_divisor)
@@ -343,6 +353,28 @@ def _overtime_calculation(*, company, employee: InternalEmployee, period: Attend
         "overtime_rate": rate,
         "amount": amount,
     }
+
+
+def _overtime_sources_locked(*, company, employee_ids: list[object] | set[object], period: AttendancePeriod):
+    """Load end-of-period overtime salary sources set-wise for large attendance rosters."""
+    ids = list(employee_ids)
+    structures = list(
+        SalaryStructure.objects.select_for_update().for_company(company)
+        .filter(employee_id__in=ids, effective_from__lte=period.period_end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=period.period_end))
+        .order_by("employee_id", "-effective_from", "-created_at")
+    )
+    structure_by_employee: dict[object, SalaryStructure] = {}
+    for structure in structures:
+        structure_by_employee.setdefault(structure.employee_id, structure)
+    structure_ids = [item.pk for item in structure_by_employee.values()]
+    lines = list(
+        SalaryStructureLine.objects.select_for_update().for_company(company)
+        .filter(structure_id__in=structure_ids)
+        .order_by("structure_id", "component_code")
+    ) if structure_ids else []
+    lines_by_structure_code = {(item.structure_id, item.component_code): item for item in lines}
+    return structure_by_employee, lines_by_structure_code
 
 
 @transaction.atomic
@@ -382,6 +414,9 @@ def save_overtime_entries(
         .for_company(company)
         .filter(period=period, employee_id__in=employee_ids)
     }
+    overtime_structures, overtime_lines = _overtime_sources_locked(
+        company=company, employee_ids=employee_ids, period=period
+    )
     before_rows: list[dict[str, object]] = []
     after_rows: list[dict[str, object]] = []
     changed = False
@@ -416,7 +451,11 @@ def save_overtime_entries(
             after_rows.append({"employee": employee.employee_number, "hours": "0.00", "amount": "0.00"})
             continue
 
-        calculated = _overtime_calculation(company=company, employee=employee, period=period, hours=hours)
+        structure = overtime_structures.get(employee.pk)
+        base_line = None if structure is None else overtime_lines.get((structure.pk, structure.overtime_base_component_code))
+        calculated = _overtime_calculation(
+            company=company, employee=employee, period=period, hours=hours, structure=structure, base_line=base_line
+        )
         values = {
             "company": company,
             "period": period,
@@ -501,8 +540,15 @@ def validate_period_for_submission(*, period: AttendancePeriod) -> None:
         .filter(period=period)
         .select_related("employee", "salary_structure")
     )
+    overtime_structures, overtime_lines = _overtime_sources_locked(
+        company=company, employee_ids=[row.employee_id for row in overtime_rows], period=period
+    )
     for row in overtime_rows:
-        expected = _overtime_calculation(company=company, employee=row.employee, period=period, hours=row.hours)
+        structure = overtime_structures.get(row.employee_id)
+        base_line = None if structure is None else overtime_lines.get((structure.pk, structure.overtime_base_component_code))
+        expected = _overtime_calculation(
+            company=company, employee=row.employee, period=period, hours=row.hours, structure=structure, base_line=base_line
+        )
         if (
             row.salary_structure_id != expected["salary_structure"].pk
             or row.policy_code != expected["policy_code"]

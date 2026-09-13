@@ -1,0 +1,214 @@
+{
+  "release": "1.0.64",
+  "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
+  "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
+  "runtime_test_labels": [
+    "apps.core.tests.test_payroll_frontend",
+    "apps.core.tests.test_payroll_attendance_contract",
+    "apps.core.tests.test_payroll_action_parity",
+    "apps.core.tests.test_payroll_data_authority",
+    "apps.core.tests.test_payroll_output_e2e",
+    "apps.core.tests.test_payroll_production_e2e",
+    "apps.core.tests.test_payroll_performance",
+    "apps.core.tests.test_payroll_seed_contract",
+    "apps.core.tests.test_payroll_seed_profiles",
+    "apps.internal_payroll.tests",
+    "apps.rental_manpower.tests",
+    "apps.documents.tests.test_documents",
+    "apps.documents.tests.test_merge_access"
+  ],
+  "static_verifiers": [
+    "scripts/verify_payroll_frontend_contract.py",
+    "scripts/verify-payroll-action-parity.py",
+    "scripts/verify-payroll-data-authority.py",
+    "scripts/verify-payroll-output-e2e.py",
+    "scripts/verify-full-demo-seed.py",
+    "scripts/verify-payroll-scale-seed.py",
+    "scripts/verify-payroll-performance.py",
+    "scripts/verify-tenant-reconciliation.py",
+    "scripts/verify-lifecycle-authority.py",
+    "scripts/verify-lifecycle-retention-contract.py"
+  ],
+  "scenarios": [
+    {
+      "id": "access-and-workspace-authorization",
+      "evidence": {
+        "apps/core/tests/test_payroll_frontend.py": [
+          "test_owner_can_open_namespaced_payroll_frontend",
+          "test_internal_officer_can_open_payroll_frontend",
+          "test_rental_officer_can_open_payroll_frontend",
+          "test_inventory_only_storekeeper_cannot_open_payroll_frontend",
+          "test_disallowed_workspace_query_is_not_honored"
+        ],
+        "apps/internal_payroll/tests/test_api.py": [
+          "test_unauthenticated_api_request_returns_json_401",
+          "test_role_without_internal_workspace_returns_json_403"
+        ],
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_unauthenticated_request_returns_json_401",
+          "test_internal_only_role_cannot_access_rental_api"
+        ]
+      }
+    },
+    {
+      "id": "attendance-contract-and-submission",
+      "evidence": {
+        "apps/core/tests/test_payroll_attendance_contract.py": [
+          "test_internal_aliases_and_hours_normalize_at_backend_boundary",
+          "test_unknown_alphabetic_value_is_rejected_cleanly",
+          "test_workflow_aliases_normalize_to_one_contract"
+        ],
+        "apps/internal_payroll/tests/test_attendance.py": [
+          "test_submission_requires_explicit_value_for_every_employed_day",
+          "test_text_status_aliases_are_normalized_by_backend_and_do_not_block_submission",
+          "test_reviewer_can_approve_and_return_but_cannot_edit",
+          "test_locked_period_can_return_for_correction_when_no_payroll_snapshot_depends_on_it"
+        ]
+      }
+    },
+    {
+      "id": "internal-payroll-review-approval-integrity",
+      "evidence": {
+        "apps/internal_payroll/tests/test_payroll.py": [
+          "test_finance_review_requires_locked_attendance_but_lock_does_not_stale_source",
+          "test_new_approved_adjustment_after_calculation_forces_recalculation",
+          "test_snapshot_tamper_is_detected_before_review",
+          "test_approved_payroll_cannot_be_recalculated_or_reset",
+          "test_calculation_is_all_or_nothing_when_any_employee_is_blocked",
+          "test_internal_payroll_workflow_is_server_authoritative_and_revisioned"
+        ],
+        "apps/internal_payroll/tests/test_payroll_api.py": [
+          "test_calculate_endpoint_persists_snapshot",
+          "test_approval_confirmation_requires_json_boolean_true",
+          "test_rental_role_cannot_read_internal_payroll"
+        ]
+      }
+    },
+    {
+      "id": "internal-wps-payment-reconciliation",
+      "evidence": {
+        "apps/internal_payroll/tests/test_payment.py": [
+          "test_payment_execution_requires_pay_capability",
+          "test_failed_payment_can_retry_and_close_without_recalculating_payroll",
+          "test_payment_batch_actions_and_payroll_revision_follow_server_lifecycle",
+          "test_export_uses_exact_configured_header_labels",
+          "test_reconciliation_can_use_configured_result_headers",
+          "test_wps_export_supports_source_layout_without_internal_employee_number",
+          "test_wps_readiness_uses_explicit_company_and_employee_configuration"
+        ]
+      }
+    },
+    {
+      "id": "internal-master-lifecycle-recovery",
+      "evidence": {
+        "apps/internal_payroll/tests/test_organization.py": [
+          "test_terminate_employee_sets_end_date_and_closes_current_assignment",
+          "test_active_employee_can_be_archived_and_restored_without_status_rewrite",
+          "test_branch_delete_soft_deletes_current_employees_and_restores_exact_cascade",
+          "test_parent_restore_does_not_resurrect_independently_deleted_employee",
+          "test_parent_restore_never_resurrects_child_redeleted_after_independent_restore",
+          "test_reactivate_employee_requires_current_active_organization_masters"
+        ],
+        "apps/internal_payroll/tests/test_api.py": [
+          "test_employee_lifecycle_leave_requires_reason",
+          "test_unused_employee_delete_requires_typed_employee_number"
+        ]
+      }
+    },
+    {
+      "id": "rental-assignment-timesheet-workflow",
+      "evidence": {
+        "apps/rental_manpower/tests/test_assignments.py": [
+          "test_assignment_transfer_trade_and_rate_preserve_segments",
+          "test_release_to_available_then_reassign_preserves_history",
+          "test_cancel_future_transfer_reopens_predecessor_and_retains_cancelled_history",
+          "test_cross_company_project_is_rejected"
+        ],
+        "apps/rental_manpower/tests/test_timesheets.py": [
+          "test_submit_rejects_missing_assigned_days",
+          "test_full_period_can_submit_approve_and_lock",
+          "test_backend_aliases_submit_and_reject_through_canonical_workflow",
+          "test_assignment_rate_change_cannot_cross_saved_timesheet_snapshot"
+        ]
+      }
+    },
+    {
+      "id": "rental-settlement-payment-integrity",
+      "evidence": {
+        "apps/rental_manpower/tests/test_settlements.py": [
+          "test_calculation_requires_locked_timesheet",
+          "test_approved_adjustments_are_snapshotted",
+          "test_negative_worker_payable_aborts_calculation",
+          "test_partial_payment_reserves_balance_failure_frees_it_and_retry_links_history",
+          "test_reversal_reopens_paid_settlement",
+          "test_supplier_payment_dates_follow_approval_chronology",
+          "test_rental_settlement_and_payment_actions_are_server_authoritative_and_revisioned",
+          "test_operational_stop_does_not_block_historical_rental_finance_completion"
+        ]
+      }
+    },
+    {
+      "id": "rental-master-lifecycle-recovery",
+      "evidence": {
+        "apps/rental_manpower/tests/test_masters.py": [
+          "test_supplier_termination_cascades_to_worker_and_is_final",
+          "test_worker_temporary_stop_keeps_assignment_and_can_resume",
+          "test_supplier_archive_restore_preserves_status_and_cascades_worker_visibility",
+          "test_project_delete_stops_current_assignment_without_deleting_worker_and_restore_resumes_exact_assignment",
+          "test_supplier_delete_with_worker_history_soft_deletes_and_restores_workers",
+          "test_worker_lifecycle_archive_restore_delete_unused"
+        ],
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_bulk_import_endpoint_validates_then_creates",
+          "test_invalid_rate_is_controlled_400",
+          "test_independent_worker_restore_under_deleted_supplier_returns_inherited_delete_state"
+        ]
+      }
+    },
+    {
+      "id": "reports-documents-and-output-authority",
+      "evidence": {
+        "apps/core/tests/test_payroll_output_e2e.py": [
+          "test_output_contract_matches_frontend_backend_and_seed"
+        ],
+        "apps/core/tests/test_payroll_data_authority.py": [
+          "test_payroll_business_state_stays_server_authoritative",
+          "test_browser_storage_contract_is_ui_only"
+        ]
+      }
+    },
+    {
+      "id": "tenant-and-cross-module-boundaries",
+      "evidence": {
+        "apps/internal_payroll/tests/test_api.py": [
+          "test_list_branches_is_company_scoped"
+        ],
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_list_suppliers_is_company_scoped"
+        ],
+        "apps/rental_manpower/tests/test_shared_project_merge.py": [
+          "test_no_duplicate_rental_project_model_exists",
+          "test_project_cannot_complete_while_rental_assignment_remains_open"
+        ]
+      }
+    },
+    {
+      "id": "seed-scale-and-performance-regression",
+      "evidence": {
+        "apps/core/tests/test_payroll_seed_profiles.py": [
+          "test_realistic_profile_is_large_but_operator_friendly",
+          "test_benchmark_profile_exercises_thousands_of_workers_for_a_full_year"
+        ],
+        "apps/core/tests/test_payroll_performance.py": [
+          "test_high_cardinality_query_contract_is_frozen"
+        ]
+      }
+    }
+  ],
+  "deployment_gates": [
+    "python manage.py check --deploy --fail-level ERROR",
+    "python manage.py makemigrations --check --dry-run",
+    "python manage.py test <curated payroll certification labels> --noinput",
+    "python manage.py test --noinput"
+  ]
+}

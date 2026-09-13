@@ -10,7 +10,7 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.54 — Attendance/status contract hardening**.
+Current packaged release: **SESCCO MS 1.0.64 — Production freeze / release candidate**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
@@ -70,13 +70,27 @@ bash scripts/create-production-env.sh
 ./scripts/create-admin.sh
 ```
 
-For a testing deployment, `--seed` creates deterministic **DEMO-only** Payroll fixtures for complete workflow testing, including Internal Payroll, Rental Manpower, reports, WPS/export/reconciliation, payments, generated business documents, transfer/rate-change scenarios, and temporary-stop/termination/archive/delete lifecycle examples:
+For a testing deployment, `--seed` creates deterministic **DEMO-only** Payroll fixtures for complete workflow testing, including Internal Payroll, Rental Manpower, reports, WPS/export/reconciliation, payments, generated business documents, transfer/rate-change scenarios, and temporary-stop/termination/archive/delete lifecycle examples. Optional scale profiles add high-cardinality history for load testing:
 
 ```bash
 ./scripts/deploy-production.sh --seed
+./scripts/deploy-production.sh --seed --seed-profile realistic
+./scripts/deploy-production.sh --seed --seed-profile benchmark
 ```
 
-`--seed` is idempotent. It intentionally creates visible DEMO/RDEMO records. The command chooses a collision-safe historical month before non-DEMO employment for its finalized synthetic payroll; if that cannot be proven safe, the seed aborts instead of mixing real employees into DEMO payroll history. Use it only where those test records are wanted.
+`functional` remains the default. `realistic` adds 250 Internal employees + 750 Rental workers across six historical months. `benchmark` expands the same synthetic population to 2,000 Internal employees + 5,000 Rental workers across 12 months, including daily attendance/timesheets, payroll/WPS rows, settlements and supplier payments. Large profiles are restart-safe and idempotent, and they refuse to run when non-DEMO Internal or Rental worker masters exist. See `docs/PAYROLL_SCALE_SEED.md`.
+
+After loading `realistic` or `benchmark`, measure the high-cardinality Payroll paths with the packaged query-budget report:
+
+```bash
+python manage.py payroll_performance_report --fail-on-query-budget
+# Or pin a specific seeded month:
+python manage.py payroll_performance_report --period 2026-07 --fail-on-query-budget
+```
+
+The report measures Internal Attendance context, Internal Payroll preflight, the largest Rental project timesheet context, and Rental settlement context. The default release guard is 40 SQL queries per measured Internal/Rental path; elapsed milliseconds are reported for environment comparison but are not treated as a portable pass/fail threshold.
+
+The functional seed intentionally creates visible DEMO/RDEMO records and chooses a collision-safe historical month before non-DEMO employment for its finalized synthetic payroll; if that cannot be proven safe, the seed aborts instead of mixing real employees into DEMO payroll history. Use seeding only where test records are wanted.
 
 Docker publishes only `127.0.0.1:8087`. Route `ims.sescco.com` through the
 existing host reverse proxy using `deploy/host-nginx/ims.sescco.com.conf`.

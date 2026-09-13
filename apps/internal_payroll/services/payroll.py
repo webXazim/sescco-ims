@@ -363,7 +363,18 @@ def transition_payroll_adjustment(
     return adjustment
 
 
-def _organization_as_of_locked(*, company, employee: InternalEmployee, as_of: date) -> EmployeeOrganizationAssignment | None:
+def _organization_as_of_locked(
+    *, company, employee: InternalEmployee, as_of: date, assignments: list[EmployeeOrganizationAssignment] | None = None
+) -> EmployeeOrganizationAssignment | None:
+    if assignments is not None:
+        return next(
+            (
+                item
+                for item in reversed(assignments)
+                if item.effective_from <= as_of and (item.effective_to is None or item.effective_to >= as_of)
+            ),
+            None,
+        )
     return (
         EmployeeOrganizationAssignment.objects.select_for_update().for_company(company)
         .select_related("branch", "department")
@@ -374,7 +385,11 @@ def _organization_as_of_locked(*, company, employee: InternalEmployee, as_of: da
     )
 
 
-def _structure_lines_locked(*, company, structure: SalaryStructure) -> list[SalaryStructureLine]:
+def _structure_lines_locked(
+    *, company, structure: SalaryStructure, lines: list[SalaryStructureLine] | None = None
+) -> list[SalaryStructureLine]:
+    if lines is not None:
+        return lines
     return list(
         SalaryStructureLine.objects.select_for_update().for_company(company)
         .filter(structure=structure)
@@ -383,7 +398,15 @@ def _structure_lines_locked(*, company, structure: SalaryStructure) -> list[Sala
     )
 
 
-def _overlapping_structures_locked(*, company, employee: InternalEmployee, start: date, end: date) -> list[SalaryStructure]:
+def _overlapping_structures_locked(
+    *, company, employee: InternalEmployee, start: date, end: date, structures: list[SalaryStructure] | None = None
+) -> list[SalaryStructure]:
+    if structures is not None:
+        return [
+            item
+            for item in structures
+            if item.effective_from <= end and (item.effective_to is None or item.effective_to >= start)
+        ]
     return list(
         SalaryStructure.objects.select_for_update().for_company(company)
         .filter(employee=employee, effective_from__lte=end)
@@ -399,10 +422,14 @@ def _component_contributions(
     period_start: date,
     period_end: date,
     proration_method: str,
+    structures: list[SalaryStructure] | None = None,
+    lines_by_structure: dict[object, list[SalaryStructureLine]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     employed_start = max(period_start, employee.joining_date)
     employed_end = min(period_end, employee.employment_end_date or period_end)
-    structures = _overlapping_structures_locked(company=company, employee=employee, start=employed_start, end=employed_end)
+    structures = _overlapping_structures_locked(
+        company=company, employee=employee, start=employed_start, end=employed_end, structures=structures
+    )
     blockers: list[str] = []
     if not structures:
         return [], ["No salary structure covers the employee's payroll period."]
@@ -427,7 +454,10 @@ def _component_contributions(
         )
         if structure is None:
             return [], ["No salary structure is effective on the employee's payroll reference date."]
-        for line in _structure_lines_locked(company=company, structure=structure):
+        for line in _structure_lines_locked(
+            company=company, structure=structure,
+            lines=None if lines_by_structure is None else lines_by_structure.get(structure.pk, []),
+        ):
             contributions.append(
                 {
                     "structure": structure,
@@ -452,7 +482,10 @@ def _component_contributions(
             blockers.append(f"Salary structure coverage is missing from {cursor.isoformat()} to {(seg_start - timedelta(days=1)).isoformat()}.")
             break
         days = (seg_end - seg_start).days + 1
-        for line in _structure_lines_locked(company=company, structure=structure):
+        for line in _structure_lines_locked(
+            company=company, structure=structure,
+            lines=None if lines_by_structure is None else lines_by_structure.get(structure.pk, []),
+        ):
             contributions.append(
                 {
                     "structure": structure,
@@ -472,12 +505,20 @@ def _component_contributions(
     return contributions, blockers
 
 
-def _attendance_summary_locked(*, company, period: AttendancePeriod, employee: InternalEmployee) -> dict[str, Any]:
-    entries = list(
-        AttendanceEntry.objects.select_for_update().for_company(company)
-        .filter(period=period, employee=employee)
-        .order_by("work_date")
-    )
+def _attendance_summary_locked(
+    *,
+    company,
+    period: AttendancePeriod,
+    employee: InternalEmployee,
+    entries: list[AttendanceEntry] | None = None,
+    overtime: AttendanceOvertimeEntry | None = None,
+) -> dict[str, Any]:
+    if entries is None:
+        entries = list(
+            AttendanceEntry.objects.select_for_update().for_company(company)
+            .filter(period=period, employee=employee)
+            .order_by("work_date")
+        )
     summary = {
         "regular_hours": sum((item.regular_hours for item in entries), Decimal("0")),
         "absent_days": 0,
@@ -504,14 +545,85 @@ def _attendance_summary_locked(*, company, period: AttendancePeriod, employee: I
     for item in entries:
         if item.code:
             summary[code_fields[item.code]] += 1
-    overtime = (
-        AttendanceOvertimeEntry.objects.select_for_update().for_company(company)
-        .filter(period=period, employee=employee)
-        .select_related("salary_structure")
-        .first()
-    )
+    if overtime is None:
+        overtime = (
+            AttendanceOvertimeEntry.objects.select_for_update().for_company(company)
+            .filter(period=period, employee=employee)
+            .select_related("salary_structure")
+            .first()
+        )
     summary["overtime"] = overtime
     return summary
+
+
+def _locked_calculation_sources(
+    *, company, attendance: AttendancePeriod, employees: list[InternalEmployee], start: date, end: date
+) -> dict[str, dict[object, object]]:
+    """Lock high-cardinality payroll sources once and group them in memory.
+
+    The old calculation path issued organization, salary, attendance and overtime
+    queries inside the employee loop. At benchmark scale that turned one payroll
+    calculation into thousands of round trips. These rows are still protected by
+    SELECT FOR UPDATE; the lock is simply acquired set-wise.
+    """
+    employee_ids = [item.pk for item in employees]
+
+    organization_rows = list(
+        EmployeeOrganizationAssignment.objects.select_for_update().for_company(company)
+        .select_related("branch", "department")
+        .filter(employee_id__in=employee_ids, effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=start))
+        .order_by("employee_id", "effective_from", "created_at")
+    )
+    organizations: dict[object, list[EmployeeOrganizationAssignment]] = {}
+    for row in organization_rows:
+        organizations.setdefault(row.employee_id, []).append(row)
+
+    salary_structures = list(
+        SalaryStructure.objects.select_for_update().for_company(company)
+        .filter(employee_id__in=employee_ids, effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=start))
+        .order_by("employee_id", "effective_from", "created_at")
+    )
+    structures_by_employee: dict[object, list[SalaryStructure]] = {}
+    for row in salary_structures:
+        structures_by_employee.setdefault(row.employee_id, []).append(row)
+
+    structure_ids = [item.pk for item in salary_structures]
+    salary_lines = list(
+        SalaryStructureLine.objects.select_for_update().for_company(company)
+        .filter(structure_id__in=structure_ids)
+        .select_related("component")
+        .order_by("structure_id", "component_category", "component_code")
+    ) if structure_ids else []
+    lines_by_structure: dict[object, list[SalaryStructureLine]] = {}
+    for row in salary_lines:
+        lines_by_structure.setdefault(row.structure_id, []).append(row)
+
+    attendance_rows = list(
+        AttendanceEntry.objects.select_for_update().for_company(company)
+        .filter(period=attendance, employee_id__in=employee_ids)
+        .order_by("employee_id", "work_date")
+    )
+    attendance_by_employee: dict[object, list[AttendanceEntry]] = {}
+    for row in attendance_rows:
+        attendance_by_employee.setdefault(row.employee_id, []).append(row)
+
+    overtime_rows = list(
+        AttendanceOvertimeEntry.objects.select_for_update().for_company(company)
+        .filter(period=attendance, employee_id__in=employee_ids)
+        .select_related("salary_structure")
+        .order_by("employee_id")
+    )
+    overtime_by_employee = {row.employee_id: row for row in overtime_rows}
+
+    return {
+        "organizations": organizations,
+        "structures": structures_by_employee,
+        "salary_lines": lines_by_structure,
+        "attendance": attendance_by_employee,
+        "overtime": overtime_by_employee,
+    }
 
 
 def _adjustment_effect(adjustment_type: str) -> str | None:
@@ -558,6 +670,10 @@ def _build_calculation_locked(*, company, period_start: date) -> dict[str, Any]:
     for item in adjustments:
         adjustments_by_employee.setdefault(str(item.employee_id), []).append(item)
 
+    source_maps = _locked_calculation_sources(
+        company=company, attendance=attendance, employees=employees, start=start, end=end
+    )
+
     result_rows: list[dict[str, Any]] = []
     source_rows: list[dict[str, Any]] = []
     blockers: list[str] = []
@@ -565,7 +681,10 @@ def _build_calculation_locked(*, company, period_start: date) -> dict[str, Any]:
     for employee in employees:
         emp_blockers: list[str] = []
         reference_date = min(end, employee.employment_end_date or end)
-        organization = _organization_as_of_locked(company=company, employee=employee, as_of=reference_date)
+        organization = _organization_as_of_locked(
+            company=company, employee=employee, as_of=reference_date,
+            assignments=source_maps["organizations"].get(employee.pk, []),
+        )
         if organization is None:
             emp_blockers.append("No branch/department assignment covers the payroll reference date.")
 
@@ -575,9 +694,15 @@ def _build_calculation_locked(*, company, period_start: date) -> dict[str, Any]:
             period_start=start,
             period_end=end,
             proration_method=proration_method,
+            structures=source_maps["structures"].get(employee.pk, []),
+            lines_by_structure=source_maps["salary_lines"],
         )
         emp_blockers.extend(salary_blockers)
-        attendance_summary = _attendance_summary_locked(company=company, period=attendance, employee=employee)
+        attendance_summary = _attendance_summary_locked(
+            company=company, period=attendance, employee=employee,
+            entries=source_maps["attendance"].get(employee.pk, []),
+            overtime=source_maps["overtime"].get(employee.pk),
+        )
         overtime = attendance_summary["overtime"]
 
         basic = Decimal("0")
@@ -728,18 +853,28 @@ def _snapshot_payload_locked(*, run: PayrollRun) -> dict[str, Any]:
         .filter(run=run)
         .order_by("employee_number", "id")
     )
+    line_ids = [row.pk for row in rows]
+    component_rows = list(
+        PayrollRunLineComponent.objects.select_for_update().for_company(run.company)
+        .filter(run_line_id__in=line_ids)
+        .order_by("run_line_id", "component_code", "effective_from", "id")
+    ) if line_ids else []
+    adjustment_rows = list(
+        PayrollRunLineAdjustment.objects.select_for_update().for_company(run.company)
+        .filter(run_line_id__in=line_ids)
+        .order_by("run_line_id", "transaction_date", "id")
+    ) if line_ids else []
+    components_by_line: dict[object, list[PayrollRunLineComponent]] = {}
+    for item in component_rows:
+        components_by_line.setdefault(item.run_line_id, []).append(item)
+    adjustments_by_line: dict[object, list[PayrollRunLineAdjustment]] = {}
+    for item in adjustment_rows:
+        adjustments_by_line.setdefault(item.run_line_id, []).append(item)
+
     payload_rows: list[dict[str, Any]] = []
     for row in rows:
-        components = list(
-            PayrollRunLineComponent.objects.select_for_update().for_company(run.company)
-            .filter(run_line=row)
-            .order_by("component_code", "effective_from", "id")
-        )
-        adjustments = list(
-            PayrollRunLineAdjustment.objects.select_for_update().for_company(run.company)
-            .filter(run_line=row)
-            .order_by("transaction_date", "id")
-        )
+        components = components_by_line.get(row.pk, [])
+        adjustments = adjustments_by_line.get(row.pk, [])
         payload_rows.append(
             {
                 "employee_id": str(row.employee_id),
@@ -906,6 +1041,9 @@ def calculate_payroll_run(
     run.full_clean()
     run.save()
 
+    payroll_lines: list[PayrollRunLine] = []
+    component_snapshots: list[PayrollRunLineComponent] = []
+    adjustment_snapshots: list[PayrollRunLineAdjustment] = []
     for item in calculation["rows"]:
         employee: InternalEmployee = item["employee"]
         organization: EmployeeOrganizationAssignment | None = item["organization"]
@@ -943,8 +1081,11 @@ def calculate_payroll_run(
             total_deductions=item["total_deductions"],
             net=item["net"],
         )
-        line.full_clean()
-        line.save()
+        # These snapshots are derived entirely from already validated/locked sources.
+        # Run model-level business validation here, then persist set-wise below so a
+        # 2,000-employee benchmark run does not issue thousands of INSERT round trips.
+        line.clean()
+        payroll_lines.append(line)
         for contribution in item["components"]:
             source_line: SalaryStructureLine = contribution["line"]
             component = PayrollRunLineComponent(
@@ -965,8 +1106,8 @@ def calculate_payroll_run(
                 proration_denominator=contribution["proration_denominator"],
                 amount=contribution["amount"],
             )
-            component.full_clean()
-            component.save()
+            component.clean()
+            component_snapshots.append(component)
         for adjustment_item in item["adjustments"]:
             adjustment: PayrollAdjustment = adjustment_item["adjustment"]
             snapshot = PayrollRunLineAdjustment(
@@ -981,8 +1122,14 @@ def calculate_payroll_run(
                 amount=adjustment.amount,
                 effect=adjustment_item["effect"],
             )
-            snapshot.full_clean()
-            snapshot.save()
+            snapshot.clean()
+            adjustment_snapshots.append(snapshot)
+
+    PayrollRunLine.objects.bulk_create(payroll_lines, batch_size=500)
+    if component_snapshots:
+        PayrollRunLineComponent.objects.bulk_create(component_snapshots, batch_size=1000)
+    if adjustment_snapshots:
+        PayrollRunLineAdjustment.objects.bulk_create(adjustment_snapshots, batch_size=1000)
 
     run.snapshot_fingerprint = _hash_payload(_snapshot_payload_locked(run=run))
     run.save(update_fields=("snapshot_fingerprint", "updated_at"))
