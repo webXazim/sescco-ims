@@ -4,7 +4,8 @@ from calendar import month_name
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Prefetch, Q
+from django.core.paginator import Paginator
+from django.db.models import Exists, OuterRef, Prefetch, Q, Sum
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
@@ -183,23 +184,168 @@ def _overtime_setup_for_employee(*, company: Company, employee: InternalEmployee
     }
 
 
-def attendance_period_context(*, company: Company, period_start: date, membership=None) -> dict[str, object]:
+def _attendance_roster_queryset(*, company: Company, period_start: date):
+    start, end = month_bounds(period_start)
+    assignments = (
+        EmployeeOrganizationAssignment.objects.for_company(company)
+        .select_related("branch", "department")
+        .filter(effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=start))
+        .order_by("-effective_from", "-created_at")
+    )
+    salary_lines = SalaryStructureLine.objects.for_company(company).order_by("component_category", "component_code")
+    salary_structures = (
+        SalaryStructure.objects.for_company(company)
+        .filter(effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=end))
+        .prefetch_related(Prefetch("lines", queryset=salary_lines, to_attr="attendance_salary_lines"))
+        .order_by("-effective_from", "-created_at")
+    )
+    return (
+        operational_internal_employees(company=company)
+        .filter(joining_date__lte=end)
+        .filter(Q(employment_end_date__isnull=True) | Q(employment_end_date__gte=start))
+        .exclude(status=EmploymentStatus.INACTIVE)
+        .prefetch_related(
+            Prefetch("organization_assignments", queryset=assignments, to_attr="attendance_org_history"),
+            Prefetch("salary_structures", queryset=salary_structures, to_attr="attendance_salary_structures"),
+        )
+        .order_by("employee_number", "full_name")
+    )
+
+
+def attendance_period_summary(*, company: Company, period_start: date) -> dict[str, object]:
+    """Return bounded aggregate facts without materializing the whole employee month."""
     start, end = month_bounds(period_start)
     period = attendance_period_for_company(company=company, period_start=start)
-    roster = attendance_roster_for_company(company=company, period_start=start)
+    base = (
+        operational_internal_employees(company=company)
+        .filter(joining_date__lte=end)
+        .filter(Q(employment_end_date__isnull=True) | Q(employment_end_date__gte=start))
+        .exclude(status=EmploymentStatus.INACTIVE)
+    )
+    required_days = 0
+    for joining_date, employment_end_date in base.values_list("joining_date", "employment_end_date"):
+        employed_from = max(joining_date, start)
+        employed_to = min(employment_end_date or end, end)
+        if employed_to >= employed_from:
+            required_days += (employed_to - employed_from).days + 1
+    entry_count = 0
+    regular_hours = Decimal("0")
+    absent_count = 0
+    leave_count = 0
+    overtime_count = 0
+    overtime_hours = Decimal("0")
+    overtime_amount = Decimal("0")
+    if period is not None:
+        entry_qs = AttendanceEntry.objects.for_company(company).filter(period=period)
+        entry_count = entry_qs.count()
+        regular_hours = entry_qs.aggregate(total=Sum("regular_hours")).get("total") or Decimal("0")
+        absent_count = entry_qs.filter(code="A").count()
+        leave_count = entry_qs.filter(code__in=("L", "S")).count()
+        overtime_agg = AttendanceOvertimeEntry.objects.for_company(company).filter(period=period).aggregate(
+            hours=Sum("hours"), amount=Sum("amount")
+        )
+        # Sum(1) is not portable across every supported backend; use count() for the row count.
+        overtime_count = AttendanceOvertimeEntry.objects.for_company(company).filter(period=period).count()
+        overtime_hours = overtime_agg.get("hours") or Decimal("0")
+        overtime_amount = overtime_agg.get("amount") or Decimal("0")
+    return {
+        "employeeCount": base.count(),
+        "entryCount": entry_count,
+        "regularHours": str(regular_hours),
+        "absentCount": absent_count,
+        "leaveCount": leave_count,
+        "missingCount": max(0, required_days - entry_count),
+        "overtimeEmployees": overtime_count,
+        "overtimeHours": str(overtime_hours),
+        "overtimeAmount": str(overtime_amount),
+    }
 
+
+def attendance_period_context(
+    *,
+    company: Company,
+    period_start: date,
+    membership=None,
+    query: str = "",
+    branch: str = "",
+    department: str = "",
+    page: int | None = None,
+    page_size: int | None = None,
+    include_summary: bool = True,
+) -> dict[str, object]:
+    """Serialize one bounded attendance page.
+
+    ``page``/``page_size`` are optional for backward compatibility with non-UI callers.  The
+    Payroll UI always supplies them so 2k+ employee benchmark months never materialize the
+    complete roster, daily entries and OT setup in one request.
+    """
+    start, end = month_bounds(period_start)
+    period = attendance_period_for_company(company=company, period_start=start)
+    roster_qs = _attendance_roster_queryset(company=company, period_start=start)
+
+    period_assignments = (
+        EmployeeOrganizationAssignment.objects.for_company(company)
+        .filter(employee_id=OuterRef("pk"), effective_from__lte=end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=start))
+    )
+    q = (query or "").strip()
+    if q:
+        assignment_search = period_assignments.filter(
+            Q(position__icontains=q)
+            | Q(branch__name__icontains=q)
+            | Q(department__name__icontains=q)
+        )
+        roster_qs = roster_qs.annotate(_assignment_search_match=Exists(assignment_search)).filter(
+            Q(employee_number__icontains=q)
+            | Q(full_name__icontains=q)
+            | Q(_assignment_search_match=True)
+        )
+    if branch:
+        roster_qs = roster_qs.annotate(
+            _branch_period_match=Exists(period_assignments.filter(branch__name=branch))
+        ).filter(_branch_period_match=True)
+    if department:
+        roster_qs = roster_qs.annotate(
+            _department_period_match=Exists(period_assignments.filter(department__name=department))
+        ).filter(_department_period_match=True)
+
+    if page is not None or page_size is not None:
+        page_number = max(1, int(page or 1))
+        bounded_size = max(1, min(100, int(page_size or 50)))
+        paginator = Paginator(roster_qs, bounded_size)
+        page_obj = paginator.get_page(page_number)
+        roster = list(page_obj.object_list)
+        meta = {
+            "count": paginator.count,
+            "page": page_obj.number,
+            "pageSize": bounded_size,
+            "totalPages": paginator.num_pages,
+            "query": q,
+            "branch": branch,
+            "department": department,
+        }
+    else:
+        roster = list(roster_qs)
+        meta = {
+            "count": len(roster), "page": None, "pageSize": None, "totalPages": None,
+            "query": q, "branch": branch, "department": department,
+        }
+
+    employee_ids = [employee.pk for employee in roster]
     entries: list[AttendanceEntry] = []
     overtime_rows: list[AttendanceOvertimeEntry] = []
-    if period is not None:
+    if period is not None and employee_ids:
         entries = list(
             AttendanceEntry.objects.for_company(company)
-            .filter(period=period)
+            .filter(period=period, employee_id__in=employee_ids)
             .select_related("employee")
             .order_by("employee__employee_number", "work_date")
         )
         overtime_rows = list(
             AttendanceOvertimeEntry.objects.for_company(company)
-            .filter(period=period)
+            .filter(period=period, employee_id__in=employee_ids)
             .select_related("employee", "salary_structure")
             .order_by("employee__employee_number")
         )
@@ -211,15 +357,9 @@ def attendance_period_context(*, company: Company, period_start: date, membershi
     overtime_by_employee = {str(item.employee_id): item for item in overtime_rows}
     roster_payload: list[dict[str, object]] = []
     overtime_payload: dict[str, dict[str, object]] = {}
-    missing_count = 0
     for employee in roster:
         assignment = _employee_assignment_as_of(employee, end)
         employee_key = str(employee.pk)
-        employee_record = records.get(employee_key, {})
-        employed_from = max(employee.joining_date, start)
-        employed_to = min(employee.employment_end_date or end, end)
-        required_days = (employed_to - employed_from).days + 1
-        missing_count += max(0, required_days - len(employee_record))
         roster_payload.append(
             {
                 "id": employee_key,
@@ -263,12 +403,6 @@ def attendance_period_context(*, company: Company, period_start: date, membershi
         "roster": roster_payload,
         "records": records,
         "overtime": overtime_payload,
-        "summary": {
-            "employeeCount": len(roster_payload),
-            "entryCount": len(entries),
-            "missingCount": missing_count,
-            "overtimeEmployees": len(overtime_rows),
-            "overtimeHours": str(sum((item.hours for item in overtime_rows), Decimal("0"))),
-            "overtimeAmount": str(sum((item.amount for item in overtime_rows), Decimal("0"))),
-        },
+        **({"summary": attendance_period_summary(company=company, period_start=start)} if include_summary else {}),
+        "meta": meta,
     }

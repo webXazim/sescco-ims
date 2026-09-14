@@ -37,6 +37,10 @@ info "Verifying final SESCCO MS release-candidate contract"
 python3 "${PROJECT_ROOT}/scripts/verify-release-candidate.py"
 
 info "Verifying frozen Payroll production-E2E certification contract"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-timesheet-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-bootstrap-search.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-query-hardening.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-browser-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-production-e2e.py"
 
 run_manage() {

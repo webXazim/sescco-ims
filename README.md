@@ -10,7 +10,7 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.64 — Production freeze / release candidate**.
+Current packaged release: **SESCCO MS 1.0.70 — 5K/2K browser benchmark certification & production freeze**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
@@ -78,7 +78,7 @@ For a testing deployment, `--seed` creates deterministic **DEMO-only** Payroll f
 ./scripts/deploy-production.sh --seed --seed-profile benchmark
 ```
 
-`functional` remains the default. `realistic` adds 250 Internal employees + 750 Rental workers across six historical months. `benchmark` expands the same synthetic population to 2,000 Internal employees + 5,000 Rental workers across 12 months, including daily attendance/timesheets, payroll/WPS rows, settlements and supplier payments. Large profiles are restart-safe and idempotent, and they refuse to run when non-DEMO Internal or Rental worker masters exist. See `docs/PAYROLL_SCALE_SEED.md`.
+`functional` remains the default. `realistic` adds 250 Internal employees + 750 Rental workers across six historical months. `benchmark` expands the same synthetic population to 2,000 Internal employees + 5,000 Rental workers across 12 months, including daily attendance/timesheets, payroll/WPS rows, settlements and supplier payments. Large profiles are restart-safe and idempotent. By default they refuse to run when non-DEMO Internal or Rental worker masters exist; on a disposable/test installation you can explicitly add the namespaced DEMO/RDEMO scale population beside existing test masters with `--allow-mixed-scale-seed`, subject to the historical collision guard. See `docs/PAYROLL_SCALE_SEED.md`.
 
 After loading `realistic` or `benchmark`, measure the high-cardinality Payroll paths with the packaged query-budget report:
 

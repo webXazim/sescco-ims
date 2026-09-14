@@ -17,6 +17,12 @@ bash scripts/verify-select-timesheet-ux.sh
 bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-payroll-reference-coverage.py
 python3 scripts/verify-payroll-reference-output.py
+python3 scripts/verify-payroll-directory-runtime.py
+python3 scripts/verify-payroll-assignment-runtime.py
+python3 scripts/verify-payroll-timesheet-scale.py
+python3 scripts/verify-payroll-bootstrap-search.py
+python3 scripts/verify-payroll-query-hardening.py
+python3 scripts/verify-payroll-browser-scale.py
 python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py
 python3 scripts/verify-payroll-output-e2e.py

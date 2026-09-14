@@ -1,0 +1,40 @@
+{
+  "release": "1.0.70",
+  "purpose": "Keep the initial Payroll shell bounded at the 2,000/5,000 benchmark scale and move Ctrl/Cmd+K entity search to server-paged directory APIs.",
+  "bootstrap": {
+    "internal_employee_limit": 50,
+    "rental_worker_limit": 50,
+    "embed_rental_assignment_history": false,
+    "deferred_domains": [
+      "salary-setup",
+      "internal-payroll-period",
+      "salary-payment-readiness"
+    ]
+  },
+  "global_search": {
+    "minimum_query_characters": 2,
+    "debounce_ms": 320,
+    "results_per_entity_type": 5,
+    "cancellation": "AbortController",
+    "entity_types": [
+      "employees",
+      "branches",
+      "departments",
+      "workers",
+      "projects",
+      "suppliers"
+    ]
+  },
+  "guarantees": [
+    "no-full-employee-master-in-initial-html",
+    "no-full-rental-worker-master-in-initial-html",
+    "no-rental-assignment-history-in-initial-html",
+    "salary-setup-loaded-on-route",
+    "payroll-period-loaded-on-route",
+    "salary-payment-readiness-loaded-on-route",
+    "server-backed-global-search",
+    "abort-obsolete-global-search",
+    "deep-link-employee-profile-fetch",
+    "deep-link-rental-worker-profile-fetch"
+  ]
+}

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from apps.projects.contracts import ProjectStatus
-from apps.rental_manpower.project_adapter import rental_project_for_company
+from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
 from apps.projects.services import archive_project, restore_project_archive, trash_unused_project, restore_project_trash
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
-from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
+from apps.core.query_controls import ListControls, apply_ordering, parse_list_controls, serialize_list
 from apps.rental_manpower.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
 from apps.rental_manpower.models import (
     ManpowerSupplier,
@@ -21,10 +22,13 @@ from apps.rental_manpower.models import (
     RentalWorkerStatus,
     SupplierStatus,
     RentalAdjustment,
+    AssignmentChangeType,
+    WorkerAssignment,
 )
 from apps.rental_manpower.selectors import (
     assignments_for_company,
     serialized_assignment_history,
+    serialized_assignment_activity,
     projects_for_company,
     serialize_project,
     serialize_supplier,
@@ -408,10 +412,18 @@ def workers_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH", "DELETE"])
+@require_http_methods(["GET", "PATCH", "DELETE"])
 @api_workspace_required(Workspace.RENTAL)
 def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
     try:
+        if request.method == "GET":
+            worker = workers_for_company(company=request.company, archived=None).get(pk=worker_id)
+            assignments = list(assignments_for_company(company=request.company, worker_id=worker_id))
+            return JsonResponse({
+                "ok": True,
+                "worker": serialize_worker(worker),
+                "assignments": serialized_assignment_history(company=request.company, assignments=assignments),
+            })
         body = json_body(request)
         if request.method == "DELETE":
             deleted_id=delete_unused_worker(actor_membership=request.company_membership, worker_id=worker_id, confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request)
@@ -494,23 +506,129 @@ def _assignment_worker_payload(*, company, worker_id):
     }
 
 
+def _bounded_list_controls(request: HttpRequest, *, allowed_sorts: dict[str, str], default_sort: str, default_direction: str = "asc") -> ListControls:
+    controls = parse_list_controls(
+        request,
+        allowed_sorts=allowed_sorts,
+        default_sort=default_sort,
+        default_direction=default_direction,
+        max_page_size=100,
+    )
+    if controls.page is None or controls.page_size is None:
+        return ListControls(sort=controls.sort, direction=controls.direction, page=1, page_size=50)
+    return controls
+
+
+def _assignment_summary_payload(*, company) -> dict[str, int]:
+    assignments = WorkerAssignment.objects.for_company(company)
+    return {
+        "assigned": workers_for_company(company=company, operational_status="assigned").count(),
+        "available": workers_for_company(company=company, operational_status="available").count(),
+        "transfers": assignments.filter(change_type=AssignmentChangeType.TRANSFER).count(),
+        "changes": assignments.filter(change_type__in=[AssignmentChangeType.TRADE_CHANGE, AssignmentChangeType.RATE_CHANGE]).count(),
+        "releases": assignments.exclude(release_disposition="").count(),
+        "events": assignments.count() + assignments.exclude(release_disposition="").count(),
+        # Multiple open assignments are blocked by a database constraint. Overlap validation
+        # remains part of the mutation service; the large-data page no longer rescans every
+        # historical segment in JavaScript just to render this health card.
+        "integrityIssues": 0,
+    }
+
+
+def _serialize_pool_worker(worker) -> dict[str, object]:
+    payload = serialize_worker(worker)
+    history = [item for item in worker.rental_assignments.all() if item.cancelled_at is None]
+    last = next((item for item in reversed(history) if item.effective_from <= date.today()), None)
+    if last:
+        payload["lastProjectId"] = project_public_id(last.project)
+        payload["lastProject"] = last.project.name
+    else:
+        payload["lastProjectId"] = None
+        payload["lastProject"] = ""
+    return payload
+
+
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.RENTAL)
 def assignments_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
+            view = str(request.GET.get("view") or "history").strip().lower().replace("-", "_")
             worker_id = request.GET.get("worker_id") or None
             project_id = request.GET.get("project_id") or None
             supplier_id = request.GET.get("supplier_id") or None
-            rows = list(
-                assignments_for_company(
+
+            if view == "summary":
+                return JsonResponse({"ok": True, "summary": _assignment_summary_payload(company=request.company)})
+
+            if view in {"deployment", "pool"}:
+                allowed_sorts = {"worker": "worker_number", "name": "full_name", "supplier": "supplier__name", "status": "status"}
+                controls = _bounded_list_controls(request, allowed_sorts=allowed_sorts, default_sort="worker")
+                rows = workers_for_company(
                     company=request.company,
-                    worker_id=worker_id,
-                    project_id=project_id,
-                    supplier_id=supplier_id,
                     query=request.GET.get("q", ""),
+                    supplier_id=supplier_id,
+                    operational_status="assigned" if view == "deployment" else "pool",
+                    project_id=(rental_project_for_company(company=request.company, identifier=project_id).pk if project_id and view == "deployment" else None),
                 )
+                rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+                results, meta = serialize_list(
+                    rows,
+                    controls=controls,
+                    serializer=serialize_worker if view == "deployment" else _serialize_pool_worker,
+                )
+                return JsonResponse({"ok": True, "view": view, "results": results, "meta": meta})
+
+            rows = assignments_for_company(
+                company=request.company,
+                worker_id=worker_id,
+                project_id=project_id,
+                supplier_id=supplier_id,
+                query=request.GET.get("q", ""),
             )
+            if view == "activity":
+                event_type = str(request.GET.get("event_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
+                if event_type in {"project_assignment", "assignment"}:
+                    rows = rows.filter(change_type=AssignmentChangeType.ASSIGNMENT)
+                elif event_type in {"project_transfer", "transfer"}:
+                    rows = rows.filter(change_type=AssignmentChangeType.TRANSFER)
+                elif event_type in {"trade_change", "trade"}:
+                    rows = rows.filter(change_type=AssignmentChangeType.TRADE_CHANGE)
+                elif event_type in {"rate_change", "rate"}:
+                    rows = rows.filter(change_type=AssignmentChangeType.RATE_CHANGE)
+                elif event_type in {"trade_rate_changes", "trade_rate", "changes"}:
+                    rows = rows.filter(change_type__in=[AssignmentChangeType.TRADE_CHANGE, AssignmentChangeType.RATE_CHANGE])
+                elif event_type == "release":
+                    rows = rows.exclude(release_disposition="")
+                elif event_type not in {"", "all", "all_activity"}:
+                    raise ValidationError({"event_type": "Unknown assignment activity filter."})
+
+                allowed_sorts = {"effective": "effective_from", "worker": "worker__worker_number", "project": "project__name", "created": "created_at"}
+                controls = _bounded_list_controls(request, allowed_sorts=allowed_sorts, default_sort="effective", default_direction="desc")
+                rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+                # serialize_list cannot expand a released segment into a second lifecycle
+                # event, so page assignment segments first and expand only the bounded page.
+                from django.core.paginator import Paginator
+                paginator = Paginator(rows, controls.page_size)
+                page_obj = paginator.get_page(controls.page)
+                segments = list(page_obj.object_list)
+                results = serialized_assignment_activity(company=request.company, assignments=segments, event_filter=event_type)
+                return JsonResponse({
+                    "ok": True,
+                    "view": "activity",
+                    "results": results,
+                    "meta": {
+                        "count": paginator.count,
+                        "page": page_obj.number,
+                        "pageSize": controls.page_size,
+                        "totalPages": paginator.num_pages,
+                        "sort": controls.sort,
+                        "direction": controls.direction,
+                        "returnedEvents": len(results),
+                    },
+                })
+
+            rows = list(rows)
             return JsonResponse({
                 "ok": True,
                 "results": serialized_assignment_history(company=request.company, assignments=rows),
@@ -600,13 +718,78 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 from datetime import date as _date
-from .selectors.timesheets import rental_timesheet_context
+from .selectors.timesheets import rental_timesheet_context, rental_timesheet_summary, _period_payload
+from .models import RentalTimesheetEntry, RentalTimesheetOvertime
 from .services.timesheets import save_entries as save_rental_timesheet_entries, save_overtime as save_rental_timesheet_overtime, transition_timesheet as transition_rental_timesheet
 
 
 def _period_start_value(value):
     parsed = parse_date(value, "period")
     return parsed.replace(day=1)
+
+
+def _bounded_timesheet_page(request: HttpRequest) -> tuple[int, int]:
+    try:
+        page = max(1, int(request.GET.get("page") or 1))
+        page_size = int(request.GET.get("page_size") or 50)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({"page": "page and page_size must be positive integers."}) from exc
+    if page_size not in {25, 50, 100}:
+        raise ValidationError({"page_size": "page_size must be 25, 50, or 100."})
+    return page, page_size
+
+
+def _rental_header_delta(*, request: HttpRequest, period) -> dict[str, object]:
+    project = period.project
+    return {
+        "deltaOnly": True,
+        "period": _period_payload(
+            period=period, project=project, start=period.period_start, end=period.period_end,
+            membership=request.company_membership,
+        ),
+        "summary": rental_timesheet_summary(
+            company=request.company, project=project, period=period,
+            start=period.period_start, end=period.period_end,
+        ),
+    }
+
+
+def _rental_entry_delta(*, request: HttpRequest, period, raw_rows: list[dict[str, object]]) -> dict[str, object]:
+    requested: list[tuple[str, date]] = []
+    for row in raw_rows:
+        worker_id = str(row.get("worker_id") or "")
+        work_date = row.get("work_date")
+        if not isinstance(work_date, date):
+            work_date = parse_date(work_date, "work_date")
+        requested.append((worker_id, work_date))
+    worker_ids = {worker_id for worker_id, _work_date in requested}
+    work_dates = {work_date for _worker_id, work_date in requested}
+    saved = {
+        (str(row.worker_id), row.work_date): (
+            row.code or (str(int(row.regular_hours)) if row.regular_hours == row.regular_hours.to_integral() else format(row.regular_hours.normalize(), "f"))
+        )
+        for row in RentalTimesheetEntry.objects.for_company(request.company).filter(
+            period=period, worker_id__in=worker_ids, work_date__in=work_dates
+        )
+    }
+    payload = _rental_header_delta(request=request, period=period)
+    payload["changes"] = [
+        {"workerId": worker_id, "day": work_date.day, "value": saved.get((worker_id, work_date), "")}
+        for worker_id, work_date in requested
+    ]
+    return payload
+
+
+def _rental_overtime_delta(*, request: HttpRequest, period, worker_id: str) -> dict[str, object]:
+    row = RentalTimesheetOvertime.objects.for_company(request.company).filter(period=period, worker_id=worker_id).first()
+    payload = _rental_header_delta(request=request, period=period)
+    payload["overtime"] = {
+        worker_id: (
+            {"hours": str(row.hours), "rate": str(row.rate), "trade": row.trade, "rateType": row.rate_type}
+            if row else {"hours": "0", "rate": "0", "trade": "", "rateType": ""}
+        )
+    }
+    return payload
 
 
 @require_http_methods(["GET", "PATCH"])
@@ -618,42 +801,95 @@ def rental_timesheets_api(request: HttpRequest) -> JsonResponse:
             if not project_id:
                 raise ValidationError({"project_id": "project_id is required."})
             period_start = _period_start_value(request.GET.get("period"))
-            return JsonResponse({"ok": True, **rental_timesheet_context(company=request.company, project_id=project_id, period_start=period_start, membership=request.company_membership)})
-        body=json_body(request); project_id=body.get("project_id")
-        if not project_id: raise ValidationError({"project_id":"project_id is required."})
-        period_start=_period_start_value(body.get("period")); rows=body.get("entries")
-        if not isinstance(rows,list) or not rows: raise ValidationError({"entries":"entries must be a non-empty array."})
-        normalized=[]
+            page, page_size = _bounded_timesheet_page(request)
+            return JsonResponse({
+                "ok": True,
+                **rental_timesheet_context(
+                    company=request.company,
+                    project_id=project_id,
+                    period_start=period_start,
+                    membership=request.company_membership,
+                    query=request.GET.get("q", ""),
+                    supplier_id=request.GET.get("supplier_id", ""),
+                    page=page,
+                    page_size=page_size,
+                    include_summary=request.GET.get("summary", "1") != "0",
+                ),
+            })
+        body = json_body(request)
+        project_id = body.get("project_id")
+        if not project_id:
+            raise ValidationError({"project_id": "project_id is required."})
+        period_start = _period_start_value(body.get("period"))
+        rows = body.get("entries")
+        if not isinstance(rows, list) or not rows:
+            raise ValidationError({"entries": "entries must be a non-empty array."})
+        normalized = []
         for row in rows:
-            if not isinstance(row,dict): raise ValidationError({"entries":"Each entry must be an object."})
-            normalized.append({'worker_id':row.get('worker_id'),'work_date':parse_date(row.get('work_date'),'work_date'),'value':row.get('value',''),'note':row.get('note','')})
-        save_rental_timesheet_entries(actor_membership=request.company_membership,project_id=project_id,period_start=period_start,entries=normalized,request=request)
-        return JsonResponse({"ok":True,**rental_timesheet_context(company=request.company,project_id=project_id,period_start=period_start,membership=request.company_membership)})
-    except Exception as exc: return handle_api_error(exc)
+            if not isinstance(row, dict):
+                raise ValidationError({"entries": "Each entry must be an object."})
+            normalized.append({
+                "worker_id": row.get("worker_id"),
+                "work_date": parse_date(row.get("work_date"), "work_date"),
+                "value": row.get("value", ""),
+                "note": row.get("note", ""),
+            })
+        period = save_rental_timesheet_entries(
+            actor_membership=request.company_membership,
+            project_id=project_id,
+            period_start=period_start,
+            entries=normalized,
+            request=request,
+        )
+        return JsonResponse({"ok": True, **_rental_entry_delta(request=request, period=period, raw_rows=normalized)})
+    except Exception as exc:
+        return handle_api_error(exc)
 
 
 @require_http_methods(["PATCH"])
 @api_workspace_required(Workspace.RENTAL)
 def rental_timesheet_overtime_api(request: HttpRequest) -> JsonResponse:
     try:
-        body=json_body(request); project_id=body.get('project_id'); worker_id=body.get('worker_id')
-        if not project_id or not worker_id: raise ValidationError("project_id and worker_id are required.")
-        period_start=_period_start_value(body.get('period'))
-        save_rental_timesheet_overtime(actor_membership=request.company_membership,project_id=project_id,period_start=period_start,worker_id=worker_id,hours=body.get('hours',0),rate=body.get('rate'),request=request)
-        return JsonResponse({"ok":True,**rental_timesheet_context(company=request.company,project_id=project_id,period_start=period_start,membership=request.company_membership)})
-    except Exception as exc: return handle_api_error(exc)
+        body = json_body(request)
+        project_id = body.get("project_id")
+        worker_id = str(body.get("worker_id") or "")
+        if not project_id or not worker_id:
+            raise ValidationError("project_id and worker_id are required.")
+        period_start = _period_start_value(body.get("period"))
+        period = save_rental_timesheet_overtime(
+            actor_membership=request.company_membership,
+            project_id=project_id,
+            period_start=period_start,
+            worker_id=worker_id,
+            hours=body.get("hours", 0),
+            rate=body.get("rate"),
+            request=request,
+        )
+        return JsonResponse({"ok": True, **_rental_overtime_delta(request=request, period=period, worker_id=worker_id)})
+    except Exception as exc:
+        return handle_api_error(exc)
 
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.RENTAL)
 def rental_timesheet_workflow_api(request: HttpRequest) -> JsonResponse:
     try:
-        body=json_body(request); project_id=body.get('project_id')
-        if not project_id: raise ValidationError({"project_id":"project_id is required."})
-        period_start=_period_start_value(body.get('period'))
-        transition_rental_timesheet(actor_membership=request.company_membership,project_id=project_id,period_start=period_start,action=str(body.get('action') or ''),reason=str(body.get('reason') or ''),request=request)
-        return JsonResponse({"ok":True,**rental_timesheet_context(company=request.company,project_id=project_id,period_start=period_start,membership=request.company_membership)})
-    except Exception as exc: return handle_api_error(exc)
+        body = json_body(request)
+        project_id = body.get("project_id")
+        if not project_id:
+            raise ValidationError({"project_id": "project_id is required."})
+        period_start = _period_start_value(body.get("period"))
+        period = transition_rental_timesheet(
+            actor_membership=request.company_membership,
+            project_id=project_id,
+            period_start=period_start,
+            action=str(body.get("action") or ""),
+            reason=str(body.get("reason") or ""),
+            request=request,
+        )
+        return JsonResponse({"ok": True, **_rental_header_delta(request=request, period=period)})
+    except Exception as exc:
+        return handle_api_error(exc)
 
 
 @require_http_methods(["GET"])

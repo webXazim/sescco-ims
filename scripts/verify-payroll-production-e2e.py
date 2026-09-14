@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.64":
-    fail("certification contract release must be 1.0.64")
+if contract.get("release") != "1.0.70":
+    fail("certification contract release must be 1.0.70")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -43,6 +43,8 @@ required_labels = {
     "apps.core.tests.test_payroll_output_e2e",
     "apps.core.tests.test_payroll_production_e2e",
     "apps.core.tests.test_payroll_performance",
+    "apps.core.tests.test_payroll_query_hardening",
+    "apps.core.tests.test_payroll_browser_scale",
     "apps.core.tests.test_payroll_seed_contract",
     "apps.core.tests.test_payroll_seed_profiles",
     "apps.internal_payroll.tests",
@@ -56,12 +58,15 @@ if not required_labels.issubset(set(labels)):
 
 required_verifiers = {
     "scripts/verify_payroll_frontend_contract.py",
+    "scripts/verify-payroll-directory-runtime.py",
     "scripts/verify-payroll-action-parity.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
     "scripts/verify-full-demo-seed.py",
     "scripts/verify-payroll-scale-seed.py",
     "scripts/verify-payroll-performance.py",
+    "scripts/verify-payroll-query-hardening.py",
+    "scripts/verify-payroll-browser-scale.py",
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
@@ -86,6 +91,7 @@ required_scenarios = {
     "reports-documents-and-output-authority",
     "tenant-and-cross-module-boundaries",
     "seed-scale-and-performance-regression",
+    "browser-scale-runtime-regression",
 }
 scenario_ids = {row.get("id") for row in scenarios}
 if not required_scenarios.issubset(scenario_ids):

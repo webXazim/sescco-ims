@@ -5,6 +5,7 @@ from .assignments import (
     current_assignment,
     serialize_assignment,
     serialized_assignment_history,
+    serialized_assignment_activity,
 )
 from .masters import (
     projects_for_company,
@@ -23,6 +24,7 @@ __all__ = [
     "current_assignment",
     "serialize_assignment",
     "serialized_assignment_history",
+    "serialized_assignment_activity",
     "projects_for_company",
     "rental_master_context",
     "serialize_project",

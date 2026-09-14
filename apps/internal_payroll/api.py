@@ -369,6 +369,7 @@ def employee_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
         period_start = _employee_profile_period(request.GET.get("period", ""))
         return JsonResponse({
             "ok": True,
+            "employee": serialize_employee(employee),
             "profile": employee_profile_context(
                 company=request.company,
                 employee=employee,

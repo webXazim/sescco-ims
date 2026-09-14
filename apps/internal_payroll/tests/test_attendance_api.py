@@ -48,8 +48,37 @@ class AttendanceApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["records"][str(self.employee.pk)]["1"], "8")
+        self.assertTrue(payload["deltaOnly"])
+        self.assertNotIn("records", payload)
+        self.assertEqual(payload["changes"], [{"employeeId": str(self.employee.pk), "day": 1, "value": "8"}])
         self.assertGreaterEqual(payload["period"]["revision"], 1)
+        self.assertTrue(payload["period"]["canEdit"])
+
+    def test_get_period_is_server_paged_and_searchable(self):
+        for index in range(2, 32):
+            create_employee(
+                actor_membership=self.membership,
+                employee_number=f"{index:04d}",
+                full_name=f"Paged Employee {index:02d}",
+                joining_date=date(2020, 1, 1),
+                position="Coordinator",
+            )
+        response = self.client.get(
+            reverse("internal_payroll:attendance-api"),
+            {"period": "2026-08", "page": 1, "page_size": 25},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["roster"]), 25)
+        self.assertEqual(payload["meta"]["count"], 31)
+        self.assertEqual(payload["meta"]["totalPages"], 2)
+
+        searched = self.client.get(
+            reverse("internal_payroll:attendance-api"),
+            {"period": "2026-08", "q": "Paged Employee 31", "page": 1, "page_size": 25},
+        ).json()
+        self.assertEqual(searched["meta"]["count"], 1)
+        self.assertEqual(searched["roster"][0]["name"], "Paged Employee 31")
 
     def test_rental_role_cannot_read_internal_attendance(self):
         rental_user = User.objects.create_user(username="attendance-rental")

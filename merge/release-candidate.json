@@ -1,13 +1,20 @@
 {
-  "release": "1.0.64",
-  "product": "SESCCO MS \u2014 Management System",
-  "release_type": "production-freeze-release-candidate",
-  "previous_release": "1.0.63",
-  "previous_archive_sha256": "8291351ac88c883796d899f31fbffbb32416b79f53e1ad8be1d3485fd0049d9e",
+  "release": "1.0.70",
+  "product": "SESCCO MS — Management System",
+  "release_type": "5k-2k-browser-benchmark-certification-freeze",
+  "previous_release": "1.0.69-postgresql-search-query-hardening",
+  "previous_archive_sha256": "04a1034fd4ae7b60dffd84991d13d4481fff5aa70d881a05ab39cff82d467c2a",
   "feature_freeze": true,
   "schema_change_in_release": false,
+  "schema_change_scope": "none; carries forward the 1.0.69 PostgreSQL search indexes",
   "payroll_formula_change_in_release": false,
   "required_static_gates": [
+    "scripts/verify-payroll-directory-runtime.py",
+    "scripts/verify-payroll-assignment-runtime.py",
+    "scripts/verify-payroll-timesheet-scale.py",
+    "scripts/verify-payroll-bootstrap-search.py",
+    "scripts/verify-payroll-query-hardening.py",
+    "scripts/verify-payroll-browser-scale.py",
     "scripts/verify-payroll-action-parity.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
@@ -20,8 +27,13 @@
   "required_runtime_gates": [
     "python manage.py check --deploy --fail-level ERROR",
     "python manage.py makemigrations --check --dry-run",
+    "python manage.py migrate --plan",
     "bash scripts/certify-payroll-production-e2e.sh",
     "python manage.py test --noinput"
+  ],
+  "required_benchmark_gates": [
+    "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
+    "python scripts/certify-payroll-browser-scale.py --base-url <release-url> --username <benchmark-user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD"
   ],
   "required_seed_profiles": [
     "functional",
@@ -30,5 +42,7 @@
   ],
   "deployment_entrypoint": "scripts/deploy-production.sh",
   "freeze_verifier": "scripts/verify-production-freeze.sh",
-  "runtime_certification_evidence": "payroll-e2e-certification.txt"
+  "runtime_certification_evidence": "payroll-e2e-certification.txt",
+  "benchmark_report_evidence": "payroll-browser-scale-report.txt",
+  "live_browser_evidence": "payroll-browser-certification.json"
 }

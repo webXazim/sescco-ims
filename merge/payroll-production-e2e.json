@@ -1,5 +1,5 @@
 {
-  "release": "1.0.64",
+  "release": "1.0.70",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -10,6 +10,8 @@
     "apps.core.tests.test_payroll_output_e2e",
     "apps.core.tests.test_payroll_production_e2e",
     "apps.core.tests.test_payroll_performance",
+    "apps.core.tests.test_payroll_query_hardening",
+    "apps.core.tests.test_payroll_browser_scale",
     "apps.core.tests.test_payroll_seed_contract",
     "apps.core.tests.test_payroll_seed_profiles",
     "apps.internal_payroll.tests",
@@ -19,7 +21,12 @@
   ],
   "static_verifiers": [
     "scripts/verify_payroll_frontend_contract.py",
+    "scripts/verify-payroll-directory-runtime.py",
+    "scripts/verify-payroll-assignment-runtime.py",
+    "scripts/verify-payroll-timesheet-scale.py",
+    "scripts/verify-payroll-query-hardening.py",
     "scripts/verify-payroll-action-parity.py",
+    "scripts/verify-payroll-browser-scale.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
     "scripts/verify-full-demo-seed.py",
@@ -201,6 +208,17 @@
         ],
         "apps/core/tests/test_payroll_performance.py": [
           "test_high_cardinality_query_contract_is_frozen"
+        ],
+        "apps/core/tests/test_payroll_query_hardening.py": [
+          "test_postgresql_search_query_contract_is_frozen"
+        ]
+      }
+    },
+    {
+      "id": "browser-scale-runtime-regression",
+      "evidence": {
+        "apps/core/tests/test_payroll_browser_scale.py": [
+          "test_5k_2k_browser_scale_contract_is_frozen"
         ]
       }
     }
@@ -210,5 +228,9 @@
     "python manage.py makemigrations --check --dry-run",
     "python manage.py test <curated payroll certification labels> --noinput",
     "python manage.py test --noinput"
+  ],
+  "benchmark_gates": [
+    "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
+    "python scripts/certify-payroll-browser-scale.py --base-url <release-url> --username <benchmark-user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD"
   ]
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -187,6 +188,10 @@ class RentalWorker(CompanyOwnedModel):
             models.Index(fields=("company", "supplier", "status"), name="rntl_wrk_supplier_status_idx"),
             models.Index(fields=("company", "archived_at", "full_name"), name="rntl_wrk_archive_name_idx"),
             models.Index(fields=("company", "deleted_at", "full_name"), name="rntl_wrk_trash_name_idx"),
+            GinIndex(fields=("worker_number",), name="rntl_wrk_num_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("full_name",), name="rntl_wrk_name_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("national_id",), name="rntl_wrk_nid_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("phone",), name="rntl_wrk_phone_trgm", opclasses=("gin_trgm_ops",)),
         ]
 
     def clean(self) -> None:

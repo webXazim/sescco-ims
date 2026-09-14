@@ -94,9 +94,10 @@ def employees_for_company(
     assignment_history = EmployeeOrganizationAssignment.objects.for_company(company).select_related(
         "branch", "department"
     ).order_by("-effective_from", "-created_at")
-    current_assignment = EmployeeOrganizationAssignment.objects.for_company(company).filter(
-        employee_id=OuterRef("pk"), effective_to__isnull=True
+    assignment_match = EmployeeOrganizationAssignment.objects.for_company(company).filter(
+        employee_id=OuterRef("pk")
     )
+    current_assignment = assignment_match.filter(effective_to__isnull=True)
     inherited_deleted = current_assignment.filter(
         Q(branch__deleted_at__isnull=False) | Q(department__deleted_at__isnull=False)
     )
@@ -121,28 +122,32 @@ def employees_for_company(
         rows = rows.filter(Q(archived_at__isnull=False) | Q(_inherited_archived=True))
     query = query.strip()
     if query:
-        rows = rows.filter(
+        assignment_search = assignment_match.filter(
+            Q(position__icontains=query)
+            | Q(branch__code__icontains=query)
+            | Q(branch__name__icontains=query)
+            | Q(department__code__icontains=query)
+            | Q(department__name__icontains=query)
+        )
+        rows = rows.annotate(_assignment_search_match=Exists(assignment_search)).filter(
             Q(employee_number__icontains=query)
             | Q(full_name__icontains=query)
             | Q(national_id__icontains=query)
             | Q(phone__icontains=query)
             | Q(address__icontains=query)
-            | Q(organization_assignments__position__icontains=query)
-            | Q(organization_assignments__branch__code__icontains=query)
-            | Q(organization_assignments__branch__name__icontains=query)
-            | Q(organization_assignments__department__code__icontains=query)
-            | Q(organization_assignments__department__name__icontains=query)
+            | Q(_assignment_search_match=True)
         )
     if status:
         rows = rows.filter(status=status)
     if branch_id:
-        rows = rows.filter(organization_assignments__branch_id=branch_id, organization_assignments__effective_to__isnull=True)
+        rows = rows.annotate(
+            _current_branch_match=Exists(current_assignment.filter(branch_id=branch_id))
+        ).filter(_current_branch_match=True)
     if department_id:
-        rows = rows.filter(
-            organization_assignments__department_id=department_id,
-            organization_assignments__effective_to__isnull=True,
-        )
-    return rows.distinct().order_by("employee_number", "full_name")
+        rows = rows.annotate(
+            _current_department_match=Exists(current_assignment.filter(department_id=department_id))
+        ).filter(_current_department_match=True)
+    return rows.order_by("employee_number", "full_name")
 
 
 def serialize_branch(branch: Branch) -> dict[str, object]:
@@ -291,10 +296,24 @@ def serialize_employee_lifecycle(employee: InternalEmployee) -> dict[str, object
 
     return lifecycle_capabilities(employee)
 
-def internal_master_context(*, company: Company, include_histories: bool = True) -> dict[str, object]:
+def internal_master_context(
+    *,
+    company: Company,
+    include_histories: bool = True,
+    employee_limit: int | None = None,
+) -> dict[str, object]:
+    """Return the Internal master bootstrap.
+
+    ``employee_limit`` is used only by the browser bootstrap. Directory APIs remain the
+    authority for complete employee lists; keeping the shell bootstrap bounded prevents a
+    2,000-employee benchmark tenant from embedding every employee record in initial HTML.
+    """
     branches = list(branches_for_company(company=company, archived=None))
     departments = list(departments_for_company(company=company, archived=None))
-    employees = list(employees_for_company(company=company))
+    employee_qs = employees_for_company(company=company)
+    total_employee_count = employee_qs.count()
+    active_employee_count = employee_qs.filter(status=EmploymentStatus.ACTIVE).count()
+    employees = list(employee_qs[:employee_limit] if employee_limit else employee_qs)
     histories = {
         str(employee.pk): [serialize_assignment(item) for item in _history_for_employee(employee)]
         for employee in employees
@@ -304,4 +323,12 @@ def internal_master_context(*, company: Company, include_histories: bool = True)
         "departments": [serialize_department(item) for item in departments],
         "employees": [serialize_employee(item) for item in employees],
         "employeeOrganizationHistory": histories,
+        "bootstrapComplete": employee_limit is None or len(employees) >= total_employee_count,
+        "summary": {
+            "employeeCount": total_employee_count,
+            "activeEmployeeCount": active_employee_count,
+            "bootstrapEmployeeCount": len(employees),
+            "branchCount": len(branches),
+            "departmentCount": len(departments),
+        },
     }

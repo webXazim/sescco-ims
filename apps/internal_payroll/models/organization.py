@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -182,6 +183,10 @@ class InternalEmployee(CompanyOwnedModel):
             models.Index(fields=("company", "status", "full_name"), name="int_emp_company_status_idx"),
             models.Index(fields=("company", "joining_date"), name="int_emp_company_join_idx"),
             models.Index(fields=("company", "deleted_at", "full_name"), name="int_emp_trash_idx"),
+            GinIndex(fields=("employee_number",), name="int_emp_num_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("full_name",), name="int_emp_name_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("national_id",), name="int_emp_nid_trgm", opclasses=("gin_trgm_ops",)),
+            GinIndex(fields=("phone",), name="int_emp_phone_trgm", opclasses=("gin_trgm_ops",)),
         ]
 
     def clean(self) -> None:
@@ -245,6 +250,17 @@ class EmployeeOrganizationAssignment(CompanyOwnedModel):
             models.Index(fields=("company", "employee", "-effective_from"), name="int_org_company_emp_date_idx"),
             models.Index(fields=("company", "branch", "effective_from"), name="int_org_company_branch_idx"),
             models.Index(fields=("company", "department", "effective_from"), name="int_org_company_dept_idx"),
+            models.Index(
+                fields=("company", "branch", "employee"),
+                condition=Q(effective_to__isnull=True),
+                name="int_org_open_branch_idx",
+            ),
+            models.Index(
+                fields=("company", "department", "employee"),
+                condition=Q(effective_to__isnull=True),
+                name="int_org_open_dept_idx",
+            ),
+            GinIndex(fields=("position",), name="int_org_pos_trgm", opclasses=("gin_trgm_ops",)),
         ]
 
     def clean(self) -> None:

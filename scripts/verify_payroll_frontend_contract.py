@@ -305,10 +305,10 @@ for marker in (
         raise SystemExit(f"Payroll server-directory browser contract missing: {marker}")
 
 for marker in (
-    'internal_master_context(company=request.company, include_histories=False)',
+    'internal_master_context(company=request.company, include_histories=False, employee_limit=50)',
 ):
     if marker not in payroll_view:
-        raise SystemExit(f"Payroll shell is still bulk-bootstrapping employee histories: {marker}")
+        raise SystemExit(f"Payroll shell lost the bounded 50-row employee bootstrap contract: {marker}")
 
 for marker in (
     '"organizationHistory": [',

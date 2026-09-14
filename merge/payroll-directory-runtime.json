@@ -1,0 +1,23 @@
+{
+  "release": "1.0.70",
+  "purpose": "Keep server-backed Payroll directories responsive and bounded under realistic/benchmark workforce sizes while preventing stale or completed requests from leaving the UI stuck in a loading state.",
+  "search_debounce_ms": 320,
+  "directories": [
+    "branches",
+    "departments",
+    "employees",
+    "projects",
+    "suppliers",
+    "workers"
+  ],
+  "guarantees": [
+    "one-authoritative-request-per-directory",
+    "abort-obsolete-search-request",
+    "clear-loading-before-success-render",
+    "preserve-last-valid-rows-during-refresh",
+    "ignore-stale-response",
+    "failed-request-does-not-auto-retry-loop",
+    "explicit-retry-remains-available",
+    "bounded-master-merge"
+  ]
+}

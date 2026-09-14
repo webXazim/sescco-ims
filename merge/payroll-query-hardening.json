@@ -1,0 +1,35 @@
+{
+  "release": "1.0.70",
+  "purpose": "Keep high-cardinality Payroll directory, attendance and assignment searches indexable and bounded in PostgreSQL after server pagination moved large collections out of the browser.",
+  "database": "postgresql",
+  "extension": "pg_trgm",
+  "migration_mode": "concurrent-index-build",
+  "indexed_search_keys": [
+    "internal_employee.employee_number",
+    "internal_employee.full_name",
+    "internal_employee.national_id",
+    "internal_employee.phone",
+    "internal_employee_org_assignment.position",
+    "rental_worker.worker_number",
+    "rental_worker.full_name",
+    "rental_worker.national_id",
+    "rental_worker.phone",
+    "rental_worker_assignment.trade",
+    "rental_worker_assignment.reason",
+    "rental_worker_assignment.end_reason"
+  ],
+  "partial_lookup_indexes": [
+    "int_org_open_branch_idx",
+    "int_org_open_dept_idx",
+    "rntl_asg_live_project_idx"
+  ],
+  "guarantees": [
+    "employee-search-uses-exists-not-join-distinct",
+    "attendance-search-uses-period-scoped-exists",
+    "rental-worker-search-uses-assignment-exists-not-join-distinct",
+    "current-project-filter-uses-exists",
+    "assignment-activity-search-uses-indexable-worker-project-subqueries",
+    "trigram-indexes-built-concurrently",
+    "no-payroll-formula-change"
+  ]
+}

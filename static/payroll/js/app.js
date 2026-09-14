@@ -83,8 +83,9 @@
   }
   const csrfToken = document.getElementById('payroll-csrf-token')?.dataset.token || '';
 
-  async function appApi(url, { method = 'GET', body = null } = {}) {
+  async function appApi(url, { method = 'GET', body = null, signal = null } = {}) {
     const options = { method, credentials: 'same-origin', headers: { 'Accept': 'application/json' } };
+    if (signal) options.signal = signal;
     if (body !== null) {
       options.headers['Content-Type'] = 'application/json';
       options.headers['X-CSRFToken'] = csrfToken;
@@ -1019,6 +1020,8 @@
     rentalRateType: 'All rate types',
     rentalView: 'directory',
     rentalWorkerTab: 'overview',
+    rentalWorkerProfilesLoaded: new Set(),
+    rentalWorkerProfileLoading: new Set(),
     rentalAssignmentTab: 'activity',
     rentalAssignmentSearch: '',
     rentalAssignmentSupplier: 'All suppliers',
@@ -1073,6 +1076,9 @@
     rentalSettlementLoadingPeriod: null,
     rentalTimesheetScopes: [],
     rentalTimesheetMeta: {},
+    rentalTimesheetRoster: {},
+    rentalTimesheetSummary: {},
+    rentalTimesheetServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     rentalAttendanceContract: rentalMaster.attendanceContract || null,
     timesheetSearch: '',
     timesheetProject: 'All projects',
@@ -1093,6 +1099,7 @@
     attendanceSummary: attendanceBootstrap.period?.label ? { [attendanceBootstrap.period.label]: attendanceBootstrap.summary || {} } : {},
     attendanceLoadedPeriods: new Set(attendanceBootstrap.period?.label ? [attendanceBootstrap.period.label] : []),
     attendanceLoadingPeriod: null,
+    attendanceServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{ ...(attendanceBootstrap.meta || {}) } },
     payrollSearch: '',
     payrollBranch: 'All branches',
     payrollDepartment: 'All departments',
@@ -1157,21 +1164,36 @@
     branches: [...(internalMaster.branches || [])],
     departments: [...(internalMaster.departments || [])],
     employeeOrganizationHistory: { ...(internalMaster.employeeOrganizationHistory || {}) },
+    internalMasterSummary: { ...(internalMaster.summary || {}) },
+    internalMasterComplete: internalMaster.bootstrapComplete !== false,
+    internalMasterLoading: false,
     projects: [...(rentalMaster.projects || [])],
     suppliers: [...(rentalMaster.suppliers || [])],
     employees: [...(internalMaster.employees || [])],
     rentalWorkers: [...(rentalMaster.workers || [])],
+    rentalMasterSummary: { ...(rentalMaster.summary || {}) },
+    rentalMasterComplete: rentalMaster.bootstrapComplete !== false,
+    rentalMasterLoading: false,
+    salarySetupLoaded: !salarySetup.deferred,
+    salarySetupLoading: false,
     salaryComponents: [...(salarySetup.salaryComponents || [])],
     overtimePolicies: [...(salarySetup.overtimePolicies || [])],
     salaryStructures: { ...(salarySetup.salaryStructures || {}) },
     salaryStructureHistory: { ...(salarySetup.salaryStructureHistory || {}) },
+    globalSearchServer: { controller:null, requestId:0, loading:false, error:'', query:'', results:[] },
     serverDirectories: {
-      branches:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
-      departments:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
-      employees:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:50},
-      projects:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
-      suppliers:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:25},
-      workers:{results:[],meta:{},key:'',pendingKey:'',filterKey:'',loading:false,error:'',page:1,pageSize:50}
+      branches:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:25},
+      departments:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:25},
+      employees:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50},
+      projects:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:25},
+      suppliers:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:25},
+      workers:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50}
+    },
+    rentalAssignmentServer: {
+      summary:{summary:{},key:'',pendingKey:'',failedKey:'',loading:false,error:'',controller:null,requestId:0},
+      activity:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50},
+      deployment:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50},
+      pool:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50}
     }
   };
 
@@ -1182,13 +1204,18 @@
   function directoryEntityMerge(kind, rows) {
     const collection = directoryMasterCollection(kind);
     if (!collection) return;
+    // Directory pages are bounded, but the shell master cache can contain thousands of
+    // records. Build one index map instead of scanning the full master for every row.
+    const indexById=new Map(collection.map((item,index)=>[item.id,index]));
     (rows || []).forEach(record => {
-      const index = collection.findIndex(item => item.id === record.id);
-      if (index >= 0) collection.splice(index, 1, { ...collection[index], ...record });
-      else collection.push(record);
+      const index=indexById.get(record.id);
+      if (index !== undefined) collection.splice(index, 1, { ...collection[index], ...record });
+      else { indexById.set(record.id,collection.length); collection.push(record); }
     });
     if (kind === 'employees') {
-      collection.forEach(employee => { employee.basicSalary = salaryBasicForEmployee(employee); });
+      // Only the returned page changed. Recomputing every employee salary on each search
+      // response made high-cardinality directory searches unnecessarily CPU-heavy.
+      (rows || []).forEach(record=>{const employee=collection[indexById.get(record.id)];if(employee)employee.basicSalary=salaryBasicForEmployee(employee);});
     }
   }
   function directoryFilterValueByName(collection, value, allLabel) {
@@ -1276,37 +1303,165 @@
       || (kind==='suppliers'&&route==='suppliers'&&!currentSupplierId())
       || (kind==='workers'&&route==='rental-workforce'&&!currentRentalWorkerId());
   }
+  function cancelServerDirectoryRequest(kind,{clearPending=true}={}) {
+    const store=directoryStore(kind);
+    if(!store)return;
+    if(store.controller){
+      try { store.controller.abort(); }
+      catch { /* An already-completed request does not need cleanup. */ }
+    }
+    store.controller=null;
+    store.requestId=Number(store.requestId||0)+1;
+    if(clearPending){store.pendingKey='';store.loading=false;}
+  }
+  function bindServerDirectorySearch(input,kind,setter) {
+    bindPayrollSearch(input,setter,{delay:320,beforeRender:()=>cancelServerDirectoryRequest(kind)});
+  }
   async function loadServerDirectory(kind,{force=false}={}) {
     const store=directoryStore(kind); const request=serverDirectoryRequest(kind);
     if(!store||!request)return null;
     if(!force && (store.key===request.key || store.pendingKey===request.key)) return store;
-    store.pendingKey=request.key; store.loading=true; store.error='';
+
+    // A directory has one authoritative in-flight read. Fast typing/filter changes
+    // abort the obsolete network request instead of letting responses queue up.
+    if(store.controller){
+      try { store.controller.abort(); }
+      catch { /* Ignore an already-settled controller. */ }
+    }
+    const controller=new AbortController();
+    const requestId=Number(store.requestId||0)+1;
+    store.requestId=requestId;
+    store.controller=controller;
+    store.pendingKey=request.key;
+    store.failedKey='';
+    store.loading=true;
+    store.error='';
+    // Render the loading state only after pendingKey is installed. Existing rows remain
+    // visible while a replacement query is in flight; only an empty directory uses the
+    // full loading empty-state.
+    if(directoryRouteActive(kind) && !(store.results||[]).length) renderRoute();
     try {
-      const payload=await appApi(request.url);
-      // Ignore stale responses after a fast search/filter change.
-      if(store.pendingKey!==request.key) return store;
-      store.results=[...(payload.results||[])]; store.meta={...(payload.meta||{})};
-      store.page=Number(store.meta.page||store.page||1); store.key=request.key; store.error='';
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(store.requestId!==requestId || store.pendingKey!==request.key) return store;
+      store.results=[...(payload.results||[])];
+      store.meta={...(payload.meta||{})};
+      store.page=Number(store.meta.page||store.page||1);
+      store.key=request.key;
+      store.failedKey='';
+      store.error='';
       directoryEntityMerge(kind,store.results);
+
+      // Clear loading authority BEFORE rendering. Rendering first was the 1.0.64 bug
+      // that could leave a completed search permanently showing "Loading directory…".
+      store.pendingKey='';
+      store.loading=false;
+      store.controller=null;
       if(directoryRouteActive(kind)) renderRoute();
       return store;
     } catch(error) {
-      if(store.pendingKey===request.key){store.error=error.message||'Directory data unavailable.'; if(directoryRouteActive(kind))renderRoute();}
+      if(error?.name==='AbortError') return store;
+      if(store.requestId===requestId && store.pendingKey===request.key){
+        store.pendingKey='';
+        store.loading=false;
+        store.controller=null;
+        store.failedKey=request.key;
+        store.error=error.message||'Directory data unavailable.';
+        if(directoryRouteActive(kind))renderRoute();
+      }
       return null;
-    } finally {
-      if(store.pendingKey===request.key){store.pendingKey='';store.loading=false;}
     }
   }
   function serverDirectoryView(kind) {
     const store=directoryStore(kind); const request=serverDirectoryRequest(kind);
-    if(!store||!request)return {rows:[],meta:{},loading:false,error:''};
-    if(store.key!==request.key && store.pendingKey!==request.key) queueMicrotask(()=>loadServerDirectory(kind));
+    if(!store||!request)return {rows:[],meta:{},loading:false,refreshing:false,error:''};
     const current=store.key===request.key;
-    return {rows:current?store.results:[],meta:current?store.meta:{},loading:store.loading||store.pendingKey===request.key,error:current?store.error:''};
+    const pending=store.pendingKey===request.key;
+    const failed=store.failedKey===request.key;
+    if(!current && !pending && !failed) queueMicrotask(()=>loadServerDirectory(kind));
+    const rows=[...(store.results||[])];
+    return {
+      rows,
+      meta:{...(store.meta||{})},
+      loading:pending || (store.loading && !current),
+      refreshing:!current && rows.length>0 && pending,
+      stale:!current && rows.length>0,
+      error:failed?store.error:''
+    };
   }
   function invalidateServerDirectories(...kinds) {
     const targets=kinds.length?kinds:Object.keys(state.serverDirectories||{});
-    targets.forEach(kind=>{const store=directoryStore(kind);if(store){store.key='';store.pendingKey='';store.error='';}});
+    targets.forEach(kind=>{
+      const store=directoryStore(kind);
+      if(!store)return;
+      cancelServerDirectoryRequest(kind);
+      store.key='';store.failedKey='';store.error='';
+    });
+  }
+
+  async function hydrateCompleteMaster(kind,{render=true}={}) {
+    const isEmployee=kind==='employees';
+    const isWorker=kind==='workers';
+    if(!isEmployee&&!isWorker)return null;
+    const complete=isEmployee?state.internalMasterComplete:state.rentalMasterComplete;
+    const loading=isEmployee?state.internalMasterLoading:state.rentalMasterLoading;
+    if(complete)return directoryMasterCollection(kind);
+    if(loading)return null;
+    if(isEmployee)state.internalMasterLoading=true; else state.rentalMasterLoading=true;
+    try {
+      const endpoint=isEmployee?'/api/internal/employees/':'/api/rental/workers/';
+      let page=1,totalPages=1;
+      do {
+        const params=new URLSearchParams({page:String(page),page_size:'200',sort:isEmployee?'employee':'worker',direction:'asc'});
+        if(isEmployee)params.set('archived','current');
+        const payload=await appApi(`${endpoint}?${params.toString()}`);
+        directoryEntityMerge(kind,payload.results||[]);
+        totalPages=Math.max(1,Number(payload.meta?.totalPages||1));
+        page+=1;
+      } while(page<=totalPages);
+      if(isEmployee)state.internalMasterComplete=true; else state.rentalMasterComplete=true;
+      if(render)renderRoute();
+      return directoryMasterCollection(kind);
+    } catch(error) {
+      showToast(isEmployee?'Employee master unavailable':'Rental worker master unavailable',error.message);
+      return null;
+    } finally {
+      if(isEmployee)state.internalMasterLoading=false; else state.rentalMasterLoading=false;
+    }
+  }
+
+  async function loadSalarySetup({force=false}={}) {
+    if(!force&&state.salarySetupLoaded)return true;
+    if(state.salarySetupLoading)return false;
+    state.salarySetupLoading=true;
+    try {
+      const [componentsPayload,policiesPayload,structuresPayload]=await Promise.all([
+        appApi('/api/internal/salary/components/?status=all'),
+        appApi('/api/internal/salary/overtime-policies/?status=all'),
+        appApi('/api/internal/salary/structures/'),
+      ]);
+      state.salaryComponents=[...(componentsPayload.results||[])];
+      state.overtimePolicies=[...(policiesPayload.results||[])];
+      state.salaryStructures={};
+      state.salaryStructureHistory={};
+      const asOf=companyTodayIso;
+      (structuresPayload.results||[]).forEach(structure=>{
+        const employeeId=structure.employeeId;
+        if(!employeeId)return;
+        (state.salaryStructureHistory[employeeId] ||= []).push(structure);
+        const effective=String(structure.effective||'');
+        const effectiveTo=String(structure.effectiveTo||'');
+        if(!state.salaryStructures[employeeId]&&effective<=asOf&&(!effectiveTo||effectiveTo>=asOf))state.salaryStructures[employeeId]=structure;
+      });
+      state.salarySetupLoaded=true;
+      state.employees.forEach(employee=>{employee.basicSalary=salaryBasicForEmployee(employee);});
+      if(currentRoute()==='salary-setup')renderRoute();
+      return true;
+    } catch(error) {
+      showToast('Salary setup unavailable',error.message);
+      return false;
+    } finally {
+      state.salarySetupLoading=false;
+    }
   }
   function directoryPagination(kind,meta={}) {
     const store=directoryStore(kind); if(!store)return '';
@@ -1319,6 +1474,90 @@
     if(view.loading) return `<div class="table-empty"><strong>Loading directory…</strong><span>Reading the filtered records from the payroll backend.</span></div>`;
     if(view.error) return `<div class="table-empty"><strong>Directory unavailable</strong><span>${escapeHtml(view.error)}</span><button type="button" class="btn btn--secondary btn--sm" data-directory-retry="${kind}">Retry</button></div>`;
     return emptyHtml;
+  }
+
+  function rentalAssignmentStore(kind) { return state.rentalAssignmentServer?.[kind] || null; }
+  function rentalAssignmentEventParam(value) {
+    return ({
+      'All activity':'',
+      'Project assignment':'project_assignment',
+      'Project transfer':'project_transfer',
+      'Trade / rate changes':'trade_rate_changes',
+      'Trade change':'trade_change',
+      'Rate change':'rate_change',
+      'Release':'release'
+    })[value] ?? '';
+  }
+  function rentalAssignmentServerRequest(kind) {
+    const store=rentalAssignmentStore(kind); if(!store)return null;
+    const params=new URLSearchParams(); params.set('view',kind);
+    if(kind==='summary') return {url:`/api/rental/assignments/?${params.toString()}`,key:`/api/rental/assignments/?${params.toString()}`};
+    if(state.rentalAssignmentSearch.trim())params.set('q',state.rentalAssignmentSearch.trim());
+    if(state.rentalAssignmentSupplier!=='All suppliers')params.set('supplier_id',state.rentalAssignmentSupplier);
+    if(kind!=='pool' && state.rentalAssignmentProject!=='All projects')params.set('project_id',state.rentalAssignmentProject);
+    if(kind==='activity'){
+      const eventType=rentalAssignmentEventParam(state.rentalAssignmentType); if(eventType)params.set('event_type',eventType);
+      params.set('sort','effective');params.set('direction','desc');
+    } else { params.set('sort','worker');params.set('direction','asc'); }
+    const filterKey=`/api/rental/assignments/?${params.toString()}`;
+    if(store.filterKey && store.filterKey!==filterKey)store.page=1;
+    store.filterKey=filterKey;
+    params.set('page',String(store.page||1));params.set('page_size',String(store.pageSize||50));
+    const url=`/api/rental/assignments/?${params.toString()}`;
+    return {url,key:url};
+  }
+  function rentalAssignmentRouteActive() { return currentRoute()==='rental-assignments'; }
+  function cancelRentalAssignmentRequest(kind,{clearPending=true}={}) {
+    const store=rentalAssignmentStore(kind);if(!store)return;
+    if(store.controller){try{store.controller.abort();}catch{/* settled */}}
+    store.controller=null;store.requestId=Number(store.requestId||0)+1;
+    if(clearPending){store.pendingKey='';store.loading=false;}
+  }
+  async function loadRentalAssignmentServer(kind,{force=false}={}) {
+    const store=rentalAssignmentStore(kind),request=rentalAssignmentServerRequest(kind);if(!store||!request)return null;
+    if(!force && (store.key===request.key||store.pendingKey===request.key))return store;
+    if(store.controller){try{store.controller.abort();}catch{/* settled */}}
+    const controller=new AbortController(),requestId=Number(store.requestId||0)+1;
+    store.requestId=requestId;store.controller=controller;store.pendingKey=request.key;store.failedKey='';store.loading=true;store.error='';
+    if(rentalAssignmentRouteActive() && kind!=='summary' && !(store.results||[]).length)renderRoute();
+    try{
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(store.requestId!==requestId||store.pendingKey!==request.key)return store;
+      if(kind==='summary')store.summary={...(payload.summary||{})};
+      else{
+        store.results=[...(payload.results||[])];store.meta={...(payload.meta||{})};store.page=Number(store.meta.page||store.page||1);
+        if(kind==='deployment'||kind==='pool')directoryEntityMerge('workers',store.results);
+      }
+      store.key=request.key;store.failedKey='';store.error='';store.pendingKey='';store.loading=false;store.controller=null;
+      if(rentalAssignmentRouteActive()||(state.workspace==='rental'&&currentRoute()==='overview'&&kind==='activity'))renderRoute();
+      return store;
+    }catch(error){
+      if(error?.name==='AbortError')return store;
+      if(store.requestId===requestId&&store.pendingKey===request.key){store.pendingKey='';store.loading=false;store.controller=null;store.failedKey=request.key;store.error=error.message||'Assignment data unavailable.';if(rentalAssignmentRouteActive()||(state.workspace==='rental'&&currentRoute()==='overview'&&kind==='activity'))renderRoute();}
+      return null;
+    }
+  }
+  function serverRentalAssignmentView(kind) {
+    const store=rentalAssignmentStore(kind),request=rentalAssignmentServerRequest(kind);if(!store||!request)return {rows:[],meta:{},summary:{},loading:false,error:''};
+    const current=store.key===request.key,pending=store.pendingKey===request.key,failed=store.failedKey===request.key;
+    if(!current&&!pending&&!failed)queueMicrotask(()=>loadRentalAssignmentServer(kind));
+    return {rows:[...(store.results||[])],meta:{...(store.meta||{})},summary:{...(store.summary||{})},loading:pending||(store.loading&&!current),refreshing:!current&&(store.results||[]).length>0&&pending,error:failed?store.error:'',stale:!current&&(store.results||[]).length>0};
+  }
+  function invalidateRentalAssignmentServer(...kinds) {
+    const targets=kinds.length?kinds:Object.keys(state.rentalAssignmentServer||{});
+    targets.forEach(kind=>{const store=rentalAssignmentStore(kind);if(!store)return;cancelRentalAssignmentRequest(kind);store.key='';store.failedKey='';store.error='';});
+  }
+  function rentalAssignmentPagination(kind,meta={}) {
+    const store=rentalAssignmentStore(kind);if(!store)return '';
+    const count=Number(meta.count||0),page=Number(meta.page||store.page||1),totalPages=Number(meta.totalPages||0),pageSize=Number(meta.pageSize||store.pageSize||50);
+    if(!count&&totalPages<=1)return '';
+    const start=count?((page-1)*pageSize+1):0,end=Math.min(count,page*pageSize);
+    return `<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${start.toLocaleString()}</strong>–<strong>${end.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-assignment-page="${kind}|${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${Math.max(totalPages,1)}</span><button type="button" data-assignment-page="${kind}|${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select data-assignment-page-size="${kind}" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div>`;
+  }
+  function rentalAssignmentTableState(kind,view,colspan,emptyTitle,emptyText) {
+    if(view.loading&&!view.rows.length)return `<tr><td colspan="${colspan}"><div class="table-empty"><strong>Loading assignment data…</strong><span>Reading a bounded page from the Payroll backend.</span></div></td></tr>`;
+    if(view.error&&!view.rows.length)return `<tr><td colspan="${colspan}"><div class="table-empty"><strong>Assignment data unavailable</strong><span>${escapeHtml(view.error)}</span><button type="button" class="btn btn--secondary btn--sm" data-assignment-retry="${kind}">Retry</button></div></td></tr>`;
+    return `<tr><td colspan="${colspan}"><div class="table-empty"><strong>${escapeHtml(emptyTitle)}</strong><span>${escapeHtml(emptyText)}</span></div></td></tr>`;
   }
 
   if (!state.projects.some(item => item.id === state.rentalTimesheetProject)) state.rentalTimesheetProject = preferredRentalProjectId(state.projects);
@@ -1569,47 +1808,53 @@
   }
 
   function internalOverviewTemplate() {
-    const activeEmployees = state.employees.filter(item => item.status === 'Active');
+    const summary=state.internalMasterSummary||{};
+    const activeEmployeeCount=Number(summary.activeEmployeeCount ?? state.employees.filter(item=>item.status==='Active').length);
     const branchCount = state.branches.filter(item => item.status === 'Active').length;
     const departmentCount = state.departments.filter(item => item.status === 'Active').length;
-    const wpsReady = activeEmployees.filter(item => item.wps === 'Ready').length;
-    const salaryConfigured = activeEmployees.filter(item => !!employeeProfileData(item).salary).length;
-    const payrollRows = payrollRowsForDisplay();
+    const salaryConfigured = state.salarySetupLoaded ? state.employees.filter(item=>item.status==='Active'&&!!employeeProfileData(item).salary).length : null;
+    const paymentKey=paymentPeriodKey(state.period);
+    const paymentCtx=state.paymentContexts?.[paymentKey]||null;
+    const wpsReady=paymentCtx ? Number(paymentCtx.wpsReadiness?.readyCount||0) : null;
+    const payrollLoaded=state.payrollLoadedPeriods.has(state.period);
+    const payrollRows = payrollLoaded ? payrollRowsForDisplay() : [];
     const totals = payrollTotals(payrollRows);
-    const runStatus = payrollRunStatus();
+    const runStatus = payrollLoaded ? payrollRunStatus() : 'Load on demand';
+    const salaryConfiguredLabel=salaryConfigured===null?'—':`${salaryConfigured}/${activeEmployeeCount}`;
+    const wpsReadyLabel=wpsReady===null?'—':`${wpsReady}/${activeEmployeeCount}`;
     return `<section class="page ui-v2-payroll-page ui-v2-payroll-overview ui-v2-prs-internal-page">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head">
         <div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company</span><h1 class="ui-v2-title-lg">Internal Company Payroll</h1><p class="ui-v2-body">Internal employees, organization, attendance, salary setup and salary-payment readiness for the active payroll period.</p></div>
         <div class="page-head__actions ui-v2-page-header__actions"><div class="ui-v2-payroll-period"><span>Payroll period</span><strong>${escapeHtml(state.period)}</strong></div><button class="btn btn--secondary" data-route-link="bank-export">${icon('bank')} Bank / WPS</button><button class="btn btn--primary" data-route-link="payroll-runs">Open Payroll Run</button></div>
       </div>
       <div class="summary-strip ui-v2-payroll-summary-strip">
-        <div class="summary-item ui-v2-payroll-metric"><span>Active employees</span><strong>${activeEmployees.length}</strong><small>${branchCount} active branch${branchCount === 1 ? '' : 'es'}</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Active employees</span><strong>${activeEmployeeCount.toLocaleString()}</strong><small>${branchCount} active branch${branchCount === 1 ? '' : 'es'}</small></div>
         <div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${departmentCount}</strong><small>Organization masters</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${salaryConfigured}/${activeEmployees.length}</strong><small>Current numeric structures</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReady}/${activeEmployees.length}</strong><small>Bank / identity source records</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${salaryConfiguredLabel}</strong><small>${salaryConfigured===null?'Loaded only when Salary Setup opens':'Current numeric structures'}</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReadyLabel}</strong><small>${wpsReady===null?'Loaded only when Bank / WPS opens':'Bank / identity source records'}</small></div>
       </div>
       <section class="ui-v2-payroll-financial-shortcut ui-v2-prs-financial-shortcut">
-        <span>${icon('bank')}</span><div><strong>Payroll & payment control</strong><small>${escapeHtml(runStatus)} · ${formatCurrency(totals.net || 0)} current net payable. Review the controlled payroll calculation before bank/WPS export.</small></div><button type="button" data-route-link="payroll-runs">Open payroll ${icon('chevron')}</button>
+        <span>${icon('bank')}</span><div><strong>Payroll & payment control</strong><small>${escapeHtml(runStatus)}${payrollLoaded?` · ${formatCurrency(totals.net || 0)} current net payable`:''}. Review the controlled payroll calculation before bank/WPS export.</small></div><button type="button" data-route-link="payroll-runs">Open payroll ${icon('chevron')}</button>
       </section>
       <div class="ui-v2-payroll-overview-grid">
         <section class="panel ui-v2-payroll-panel">
           <header><div><span>Organization</span><h2>Internal workforce</h2></div>${statusBadge('Active')}</header>
           <div class="ui-v2-payroll-org-grid">
-            <button type="button" data-route-link="internal-employees"><span>${icon('person')}</span><div><strong>${activeEmployees.length} employees</strong><small>Open internal employee register</small></div>${icon('chevron')}</button>
+            <button type="button" data-route-link="internal-employees"><span>${icon('person')}</span><div><strong>${activeEmployeeCount.toLocaleString()} employees</strong><small>Open server-paged employee register</small></div>${icon('chevron')}</button>
             <button type="button" data-route-link="branches"><span>${icon('branch')}</span><div><strong>${branchCount} active branches</strong><small>Company office masters</small></div>${icon('chevron')}</button>
             <button type="button" data-route-link="departments"><span>${icon('department')}</span><div><strong>${departmentCount} departments</strong><small>Published organization masters</small></div>${icon('chevron')}</button>
             <button type="button" data-route-link="timesheets"><span>${icon('timesheet')}</span><div><strong>Attendance & overtime</strong><small>${escapeHtml(state.period)} company timesheet</small></div>${icon('chevron')}</button>
           </div>
         </section>
         <section class="panel ui-v2-payroll-panel">
-          <header><div><span>Payroll readiness</span><h2>Items needing configuration</h2></div></header>
+          <header><div><span>Payroll readiness</span><h2>Load only what you open</h2></div></header>
           <div class="ui-v2-payroll-attention">
-            <article><span>!</span><div><strong>${Math.max(0, activeEmployees.length - salaryConfigured)} salary record${activeEmployees.length - salaryConfigured === 1 ? '' : 's'} incomplete</strong><small>Configure a numeric salary structure before calculation.</small></div></article>
-            <article><span>BK</span><div><strong>${Math.max(0, activeEmployees.length - wpsReady)} employee${activeEmployees.length - wpsReady === 1 ? '' : 's'} not WPS-ready</strong><small>Bank and identity setup remains separate from salary calculation.</small></div></article>
+            <article><span>SS</span><div><strong>${salaryConfigured===null?'Salary setup deferred':`${Math.max(0,activeEmployeeCount-salaryConfigured)} salary records incomplete`}</strong><small>Salary structures are fetched only when Salary Setup is opened.</small></div></article>
+            <article><span>BK</span><div><strong>${wpsReady===null?'Payment readiness deferred':`${Math.max(0,activeEmployeeCount-wpsReady)} employees not WPS-ready`}</strong><small>Bank/WPS readiness is fetched only when the payment workspace is opened.</small></div></article>
           </div>
         </section>
       </div>
-      <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Internal employees are organized through company-controlled branches and departments. Rental projects and manpower suppliers remain outside this workspace.</span></div>
+      <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>The initial Payroll shell carries only a bounded employee sample and aggregate counts. Complete employee, salary, payroll and payment collections are loaded from server APIs only when needed.</span></div>
     </section>`;
   }
 
@@ -1631,15 +1876,6 @@
 
   function rentalProjectControlRows() {
     const projects = state.projects.filter(project => !project.legacyInternal);
-    const projectMetrics = new Map(projects.map(project => [project.id, { workers:0, suppliers:new Set() }]));
-    state.rentalWorkers.forEach(worker => {
-      if (worker.status !== 'Assigned') return;
-      const projectId = rentalWorkerCurrentSnapshot(worker).project?.id;
-      const metric = projectMetrics.get(projectId);
-      if (!metric) return;
-      metric.workers += 1;
-      if (worker.supplierId) metric.suppliers.add(worker.supplierId);
-    });
     const settlementByProject = new Map();
     Object.values(state.rentalSettlements || {}).forEach(row => {
       if (row.period !== state.period) return;
@@ -1647,12 +1883,11 @@
       if (!current || rentalSettlementStage(row.status) > rentalSettlementStage(current.status)) settlementByProject.set(row.projectId, row);
     });
     return projects.map(project => {
-      const workforce = projectMetrics.get(project.id) || { workers:0, suppliers:new Set() };
       const financial = rentalProjectFinancial(project.id) || {};
       return {
         project,
-        workers: workforce.workers,
-        suppliers: workforce.suppliers.size,
+        workers: Number(project.rentalWorkers || 0),
+        suppliers: Number(project.suppliers || 0),
         timesheet: rentalTimesheetStatus(state.period, project.id),
         settlement: settlementByProject.get(project.id)?.status || 'Not started',
         payable: Number(financial.payable || 0),
@@ -1668,26 +1903,13 @@
   }
 
   function rentalSupplierControlRows() {
-    const supplierMetrics = new Map(state.suppliers.map(supplier => [supplier.id, { assigned:0, available:0, projects:new Set() }]));
-    state.rentalWorkers.forEach(worker => {
-      const metric = supplierMetrics.get(worker.supplierId);
-      if (!metric) return;
-      if (worker.status === 'Assigned') {
-        metric.assigned += 1;
-        const projectId = rentalWorkerCurrentSnapshot(worker).project?.id;
-        if (projectId) metric.projects.add(projectId);
-      } else if (worker.status === 'Available') {
-        metric.available += 1;
-      }
-    });
     return state.suppliers.map(supplier => {
-      const workforce = supplierMetrics.get(supplier.id) || { assigned:0, available:0, projects:new Set() };
       const financial = rentalSupplierFinancial(supplier.id) || {};
       return {
         supplier,
-        assigned: workforce.assigned,
-        available: workforce.available,
-        projects: workforce.projects.size,
+        assigned: Number(supplier.activeWorkers || 0),
+        available: Number(supplier.availableWorkers || 0),
+        projects: Number(supplier.activeProjects || 0),
         payable: Number(financial.payable || 0),
         paid: Number(financial.paid || 0),
         outstanding: Number(financial.outstanding || 0),
@@ -1702,15 +1924,17 @@
 
   function rentalOverviewTemplate() {
     if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
-    const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
-    const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
+    const assigned = Number(state.rentalMasterSummary.assignedWorkerCount ?? state.rentalWorkers.filter(worker => worker.status === 'Assigned').length);
+    const available = Number(state.rentalMasterSummary.availableWorkerCount ?? state.rentalWorkers.filter(worker => worker.status === 'Available').length);
     const activeProjects = state.projects.filter(project => project.status === 'Active' && !project.legacyInternal);
     const activeSuppliers = state.suppliers.filter(supplier => supplier.status === 'Active');
     const projectRows = rentalProjectControlRows().filter(row => row.project.status === 'Active');
     const supplierRows = rentalSupplierControlRows().filter(row => row.supplier.status === 'Active');
     const payables = supplierPayables(state.period);
     const payableSummary = supplierPaymentSummary(payables);
-    const activity = rentalAssignmentActivityRows().slice(0,5);
+    const activityStore=rentalAssignmentStore('activity');
+    if(!(activityStore?.results||[]).length&&!activityStore?.loading)queueMicrotask(()=>loadRentalAssignmentServer('activity'));
+    const activity = [...(activityStore?.results||[])].slice(0,5);
     const periodFinancial = rentalFinancialContext(state.period).totals || {};
     const periodHours = Number(periodFinancial.hours || 0);
     const periodNet = Number(periodFinancial.net || 0);
@@ -2103,6 +2327,7 @@
     try {
       const periodKey = periodKeyFromLabel(period);
       const payload = await appApi(`/api/internal/employees/${encodeURIComponent(employeeId)}/profile/?period=${encodeURIComponent(periodKey)}`);
+      if(payload.employee)directoryEntityMerge('employees',[payload.employee]);
       state.employeeProfileContexts[key] = payload.profile || null;
       if (render && currentEmployeeId() === employeeId && state.period === period) renderRoute();
       return payload.profile || null;
@@ -2978,6 +3203,11 @@
   }
 
   function salarySetupTemplate() {
+    if(!state.salarySetupLoaded||!state.internalMasterComplete){
+      if(!state.salarySetupLoaded&&!state.salarySetupLoading)loadSalarySetup();
+      if(!state.internalMasterComplete&&!state.internalMasterLoading)hydrateCompleteMaster('employees');
+      return `<section class="page salary-setup-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="table-empty table-empty--card"><strong>Loading salary setup…</strong><span>Fetching salary configuration and the employee master only for this workspace.</span></div></section>`;
+    }
     const activeComponents = state.salaryComponents.filter(item => item.status === 'Active');
     const earningCount = activeComponents.filter(item => item.category === 'Earning').length;
     const deductionCount = activeComponents.filter(item => item.category === 'Deduction').length;
@@ -3176,34 +3406,106 @@
     return [isWeekendDay(day, period) ? 'is-weekend' : '', date.getDay() === 6 ? 'is-week-boundary' : '', dateIso === todayIso ? 'is-today' : ''].filter(Boolean).join(' ');
   }
 
+  function internalAttendanceRequest(period = state.period) {
+    const store = state.attendanceServer;
+    const params = new URLSearchParams();
+    params.set('period', periodKeyFromLabel(period));
+    if (state.timesheetSearch.trim()) params.set('q', state.timesheetSearch.trim());
+    if (state.timesheetBranch !== 'All branches') params.set('branch', state.timesheetBranch);
+    if (state.timesheetDepartment !== 'All departments') params.set('department', state.timesheetDepartment);
+    params.set('page', String(Math.max(1, Number(state.timesheetPage) || 1)));
+    params.set('page_size', String([25,50,100].includes(Number(state.timesheetPageSize)) ? Number(state.timesheetPageSize) : 50));
+    params.set('summary', state.attendanceSummary?.[period] ? '0' : '1');
+    const url = `/api/internal/attendance/?${params.toString()}`;
+    return { url, key:url, store };
+  }
+
+  function cancelInternalAttendanceRequest() {
+    const store = state.attendanceServer;
+    if (store.controller) { try { store.controller.abort(); } catch { /* settled */ } }
+    store.controller = null;
+    store.pendingKey = '';
+    store.loading = false;
+    store.requestId = Number(store.requestId || 0) + 1;
+  }
+
   function applyAttendancePayload(payload, period = state.period, { supersede = true } = {}) {
     const label = payload.period?.label || period;
     if (supersede) supersedePayrollAuthority('internal-attendance', label);
-    state.timesheets[label] = payload.records || {};
-    state.timesheetStatuses[label] = payload.period?.status || 'Draft';
-    state.attendancePeriodMeta[label] = payload.period || {};
+    state.timesheets[label] ||= {};
+    state.attendanceOvertimeMeta[label] ||= {};
+    state.overtimeEntries[label] ||= {};
+    if (payload.period) {
+      state.timesheetStatuses[label] = payload.period.status || state.timesheetStatuses[label] || 'Draft';
+      state.attendancePeriodMeta[label] = { ...(state.attendancePeriodMeta[label] || {}), ...payload.period };
+    }
     if (payload.attendanceContract) state.internalAttendanceContract = payload.attendanceContract;
+    if (payload.summary) state.attendanceSummary[label] = { ...(state.attendanceSummary[label] || {}), ...payload.summary };
+
+    if (payload.deltaOnly) {
+      (payload.changes || []).forEach(change => {
+        const employeeId = String(change.employeeId || '');
+        if (!employeeId) return;
+        state.timesheets[label][employeeId] ||= {};
+        const day = String(change.day);
+        if (change.value === '' || change.value == null) delete state.timesheets[label][employeeId][day];
+        else state.timesheets[label][employeeId][day] = change.value;
+      });
+      Object.entries(payload.overtime || {}).forEach(([employeeId,row]) => {
+        const previous = state.attendanceOvertimeMeta[label][employeeId] || {};
+        state.attendanceOvertimeMeta[label][employeeId] = { ...previous, ...row };
+        state.overtimeEntries[label][employeeId] = Number(row.hours || 0);
+      });
+      state.attendanceLoadedPeriods.add(label);
+      return;
+    }
+
+    state.timesheets[label] = payload.records || {};
     state.attendanceRoster[label] = payload.roster || [];
     state.attendanceOvertimeMeta[label] = payload.overtime || {};
-    state.attendanceSummary[label] = payload.summary || {};
     state.overtimeEntries[label] = Object.fromEntries(Object.entries(payload.overtime || {}).map(([employeeId,row]) => [employeeId, Number(row.hours || 0)]));
+    state.attendanceServer.meta = { ...(payload.meta || {}) };
+    state.timesheetPage = Number(payload.meta?.page || state.timesheetPage || 1);
     state.attendanceLoadedPeriods.add(label);
   }
 
   async function loadInternalAttendancePeriod(period = state.period, { force = false } = {}) {
-    if (!force && state.attendanceLoadedPeriods.has(period)) return;
-    if (state.attendanceLoadingPeriod === period) return;
-    const authorityTicket = payrollAuthorityTicket('internal-attendance', period);
+    const request = internalAttendanceRequest(period);
+    const store = request.store;
+    if (!force && (store.key === request.key || store.pendingKey === request.key)) return store;
+    if (store.controller) { try { store.controller.abort(); } catch { /* settled */ } }
+    const controller = new AbortController();
+    const requestId = Number(store.requestId || 0) + 1;
+    store.requestId = requestId;
+    store.controller = controller;
+    store.pendingKey = request.key;
+    store.loading = true;
+    store.error = '';
     state.attendanceLoadingPeriod = period;
+    const authorityTicket = payrollAuthorityTicket('internal-attendance', period);
     try {
-      const payload = await appApi(`/api/internal/attendance/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
-      if (!payrollAuthorityIsCurrent(authorityTicket)) return null;
+      const payload = await appApi(request.url, { signal:controller.signal });
+      if (store.requestId !== requestId || store.pendingKey !== request.key || !payrollAuthorityIsCurrent(authorityTicket)) return null;
       applyAttendancePayload(payload, period, { supersede:false });
-    } catch (error) {
-      showToast('Attendance not loaded', error.message);
-    } finally {
-      if (state.attendanceLoadingPeriod === period) state.attendanceLoadingPeriod = null;
+      store.key = request.key;
+      store.pendingKey = '';
+      store.loading = false;
+      store.controller = null;
+      store.meta = { ...(payload.meta || {}) };
+      state.attendanceLoadingPeriod = null;
       if (currentRoute() === 'timesheets' && state.timesheetWorkspace === 'internal' && state.period === period) renderRoute();
+      return payload;
+    } catch (error) {
+      if (error?.name === 'AbortError') return null;
+      if (store.requestId === requestId) {
+        store.pendingKey = '';
+        store.loading = false;
+        store.controller = null;
+        store.error = error.message || 'Attendance data unavailable.';
+        state.attendanceLoadingPeriod = null;
+        if (currentRoute() === 'timesheets' && state.timesheetWorkspace === 'internal' && state.period === period) renderRoute();
+      }
+      return null;
     }
   }
 
@@ -3399,13 +3701,8 @@
   }
 
   function filteredTimesheetEmployees() {
-    const q = state.timesheetSearch.trim().toLowerCase();
-    return attendanceRosterForPeriod().filter(employee => {
-      const branchMatch = state.timesheetBranch === 'All branches' || employee.branch === state.timesheetBranch;
-      const departmentMatch = state.timesheetDepartment === 'All departments' || employee.department === state.timesheetDepartment;
-      const text = `${employee.employeeId} ${employee.name} ${employee.position} ${employee.department} ${employee.branch}`.toLowerCase();
-      return branchMatch && departmentMatch && (!q || text.includes(q));
-    });
+    // 1.0.67: filtering is server-authoritative. The browser only holds the current bounded page.
+    return attendanceRosterForPeriod();
   }
 
   function overtimeHoursFor(item, period = state.period) {
@@ -3430,22 +3727,22 @@
   }
 
   function internalTimesheetPageData() {
-    const all = filteredTimesheetEmployees();
-    const allowedSizes = [25, 50, 100];
-    if (!allowedSizes.includes(Number(state.timesheetPageSize))) state.timesheetPageSize = 50;
-    const pageSize = Number(state.timesheetPageSize);
-    const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
-    state.timesheetPage = Math.min(Math.max(1, Number(state.timesheetPage) || 1), totalPages);
-    const startIndex = (state.timesheetPage - 1) * pageSize;
-    const rows = all.slice(startIndex, startIndex + pageSize);
+    const rows = attendanceRosterForPeriod();
+    const meta = state.attendanceServer?.meta || {};
+    const pageSize = Number(meta.pageSize || state.timesheetPageSize || 50);
+    const page = Number(meta.page || state.timesheetPage || 1);
+    const count = Number(meta.count ?? rows.length);
+    const totalPages = Math.max(1, Number(meta.totalPages || Math.ceil(count / pageSize) || 1));
+    const startIndex = count ? (page - 1) * pageSize : 0;
     return {
-      all,
+      all: rows,
       rows,
       pageSize,
       totalPages,
-      page: state.timesheetPage,
-      rangeStart: all.length ? startIndex + 1 : 0,
-      rangeEnd: Math.min(startIndex + pageSize, all.length)
+      page,
+      count,
+      rangeStart: count ? startIndex + 1 : 0,
+      rangeEnd: Math.min(startIndex + rows.length, count)
     };
   }
 
@@ -3478,7 +3775,7 @@
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showToast('Attendance exported', `${roster.length} employee row${roster.length === 1 ? '' : 's'} exported for ${state.period}.`);
+    showToast('Attendance page exported', `${roster.length} employee row${roster.length === 1 ? '' : 's'} from the current filtered page exported for ${state.period}.`);
   }
 
   function timesheetAttendanceGrid(employees) {
@@ -3547,6 +3844,7 @@
     const employees = page.rows;
     const filteredEmployees = page.all;
     const records = ensureTimesheetPeriod();
+    const summary = state.attendanceSummary[state.period] || {};
     const totals = filteredEmployees.reduce((acc, employee) => {
       const rowSummary = summarizeAttendanceRecord(records[employee.id] || {}, state.period, employee);
       acc.hours += rowSummary.regularHours;
@@ -3556,21 +3854,21 @@
       return acc;
     }, { hours:0, absent:0, leave:0, missing:0 });
     const roster = attendanceRosterForPeriod();
-    const branchOptions = ['All branches', ...new Set(roster.map(employee => employee.branch).filter(Boolean))];
-    const departments = ['All departments', ...new Set(roster.map(employee => employee.department).filter(Boolean))];
+    const branchOptions = ['All branches', ...state.branches.filter(item=>item.status === 'Active').map(item=>item.name)];
+    const departments = ['All departments', ...state.departments.filter(item=>item.status === 'Active').map(item=>item.name)];
     const status = timesheetStatus();
     const next = timesheetNextAction(status);
     const selectedCount = state.timesheetSelected.size;
     const info = periodInfo();
-    const missingCount = Number(totals.missing || 0);
+    const missingCount = Number(summary.missingCount ?? totals.missing ?? 0);
     const editable = timesheetCanEdit();
     const allPageSelected = employees.length > 0 && employees.every(employee => state.timesheetSelected.has(employee.id));
     const somePageSelected = employees.some(employee => state.timesheetSelected.has(employee.id)) && !allPageSelected;
     return `
       <div class="ui-v2-payroll-summary-strip">
-        <div class="ui-v2-payroll-metric"><span>Employee roster</span><strong>${roster.length}</strong><small>${filteredEmployees.length} in current filter · assigned scope</small></div>
-        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${totals.hours.toLocaleString()}</strong><small>${escapeHtml(state.period)} saved attendance</small></div>
-        <div class="ui-v2-payroll-metric"><span>Exceptions</span><strong>${(totals.absent + totals.leave + missingCount).toLocaleString()}</strong><small>${missingCount.toLocaleString()} missing · ${totals.absent} absent · ${totals.leave} leave/sick</small></div>
+        <div class="ui-v2-payroll-metric"><span>Employee roster</span><strong>${Number(summary.employeeCount || page.count || roster.length).toLocaleString()}</strong><small>${Number(page.count || filteredEmployees.length).toLocaleString()} in current filter · server-paged scope</small></div>
+        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${Number(summary.regularHours || totals.hours || 0).toLocaleString()}</strong><small>${escapeHtml(state.period)} saved attendance</small></div>
+        <div class="ui-v2-payroll-metric"><span>Exceptions</span><strong>${(Number(summary.absentCount||0) + Number(summary.leaveCount||0) + missingCount).toLocaleString()}</strong><small>${missingCount.toLocaleString()} missing · ${Number(summary.absentCount||0).toLocaleString()} absent · ${Number(summary.leaveCount||0).toLocaleString()} leave/sick</small></div>
         <div class="ui-v2-payroll-metric"><span>Approval state</span><strong>${escapeHtml(status)}</strong><small>Revision ${Number(attendanceMeta().revision || 0)} · ${editable ? 'operational input open' : 'controlled review state'}</small></div>
       </div>
       <section class="ui-v2-payroll-panel ui-v2-payroll-timesheet-lifecycle"><header><div><span>Period control</span><h2>Monthly attendance lifecycle</h2></div>${v2TimesheetStatusBadge(status)}</header>${timesheetWorkflow()}</section>
@@ -3590,43 +3888,46 @@
         <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span>${attendanceLegendItems(state.internalAttendanceContract)}<span><i class="is-weekend"></i>Weekend</span></div><span>${escapeHtml(attendanceContractHint(state.internalAttendanceContract))}</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-timesheet-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of employees" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
-          <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${employees.length} employees`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${employees.filter(employee=>state.timesheetSelected.has(employee.id)).length} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredEmployees.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
+          <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${employees.length} employees`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${employees.filter(employee=>state.timesheetSelected.has(employee.id)).length} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${Number(page.count || filteredEmployees.length).toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
           <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="timesheetBulkDay" class="ui-v2-select ui-v2-payroll-dense-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day => `<option value="${day}" ${Number(state.timesheetBulkDay) === day ? 'selected' : ''}>${day} · ${weekdayShort(day)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="A" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="L" ${selectedCount && editable ? '' : 'disabled'}>Leave</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="OFF" ${selectedCount && editable ? '' : 'disabled'}>Off</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="copy" ${selectedCount && editable && Number(state.timesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-bulk-action="workdays" ${selectedCount && editable ? '' : 'disabled'}>Fill workdays</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-timesheet-bulk-action="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
         </div>
         ${employees.length ? timesheetAttendanceGrid(employees) : `<div class="ui-v2-payroll-table-empty"><strong>No employees match this attendance view.</strong><span>Change the search, branch or department filters.</span></div>`}
-        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredEmployees.length.toLocaleString()}</strong> employees <i></i> <strong>${(totals.absent + totals.leave + missingCount).toLocaleString()}</strong> controlled exceptions <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="timesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-save>Save draft</button>' : ''}</div></div>
+        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${Number(page.count || filteredEmployees.length).toLocaleString()}</strong> employees <i></i> <strong>${(totals.absent + totals.leave + missingCount).toLocaleString()}</strong> controlled exceptions <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="timesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-timesheet-save>Save draft</button>' : ''}</div></div>
       </section>`;
   }
 
   function internalOvertimeTemplate() {
-    const roster = attendanceRosterForPeriod();
+    const page = internalTimesheetPageData();
+    const roster = page.rows;
     const overtimeMeta = state.attendanceOvertimeMeta[state.period] || {};
+    const summary = state.attendanceSummary[state.period] || {};
     const configured = roster.filter(employee => overtimeMeta[employee.id]?.configured);
-    const totalOtHours = roster.reduce((sum, employee) => sum + overtimeHoursFor(employee), 0);
-    const totalAmount = roster.reduce((sum, employee) => sum + overtimeAmountFor(employee), 0);
+    const pageOtHours = roster.reduce((sum, employee) => sum + overtimeHoursFor(employee), 0);
+    const pageAmount = roster.reduce((sum, employee) => sum + overtimeAmountFor(employee), 0);
+    const totalOtHours = Number(summary.overtimeHours ?? pageOtHours ?? 0);
+    const totalAmount = Number(summary.overtimeAmount ?? pageAmount ?? 0);
     const policyNames = [...new Set(configured.map(employee => overtimeMeta[employee.id]?.policyName).filter(Boolean))];
     const editable = timesheetCanEdit();
     return `
       <div class="timesheet-summary summary-strip summary-strip--4">
-        <div class="summary-item"><span>Employees in period</span><strong>${roster.length}</strong><small>${configured.length} OT-ready salary structures</small></div>
-        <div class="summary-item"><span>OT configured</span><strong>${configured.length}</strong><small>${roster.length - configured.length} require salary/OT setup</small></div>
-        <div class="summary-item"><span>OT hours</span><strong>${totalOtHours.toLocaleString()}</strong><small>Saved monthly overtime</small></div>
+        <div class="summary-item"><span>Employees in period</span><strong>${Number(summary.employeeCount || page.count || roster.length).toLocaleString()}</strong><small>${page.rangeStart}–${page.rangeEnd} shown · server-paged</small></div>
+        <div class="summary-item"><span>OT configured</span><strong>${configured.length}</strong><small>OT-ready employees on this page</small></div>
+        <div class="summary-item"><span>OT hours</span><strong>${totalOtHours.toLocaleString()}</strong><small>Saved monthly overtime · all employees</small></div>
         <div class="summary-item"><span>Calculated OT</span><strong>${formatCurrency(totalAmount)}</strong><small>Salary-structure snapshot calculation</small></div>
       </div>
       <div class="overtime-workspace-layout">
         <section class="data-panel overtime-register"><div class="section-headline"><div><h2>${escapeHtml(state.period)} overtime register</h2><p>OT is calculated from each employee's salary structure and snapshotted policy effective at the period end.</p></div><button class="btn btn--secondary btn--sm" data-route-link="salary-setup">Manage Salary & OT Policy</button></div><div class="table-scroll"><table class="data-table overtime-table"><thead><tr><th>Employee</th><th>Base Amount</th><th>Divisor</th><th>OT Hours</th><th>Multiplier</th><th>OT Amount</th><th>Readiness</th></tr></thead><tbody>
-          ${roster.map(employee => {
+          ${roster.length ? roster.map(employee => {
             const meta = overtimeMeta[employee.id] || { configured:false, reason:'Salary/OT setup unavailable.' };
             const hours = overtimeHoursFor(employee);
             const amount = overtimeAmountFor(employee);
             return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${employee.id}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)} · ${escapeHtml(employee.position || '—')}</span></button></td><td><strong>${meta.configured ? formatCurrency(Number(meta.baseAmount || 0)) : '—'}</strong><div class="table-secondary">${escapeHtml(meta.baseComponent || '')}</div></td><td>${meta.configured ? Number(meta.divisor || 0).toLocaleString() : '—'}</td><td><input class="input ot-inline-input" type="number" min="0" max="744" step="0.5" value="${hours}" data-ot-hours="${employee.id}" ${editable && meta.configured ? '' : 'disabled'} aria-label="Overtime hours for ${escapeHtml(employee.name)}"></td><td>${meta.configured ? `× ${Number(meta.multiplier || 0).toLocaleString('en-SA',{maximumFractionDigits:4})}` : '—'}</td><td><strong>${meta.configured ? formatCurrency(amount) : '—'}</strong></td><td>${meta.configured ? `<span class="readiness readiness--ready"><span></span>${escapeHtml(meta.policyName || 'Configured')}</span>` : `<span class="readiness readiness--warn"><span></span>Needs setup</span><div class="table-secondary">${escapeHtml(meta.reason || '')}</div>`}</td></tr>`;
-          }).join('')}
-        </tbody><tfoot><tr><td><strong>Total</strong></td><td colspan="2">—</td><td><strong>${totalOtHours.toLocaleString()}</strong></td><td>—</td><td><strong>${formatCurrency(totalAmount)}</strong></td><td></td></tr></tfoot></table></div></section>
-        <aside class="data-panel overtime-policy-panel"><div class="panel__head panel__head--padded"><div><h2>Period calculation basis</h2><p>Effective employee salary structures</p></div>${timesheetStatusBadge(timesheetStatus())}</div><div class="overtime-policy-formula"><span>Base component</span><strong>÷ Salary divisor</strong><strong>× OT hours</strong><strong>× Multiplier</strong></div><div class="overtime-policy-foot"><span>Policies represented</span><strong>${escapeHtml(policyNames.length ? policyNames.join(' · ') : 'No configured OT policy')}</strong><button class="text-link" data-route-link="salary-setup">Review Salary Setup →</button></div></aside>
+          }).join('') : '<tr><td colspan="7"><div class="table-empty"><strong>No employees match this page.</strong><span>Change the attendance search or filters.</span></div></td></tr>'}
+        </tbody>${roster.length ? `<tfoot><tr><td><strong>Page total</strong></td><td colspan="2">—</td><td><strong>${pageOtHours.toLocaleString()}</strong></td><td>—</td><td><strong>${formatCurrency(pageAmount)}</strong></td><td></td></tr></tfoot>` : ''}</table></div>
+        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${Number(page.count || 0).toLocaleString()}</strong> employees</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''}>‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="timesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}</div></section>
+        <aside class="data-panel overtime-policy-panel"><div class="panel__head panel__head--padded"><div><h2>Period calculation basis</h2><p>Effective employee salary structures</p></div>${timesheetStatusBadge(timesheetStatus())}</div><div class="overtime-policy-formula"><span>Base component</span><strong>÷ Salary divisor</strong><strong>× OT hours</strong><strong>× Multiplier</strong></div><div class="overtime-policy-foot"><span>Policies represented on page</span><strong>${escapeHtml(policyNames.length ? policyNames.join(' · ') : 'No configured OT policy on this page')}</strong><button class="text-link" data-route-link="salary-setup">Review Salary Setup →</button></div></aside>
       </div>`;
   }
-
-  /* Rental project timesheets */
 
   function rentalTimesheetPeriodRange(period = state.period) {
     const info = periodInfo(period);
@@ -3663,15 +3964,8 @@
 
   function rentalWorkersForTimesheet(projectId = state.rentalTimesheetProject, period = state.period) {
     if (!projectId) return [];
-    const q = state.rentalTimesheetSearch.trim().toLowerCase();
-    return state.rentalWorkers.filter(worker => {
-      const assignments = rentalAssignmentsInProjectPeriod(worker, projectId, period);
-      if (!assignments.length) return false;
-      if (state.rentalTimesheetSupplier !== 'All suppliers' && worker.supplierId !== state.rentalTimesheetSupplier) return false;
-      const supplier = rentalWorkerSupplier(worker);
-      const text = `${rentalWorkerCode(worker)} ${worker.name} ${worker.trade || ''} ${supplier?.name || ''}`.toLowerCase();
-      return !q || text.includes(q);
-    });
+    const key = rentalTimesheetRecordKey(period, projectId);
+    return state.rentalTimesheetRoster?.[key] || [];
   }
 
 
@@ -3683,35 +3977,112 @@
     return rentalTimesheetPeriodRange(period).start;
   }
 
+  function rentalTimesheetRequest(period = state.period, projectId = state.rentalTimesheetProject) {
+    const params = new URLSearchParams();
+    params.set('project_id', projectId || '');
+    params.set('period', rentalTimesheetApiPeriod(period));
+    if (state.rentalTimesheetSearch.trim()) params.set('q', state.rentalTimesheetSearch.trim());
+    if (state.rentalTimesheetSupplier !== 'All suppliers') params.set('supplier_id', state.rentalTimesheetSupplier);
+    params.set('page', String(Math.max(1, Number(state.rentalTimesheetPage) || 1)));
+    params.set('page_size', String([25,50,100].includes(Number(state.rentalTimesheetPageSize)) ? Number(state.rentalTimesheetPageSize) : 50));
+    params.set('summary', state.rentalTimesheetSummary?.[rentalTimesheetRecordKey(period, projectId)] ? '0' : '1');
+    const url = `/api/rental/timesheets/?${params.toString()}`;
+    return { url, key:url };
+  }
+
+  function cancelRentalTimesheetRequest() {
+    const store = state.rentalTimesheetServer;
+    if (store.controller) { try { store.controller.abort(); } catch { /* settled */ } }
+    store.controller = null;
+    store.pendingKey = '';
+    store.loading = false;
+    store.requestId = Number(store.requestId || 0) + 1;
+  }
+
   function applyRentalTimesheetPayload(payload, { supersede = true } = {}) {
     const periodLabel = payload.period?.label || state.period;
     const projectId = payload.period?.projectId || state.rentalTimesheetProject;
     if (!projectId) return;
-    if (supersede) supersedePayrollAuthority('rental-timesheet', rentalTimesheetRecordKey(periodLabel, projectId));
-    state.rentalTimesheets[periodLabel] ||= {};
-    state.rentalTimesheets[periodLabel][projectId] = payload.records || {};
     const key = rentalTimesheetRecordKey(periodLabel, projectId);
-    state.rentalTimesheetStatuses[key] = payload.period?.status || 'Draft';
-    state.rentalTimesheetMeta[key] = payload.period || {};
+    if (supersede) supersedePayrollAuthority('rental-timesheet', key);
+    state.rentalTimesheets[periodLabel] ||= {};
+    state.rentalTimesheets[periodLabel][projectId] ||= {};
+    state.rentalOvertime[key] ||= {};
+    if (payload.period) {
+      state.rentalTimesheetStatuses[key] = payload.period.status || state.rentalTimesheetStatuses[key] || 'Draft';
+      state.rentalTimesheetMeta[key] = { ...(state.rentalTimesheetMeta[key] || {}), ...payload.period };
+    }
     if (payload.attendanceContract) state.rentalAttendanceContract = payload.attendanceContract;
-    state.rentalOvertime[key] = Object.fromEntries(Object.entries(payload.overtime || {}).map(([workerId,row]) => [workerId,{hours:Number(row.hours||0),rate:Number(row.rate||0)}]));
+    if (payload.summary) state.rentalTimesheetSummary[key] = { ...(state.rentalTimesheetSummary[key] || {}), ...payload.summary };
+
+    if (payload.deltaOnly) {
+      (payload.changes || []).forEach(change => {
+        const workerId = String(change.workerId || '');
+        if (!workerId) return;
+        state.rentalTimesheets[periodLabel][projectId][workerId] ||= {};
+        const day = String(change.day);
+        if (change.value === '' || change.value == null) delete state.rentalTimesheets[periodLabel][projectId][workerId][day];
+        else state.rentalTimesheets[periodLabel][projectId][workerId][day] = change.value;
+      });
+      Object.entries(payload.overtime || {}).forEach(([workerId,row]) => {
+        state.rentalOvertime[key][workerId] = { ...(state.rentalOvertime[key][workerId] || {}), hours:Number(row.hours || 0), rate:Number(row.rate || 0), trade:row.trade || '', rateType:row.rateType || '' };
+      });
+      return;
+    }
+
+    state.rentalTimesheets[periodLabel][projectId] = payload.records || {};
+    state.rentalOvertime[key] = Object.fromEntries(Object.entries(payload.overtime || {}).map(([workerId,row]) => [workerId,{hours:Number(row.hours||0),rate:Number(row.rate||0),trade:row.trade||'',rateType:row.rateType||''}]));
+    state.rentalTimesheetRoster[key] = [...(payload.roster || [])];
+    (payload.roster || []).forEach(worker => {
+      state.rentalAssignments[worker.id] = [...(worker.assignments || [])];
+      const existing = state.rentalWorkers.find(item => item.id === worker.id);
+      if (existing) Object.assign(existing, worker);
+    });
+    state.rentalTimesheetServer.meta = { ...(payload.meta || {}) };
+    state.rentalTimesheetPage = Number(payload.meta?.page || state.rentalTimesheetPage || 1);
     state.rentalTimesheetLoaded ||= new Set();
     state.rentalTimesheetLoaded.add(key);
   }
 
-  async function loadRentalTimesheet({ render = true } = {}) {
+  async function loadRentalTimesheet({ render = true, force = false } = {}) {
     const projectId = state.rentalTimesheetProject;
     const period = state.period;
-    if (!projectId) return;
+    if (!projectId) return null;
+    const request = rentalTimesheetRequest(period, projectId);
+    const store = state.rentalTimesheetServer;
+    if (!force && (store.key === request.key || store.pendingKey === request.key)) return store;
+    if (store.controller) { try { store.controller.abort(); } catch { /* settled */ } }
+    const controller = new AbortController();
+    const requestId = Number(store.requestId || 0) + 1;
+    store.requestId = requestId;
+    store.controller = controller;
+    store.pendingKey = request.key;
+    store.loading = true;
+    store.error = '';
     const scopeKey = rentalTimesheetRecordKey(period, projectId);
     const authorityTicket = payrollAuthorityTicket('rental-timesheet', scopeKey);
     try {
-      const payload = await appApi(`/api/rental/timesheets/?project_id=${encodeURIComponent(projectId)}&period=${encodeURIComponent(rentalTimesheetApiPeriod(period))}`);
-      if (!payrollAuthorityIsCurrent(authorityTicket)) return null;
+      const payload = await appApi(request.url, { signal:controller.signal });
+      if (store.requestId !== requestId || store.pendingKey !== request.key || !payrollAuthorityIsCurrent(authorityTicket)) return null;
       applyRentalTimesheetPayload(payload, { supersede:false });
+      store.key = request.key;
+      store.pendingKey = '';
+      store.loading = false;
+      store.controller = null;
+      store.meta = { ...(payload.meta || {}) };
       if (render && state.rentalTimesheetProject === projectId && state.period === period) renderRoute();
       return payload;
-    } catch (error) { showToast('Could not load project timesheet', error.message); return null; }
+    } catch (error) {
+      if (error?.name === 'AbortError') return null;
+      if (store.requestId === requestId) {
+        store.pendingKey = '';
+        store.loading = false;
+        store.controller = null;
+        store.error = error.message || 'Could not load project timesheet.';
+        if (render && state.rentalTimesheetProject === projectId && state.period === period) renderRoute();
+      }
+      return null;
+    }
   }
 
   async function saveRentalTimesheetEntries(entries, { render = true } = {}) {
@@ -3858,22 +4229,22 @@
   }
 
   function rentalTimesheetPageData() {
-    const all = rentalWorkersForTimesheet();
-    const allowedSizes = [25, 50, 100];
-    if (!allowedSizes.includes(Number(state.rentalTimesheetPageSize))) state.rentalTimesheetPageSize = 50;
-    const pageSize = Number(state.rentalTimesheetPageSize);
-    const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
-    state.rentalTimesheetPage = Math.min(Math.max(1, Number(state.rentalTimesheetPage) || 1), totalPages);
-    const startIndex = (state.rentalTimesheetPage - 1) * pageSize;
-    const rows = all.slice(startIndex, startIndex + pageSize);
+    const rows = rentalWorkersForTimesheet();
+    const meta = state.rentalTimesheetServer?.meta || {};
+    const pageSize = Number(meta.pageSize || state.rentalTimesheetPageSize || 50);
+    const page = Number(meta.page || state.rentalTimesheetPage || 1);
+    const count = Number(meta.count ?? rows.length);
+    const totalPages = Math.max(1, Number(meta.totalPages || Math.ceil(count / pageSize) || 1));
+    const startIndex = count ? (page - 1) * pageSize : 0;
     return {
-      all,
+      all: rows,
       rows,
       pageSize,
       totalPages,
-      page: state.rentalTimesheetPage,
-      rangeStart: all.length ? startIndex + 1 : 0,
-      rangeEnd: Math.min(startIndex + pageSize, all.length)
+      page,
+      count,
+      rangeStart: count ? startIndex + 1 : 0,
+      rangeEnd: Math.min(startIndex + rows.length, count)
     };
   }
 
@@ -3912,7 +4283,7 @@
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showToast('Project timesheet exported', `${workers.length} worker row${workers.length === 1 ? '' : 's'} exported for ${project?.name || 'the selected project'} · ${state.period}.`);
+    showToast('Timesheet page exported', `${workers.length} worker row${workers.length === 1 ? '' : 's'} from the current filtered page exported for ${project?.name || 'the selected project'} · ${state.period}.`);
   }
 
   function rentalTimesheetGrid(workers) {
@@ -3967,13 +4338,13 @@
     const page = rentalTimesheetPageData();
     const workers = page.rows;
     const filteredWorkers = page.all;
-    const totals = rentalTimesheetProjectTotals(filteredWorkers);
+    const pageTotals = rentalTimesheetProjectTotals(workers);
+    const summary = state.rentalTimesheetSummary[rentalTimesheetRecordKey()] || {};
     const status = rentalTimesheetStatus();
     const statusValue = rentalTimesheetStatusValue();
     const next = rentalTimesheetNextAction(status);
     const project = state.projects.find(item => item.id === state.rentalTimesheetProject);
-    const projectWorkers = state.rentalWorkers.filter(worker => rentalAssignmentsInProjectPeriod(worker,state.rentalTimesheetProject,state.period).length);
-    const supplierOptions = [...new Set(projectWorkers.map(worker => worker.supplierId).filter(Boolean))].map(id=>state.suppliers.find(s=>s.id===id)).filter(Boolean);
+    const supplierOptions = state.suppliers.filter(item => item.status === 'Active');
     const selectedCount = state.rentalTimesheetSelected.size;
     const selectedOnPage = workers.filter(worker=>state.rentalTimesheetSelected.has(worker.id)).length;
     const info = periodInfo();
@@ -3982,19 +4353,23 @@
     const meta = state.rentalTimesheetMeta[rentalTimesheetRecordKey()] || {};
     const allPageSelected = workers.length > 0 && workers.every(worker => state.rentalTimesheetSelected.has(worker.id));
     const somePageSelected = workers.some(worker => state.rentalTimesheetSelected.has(worker.id)) && !allPageSelected;
-    const supplierCount = new Set(filteredWorkers.map(worker=>worker.supplierId).filter(Boolean)).size;
+    const supplierCount = Number(summary.supplierCount ?? new Set(workers.map(worker=>worker.supplierId).filter(Boolean)).size);
+    const workerCount = Number(summary.workerCount ?? page.count ?? workers.length);
+    const regularHours = Number(summary.regularHours ?? pageTotals.hours ?? 0);
+    const overtimeHours = Number(summary.overtimeHours ?? pageTotals.otHours ?? 0);
+    const missingCount = Number(summary.missingCount ?? pageTotals.missing ?? 0);
 
     return `
       <div class="ui-v2-payroll-summary-strip ui-v2-prs-rental-timesheet-summary">
-        <div class="ui-v2-payroll-metric"><span>Worker roster</span><strong>${projectWorkers.length.toLocaleString()}</strong><small>${filteredWorkers.length.toLocaleString()} in current filter · ${supplierCount.toLocaleString()} supplier${supplierCount===1?'':'s'}</small></div>
-        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${totals.hours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>${escapeHtml(state.period)} saved project hours</small></div>
-        <div class="ui-v2-payroll-metric"><span>Overtime</span><strong>${totals.otHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Explicit worker OT register</small></div>
-        <div class="ui-v2-payroll-metric"><span>Approval state</span><strong>${escapeHtml(status)}</strong><small>${totals.missing.toLocaleString()} missing · revision ${Number(meta.revision || 0)}</small></div>
+        <div class="ui-v2-payroll-metric"><span>Worker roster</span><strong>${workerCount.toLocaleString()}</strong><small>${Number(page.count || workers.length).toLocaleString()} in current filter · ${supplierCount.toLocaleString()} supplier${supplierCount===1?'':'s'}</small></div>
+        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${regularHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>${escapeHtml(state.period)} saved project hours</small></div>
+        <div class="ui-v2-payroll-metric"><span>Overtime</span><strong>${overtimeHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Explicit worker OT register</small></div>
+        <div class="ui-v2-payroll-metric"><span>Approval state</span><strong>${escapeHtml(status)}</strong><small>${missingCount.toLocaleString()} missing · revision ${Number(meta.revision || 0)}</small></div>
       </div>
       <section class="ui-v2-payroll-panel ui-v2-payroll-timesheet-lifecycle"><header><div><span>Project period control</span><h2>${escapeHtml(project?.name || 'Project')} timesheet lifecycle</h2></div>${v2TimesheetStatusBadge(status)}</header>${rentalTimesheetWorkflow(status)}</section>
       <section class="ui-v2-payroll-attendance-control-strip ui-v2-prs-rental-control-strip">
         <div class="ui-v2-payroll-attendance-control-strip__state"><span class="ui-v2-payroll-attendance-control-icon is-${escapeHtml(status.toLowerCase().replace(/\s+/g,'-'))}">${status === 'Approved' || status === 'Locked' ? '✓' : icon('timesheet')}</span><div><strong>${escapeHtml(status)}</strong><span>${escapeHtml(settlementProtected && statusValue === 'draft' ? 'A calculated supplier settlement protects this project-period snapshot. Return the settlement before editing or resubmitting.' : rentalTimesheetStatusDescription(status))}</span></div></div>
-        <div class="ui-v2-payroll-attendance-control-strip__actions">${totals.missing ? `<span class="ui-v2-payroll-attendance-exception-link">${totals.missing.toLocaleString()} missing entr${totals.missing===1?'y':'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${['submitted','approved'].includes(statusValue) && meta.canApprove ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-return>Return to Draft</button>' : ''}${['approved','locked'].includes(statusValue) ? `<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-open-rental-settlement-project="${escapeHtml(state.rentalTimesheetProject)}" data-settlement-period="${escapeHtml(state.period)}">Open Settlement</button>` : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-rental-timesheet-workflow ${next.next && !(settlementProtected && statusValue === 'draft') ? '' : 'disabled'}>${escapeHtml(settlementProtected && statusValue === 'draft' ? 'Settlement Protected' : next.label)}</button></div>
+        <div class="ui-v2-payroll-attendance-control-strip__actions">${missingCount ? `<span class="ui-v2-payroll-attendance-exception-link">${missingCount.toLocaleString()} missing entr${missingCount===1?'y':'ies'}</span>` : '<span class="ui-v2-payroll-attendance-clear">✓ No missing entries</span>'}${['submitted','approved'].includes(statusValue) && meta.canApprove ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-return>Return to Draft</button>' : ''}${['approved','locked'].includes(statusValue) ? `<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-open-rental-settlement-project="${escapeHtml(state.rentalTimesheetProject)}" data-settlement-period="${escapeHtml(state.period)}">Open Settlement</button>` : ''}<button class="ui-v2-button ui-v2-button--primary ui-v2-button--sm" data-rental-timesheet-workflow ${next.next && !(settlementProtected && statusValue === 'draft') ? '' : 'disabled'}>${escapeHtml(settlementProtected && statusValue === 'draft' ? 'Settlement Protected' : next.label)}</button></div>
       </section>
       <section class="ui-v2-payroll-panel ui-v2-payroll-register ui-v2-payroll-timesheet-workspace ui-v2-prs-rental-timesheet-workspace ${state.timesheetFullscreen ? 'is-fullscreen' : ''}" aria-label="Rental project manpower timesheet workspace">
         <div class="ui-v2-payroll-register__toolbar ui-v2-payroll-timesheet-toolbar">
@@ -4008,11 +4383,11 @@
         <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span>${attendanceLegendItems(state.rentalAttendanceContract)}<span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>${escapeHtml(attendanceContractHint(state.rentalAttendanceContract).replace("required days", "assigned worker-days"))}</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-rental-ts-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of workers" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-rental-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
-          <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${filteredWorkers.length.toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
+          <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${Number(page.count || workers.length).toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
           <div class="ui-v2-payroll-timesheet-command-strip"><label class="ui-v2-prs-timesheet-day-select"><span>Day</span><select id="rentalTimesheetBulkDay" class="ui-v2-select ui-v2-payroll-dense-select" ${selectedCount && editable ? '' : 'disabled'}>${Array.from({length:info.days},(_,i)=>i+1).map(day=>`<option value="${day}" ${Number(state.rentalTimesheetBulkDay)===day?'selected':''}>${day} · ${weekdayShort(day,state.period)}${isCompanyToday(day,state.period) ? ' · Today' : ''}</option>`).join('')}</select></label><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="8" ${selectedCount && editable ? '' : 'disabled'}>Fill 8h</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="A" ${selectedCount && editable ? '' : 'disabled'}>Absent</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="0" ${selectedCount && editable ? '' : 'disabled'}>Zero hours</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="N" ${selectedCount && editable ? '' : 'disabled'}>No scope</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="L" ${selectedCount && editable ? '' : 'disabled'}>Leave</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="OFF" ${selectedCount && editable ? '' : 'disabled'}>Off</button><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-ts-bulk="copy" ${selectedCount && editable && Number(state.rentalTimesheetBulkDay) > 1 ? '' : 'disabled'}>Copy previous</button><button class="ui-v2-button ui-v2-button--quiet ui-v2-button--sm" data-rental-ts-bulk="clear" ${selectedCount && editable ? '' : 'disabled'}>Clear day</button></div>
         </div>
         ${workers.length ? rentalTimesheetGrid(workers) : `<div class="ui-v2-payroll-table-empty"><strong>No rental workers overlap this project period.</strong><span>Assign workers to this project, change the supplier filter, or choose another project.</span></div>`}
-        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredWorkers.length.toLocaleString()}</strong> workers <i></i> <strong>${supplierCount.toLocaleString()}</strong> supplier${supplierCount===1?'':'s'} <i></i> <strong>${totals.missing.toLocaleString()}</strong> missing <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-save>Save draft</button>' : ''}</div></div>
+        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${Number(page.count || workers.length).toLocaleString()}</strong> workers <i></i> <strong>${supplierCount.toLocaleString()}</strong> supplier${supplierCount===1?'':'s'} <i></i> <strong>${missingCount.toLocaleString()}</strong> missing <i></i> <strong>${escapeHtml(status)}</strong>${editable ? ' · editable' : ' · read-only'}</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}<div class="ui-v2-payroll-timesheet-footer-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-save>Save draft</button>' : ''}</div></div>
       </section>`;
   }
 
@@ -4021,15 +4396,20 @@
     const page = rentalTimesheetPageData();
     const workers = page.rows;
     const filteredWorkers = page.all;
-    const totals = rentalTimesheetProjectTotals(filteredWorkers);
+    const pageTotals = rentalTimesheetProjectTotals(workers);
+    const summary = state.rentalTimesheetSummary[rentalTimesheetRecordKey()] || {};
+    const workerCount = Number(summary.workerCount ?? page.count ?? workers.length);
+    const regularHours = Number(summary.regularHours ?? pageTotals.hours ?? 0);
+    const overtimeHours = Number(summary.overtimeHours ?? pageTotals.otHours ?? 0);
+    const missingCount = Number(summary.missingCount ?? pageTotals.missing ?? 0);
     const editable = rentalTimesheetCanEdit();
     const project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     return `
       <div class="ui-v2-payroll-summary-strip ui-v2-prs-rental-timesheet-summary">
-        <div class="ui-v2-payroll-metric"><span>Workers</span><strong>${filteredWorkers.length.toLocaleString()}</strong><small>${escapeHtml(project?.name || 'Selected project')} · ${escapeHtml(state.period)}</small></div>
-        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${totals.hours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Daily project timesheet</small></div>
-        <div class="ui-v2-payroll-metric"><span>OT hours</span><strong>${totals.otHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Explicit rental overtime</small></div>
-        <div class="ui-v2-payroll-metric"><span>Incomplete cells</span><strong>${totals.missing.toLocaleString('en-SA')}</strong><small>Daily sheet must be complete before submission</small></div>
+        <div class="ui-v2-payroll-metric"><span>Workers</span><strong>${workerCount.toLocaleString()}</strong><small>${escapeHtml(project?.name || 'Selected project')} · ${escapeHtml(state.period)}</small></div>
+        <div class="ui-v2-payroll-metric"><span>Regular hours</span><strong>${regularHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Daily project timesheet</small></div>
+        <div class="ui-v2-payroll-metric"><span>OT hours</span><strong>${overtimeHours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>Explicit rental overtime</small></div>
+        <div class="ui-v2-payroll-metric"><span>Incomplete cells</span><strong>${missingCount.toLocaleString('en-SA')}</strong><small>Daily sheet must be complete before submission</small></div>
       </div>
       <section class="ui-v2-payroll-panel ui-v2-payroll-register ui-v2-prs-rental-ot-panel">
         <div class="ui-v2-payroll-register__toolbar ui-v2-prs-rental-ot-toolbar"><div><strong>Worker overtime register</strong><span>OT inputs stay separate from supplier settlement calculation.</span></div><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-tab-jump="daily">Daily Timesheet</button></div>
@@ -4037,7 +4417,7 @@
           const metrics=rentalWorkerTimesheetMetrics(worker);
           return `<tr><td><button class="ui-v2-prs-rental-ot-worker" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))} · ${escapeHtml(rentalWorkerSupplier(worker)?.name || 'Supplier not linked')}</span></button></td><td><strong>${escapeHtml(rentalPeriodAssignmentsLabel(worker))}</strong><span class="ui-v2-prs-rental-ot-rate-label">${escapeHtml(rentalPeriodAssignmentsLabel(worker,undefined,undefined,'rate'))}</span></td><td class="is-numeric">${metrics.hours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</td><td><input class="ui-v2-input ui-v2-prs-rental-ot-input" type="number" min="0" step="0.25" value="${metrics.otHours || ''}" data-rental-ot-hours="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hours for ${escapeHtml(worker.name)}"></td><td><div class="ui-v2-prs-money-input"><span>${escapeHtml(currencyCode())}</span><input class="ui-v2-input" type="number" min="0" step="0.01" value="${metrics.otRate || ''}" data-rental-ot-rate="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hourly rate for ${escapeHtml(worker.name)}"></div></td><td><span class="ui-v2-muted">Calculated after lock</span></td></tr>`;
         }).join('') : '<tr><td colspan="6"><div class="ui-v2-payroll-table-empty"><strong>No workers match this overtime view.</strong><span>Change the project, supplier or search filter on the Daily Timesheet tab.</span></div></td></tr>'}</tbody>${workers.length ? `<tfoot><tr><td colspan="2"><strong>Page total</strong></td><td class="is-numeric"><strong>${rentalTimesheetProjectTotals(workers).hours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</strong></td><td><strong>${rentalTimesheetProjectTotals(workers).otHours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</strong></td><td></td><td></td></tr></tfoot>` : ''}</table></div>
-        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${filteredWorkers.length.toLocaleString()}</strong> workers <i></i> Settlement values remain server-calculated after lock</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''}>‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}</div>
+        <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${Number(page.count || workers.length).toLocaleString()}</strong> workers <i></i> Settlement values remain server-calculated after lock</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''}>‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}</div>
       </section>
       <section class="ui-v2-payroll-panel ui-v2-prs-rental-settlement-boundary"><header><div><span>Financial boundary</span><h2>Timesheet → Lock → Settlement → Payment</h2></div>${v2TimesheetStatusBadge(rentalTimesheetStatus())}</header><div class="ui-v2-prs-rental-boundary-grid"><div><strong>Timesheet</strong><span>Records worker-day hours/status and assignment-specific OT inputs.</span></div><div><strong>Lock</strong><span>Freezes this project-period as a controlled financial source.</span></div><div><strong>Settlement</strong><span>Applies supplier commercial rules and approved adjustments server-side.</span></div><div><strong>Payment</strong><span>Remains a separate supplier-payable lifecycle after settlement approval.</span></div></div></section>`;
   }
@@ -4049,27 +4429,45 @@
       project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     }
     ensureRentalTimesheet();
+    if (state.rentalTimesheetProject) {
+      const request = rentalTimesheetRequest();
+      if (state.rentalTimesheetServer.key !== request.key && state.rentalTimesheetServer.pendingKey !== request.key) {
+        queueMicrotask(() => loadRentalTimesheet({ render:true }));
+      }
+    }
+    const currentRows = rentalWorkersForTimesheet();
+    if (!currentRows.length && state.rentalTimesheetServer.loading) {
+      return `<section class="ui-v2-page ui-v2-payroll-page ui-v2-prs-rental-page timesheets-page"><div class="ui-v2-page-header"><div class="ui-v2-page-header__copy"><span class="ui-v2-eyebrow">Operations · Rental Workforce</span><h1 class="ui-v2-title-lg">Project Manpower Timesheets</h1><p class="ui-v2-body">Loading the bounded project-period worker roster.</p></div></div><div class="ui-v2-payroll-table-empty"><strong>Loading timesheet page…</strong><span>Only the requested 25/50/100 worker page is being read from the server.</span></div></section>`;
+    }
     const status = rentalTimesheetStatus();
-    const overtimeCount = rentalWorkersForTimesheet().filter(worker => rentalOvertimeFor(worker).hours > 0).length;
+    const summary = state.rentalTimesheetSummary[rentalTimesheetRecordKey()] || {};
+    const overtimeCount = Number(summary.overtimeEmployees ?? currentRows.filter(worker => rentalOvertimeFor(worker).hours > 0).length);
     return `<section class="ui-v2-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-timesheets-page timesheets-page">
       <div class="ui-v2-page-header"><div class="ui-v2-page-header__copy"><span class="ui-v2-eyebrow">Operations · Rental Workforce</span><h1 class="ui-v2-title-lg">Project Manpower Timesheets</h1><p class="ui-v2-body">Daily supplier-workforce input tied to permanent worker masters and effective-dated project assignments.</p><span class="ui-v2-prs-period-note">Working period: <strong>${escapeHtml(state.period)}</strong>${project ? ` · <strong>${escapeHtml(project.name)}</strong>` : ''} · ${v2TimesheetStatusBadge(status)}</span></div><div class="ui-v2-page-header__actions">${state.rentalTimesheetTab === 'ot' ? '<button class="ui-v2-button ui-v2-button--primary" data-rental-timesheet-tab-jump="daily">Daily Timesheet</button>' : ''}</div></div>
       <nav class="ui-v2-tabs ui-v2-prs-timesheet-tabs" aria-label="Rental project timesheet views"><button class="${state.rentalTimesheetTab==='daily'?'is-active':''}" data-rental-timesheet-tab="daily">Daily Timesheet</button><button class="${state.rentalTimesheetTab==='ot'?'is-active':''}" data-rental-timesheet-tab="ot">Overtime <span class="ui-v2-prs-tab-count">${overtimeCount}</span></button></nav>
+      ${state.rentalTimesheetServer.error ? `<div class="ui-v2-payroll-inline-alert"><strong>Timesheet page could not be refreshed.</strong><span>${escapeHtml(state.rentalTimesheetServer.error)}</span></div>` : ''}
       ${state.rentalTimesheetTab === 'ot' ? rentalOvertimeRegisterTemplate() : rentalTimesheetDailyTemplate()}
     </section>`;
   }
 
   function timesheetsTemplate() {
     if (state.timesheetWorkspace === 'rental') return rentalTimesheetsTemplate();
-    if (!state.attendanceLoadedPeriods.has(state.period)) {
-      loadInternalAttendancePeriod(state.period);
-      return `<section class="ui-v2-page ui-v2-payroll-page ui-v2-prs-internal-page timesheets-page"><div class="ui-v2-page-header"><div class="ui-v2-page-header__copy"><span class="ui-v2-eyebrow">Operations · Attendance</span><h1 class="ui-v2-title-lg">Timesheets & Overtime</h1><p class="ui-v2-body">Loading the company attendance period and employee roster for ${escapeHtml(state.period)}.</p></div></div><div class="ui-v2-payroll-table-empty"><strong>Loading attendance…</strong><span>Fetching the company-scoped monthly snapshot from the server.</span></div></section>`;
+    const request = internalAttendanceRequest(state.period);
+    if (state.attendanceServer.key !== request.key && state.attendanceServer.pendingKey !== request.key) {
+      queueMicrotask(() => loadInternalAttendancePeriod(state.period));
+    }
+    const currentRows = attendanceRosterForPeriod();
+    if (!currentRows.length && state.attendanceServer.loading) {
+      return `<section class="ui-v2-page ui-v2-payroll-page ui-v2-prs-internal-page timesheets-page"><div class="ui-v2-page-header"><div class="ui-v2-page-header__copy"><span class="ui-v2-eyebrow">Operations · Attendance</span><h1 class="ui-v2-title-lg">Timesheets & Overtime</h1><p class="ui-v2-body">Loading the bounded company attendance page for ${escapeHtml(state.period)}.</p></div></div><div class="ui-v2-payroll-table-empty"><strong>Loading attendance page…</strong><span>Only the requested 25/50/100 employee page is being read from the server.</span></div></section>`;
     }
     ensureTimesheetPeriod();
     const status = timesheetStatus();
-    const overtimeCount = Object.values(state.attendanceOvertimeMeta[state.period] || {}).filter(item => Number(item.hours || 0) > 0).length;
+    const summary = state.attendanceSummary[state.period] || {};
+    const overtimeCount = Number(summary.overtimeEmployees ?? Object.values(state.attendanceOvertimeMeta[state.period] || {}).filter(item => Number(item.hours || 0) > 0).length);
     return `<section class="ui-v2-page ui-v2-payroll-page ui-v2-prs-internal-page timesheets-page">
       <div class="ui-v2-page-header"><div class="ui-v2-page-header__copy"><span class="ui-v2-eyebrow">Operations · Attendance</span><h1 class="ui-v2-title-lg">Timesheets & Overtime</h1><p class="ui-v2-body">Monthly internal-company attendance and overtime with server-enforced review, approval and locking.</p><span class="ui-v2-prs-period-note">Working period: <strong>${escapeHtml(state.period)}</strong> · ${v2TimesheetStatusBadge(status)}</span></div><div class="ui-v2-page-header__actions">${state.timesheetTab === 'overtime' ? '<button class="ui-v2-button ui-v2-button--primary" data-route-link="salary-setup">OT Policy</button>' : ''}</div></div>
       <nav class="ui-v2-tabs ui-v2-prs-timesheet-tabs" aria-label="Internal timesheet views"><button class="${state.timesheetTab === 'attendance' ? 'is-active' : ''}" data-timesheet-tab="attendance">Attendance</button><button class="${state.timesheetTab === 'overtime' ? 'is-active' : ''}" data-timesheet-tab="overtime">Overtime <span class="ui-v2-prs-tab-count">${overtimeCount}</span></button></nav>
+      ${state.attendanceServer.error ? `<div class="ui-v2-payroll-inline-alert"><strong>Attendance page could not be refreshed.</strong><span>${escapeHtml(state.attendanceServer.error)}</span></div>` : ''}
       ${state.timesheetTab === 'overtime' ? internalOvertimeTemplate() : internalAttendanceTemplate()}
     </section>`;
   }
@@ -4107,6 +4505,13 @@
 
   function applyPayrollPayload(payload, fallbackPeriod = state.period, { supersede = true } = {}) {
     const label = payload?.run?.label || fallbackPeriod;
+    // Thin bootstrap keeps only a bounded employee sample. Payroll snapshot rows carry
+    // enough identity/display data to hydrate just the employees visible in this period.
+    directoryEntityMerge('employees', (payload?.rows || []).map(row => ({
+      id: row.employeeId, employeeId: row.employeeCode, employeeNumber: row.employeeCode,
+      name: row.name, position: row.position || '', department: row.department || '',
+      branchId: row.branchId || null, branch: row.branch || ''
+    })));
     if (supersede) supersedePayrollAuthority('internal-payroll', label);
     state.payrollContexts[label] = payload;
     state.payrollLoadedPeriods.add(label);
@@ -4649,6 +5054,16 @@
 
   function applyPaymentPayload(payload, { activate = true, supersede = true } = {}) {
     if (!payload?.period) return;
+    // Salary readiness is server authoritative and already contains the employee identity
+    // needed by WPS/Bank pages. Merge only those rows rather than hydrating all employees.
+    const readinessRows = [...(payload?.bankReadiness?.employees || []), ...(payload?.wpsReadiness?.employees || [])];
+    const readinessById = new Map();
+    readinessRows.forEach(row => { if (row?.employeeId) readinessById.set(row.employeeId, row); });
+    directoryEntityMerge('employees', [...readinessById.values()].map(row => ({
+      id: row.employeeId, employeeId: row.employeeCode, employeeNumber: row.employeeCode,
+      name: row.name, position: row.position || '', department: row.department || '',
+      branch: row.branch || ''
+    })));
     if (supersede) supersedePayrollAuthority('salary-payments', payload.period);
     state.paymentContexts[payload.period] = payload;
     state.paymentLoadedPeriods.add(payload.period);
@@ -4708,8 +5123,8 @@
         ...row,
         employee,
         branchId: employee.branchId || null,
-        nationalId: employee.nationalId || '',
-        address: employee.address || '',
+        nationalId: row.nationalId || employee.nationalId || '',
+        address: row.address || employee.address || '',
         totalSalary: Number(row.netSalary || 0),
         basicSalary: Number(row.basicSalary || 0),
         housingAllowance: Number(row.housingAllowance || 0),
@@ -5262,6 +5677,25 @@
     return state.rentalWorkers.find(worker => worker.id === id) || null;
   }
 
+  async function loadRentalWorkerProfile(workerId,{force=false,render=true}={}) {
+    if(!force&&state.rentalWorkerProfilesLoaded.has(workerId))return rentalWorkerById(workerId);
+    if(state.rentalWorkerProfileLoading.has(workerId))return null;
+    state.rentalWorkerProfileLoading.add(workerId);
+    try{
+      const payload=await appApi(`/api/rental/workers/${encodeURIComponent(workerId)}/`);
+      if(payload.worker)directoryEntityMerge('workers',[payload.worker]);
+      if(Array.isArray(payload.assignments))state.rentalAssignments[workerId]=payload.assignments;
+      state.rentalWorkerProfilesLoaded.add(workerId);
+      if(render&&currentRentalWorkerId()===workerId)renderRoute();
+      return rentalWorkerById(workerId);
+    }catch(error){
+      showToast('Rental worker profile unavailable',error.message);
+      return null;
+    }finally{
+      state.rentalWorkerProfileLoading.delete(workerId);
+    }
+  }
+
   function rentalWorkerCode(worker) {
     return worker?.workerCode || String(worker?.id || '').replace(/^rw-/, 'RW-').toUpperCase() || 'RW';
   }
@@ -5539,40 +5973,12 @@
     return activity.sort((a,b) => String(b.effective || '').localeCompare(String(a.effective || '')) || a.worker.name.localeCompare(b.worker.name));
   }
 
-  function rentalAssignmentIntegrity() {
-    const issues = [];
-    state.rentalWorkers.forEach(worker => {
-      const rows = rentalAssignmentsFor(worker).filter(row => row.kind === 'assignment');
-      const active = rows.filter(row => row.status === 'Active' && !row.end);
-      if (active.length > 1) issues.push({ worker, message:'More than one open project assignment.' });
-      rows.forEach(row => { if (!row.start) issues.push({ worker, message:'Assignment is missing an effective start date.' }); });
-      const sorted = [...rows].filter(row => row.start).sort((a,b) => String(a.start).localeCompare(String(b.start)));
-      for (let i=1;i<sorted.length;i++) {
-        const previous = sorted[i-1], current = sorted[i];
-        if (previous.end && String(previous.end) >= String(current.start)) issues.push({ worker, message:`Assignment dates overlap around ${rentalDisplayDate(current.start)}.` });
-      }
-    });
-    return issues;
-  }
-
-  function rentalAssignmentFilteredActivity() {
-    const q = state.rentalAssignmentSearch.trim().toLowerCase();
-    return rentalAssignmentActivityRows().filter(row => {
-      const supplierMatch = state.rentalAssignmentSupplier === 'All suppliers' || row.worker.supplierId === state.rentalAssignmentSupplier;
-      const projectIds = [row.item.projectId,row.previous?.projectId].filter(Boolean);
-      const projectMatch = state.rentalAssignmentProject === 'All projects' || projectIds.includes(state.rentalAssignmentProject);
-      const typeMatch = state.rentalAssignmentType === 'All activity' || (state.rentalAssignmentType === 'Trade / rate changes' ? ['Trade change','Rate change'].includes(row.type) : row.type === state.rentalAssignmentType);
-      const searchText = `${row.worker.name} ${rentalWorkerCode(row.worker)} ${row.supplier?.name || ''} ${row.from} ${row.to} ${row.detail} ${row.reason}`.toLowerCase();
-      return supplierMatch && projectMatch && typeMatch && (!q || searchText.includes(q));
-    });
-  }
-
   function rentalAssignmentActivityTemplate() {
-    const rows = rentalAssignmentFilteredActivity();
-    const all = rentalAssignmentActivityRows();
-    const eventTypes = ['All activity','Project assignment','Project transfer','Trade / rate changes','Trade change','Rate change','Release'];
+    const view=serverRentalAssignmentView('activity'),rows=view.rows,meta=view.meta;
+    const eventTypes=['All activity','Project assignment','Project transfer','Trade / rate changes','Trade change','Rate change','Release'];
+    const body=rows.length?rows.map(row=>`<tr><td><strong>${escapeHtml(row.effective?rentalDisplayDate(row.effective):'Date not supplied')}</strong>${row.recordedAt?`<small class="table-secondary">Recorded ${escapeHtml(payrollTimestamp(row.recordedAt))}</small>`:''}</td><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.worker.id)}"><strong>${escapeHtml(row.worker.name)}</strong><span>${escapeHtml(row.worker.workerCode||row.worker.id)}</span></button>${row.supplier?`<button class="table-sub-link" data-open-supplier="${escapeHtml(row.supplier.id)}">${escapeHtml(row.supplier.name)}</button>`:''}</td><td>${rentalAssignmentBadge(row.type)}</td><td><div class="assignment-change-cell"><span>${escapeHtml(row.from||'—')}</span><b>→</b><strong>${escapeHtml(row.to||'—')}</strong></div></td><td><div class="table-primary">${escapeHtml(row.detail||'—')}</div>${row.project?`<button class="table-sub-link" data-open-project="${escapeHtml(row.project.id)}">${escapeHtml(row.project.code||row.project.name)}</button>`:''}</td><td><span class="assignment-reason">${escapeHtml(row.reason||'Assignment update')}</span></td><td><span class="source-mini">Audited</span><small class="assignment-audit-actor">${escapeHtml(row.audit||'Audit trail')}</small></td><td><button class="icon-btn icon-btn--sm" data-assignment-worker="${escapeHtml(row.worker.id)}" title="Open assignment history">${icon('chevron')}</button></td></tr>`).join(''):rentalAssignmentTableState('activity',view,8,'No assignment events match these filters.','Reset the filters to review the effective-dated history.');
     return `<section class="panel panel--flush assignment-activity-panel">
-      <div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Assignment activity</h2><p>One audit view for project transfers, role changes, rate revisions, releases and reassignments across every manpower supplier.</p></div><div class="assignment-panel-count"><strong>${rows.length}</strong><span>matching events</span></div></div>
+      <div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Assignment activity</h2><p>Server-paged lifecycle events for project transfers, role changes, rate revisions, releases and reassignments.</p></div><div class="assignment-panel-count"><strong>${Number(meta.count||0).toLocaleString()}</strong><span>matching records${view.refreshing?' · refreshing…':''}</span></div></div>
       <div class="assignment-filterbar">
         <div class="search-field assignment-search">${icon('search')}<input id="rentalAssignmentSearch" type="search" value="${escapeHtml(state.rentalAssignmentSearch)}" placeholder="Search worker, supplier, project, trade or reason…"></div>
         <select class="select" id="rentalAssignmentSupplier"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.rentalAssignmentSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select>
@@ -5580,53 +5986,36 @@
         <select class="select" id="rentalAssignmentType">${eventTypes.map(type=>`<option ${state.rentalAssignmentType===type?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select>
         <button class="btn btn--ghost" data-assignment-reset>Reset</button>
       </div>
-      <div class="table-wrap assignment-activity-table-wrap"><table class="data-table assignment-activity-table"><thead><tr><th>Effective</th><th>Worker</th><th>Event</th><th>Change</th><th>Context</th><th>Reason</th><th>Audit</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row=>`<tr><td><strong>${escapeHtml(row.effective ? rentalDisplayDate(row.effective) : 'Date not supplied')}</strong>${row.recordedAt?`<small class="table-secondary">Recorded ${escapeHtml(payrollTimestamp(row.recordedAt))}</small>`:''}</td><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.worker.id)}"><strong>${escapeHtml(row.worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(row.worker))}</span></button>${row.supplier?`<button class="table-sub-link" data-open-supplier="${escapeHtml(row.supplier.id)}">${escapeHtml(row.supplier.name)}</button>`:''}</td><td>${rentalAssignmentBadge(row.type)}</td><td><div class="assignment-change-cell"><span>${escapeHtml(row.from)}</span><b>→</b><strong>${escapeHtml(row.to)}</strong></div></td><td><div class="table-primary">${escapeHtml(row.detail)}</div>${row.project?`<button class="table-sub-link" data-open-project="${escapeHtml(row.project.id)}">${escapeHtml(row.project.code)}</button>`:''}</td><td><span class="assignment-reason">${escapeHtml(row.reason)}</span></td><td><span class="source-mini">Audited</span><small class="assignment-audit-actor">${escapeHtml(row.audit)}</small></td><td><button class="icon-btn icon-btn--sm" data-assignment-worker="${escapeHtml(row.worker.id)}" title="Open assignment history">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="8"><div class="table-empty"><strong>No assignment events match these filters.</strong><span>Reset the filters to review the full effective-dated history.</span></div></td></tr>`}</tbody></table></div>
-      <div class="table-meta"><span><strong>${all.length}</strong> lifecycle events in the current worker master</span><span>Every lifecycle event is backed by the server assignment history and audit trail.</span></div>
+      <div class="table-wrap assignment-activity-table-wrap"><table class="data-table assignment-activity-table"><thead><tr><th>Effective</th><th>Worker</th><th>Event</th><th>Change</th><th>Context</th><th>Reason</th><th>Audit</th><th></th></tr></thead><tbody>${body}</tbody></table></div>
+      ${rentalAssignmentPagination('activity',meta)}
+      <div class="table-meta"><span>Only the visible server page is materialized in the browser.</span><span>Every lifecycle event remains backed by assignment history and audit trail.</span></div>
     </section>`;
   }
 
   function rentalAssignmentDeploymentTemplate() {
-    const q = state.rentalAssignmentSearch.trim().toLowerCase();
-    const rows = state.rentalWorkers.filter(worker => worker.status === 'Assigned').map(worker => ({ worker, supplier:rentalWorkerSupplier(worker), snapshot:rentalWorkerCurrentSnapshot(worker) })).filter(row => {
-      const supplierMatch = state.rentalAssignmentSupplier === 'All suppliers' || row.worker.supplierId === state.rentalAssignmentSupplier;
-      const projectMatch = state.rentalAssignmentProject === 'All projects' || row.snapshot.project?.id === state.rentalAssignmentProject;
-      const text = `${row.worker.name} ${rentalWorkerCode(row.worker)} ${row.supplier?.name || ''} ${row.snapshot.project?.name || ''} ${row.snapshot.trade} ${row.snapshot.rate}`.toLowerCase();
-      return supplierMatch && projectMatch && (!q || text.includes(q));
-    });
-    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Current deployment</h2><p>The latest open assignment for each worker, resolved from effective-dated history.</p></div><div class="assignment-panel-count"><strong>${rows.length}</strong><span>deployed workers</span></div></div><div class="assignment-filterbar assignment-filterbar--compact"><div class="search-field assignment-search">${icon('search')}<input id="rentalAssignmentSearch" type="search" value="${escapeHtml(state.rentalAssignmentSearch)}" placeholder="Search current deployment…"></div><select class="select" id="rentalAssignmentSupplier"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.rentalAssignmentSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><select class="select" id="rentalAssignmentProject"><option value="All projects">All projects</option>${state.projects.filter(p=>p.status==='Active').map(p=>`<option value="${escapeHtml(p.id)}" ${state.rentalAssignmentProject===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><button class="btn btn--ghost" data-assignment-reset>Reset</button></div><div class="table-wrap"><table class="data-table assignment-deployment-table"><thead><tr><th>Worker</th><th>Supplier</th><th>Project</th><th>Trade</th><th>Rate</th><th>Effective Since</th><th>Actions</th></tr></thead><tbody>${rows.length?rows.map(({worker,supplier,snapshot})=>`<tr><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button></td><td>${supplier?`<button class="entity-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>`:'—'}</td><td>${snapshot.project?`<button class="entity-link entity-link--stack" data-open-project="${escapeHtml(snapshot.project.id)}"><strong>${escapeHtml(snapshot.project.name)}</strong><span>${escapeHtml(snapshot.project.code)}</span></button>`:'—'}</td><td><strong>${escapeHtml(snapshot.trade)}</strong></td><td>${escapeHtml(snapshot.rate)}</td><td>${escapeHtml(snapshot.since?rentalDisplayDate(snapshot.since):'—')}</td><td><div class="assignment-inline-actions">${worker.nextAssignmentId ? `<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel scheduled</button>` : `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Trade</button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Rate</button><button class="is-danger" data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release</button>`}</div></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No active assignments match these filters.</strong><span>Reset filters or assign an available supplier worker.</span></div></td></tr>`}</tbody></table></div></section>`;
+    const view=serverRentalAssignmentView('deployment'),rows=view.rows,meta=view.meta;
+    const body=rows.length?rows.map(worker=>{const project=state.projects.find(item=>item.id===worker.projectId);return `<tr><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button></td><td>${worker.supplierId?`<button class="entity-link" data-open-supplier="${escapeHtml(worker.supplierId)}">${escapeHtml(worker.supplier||'Supplier')}</button>`:'—'}</td><td>${worker.projectId?`<button class="entity-link entity-link--stack" data-open-project="${escapeHtml(worker.projectId)}"><strong>${escapeHtml(project?.name||worker.project||'Project')}</strong><span>${escapeHtml(project?.code||'')}</span></button>`:'—'}</td><td><strong>${escapeHtml(worker.trade||'—')}</strong></td><td>${escapeHtml(rentalWorkerRate(worker))}</td><td>${escapeHtml(worker.since?rentalDisplayDate(worker.since):'—')}</td><td><div class="assignment-inline-actions">${worker.nextAssignmentId?`<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel scheduled</button>`:`<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Trade</button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Rate</button><button class="is-danger" data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release</button>`}</div></td></tr>`}).join(''):rentalAssignmentTableState('deployment',view,7,'No active assignments match these filters.','Reset filters or assign an available supplier worker.');
+    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Current deployment</h2><p>The current server-resolved assignment for each worker; the browser no longer scans the complete assignment history.</p></div><div class="assignment-panel-count"><strong>${Number(meta.count||0).toLocaleString()}</strong><span>deployed workers${view.refreshing?' · refreshing…':''}</span></div></div><div class="assignment-filterbar assignment-filterbar--compact"><div class="search-field assignment-search">${icon('search')}<input id="rentalAssignmentSearch" type="search" value="${escapeHtml(state.rentalAssignmentSearch)}" placeholder="Search current deployment…"></div><select class="select" id="rentalAssignmentSupplier"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.rentalAssignmentSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><select class="select" id="rentalAssignmentProject"><option value="All projects">All projects</option>${state.projects.filter(p=>p.status==='Active').map(p=>`<option value="${escapeHtml(p.id)}" ${state.rentalAssignmentProject===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><button class="btn btn--ghost" data-assignment-reset>Reset</button></div><div class="table-wrap"><table class="data-table assignment-deployment-table"><thead><tr><th>Worker</th><th>Supplier</th><th>Project</th><th>Trade</th><th>Rate</th><th>Effective Since</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>${rentalAssignmentPagination('deployment',meta)}</section>`;
   }
 
   function rentalAssignmentPoolTemplate() {
-    const q = state.rentalAssignmentSearch.trim().toLowerCase();
-    const rows = state.rentalWorkers.filter(worker => ['Available','Inactive'].includes(worker.status)).map(worker => {
-      const history = rentalAssignmentsFor(worker);
-      const last = [...history].reverse().find(item => item.kind === 'assignment');
-      return { worker, supplier:rentalWorkerSupplier(worker), last };
-    }).filter(row => {
-      const supplierMatch = state.rentalAssignmentSupplier === 'All suppliers' || row.worker.supplierId === state.rentalAssignmentSupplier;
-      const text = `${row.worker.name} ${rentalWorkerCode(row.worker)} ${row.supplier?.name || ''} ${row.worker.trade} ${row.worker.status} ${row.last?.projectName || ''}`.toLowerCase();
-      return supplierMatch && (!q || text.includes(q));
-    });
-    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Supplier worker pool</h2><p>Released and available workers remain permanent master records and can be assigned again without duplication.</p></div><div class="assignment-panel-count"><strong>${rows.filter(r=>r.worker.status==='Available').length}</strong><span>available now</span></div></div><div class="assignment-filterbar assignment-filterbar--pool"><div class="search-field assignment-search">${icon('search')}<input id="rentalAssignmentSearch" type="search" value="${escapeHtml(state.rentalAssignmentSearch)}" placeholder="Search available or inactive workers…"></div><select class="select" id="rentalAssignmentSupplier"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.rentalAssignmentSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><button class="btn btn--ghost" data-assignment-reset>Reset</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Worker</th><th>Supplier</th><th>Trade</th><th>Current Rate</th><th>Last Project</th><th>Status</th><th>Available Since</th><th></th></tr></thead><tbody>${rows.length?rows.map(({worker,supplier,last})=>`<tr><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button></td><td>${supplier?`<button class="entity-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>`:'—'}</td><td>${escapeHtml(worker.trade || '—')}</td><td>${escapeHtml(rentalWorkerRate(worker))}</td><td>${last?.projectId?`<button class="entity-link" data-open-project="${escapeHtml(last.projectId)}">${escapeHtml(last.projectName || 'Project')}</button>`:'—'}</td><td>${statusBadge(worker.status || 'Available')}</td><td>${escapeHtml(worker.since?rentalDisplayDate(rentalFriendlyToIso(worker.since)||worker.since):'—')}</td><td>${worker.status==='Available'||worker.status==='Released'?`<button class="btn btn--secondary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign</button>`:`<button class="text-link" data-open-rental-worker="${escapeHtml(worker.id)}">View profile</button>`}</td></tr>`).join(''):`<tr><td colspan="8"><div class="table-empty"><strong>No supplier-pool workers match this filter.</strong><span>Released workers appear here when returned to the supplier pool.</span></div></td></tr>`}</tbody></table></div></section>`;
+    const view=serverRentalAssignmentView('pool'),rows=view.rows,meta=view.meta;
+    const body=rows.length?rows.map(worker=>`<tr><td><button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button></td><td>${worker.supplierId?`<button class="entity-link" data-open-supplier="${escapeHtml(worker.supplierId)}">${escapeHtml(worker.supplier||'Supplier')}</button>`:'—'}</td><td>${escapeHtml(worker.trade||'—')}</td><td>${escapeHtml(rentalWorkerRate(worker))}</td><td>${worker.lastProjectId?`<button class="entity-link" data-open-project="${escapeHtml(worker.lastProjectId)}">${escapeHtml(worker.lastProject||'Project')}</button>`:'—'}</td><td>${statusBadge(worker.status||'Available')}</td><td>${escapeHtml(worker.since?rentalDisplayDate(rentalFriendlyToIso(worker.since)||worker.since):'—')}</td><td>${worker.status==='Available'||worker.status==='Released'?`<button class="btn btn--secondary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign</button>`:`<button class="text-link" data-open-rental-worker="${escapeHtml(worker.id)}">View profile</button>`}</td></tr>`).join(''):rentalAssignmentTableState('pool',view,8,'No supplier-pool workers match this filter.','Released and available workers appear here without duplicating their master records.');
+    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded assignment-panel-head"><div><h2>Supplier worker pool</h2><p>Server-paged available and inactive workers, ready for reassignment without loading the full rental master into this table.</p></div><div class="assignment-panel-count"><strong>${Number(meta.count||0).toLocaleString()}</strong><span>pool workers${view.refreshing?' · refreshing…':''}</span></div></div><div class="assignment-filterbar assignment-filterbar--pool"><div class="search-field assignment-search">${icon('search')}<input id="rentalAssignmentSearch" type="search" value="${escapeHtml(state.rentalAssignmentSearch)}" placeholder="Search available or inactive workers…"></div><select class="select" id="rentalAssignmentSupplier"><option value="All suppliers">All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(s=>`<option value="${escapeHtml(s.id)}" ${state.rentalAssignmentSupplier===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select><button class="btn btn--ghost" data-assignment-reset>Reset</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Worker</th><th>Supplier</th><th>Trade</th><th>Current Rate</th><th>Last Project</th><th>Status</th><th>Available Since</th><th></th></tr></thead><tbody>${body}</tbody></table></div>${rentalAssignmentPagination('pool',meta)}</section>`;
   }
 
   function rentalAssignmentsTemplate() {
-    const all = rentalAssignmentActivityRows();
-    const integrity = rentalAssignmentIntegrity();
-    const assigned = state.rentalWorkers.filter(worker=>worker.status==='Assigned').length;
-    const available = state.rentalWorkers.filter(worker=>worker.status==='Available').length;
-    const transfers = all.filter(row=>row.type==='Project transfer').length;
-    const changes = all.filter(row=>['Trade change','Rate change'].includes(row.type)).length;
-    const releases = all.filter(row=>row.type==='Release').length;
-    let content = rentalAssignmentActivityTemplate();
-    if (state.rentalAssignmentTab === 'deployment') content = rentalAssignmentDeploymentTemplate();
-    else if (state.rentalAssignmentTab === 'pool') content = rentalAssignmentPoolTemplate();
+    const summaryView=serverRentalAssignmentView('summary'),summary=summaryView.summary||{};
+    const assigned=Number(summary.assigned||0),available=Number(summary.available||0),transfers=Number(summary.transfers||0),changes=Number(summary.changes||0),releases=Number(summary.releases||0),integrity=Number(summary.integrityIssues||0);
+    let content=rentalAssignmentActivityTemplate();
+    if(state.rentalAssignmentTab==='deployment')content=rentalAssignmentDeploymentTemplate();
+    else if(state.rentalAssignmentTab==='pool')content=rentalAssignmentPoolTemplate();
     return `<section class="page rental-assignments-page">
       <div class="page-head rental-assignment-head"><div class="page-head__copy"><span class="eyebrow">Rental Workforce · Assignment Control</span><h1>Assignment Lifecycle</h1><p>Control project deployment without duplicating workers: assign, transfer, change trade/rate, release back to the supplier pool and preserve every effective-dated record.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="rental-workforce">Worker Master</button><button class="btn btn--secondary" data-route-link="rental-onboarding">Bulk Onboard</button><button class="btn btn--primary" data-rental-available-jump>${icon('plus')} Assign Available Worker</button></div></div>
-      <div class="assignment-summary-strip"><div><span>Deployed now</span><strong>${assigned}</strong><small>Open project assignments</small></div><button data-assignment-tab-jump="pool"><span>Available pool</span><strong>${available}</strong><small>Ready to reassign</small></button><button data-assignment-type-jump="Project transfer"><span>Transfers</span><strong>${transfers}</strong><small>Preserved project moves</small></button><button data-assignment-type-jump="Trade / rate changes"><span>Trade / rate changes</span><strong>${changes}</strong><small>Effective revisions</small></button><button data-assignment-type-jump="Release"><span>Releases</span><strong>${releases}</strong><small>Returned / inactive</small></button></div>
-      <div class="assignment-workspace-tabs"><button class="${state.rentalAssignmentTab==='activity'?'is-active':''}" data-assignment-tab="activity"><span>Activity Log</span><small>All lifecycle events</small></button><button class="${state.rentalAssignmentTab==='deployment'?'is-active':''}" data-assignment-tab="deployment"><span>Current Deployment</span><small>Who is working where</small></button><button class="${state.rentalAssignmentTab==='pool'?'is-active':''}" data-assignment-tab="pool"><span>Supplier Pool</span><small>Available & released</small></button></div>
+      <div class="assignment-summary-strip"><div><span>Deployed now</span><strong>${assigned.toLocaleString()}</strong><small>Open project assignments</small></div><button data-assignment-tab-jump="pool"><span>Available pool</span><strong>${available.toLocaleString()}</strong><small>Ready to reassign</small></button><button data-assignment-type-jump="Project transfer"><span>Transfers</span><strong>${transfers.toLocaleString()}</strong><small>Preserved project moves</small></button><button data-assignment-type-jump="Trade / rate changes"><span>Trade / rate changes</span><strong>${changes.toLocaleString()}</strong><small>Effective revisions</small></button><button data-assignment-type-jump="Release"><span>Releases</span><strong>${releases.toLocaleString()}</strong><small>Returned / inactive</small></button></div>
+      <div class="assignment-workspace-tabs"><button class="${state.rentalAssignmentTab==='activity'?'is-active':''}" data-assignment-tab="activity"><span>Activity Log</span><small>Server-paged lifecycle events</small></button><button class="${state.rentalAssignmentTab==='deployment'?'is-active':''}" data-assignment-tab="deployment"><span>Current Deployment</span><small>Who is working where</small></button><button class="${state.rentalAssignmentTab==='pool'?'is-active':''}" data-assignment-tab="pool"><span>Supplier Pool</span><small>Available & released</small></button></div>
       ${content}
-      <div class="assignment-footer-grid"><section class="detail-card"><div class="detail-card__head"><h3>History integrity</h3>${integrity.length?'<span class="status status--danger"><span></span>Needs review</span>':'<span class="status status--success"><span></span>Healthy</span>'}</div>${integrity.length?`<div class="assignment-integrity-list">${integrity.slice(0,4).map(issue=>`<button data-open-rental-worker="${escapeHtml(issue.worker.id)}"><strong>${escapeHtml(issue.worker.name)}</strong><span>${escapeHtml(issue.message)}</span></button>`).join('')}</div>`:`<p>Each worker has at most one open project assignment, effective dates are present, and closed records do not overlap the next assignment.</p>`}</section><section class="detail-card"><div class="detail-card__head"><h3>Lifecycle rule</h3></div><div class="rental-rule-list"><div><strong>Transfer</strong><span>Close old project the day before the new assignment starts.</span></div><div><strong>Trade / Rate</strong><span>Same project, new effective record; do not rewrite prior payroll.</span></div><div><strong>Release</strong><span>Close project assignment and return the worker to supplier pool or mark inactive.</span></div></div></section><section class="detail-card"><div class="detail-card__head"><h3>Audit scope</h3></div><p>Every assignment lifecycle action is persisted server-side and written to the append-only company audit trail with actor and request context.</p></section></div>
+      <div class="assignment-footer-grid"><section class="detail-card"><div class="detail-card__head"><h3>History integrity</h3>${integrity?'<span class="status status--danger"><span></span>Needs review</span>':'<span class="status status--success"><span></span>Controlled</span>'}</div><p>Open-assignment uniqueness and lifecycle validation are enforced server-side. The browser no longer rescans every historical segment just to render this page.</p></section><section class="detail-card"><div class="detail-card__head"><h3>Lifecycle rule</h3></div><div class="rental-rule-list"><div><strong>Transfer</strong><span>Close old project the day before the new assignment starts.</span></div><div><strong>Trade / Rate</strong><span>Same project, new effective record; do not rewrite prior payroll.</span></div><div><strong>Release</strong><span>Close project assignment and return the worker to supplier pool or mark inactive.</span></div></div></section><section class="detail-card"><div class="detail-card__head"><h3>Scale boundary</h3></div><p>Assignment Lifecycle now keeps only 25, 50 or 100 server-selected rows in the active table, even with thousands of workers and long assignment history.</p></section></div>
     </section>`;
   }
 
@@ -5669,7 +6058,7 @@
       <section class="panel panel--flush rental-directory-panel">
         <div class="panel__head panel__head--padded rental-directory-head">
           <div><h2>Worker master</h2><p>Filter the complete rental roster by assignment, supplier, project, trade or rate type.</p></div>
-          <div class="rental-directory-meta"><strong>${Number(directory.meta.count ?? rows.length).toLocaleString()}</strong><span>${filtered ? 'matching workers' : 'workers in master'}</span></div>
+          <div class="rental-directory-meta"><strong>${Number(directory.meta.count ?? rows.length).toLocaleString()}</strong><span>${filtered ? 'matching workers' : 'workers in master'}</span>${directory.refreshing?'<small>Refreshing…</small>':''}</div>
         </div>
 
         <div class="rental-filterbar">
@@ -6369,6 +6758,14 @@
   }
 
   function adjustmentsTemplate() {
+    if (state.workspace === 'internal' && !state.internalMasterComplete) {
+      if (!state.internalMasterLoading) hydrateCompleteMaster('employees');
+      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading employee directory…</strong><span>The complete employee master is fetched only when the adjustment person selector needs it.</span></div></section>`;
+    }
+    if (state.workspace === 'rental' && !state.rentalMasterComplete) {
+      if (!state.rentalMasterLoading) hydrateCompleteMaster('workers');
+      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental worker directory…</strong><span>The complete worker master is fetched only when the adjustment person selector needs it.</span></div></section>`;
+    }
     if (state.workspace === 'internal' && !state.payrollLoadedPeriods.has(state.period)) {
       loadInternalPayrollPeriod(state.period);
       return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading adjustments…</strong><span>Fetching the period ledger from the server.</span></div></section>`;
@@ -6815,38 +7212,43 @@
     else if (route === 'access-roles') { pageRoot.innerHTML = accessRolesTemplate(); title = 'Access & Roles'; }
     else if (route === 'projects' && projectId) {
       const project = state.projects.find(p => p.id === projectId);
-      pageRoot.innerHTML = projectProfileTemplate(project);
+      if(!state.rentalMasterComplete){if(!state.rentalMasterLoading)hydrateCompleteMaster('workers');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading project workforce…</strong><span>The complete rental worker master is fetched only for project profile detail.</span></div></section>`;}
+      else pageRoot.innerHTML = projectProfileTemplate(project);
       title = project?.name || 'Project';
     } else if (route === 'projects') pageRoot.innerHTML = projectsTemplate();
     else if (route === 'suppliers' && supplierId) {
       const supplier = state.suppliers.find(item => item.id === supplierId);
-      pageRoot.innerHTML = supplierProfileTemplate(supplier);
+      if(!state.rentalMasterComplete){if(!state.rentalMasterLoading)hydrateCompleteMaster('workers');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading supplier workforce…</strong><span>The complete rental worker master is fetched only for supplier profile detail.</span></div></section>`;}
+      else pageRoot.innerHTML = supplierProfileTemplate(supplier);
       title = supplier?.name || 'Supplier';
     } else if (route === 'suppliers') pageRoot.innerHTML = suppliersTemplate();
     else if (route === 'branches' && branchId) {
       const branch = state.branches.find(item => item.id === branchId);
-      pageRoot.innerHTML = branchProfileTemplate(branch);
+      if(!state.internalMasterComplete){if(!state.internalMasterLoading)hydrateCompleteMaster('employees');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading branch workforce…</strong><span>The complete employee master is fetched only for branch profile detail.</span></div></section>`;}
+      else pageRoot.innerHTML = branchProfileTemplate(branch);
       title = branch?.name || 'Branch / Office';
     } else if (route === 'branches') pageRoot.innerHTML = branchesTemplate();
     else if (route === 'departments' && departmentId) {
       const department = state.departments.find(item => item.id === departmentId);
-      pageRoot.innerHTML = departmentProfileTemplate(department);
+      if(!state.internalMasterComplete){if(!state.internalMasterLoading)hydrateCompleteMaster('employees');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading department workforce…</strong><span>The complete employee master is fetched only for department profile detail.</span></div></section>`;}
+      else pageRoot.innerHTML = departmentProfileTemplate(department);
       title = department?.name || 'Department';
     } else if (route === 'departments') pageRoot.innerHTML = departmentsTemplate();
     else if (route === 'internal-employees' && employeeId) {
       const employee = state.employees.find(item => item.id === employeeId);
       const profileKey = employeeProfileContextKey(employeeId, state.period);
-      if (employee && !state.employeeProfileContexts[profileKey] && !state.employeeProfileLoading.has(profileKey)) {
+      if (!state.employeeProfileContexts[profileKey] && !state.employeeProfileLoading.has(profileKey)) {
         loadEmployeeProfileContext(employeeId, state.period, { render:true });
       }
-      pageRoot.innerHTML = employeeRecordPreviewTemplate(employee);
+      pageRoot.innerHTML = employee ? employeeRecordPreviewTemplate(employee) : `<section class="page"><div class="table-empty table-empty--card"><strong>Loading employee profile…</strong><span>Fetching this employee directly from the Payroll backend.</span></div></section>`;
       title = employee?.name || 'Employee';
     } else if (route === 'internal-employees') pageRoot.innerHTML = internalEmployeesTemplate();
     else if (route === 'rental-onboarding') { pageRoot.innerHTML = rentalOnboardingTemplate(); title = 'Rental Worker Onboarding'; }
     else if (route === 'rental-assignments') { pageRoot.innerHTML = rentalAssignmentsTemplate(); title = 'Rental Assignments'; }
     else if (route === 'rental-workforce' && rentalWorkerId) {
       const worker = rentalWorkerById(rentalWorkerId);
-      pageRoot.innerHTML = rentalWorkerPreviewTemplate(worker);
+      if(!state.rentalWorkerProfilesLoaded.has(rentalWorkerId)&&!state.rentalWorkerProfileLoading.has(rentalWorkerId))loadRentalWorkerProfile(rentalWorkerId,{render:true});
+      pageRoot.innerHTML = state.rentalWorkerProfilesLoaded.has(rentalWorkerId) ? rentalWorkerPreviewTemplate(worker) : `<section class="page"><div class="table-empty table-empty--card"><strong>Loading rental worker profile…</strong><span>Fetching this worker and assignment history directly from the Payroll backend.</span></div></section>`;
       title = worker?.name || 'Rental Worker';
     } else if (route === 'rental-workforce') pageRoot.innerHTML = rentalWorkforceTemplate();
     else if (route === 'salary-setup') pageRoot.innerHTML = salarySetupTemplate();
@@ -6917,7 +7319,18 @@
       if(!store||![25,50,100].includes(pageSize))return; store.pageSize=pageSize; store.page=1; renderRoute();
     }));
     document.querySelectorAll('[data-directory-retry]').forEach(btn => btn.addEventListener('click', () => {
-      const kind=btn.dataset.directoryRetry; const store=directoryStore(kind); if(store){store.key='';store.pendingKey='';store.error='';loadServerDirectory(kind,{force:true});renderRoute();}
+      const kind=btn.dataset.directoryRetry; const store=directoryStore(kind); if(store){store.key='';store.failedKey='';store.error='';loadServerDirectory(kind,{force:true});}
+    }));
+    document.querySelectorAll('[data-assignment-page]').forEach(btn => btn.addEventListener('click', () => {
+      const [kind,pageRaw]=String(btn.dataset.assignmentPage||'').split('|');const store=rentalAssignmentStore(kind),page=Number(pageRaw);
+      if(!store||!Number.isFinite(page)||page<1)return;store.page=page;renderRoute();
+    }));
+    document.querySelectorAll('[data-assignment-page-size]').forEach(select => select.addEventListener('change', () => {
+      const store=rentalAssignmentStore(select.dataset.assignmentPageSize),pageSize=Number(select.value);
+      if(!store||![25,50,100].includes(pageSize))return;store.pageSize=pageSize;store.page=1;renderRoute();
+    }));
+    document.querySelectorAll('[data-assignment-retry]').forEach(btn => btn.addEventListener('click', () => {
+      const kind=btn.dataset.assignmentRetry,store=rentalAssignmentStore(kind);if(store){store.key='';store.failedKey='';store.error='';loadRentalAssignmentServer(kind,{force:true});}
     }));
     document.querySelectorAll('[data-timesheet-fullscreen]').forEach(btn => btn.addEventListener('click', toggleTimesheetFullscreen));
     document.querySelectorAll('[data-route-link]').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.routeLink)));
@@ -6963,12 +7376,12 @@
     document.querySelectorAll('[data-open-department]').forEach(btn => btn.addEventListener('click', () => navigate(`departments/${btn.dataset.openDepartment}`)));
     document.querySelectorAll('[data-branch-tab]').forEach(btn => btn.addEventListener('click', () => { state.branchTab=btn.dataset.branchTab; renderRoute(); }));
     document.querySelectorAll('[data-department-tab]').forEach(btn => btn.addEventListener('click', () => { state.departmentTab=btn.dataset.departmentTab; renderRoute(); }));
-    const branchSearch=document.getElementById('branchSearch'); bindPayrollSearch(branchSearch,value=>{state.branchSearch=value;});
+    const branchSearch=document.getElementById('branchSearch'); bindServerDirectorySearch(branchSearch,'branches',value=>{state.branchSearch=value;});
     document.querySelectorAll('[data-branch-status]').forEach(btn=>btn.addEventListener('click',()=>{state.branchStatus=btn.dataset.branchStatus;renderRoute();}));
     const branchStatusFilter=document.getElementById('branchStatusFilter'); if(branchStatusFilter) branchStatusFilter.addEventListener('change',()=>{state.branchStatus=branchStatusFilter.value;renderRoute();});
     const branchSortFilter=document.getElementById('branchSortFilter'); if(branchSortFilter) branchSortFilter.addEventListener('change',()=>{state.branchSort=branchSortFilter.value;localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();});
     document.querySelectorAll('[data-branch-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.branchSearch='';state.branchStatus='Active';state.branchSort='code-asc';localStorage.setItem('payroll-ui-branch-sort',state.branchSort);renderRoute();}));
-    const departmentSearch=document.getElementById('departmentSearch'); bindPayrollSearch(departmentSearch,value=>{state.departmentSearch=value;});
+    const departmentSearch=document.getElementById('departmentSearch'); bindServerDirectorySearch(departmentSearch,'departments',value=>{state.departmentSearch=value;});
     document.querySelectorAll('[data-department-status]').forEach(btn=>btn.addEventListener('click',()=>{state.departmentStatus=btn.dataset.departmentStatus;renderRoute();}));
     const departmentStatusFilter=document.getElementById('departmentStatusFilter'); if(departmentStatusFilter) departmentStatusFilter.addEventListener('change',()=>{state.departmentStatus=departmentStatusFilter.value;renderRoute();});
     const departmentSortFilter=document.getElementById('departmentSortFilter'); if(departmentSortFilter) departmentSortFilter.addEventListener('change',()=>{state.departmentSort=departmentSortFilter.value;localStorage.setItem('payroll-ui-department-sort',state.departmentSort);renderRoute();});
@@ -7124,7 +7537,7 @@
       periodLabel.textContent=state.period;
       navigate('timesheets');
     }));
-    document.querySelectorAll('[data-assignment-tab]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab = btn.dataset.assignmentTab; renderRoute(); }));
+    document.querySelectorAll('[data-assignment-tab]').forEach(btn => btn.addEventListener('click', () => { cancelRentalAssignmentRequest(state.rentalAssignmentTab); state.rentalAssignmentTab = btn.dataset.assignmentTab; renderRoute(); }));
     document.querySelectorAll('[data-assignment-tab-jump]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab = btn.dataset.assignmentTabJump; renderRoute(); }));
     document.querySelectorAll('[data-assignment-type-jump]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab='activity'; state.rentalAssignmentType=btn.dataset.assignmentTypeJump; renderRoute(); }));
     document.querySelectorAll('[data-assignment-worker]').forEach(btn => btn.addEventListener('click', () => { state.rentalWorkerTab='assignments'; navigate(`rental-workforce/${btn.dataset.assignmentWorker}`); }));
@@ -7133,13 +7546,13 @@
     document.querySelectorAll('[data-project-assignment-activity]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab='activity'; state.rentalAssignmentProject=btn.dataset.projectAssignmentActivity; state.rentalAssignmentSupplier='All suppliers'; state.rentalAssignmentType='All activity'; state.rentalAssignmentSearch=''; navigate('rental-assignments'); }));
     document.querySelectorAll('[data-supplier-assignment-activity]').forEach(btn => btn.addEventListener('click', () => { state.rentalAssignmentTab='activity'; state.rentalAssignmentSupplier=btn.dataset.supplierAssignmentActivity; state.rentalAssignmentProject='All projects'; state.rentalAssignmentType='All activity'; state.rentalAssignmentSearch=''; navigate('rental-assignments'); }));
     const rentalAssignmentSearch = document.getElementById('rentalAssignmentSearch');
-    bindPayrollSearch(rentalAssignmentSearch,value=>{state.rentalAssignmentSearch=value;});
+    bindPayrollSearch(rentalAssignmentSearch,value=>{state.rentalAssignmentSearch=value;},{delay:320,beforeRender:()=>cancelRentalAssignmentRequest(state.rentalAssignmentTab)});
     const rentalAssignmentSupplier = document.getElementById('rentalAssignmentSupplier'); if (rentalAssignmentSupplier) rentalAssignmentSupplier.addEventListener('change', () => { state.rentalAssignmentSupplier=rentalAssignmentSupplier.value; renderRoute(); });
     const rentalAssignmentProject = document.getElementById('rentalAssignmentProject'); if (rentalAssignmentProject) rentalAssignmentProject.addEventListener('change', () => { state.rentalAssignmentProject=rentalAssignmentProject.value; renderRoute(); });
     const rentalAssignmentType = document.getElementById('rentalAssignmentType'); if (rentalAssignmentType) rentalAssignmentType.addEventListener('change', () => { state.rentalAssignmentType=rentalAssignmentType.value; renderRoute(); });
 
     const rentalSearch = document.getElementById('rentalSearch');
-    bindPayrollSearch(rentalSearch,value=>{state.rentalSearch=value;});
+    bindServerDirectorySearch(rentalSearch,'workers',value=>{state.rentalSearch=value;});
     const rentalSupplierFilter = document.getElementById('rentalSupplierFilter');
     if (rentalSupplierFilter) rentalSupplierFilter.addEventListener('change', () => { state.rentalSupplier = rentalSupplierFilter.value; renderRoute(); });
     const rentalProjectFilter = document.getElementById('rentalProjectFilter');
@@ -7313,9 +7726,10 @@
     }));
 
     const rentalTimesheetSearch = document.getElementById('rentalTimesheetSearch');
-    bindPayrollSearch(rentalTimesheetSearch,value=>{state.rentalTimesheetSearch=value;},{beforeRender:()=>{state.rentalTimesheetPage=1;state.rentalTimesheetSelected.clear();}});
+    bindPayrollSearch(rentalTimesheetSearch,value=>{state.rentalTimesheetSearch=value;},{delay:320,beforeRender:()=>{cancelRentalTimesheetRequest();state.rentalTimesheetPage=1;state.rentalTimesheetSelected.clear();}});
     const rentalTimesheetProjectFilter = document.getElementById('rentalTimesheetProjectFilter');
     if (rentalTimesheetProjectFilter) rentalTimesheetProjectFilter.addEventListener('change', () => {
+      cancelRentalTimesheetRequest();
       state.rentalTimesheetProject = rentalTimesheetProjectFilter.value;
       state.rentalTimesheetSupplier = 'All suppliers';
       state.rentalTimesheetPage = 1;
@@ -7326,12 +7740,14 @@
     });
     const rentalTimesheetSupplierFilter = document.getElementById('rentalTimesheetSupplierFilter');
     if (rentalTimesheetSupplierFilter) rentalTimesheetSupplierFilter.addEventListener('change', () => {
+      cancelRentalTimesheetRequest();
       state.rentalTimesheetSupplier = rentalTimesheetSupplierFilter.value;
       state.rentalTimesheetPage = 1;
       state.rentalTimesheetSelected.clear();
       renderRoute();
     });
     document.querySelectorAll('[data-rental-timesheet-reset]').forEach(btn => btn.addEventListener('click', () => {
+      cancelRentalTimesheetRequest();
       state.rentalTimesheetSearch='';
       state.rentalTimesheetSupplier='All suppliers';
       state.rentalTimesheetPage=1;
@@ -7378,10 +7794,11 @@
     }));
     document.querySelectorAll('[data-rental-timesheet-page]').forEach(btn => btn.addEventListener('click', () => {
       const nextPage = Number(btn.dataset.rentalTimesheetPage);
-      if (Number.isFinite(nextPage) && nextPage > 0) { state.rentalTimesheetPage = nextPage; state.rentalTimesheetSelected.clear(); renderRoute(); }
+      if (Number.isFinite(nextPage) && nextPage > 0) { cancelRentalTimesheetRequest(); state.rentalTimesheetPage = nextPage; state.rentalTimesheetSelected.clear(); renderRoute(); }
     }));
     const rentalTimesheetPageSize = document.getElementById('rentalTimesheetPageSize');
     if (rentalTimesheetPageSize) rentalTimesheetPageSize.addEventListener('change', () => {
+      cancelRentalTimesheetRequest();
       state.rentalTimesheetPageSize = Number(rentalTimesheetPageSize.value) || 50;
       state.rentalTimesheetPage = 1;
       localStorage.setItem('payroll-ui-rental-timesheet-page-size', String(state.rentalTimesheetPageSize));
@@ -7403,7 +7820,7 @@
       if (action === 'copy' && day <= 1) { showToast('No previous day','Choose day 2 or later before using Copy previous.'); return; }
       let updated = 0, skipped = 0;
       state.rentalTimesheetSelected.forEach(workerId => {
-        const worker = state.rentalWorkers.find(item => item.id === workerId);
+        const worker = rentalWorkersForTimesheet().find(item => item.id === workerId);
         if (!worker || !rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period)) { skipped += 1; return; }
         const record = state.rentalTimesheets[state.period][state.rentalTimesheetProject][workerId] || (state.rentalTimesheets[state.period][state.rentalTimesheetProject][workerId]={});
         if (action === 'copy') record[day] = record[day-1] ?? record[String(day-1)] ?? '';
@@ -7412,7 +7829,7 @@
         updated += 1;
       });
       const entries=[];
-      state.rentalTimesheetSelected.forEach(workerId=>{ const worker=state.rentalWorkers.find(item=>item.id===workerId); if(!worker||!rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period)) return; const record=state.rentalTimesheets[state.period][state.rentalTimesheetProject][workerId]||{}; entries.push({worker_id:workerId,work_date:rentalTimesheetDate(day),value:record[day]??''}); });
+      state.rentalTimesheetSelected.forEach(workerId=>{ const worker=rentalWorkersForTimesheet().find(item=>item.id===workerId); if(!worker||!rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period)) return; const record=state.rentalTimesheets[state.period][state.rentalTimesheetProject][workerId]||{}; entries.push({worker_id:workerId,work_date:rentalTimesheetDate(day),value:record[day]??''}); });
       if (entries.length) saveRentalTimesheetEntries(entries).then(()=>showToast('Project timesheet updated', `${entries.length} worker${entries.length===1?'':'s'} updated for day ${day}.`)).catch(error=>showToast('Bulk update failed',error.message));
     }));
 
@@ -7456,19 +7873,20 @@
     }));
 
     const timesheetSearch = document.getElementById('timesheetSearch');
-    bindPayrollSearch(timesheetSearch,value=>{state.timesheetSearch=value;},{beforeRender:()=>{state.timesheetPage=1;}});
+    bindPayrollSearch(timesheetSearch,value=>{state.timesheetSearch=value;},{delay:320,beforeRender:()=>{cancelInternalAttendanceRequest();state.timesheetPage=1;state.timesheetSelected.clear();}});
     const timesheetBranchFilter = document.getElementById('timesheetBranchFilter');
-    if (timesheetBranchFilter) timesheetBranchFilter.addEventListener('change', () => { state.timesheetBranch = timesheetBranchFilter.value; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); });
+    if (timesheetBranchFilter) timesheetBranchFilter.addEventListener('change', () => { cancelInternalAttendanceRequest(); state.timesheetBranch = timesheetBranchFilter.value; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); });
     const timesheetDepartmentFilter = document.getElementById('timesheetDepartmentFilter');
-    if (timesheetDepartmentFilter) timesheetDepartmentFilter.addEventListener('change', () => { state.timesheetDepartment = timesheetDepartmentFilter.value; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); });
-    document.querySelectorAll('[data-timesheet-filter-reset]').forEach(btn => btn.addEventListener('click', () => { state.timesheetSearch = ''; state.timesheetBranch = 'All branches'; state.timesheetDepartment = 'All departments'; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); }));
+    if (timesheetDepartmentFilter) timesheetDepartmentFilter.addEventListener('change', () => { cancelInternalAttendanceRequest(); state.timesheetDepartment = timesheetDepartmentFilter.value; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); });
+    document.querySelectorAll('[data-timesheet-filter-reset]').forEach(btn => btn.addEventListener('click', () => { cancelInternalAttendanceRequest(); state.timesheetSearch = ''; state.timesheetBranch = 'All branches'; state.timesheetDepartment = 'All departments'; state.timesheetPage = 1; state.timesheetSelected.clear(); renderRoute(); }));
 
     document.querySelectorAll('[data-timesheet-page]').forEach(btn => btn.addEventListener('click', () => {
       const nextPage = Number(btn.dataset.timesheetPage);
-      if (Number.isFinite(nextPage) && nextPage > 0) { state.timesheetPage = nextPage; renderRoute(); }
+      if (Number.isFinite(nextPage) && nextPage > 0) { cancelInternalAttendanceRequest(); state.timesheetPage = nextPage; state.timesheetSelected.clear(); renderRoute(); }
     }));
     const timesheetPageSize = document.getElementById('timesheetPageSize');
     if (timesheetPageSize) timesheetPageSize.addEventListener('change', () => {
+      cancelInternalAttendanceRequest();
       state.timesheetPageSize = Number(timesheetPageSize.value) || 50;
       state.timesheetPage = 1;
       localStorage.setItem('payroll-ui-internal-timesheet-page-size', String(state.timesheetPageSize));
@@ -7604,7 +8022,7 @@
       renderRoute();
     }));
     const employeeSearch = document.getElementById('employeeSearch');
-    bindPayrollSearch(employeeSearch,value=>{state.employeeSearch=value;});
+    bindServerDirectorySearch(employeeSearch,'employees',value=>{state.employeeSearch=value;});
     const employeeStatusFilter = document.getElementById('employeeStatusFilter'); if(employeeStatusFilter) employeeStatusFilter.addEventListener('change',()=>{state.employeeStatus=employeeStatusFilter.value;renderRoute();});
     const employeeBranchFilter = document.getElementById('employeeBranchFilter');
     if (employeeBranchFilter) employeeBranchFilter.addEventListener('change', () => { state.employeeBranch = employeeBranchFilter.value; renderRoute(); });
@@ -7688,7 +8106,7 @@
     }));
 
     const supplierSearch = document.getElementById('supplierSearch');
-    bindPayrollSearch(supplierSearch, value => { state.supplierSearch = value; });
+    bindServerDirectorySearch(supplierSearch,'suppliers', value => { state.supplierSearch = value; });
 
     document.querySelectorAll('[data-supplier-tab]').forEach(btn => btn.addEventListener('click', () => {
       state.supplierTab = btn.dataset.supplierTab;
@@ -7736,7 +8154,7 @@
     }));
 
     const projectSearch = document.getElementById('projectSearch');
-    bindPayrollSearch(projectSearch, value => { state.projectSearch = value; });
+    bindServerDirectorySearch(projectSearch,'projects', value => { state.projectSearch = value; });
 
     document.querySelectorAll('[data-project-tab]').forEach(btn => btn.addEventListener('click', () => {
       state.projectTab = btn.dataset.projectTab;
@@ -8059,51 +8477,126 @@
   }
 
   function closeSearch() {
+    if(globalSearchTimer){clearTimeout(globalSearchTimer);globalSearchTimer=null;}
+    cancelGlobalSearchRequest();
     searchDialog.classList.remove('is-open');
     searchDialog.setAttribute('aria-hidden', 'true');
     searchDialog.hidden = true;
   }
 
-  function renderSearch(query) {
-    const q = query.trim().toLowerCase();
-    let pageResults = PAGE_SEARCH_ITEMS.filter(item => workspaceAllowsRoute(String(item.route || '').split('/')[0])).map(item => ({...item, workspace:state.workspace}));
-    let all = [];
-    if (state.workspace === 'management') {
-      pageResults = [
+  let globalSearchTimer = null;
+
+  function globalSearchPageRows(query) {
+    const q=String(query||'').trim().toLowerCase();
+    let rows=PAGE_SEARCH_ITEMS.filter(item=>workspaceAllowsRoute(String(item.route||'').split('/')[0])).map(item=>({...item,workspace:state.workspace}));
+    if(state.workspace==='management'){
+      rows=[
         {type:'Page',code:'MG',name:'Company Overview',meta:'Cross-workspace company control',route:'overview',workspace:'management'},
         {type:'Page',code:'WC',name:'Workforce Cost',meta:'Internal vs rental controlled cost',route:'management-cost',workspace:'management'},
         {type:'Page',code:'AP',name:'Approval Center',meta:'Payroll · settlement · payment exceptions',route:'management-approvals',workspace:'management'},
         {type:'Page',code:'AU',name:'Audit Trail',meta:'Cross-workspace lifecycle events',route:'management-audit',workspace:'management'},
-        {type:'Page',code:'RP',name:'Management Reports',meta:'Controlled workforce cost reporting',route:'reports',workspace:'management'}
+        {type:'Page',code:'RP',name:'Management Reports',meta:'Controlled workforce cost reporting',route:'reports',workspace:'management'},
       ];
-      if (['owner','finance'].includes(state.accessRole)) pageResults.push({type:'Page',code:'AC',name:'Access & Roles',meta:'Workspace permission matrix',route:'access-roles',workspace:'management'});
-      const employeeResults = state.employees.map(employee => ({ type:'Internal Employee', code:'IE', name:employee.name, meta:`EMP ${employee.employeeId} · ${employee.branch || 'Branch not set'} · ${employee.department}`, route:`internal-employees/${employee.id}`, workspace:'internal' }));
-      const branchResults = state.branches.map(branch => ({ type:'Branch', code:'BR', name:branch.name, meta:`${branch.code} · ${branch.location}`, route:`branches/${branch.id}`, workspace:'internal' }));
-      const rentalResults = state.rentalWorkers.map(worker => ({ type:'Rental Worker', code:'RW', name:worker.name, meta:`${rentalWorkerCode(worker)} · ${worker.trade || 'Rental worker'} · ${rentalWorkerSupplier(worker)?.name || 'Supplier not linked'}`, route:`rental-workforce/${worker.id}`, workspace:'rental' }));
-      const projectResults = state.projects.filter(project=>!project.legacyInternal).map(project => ({ type:'Project', code:'PR', name:project.name, meta:`${project.code} · ${project.location}`, route:`projects/${project.id}`, workspace:'rental' }));
-      const supplierResults = state.suppliers.map(supplier => ({ type:'Supplier', code:'SP', name:supplier.name, meta:`${supplier.code} · ${supplier.activeWorkers || 0} assigned · ${supplier.activeProjects || 0} projects`, route:`suppliers/${supplier.id}`, workspace:'rental' }));
-      all = [...pageResults, ...employeeResults, ...branchResults, ...rentalResults, ...projectResults, ...supplierResults];
-    } else if (state.workspace === 'internal') {
-      const employeeResults = state.employees.map(employee => ({ type:'Employee', code:'IE', name:employee.name, meta:`EMP ${employee.employeeId} · ${employee.branch || 'Branch not set'} · ${employee.department}`, route:`internal-employees/${employee.id}`, workspace:'internal' }));
-      const branchResults = state.branches.map(branch => ({ type:'Branch', code:'BR', name:branch.name, meta:`${branch.code} · ${branch.location}`, route:`branches/${branch.id}`, workspace:'internal' }));
-      const departmentResults = state.departments.map(dept => ({ type:'Department', code:'DP', name:dept.name, meta:`${dept.code} · ${branchEmployeesByDepartment(dept.name).length} employees`, route:`departments/${dept.id}`, workspace:'internal' }));
-      all = [...pageResults.filter(x=>!['Employee','Branch','Department'].includes(x.type)), ...employeeResults, ...branchResults, ...departmentResults];
-    } else {
-      const projectResults = state.projects.filter(project=>!project.legacyInternal).map(project => ({ type:'Project', code:'PR', name:project.name, meta:`${project.code} · ${project.location}`, route:`projects/${project.id}`, workspace:'rental' }));
-      const supplierResults = state.suppliers.map(supplier => ({ type:'Supplier', code:'SP', name:supplier.name, meta:`${supplier.code} · ${supplier.activeWorkers || 0} assigned · ${supplier.activeProjects || 0} projects`, route:`suppliers/${supplier.id}`, workspace:'rental' }));
-      const rentalResults = state.rentalWorkers.map(worker => ({ type:'Worker', code:'RW', name:worker.name, meta:`${rentalWorkerCode(worker)} · ${worker.trade || 'Rental worker'} · ${rentalWorkerSupplier(worker)?.name || 'Supplier not linked'}`, route:`rental-workforce/${worker.id}`, workspace:'rental' }));
-      all = [...pageResults.filter(x=>!['Project','Supplier','Worker'].includes(x.type)), ...rentalResults, ...projectResults, ...supplierResults];
+      if(['owner','finance'].includes(state.accessRole))rows.push({type:'Page',code:'AC',name:'Access & Roles',meta:'Workspace permission matrix',route:'access-roles',workspace:'management'});
     }
-    const rows = all.filter(item => !q || `${item.type} ${item.name} ${item.meta}`.toLowerCase().includes(q));
-    if (!rows.length) { commandResults.innerHTML = `<div class="ui-v2-command__empty">${icon('search')}<strong>No matching destination</strong><span>No matching records in ${escapeHtml(workspaceLabel())}.</span></div>`; return; }
-    const groups = rows.reduce((acc,item)=>{(acc[item.type] ||= []).push(item);return acc;},{});
-    commandResults.innerHTML = Object.entries(groups).map(([type,items]) => `<div class="ui-v2-prs-command-group">${type}${items.length>1?'s':''}</div>${items.map(item=>`<button data-search-route="${item.route}" data-search-workspace="${escapeHtml(item.workspace||state.workspace)}"><span class="ui-v2-command__icon">${item.code}</span><span class="ui-v2-command__copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.meta)}</small></span>${icon('arrow')}</button>`).join('')}`).join('');
-    commandResults.querySelectorAll('[data-search-route]').forEach(btn=>btn.addEventListener('click',()=>{closeSearch(); const targetWorkspace=btn.dataset.searchWorkspace||state.workspace; if(targetWorkspace!==state.workspace){ if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${roleDefinition().label} cannot open this result.`);return;} state.workspace=targetWorkspace; localStorage.setItem('payroll-ui-workspace',targetWorkspace); syncWorkspaceUrl(targetWorkspace); state.period=targetWorkspace==='rental'?(localStorage.getItem('payroll-ui-rental-period')||defaultInternalPeriod):targetWorkspace==='management'?(localStorage.getItem('payroll-ui-management-period')||defaultInternalPeriod):(localStorage.getItem('payroll-ui-internal-period')||defaultInternalPeriod); localStorage.setItem('payroll-ui-period',state.period); periodLabel.textContent=state.period; renderWorkspaceShell(); } navigate(btn.dataset.searchRoute);}));
+    return rows.filter(item=>!q||`${item.type} ${item.name} ${item.meta}`.toLowerCase().includes(q));
+  }
+
+  function globalSearchEndpointSpecs(query) {
+    const q=String(query||'').trim();
+    const encoded=encodeURIComponent(q);
+    const specs=[];
+    if(roleCanWorkspace('internal')&&(state.workspace==='internal'||state.workspace==='management')){
+      specs.push(
+        {kind:'employees',url:`/api/internal/employees/?q=${encoded}&archived=current&sort=employee&direction=asc&page=1&page_size=5`,map:item=>({type:'Employee',code:'IE',name:item.name,meta:`EMP ${item.employeeId} · ${item.branch||'Branch not set'} · ${item.department||'Department not set'}`,route:`internal-employees/${item.id}`,workspace:'internal'})},
+        {kind:'branches',url:`/api/internal/branches/?q=${encoded}&status=all&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Branch',code:'BR',name:item.name,meta:`${item.code} · ${item.location||'Location not set'} · ${Number(item.activeEmployeeCount||0).toLocaleString()} active`,route:`branches/${item.id}`,workspace:'internal'})},
+        {kind:'departments',url:`/api/internal/departments/?q=${encoded}&status=all&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Department',code:'DP',name:item.name,meta:`${item.code} · ${Number(item.activeEmployeeCount||0).toLocaleString()} active employees`,route:`departments/${item.id}`,workspace:'internal'})},
+      );
+    }
+    if(roleCanWorkspace('rental')&&(state.workspace==='rental'||state.workspace==='management')){
+      specs.push(
+        {kind:'workers',url:`/api/rental/workers/?q=${encoded}&sort=worker&direction=asc&page=1&page_size=5`,map:item=>({type:'Worker',code:'RW',name:item.name,meta:`${rentalWorkerCode(item)} · ${item.trade||'Rental worker'} · ${item.supplier||'Supplier not linked'}`,route:`rental-workforce/${item.id}`,workspace:'rental'})},
+        {kind:'projects',url:`/api/rental/projects/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Project',code:'PR',name:item.name,meta:`${item.code} · ${item.location||'Location not set'} · ${Number(item.rentalWorkers||0).toLocaleString()} workers`,route:`projects/${item.id}`,workspace:'rental'})},
+        {kind:'suppliers',url:`/api/rental/suppliers/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Supplier',code:'SP',name:item.name,meta:`${item.code} · ${Number(item.activeWorkers||0).toLocaleString()} assigned · ${Number(item.activeProjects||0).toLocaleString()} projects`,route:`suppliers/${item.id}`,workspace:'rental'})},
+      );
+    }
+    return specs;
+  }
+
+  function cancelGlobalSearchRequest() {
+    const server=state.globalSearchServer;
+    if(server.controller){try{server.controller.abort();}catch{/* settled */}}
+    server.controller=null;server.loading=false;server.requestId=Number(server.requestId||0)+1;
+  }
+
+  async function loadGlobalSearch(query) {
+    const q=String(query||'').trim();
+    const server=state.globalSearchServer;
+    if(q.length<2){cancelGlobalSearchRequest();server.query='';server.results=[];server.error='';renderSearch(query);return;}
+    if(server.controller){try{server.controller.abort();}catch{/* settled */}}
+    const controller=new AbortController(),requestId=Number(server.requestId||0)+1;
+    server.requestId=requestId;server.controller=controller;server.loading=true;server.error='';server.query=q;server.results=[];
+    renderSearch(q);
+    try{
+      const specs=globalSearchEndpointSpecs(q);
+      const settled=await Promise.allSettled(specs.map(spec=>appApi(spec.url,{signal:controller.signal})));
+      if(server.requestId!==requestId||server.query!==q)return;
+      const results=[];
+      settled.forEach((result,index)=>{
+        if(result.status!=='fulfilled')return;
+        const spec=specs[index],rows=result.value?.results||[];
+        directoryEntityMerge(spec.kind,rows);
+        rows.forEach(item=>results.push(spec.map(item)));
+      });
+      server.results=results;server.loading=false;server.controller=null;
+      if(searchDialog.classList.contains('is-open')&&searchInput.value.trim()===q)renderSearch(q);
+    }catch(error){
+      if(error?.name==='AbortError')return;
+      if(server.requestId===requestId){server.loading=false;server.controller=null;server.error=error.message||'Search unavailable.';renderSearch(q);}
+    }
+  }
+
+  function bindGlobalSearchResultButtons() {
+    commandResults.querySelectorAll('[data-search-route]').forEach(btn=>btn.addEventListener('click',()=>{
+      closeSearch();
+      const targetWorkspace=btn.dataset.searchWorkspace||state.workspace;
+      if(targetWorkspace!==state.workspace){
+        if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${roleDefinition().label} cannot open this result.`);return;}
+        state.workspace=targetWorkspace;localStorage.setItem('payroll-ui-workspace',targetWorkspace);syncWorkspaceUrl(targetWorkspace);
+        state.period=targetWorkspace==='rental'?(localStorage.getItem('payroll-ui-rental-period')||defaultInternalPeriod):targetWorkspace==='management'?(localStorage.getItem('payroll-ui-management-period')||defaultInternalPeriod):(localStorage.getItem('payroll-ui-internal-period')||defaultInternalPeriod);
+        localStorage.setItem('payroll-ui-period',state.period);periodLabel.textContent=state.period;renderWorkspaceShell();
+      }
+      navigate(btn.dataset.searchRoute);
+    }));
+  }
+
+  function renderSearch(query) {
+    const q=String(query||'').trim();
+    const pageRows=globalSearchPageRows(q);
+    const server=state.globalSearchServer;
+    const serverRows=server.query===q?[...(server.results||[])]:[];
+    const rows=[...pageRows,...serverRows];
+    if(!rows.length&&!server.loading){
+      commandResults.innerHTML=server.error
+        ? `<div class="ui-v2-command__empty">${icon('search')}<strong>Search unavailable</strong><span>${escapeHtml(server.error)}</span></div>`
+        : `<div class="ui-v2-command__empty">${icon('search')}<strong>${q.length<2?'Type at least 2 characters':'No matching destination'}</strong><span>${q.length<2?'Record search runs on the server and does not scan the full workforce in your browser.':`No matching records in ${escapeHtml(workspaceLabel())}.`}</span></div>`;
+      return;
+    }
+    const groups=rows.reduce((acc,item)=>{(acc[item.type] ||= []).push(item);return acc;},{});
+    commandResults.innerHTML=`${server.loading&&server.query===q?'<div class="ui-v2-prs-command-group">Searching server…</div>':''}${Object.entries(groups).map(([type,items])=>`<div class="ui-v2-prs-command-group">${type}${items.length>1?'s':''}</div>${items.map(item=>`<button data-search-route="${item.route}" data-search-workspace="${escapeHtml(item.workspace||state.workspace)}"><span class="ui-v2-command__icon">${item.code}</span><span class="ui-v2-command__copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.meta)}</small></span>${icon('arrow')}</button>`).join('')}`).join('')}`;
+    bindGlobalSearchResultButtons();
   }
 
   function initSearch() {
     document.getElementById('globalSearchButton').addEventListener('click', openSearch);
-    searchInput.addEventListener('input', () => renderSearch(searchInput.value));
+    searchInput.addEventListener('input',()=>{
+      const value=searchInput.value;
+      if(globalSearchTimer)clearTimeout(globalSearchTimer);
+      cancelGlobalSearchRequest();
+      state.globalSearchServer.query='';state.globalSearchServer.results=[];state.globalSearchServer.error='';
+      renderSearch(value);
+      if(value.trim().length>=2)globalSearchTimer=setTimeout(()=>loadGlobalSearch(value),320);
+    });
     searchDialog.addEventListener('click', e => { if (e.target === searchDialog) closeSearch(); });
     document.addEventListener('keydown', e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
@@ -8879,7 +9372,9 @@
         applyAttendancePayload(payload, state.period);
         const imported = payload.import || {};
         closeDrawer();
-        renderRoute();
+        cancelInternalAttendanceRequest();
+        state.attendanceServer.key = '';
+        await loadInternalAttendancePeriod(state.period, { force:true });
         showToast('Attendance imported', `${Number(imported.employee_count || 0)} employee row${Number(imported.employee_count || 0) === 1 ? '' : 's'} · ${Number(imported.entry_count || 0)} attendance entr${Number(imported.entry_count || 0) === 1 ? 'y' : 'ies'} saved.`);
       } catch (error) {
         drawerSave.disabled = false;
@@ -9154,6 +9649,8 @@
         drawerSave.disabled = true;
         const payload = await appApi('/api/rental/assignments/', { method:'POST', body:requestBody });
         applyRentalAssignmentPayload(payload);
+        invalidateRentalAssignmentServer();
+        invalidateServerDirectories('workers');
         const updated = payload.worker || worker;
         closeDrawer();
         state.rentalWorkerTab = 'assignments';

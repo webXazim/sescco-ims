@@ -87,8 +87,9 @@ if ".objects.select_for_update()" in snapshot[loop_start:]:
     fail("Payroll snapshot fingerprint reintroduced per-line SELECT FOR UPDATE queries")
 
 for needle in (
-    "assignments_by_worker={}",
-    "for a in assignments_by_worker.get(wid, []):",
+    "assignments_by_worker",
+    "assignments_by_worker.setdefault(str(assignment.worker_id), []).append(assignment)",
+    "for assignment in assignments_by_worker.get(wid, []):",
 ):
     if needle not in rental_timesheets:
         fail(f"Rental Timesheet lost linear assignment grouping: {needle}")

@@ -49,6 +49,26 @@ class InternalOrganizationApiTests(TestCase):
         self.assertEqual(payload["employee"]["branchId"], str(self.branch.pk))
         self.assertEqual(len(payload["history"]), 1)
 
+    def test_employee_profile_api_returns_master_for_thin_bootstrap_deep_link(self):
+        employee = create_employee(
+            actor_membership=self.membership,
+            employee_number="0042",
+            full_name="Thin Bootstrap Employee",
+            joining_date=date(2024, 1, 1),
+            branch_id=self.branch.pk,
+            department_id=self.department.pk,
+            position="Planner",
+            status="Active",
+        )
+        response = self.client.get(
+            reverse("internal_payroll:employee-profile-api", kwargs={"employee_id": employee.pk}),
+            {"period": "2026-09"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["employee"]["id"], str(employee.pk))
+        self.assertEqual(payload["profile"]["employeeId"], str(employee.pk))
+
     def test_branch_list_supports_search_sort_and_pagination(self):
         create_branch(actor_membership=self.membership, code="BR-B", name="Beta Office")
         create_branch(actor_membership=self.membership, code="BR-A", name="Alpha Office")

@@ -1,0 +1,28 @@
+{
+  "release": "1.0.70",
+  "purpose": "Keep Rental Assignment Lifecycle responsive under benchmark workforce/history scale by moving Activity, Current Deployment and Supplier Pool to bounded server-side filtering and pagination.",
+  "endpoint": "/api/rental/assignments/",
+  "views": [
+    "summary",
+    "activity",
+    "deployment",
+    "pool"
+  ],
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "search_debounce_ms": 320,
+  "guarantees": [
+    "server-side-assignment-filters",
+    "bounded-activity-segment-page",
+    "bounded-deployment-worker-page",
+    "bounded-supplier-pool-page",
+    "abort-obsolete-assignment-search",
+    "ignore-stale-assignment-response",
+    "no-full-worker-history-scan-in-assignment-route",
+    "mutation-invalidates-assignment-pages-and-summary",
+    "server-side-summary-counts"
+  ]
+}

@@ -89,22 +89,26 @@ def payroll_app(request):
     initial_workspace = requested_workspace if requested_workspace in allowed_workspace_keys else None
     access_context["initial_workspace"] = initial_workspace
 
+    # 1.0.68: keep the initial HTML bootstrap bounded. Complete employee/worker
+    # directories and heavy Payroll configuration/period contexts are loaded from
+    # their server APIs only when the relevant route needs them.
     internal_context = (
-        internal_master_context(company=request.company, include_histories=False)
-        if can_internal
-        else {"branches": [], "departments": [], "employees": [], "employeeOrganizationHistory": {}}
-    )
-    salary_context = (
-        salary_setup_context(company=request.company)
+        internal_master_context(company=request.company, include_histories=False, employee_limit=50)
         if can_internal
         else {
-            "salaryComponents": [],
-            "overtimePolicies": [],
-            "salaryStructures": {},
-            "salaryStructureHistory": {},
-            "asOf": None,
+            "branches": [], "departments": [], "employees": [], "employeeOrganizationHistory": {},
+            "bootstrapComplete": True,
+            "summary": {"employeeCount": 0, "activeEmployeeCount": 0, "bootstrapEmployeeCount": 0, "branchCount": 0, "departmentCount": 0},
         }
     )
+    salary_context = {
+        "salaryComponents": [],
+        "overtimePolicies": [],
+        "salaryStructures": {},
+        "salaryStructureHistory": {},
+        "asOf": None,
+        "deferred": bool(can_internal),
+    }
 
     current_month = timezone.localdate().replace(day=1)
     attendance_context = (
@@ -112,6 +116,8 @@ def payroll_app(request):
             company=request.company,
             period_start=current_month,
             membership=membership,
+            page=1,
+            page_size=50,
         )
         if can_internal
         else {
@@ -132,45 +138,40 @@ def payroll_app(request):
             "summary": {},
         }
     )
-    payroll_context = (
-        payroll_period_context(
-            company=request.company,
-            period_start=current_month,
-            membership=membership,
-        )
-        if can_internal
-        else {
-            "run": {
-                "id": None,
-                "exists": False,
-                "period": f"{current_month:%Y-%m}",
-                "label": f"{month_name[current_month.month]} {current_month.year}",
-                "status": "Draft",
-                "statusValue": "draft",
-                "revision": 0,
-                "canEdit": False,
-                "canApprove": False,
-                "totals": {},
-            },
-            "rows": [],
-            "sourceErrors": [],
-            "policy": {
-                "id": None,
-                "prorationMethod": "not_configured",
-                "prorationLabel": "Not configured",
-                "configured": False,
-            },
-            "adjustments": [],
-            "adjustmentsByEmployee": {},
-            "reviewHistory": [],
-            "attendanceStatus": "Not available",
-            "attendanceLocked": False,
-            "previous": {"period": None, "label": None, "run": None, "rows": []},
-        }
-    )
+    payroll_context = {
+        "deferred": bool(can_internal),
+        "run": {
+            "id": None,
+            "exists": False,
+            "period": f"{current_month:%Y-%m}",
+            "label": None,
+            "status": "Draft",
+            "statusValue": "draft",
+            "revision": 0,
+            "canEdit": False,
+            "canApprove": False,
+            "totals": {},
+        },
+        "rows": [],
+        "sourceErrors": [],
+        "policy": {
+            "id": None,
+            "prorationMethod": "not_configured",
+            "prorationLabel": "Not configured",
+            "configured": False,
+        },
+        "adjustments": [],
+        "adjustmentsByEmployee": {},
+        "reviewHistory": [],
+        "attendanceStatus": "Not available",
+        "attendanceLocked": False,
+        "previous": {"period": None, "label": None, "run": None, "rows": []},
+    }
 
     rental_context = (
-        rental_master_context(company=request.company, period_start=current_month)
+        rental_master_context(
+            company=request.company, period_start=current_month, worker_limit=50, include_assignments=False
+        )
         if can_rental
         else {
             "suppliers": [],
@@ -240,25 +241,18 @@ def payroll_app(request):
         "canManage": membership_has_capability(membership, Capability.MANAGE_SETTINGS),
     }
 
-    payment_context = (
-        salary_payment_context(
-            company=request.company,
-            period_start=current_month,
-            membership=membership,
-        )
-        if can_internal
-        else {
-            "period": f"{current_month:%Y-%m}",
-            "settings": {},
-            "profiles": {},
-            "templates": [],
-            "batches": [],
-            "bankReadiness": {"ready": False, "companyBlockers": [], "employees": []},
-            "wpsReadiness": {"ready": False, "companyBlockers": [], "employees": []},
-            "canEditSetup": False,
-            "canPay": False,
-        }
-    )
+    payment_context = {
+        "deferred": bool(can_internal),
+        "period": None,
+        "settings": {},
+        "profiles": {},
+        "templates": [],
+        "batches": [],
+        "bankReadiness": {"ready": False, "companyBlockers": [], "employees": []},
+        "wpsReadiness": {"ready": False, "companyBlockers": [], "employees": []},
+        "canEditSetup": False,
+        "canPay": False,
+    }
 
     record_management_bootstrap = record_management_context(
         company=request.company, include_internal=can_internal, include_rental=can_rental

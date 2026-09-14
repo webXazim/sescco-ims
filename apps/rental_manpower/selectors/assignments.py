@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, Subquery
 from django.utils import timezone
 
 from apps.core.models import AuditEvent
-from apps.rental_manpower.models import ReleaseDisposition, WorkerAssignment
+from apps.rental_manpower.models import ReleaseDisposition, RentalWorker, WorkerAssignment
 from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
+from apps.projects.models import Project
 
 
 ASSIGNMENT_OBJECT_TYPE = "rental_manpower.WorkerAssignment"
@@ -36,12 +37,23 @@ def assignments_for_company(
         queryset = queryset.filter(worker__supplier_id=supplier_id)
     if query.strip():
         q = query.strip()
+        matching_workers = (
+            RentalWorker.objects.for_company(company)
+            .filter(
+                Q(worker_number__icontains=q)
+                | Q(full_name__icontains=q)
+                | Q(supplier__name__icontains=q)
+            )
+            .values("pk")
+        )
+        matching_projects = (
+            Project.objects.for_company(company)
+            .filter(Q(code__icontains=q) | Q(name__icontains=q))
+            .values("pk")
+        )
         queryset = queryset.filter(
-            Q(worker__worker_number__icontains=q)
-            | Q(worker__full_name__icontains=q)
-            | Q(worker__supplier__name__icontains=q)
-            | Q(project__code__icontains=q)
-            | Q(project__name__icontains=q)
+            Q(worker_id__in=Subquery(matching_workers))
+            | Q(project_id__in=Subquery(matching_projects))
             | Q(trade__icontains=q)
             | Q(reason__icontains=q)
             | Q(end_reason__icontains=q)
@@ -236,3 +248,119 @@ def assignment_context(*, company, as_of: date | None = None) -> dict[str, objec
             "openEndedAssignments": sum(item.cancelled_at is None and item.effective_to is None for item in assignments),
         },
     }
+
+
+
+def serialized_assignment_activity(*, company, assignments: list[WorkerAssignment], event_filter: str = "") -> list[dict[str, object]]:
+    """Serialize a bounded page of assignment segments into UI activity events.
+
+    Assignment Lifecycle used to rebuild every worker's full history in the browser.  This
+    serializer keeps the expensive history reasoning on the server and only inspects the
+    workers represented by the current page.  A segment can yield its assignment/change
+    event and, when released, one release event.
+    """
+    if not assignments:
+        return []
+
+    worker_ids = {item.worker_id for item in assignments}
+    history = list(
+        WorkerAssignment.objects.for_company(company)
+        .filter(worker_id__in=worker_ids)
+        .select_related("worker", "worker__supplier", "project", "company__settings")
+        .order_by("worker_id", "effective_from", "created_at", "pk")
+    )
+    previous_by_id: dict[str, WorkerAssignment | None] = {}
+    last_by_worker: dict[object, WorkerAssignment] = {}
+    for item in history:
+        previous_by_id[str(item.pk)] = last_by_worker.get(item.worker_id)
+        last_by_worker[item.worker_id] = item
+
+    created_audits, release_audits, cancelled_audits = _audit_maps(company=company, assignments=assignments)
+    normalized = (event_filter or "").strip().lower().replace("-", "_").replace(" ", "_")
+    result: list[dict[str, object]] = []
+
+    for assignment in assignments:
+        key = str(assignment.pk)
+        previous = previous_by_id.get(key)
+        assignment_event = serialize_assignment(
+            assignment,
+            audit_event=cancelled_audits.get(key) if assignment.cancelled_at else created_audits.get(key),
+        )
+        event_type = assignment.get_change_type_display()
+        include_assignment = normalized not in {"release"}
+        if normalized in {"project_assignment", "assignment"}:
+            include_assignment = assignment.change_type == "assignment"
+        elif normalized in {"project_transfer", "transfer"}:
+            include_assignment = assignment.change_type == "transfer"
+        elif normalized in {"trade_change", "trade"}:
+            include_assignment = assignment.change_type == "trade_change"
+        elif normalized in {"rate_change", "rate"}:
+            include_assignment = assignment.change_type == "rate_change"
+        elif normalized in {"trade_rate_changes", "trade_rate", "changes"}:
+            include_assignment = assignment.change_type in {"trade_change", "rate_change"}
+
+        if include_assignment:
+            project_id = project_public_id(assignment.project)
+            previous_project_id = project_public_id(previous.project) if previous else None
+            from_label = "Supplier pool" if previous is None else "Previous assignment"
+            to_label = assignment.project.name
+            detail = f"{assignment.trade} · {_rate_label(assignment, assignment.company.settings.currency_code)}"
+            if assignment.change_type == "transfer":
+                from_label = previous.project.name if previous else "Previous project"
+                to_label = assignment.project.name
+            elif assignment.change_type == "trade_change":
+                from_label = previous.trade if previous else "Previous trade"
+                to_label = assignment.trade
+                detail = assignment.project.name
+            elif assignment.change_type == "rate_change":
+                from_label = _rate_label(previous, assignment.company.settings.currency_code) if previous else "Previous rate"
+                to_label = _rate_label(assignment, assignment.company.settings.currency_code)
+                detail = f"{assignment.project.name} · {assignment.trade}"
+
+            result.append({
+                "id": key,
+                "worker": {
+                    "id": str(assignment.worker_id),
+                    "name": assignment.worker.full_name,
+                    "workerCode": assignment.worker.worker_number,
+                    "supplierId": str(assignment.worker.supplier_id),
+                },
+                "supplier": {"id": str(assignment.worker.supplier_id), "name": assignment.worker.supplier.name},
+                "project": {"id": project_id, "name": assignment.project.name, "code": assignment.project.code},
+                "previousProjectId": previous_project_id,
+                "type": event_type,
+                "effective": assignment.effective_from.isoformat(),
+                "from": from_label,
+                "to": to_label,
+                "detail": detail,
+                "reason": assignment.reason or assignment_event.get("source") or "Assignment update",
+                "audit": assignment_event.get("actor") or "Audit trail",
+                "recordedAt": assignment_event.get("createdAt"),
+            })
+
+        if assignment.release_disposition and assignment.effective_to and normalized in {"", "all", "all_activity", "release"}:
+            release_event = serialize_release_event(assignment, audit_event=release_audits.get(key))
+            if release_event:
+                result.append({
+                    "id": str(release_event["id"]),
+                    "worker": {
+                        "id": str(assignment.worker_id),
+                        "name": assignment.worker.full_name,
+                        "workerCode": assignment.worker.worker_number,
+                        "supplierId": str(assignment.worker.supplier_id),
+                    },
+                    "supplier": {"id": str(assignment.worker.supplier_id), "name": assignment.worker.supplier.name},
+                    "project": {"id": project_public_id(assignment.project), "name": assignment.project.name, "code": assignment.project.code},
+                    "previousProjectId": project_public_id(assignment.project),
+                    "type": "Release",
+                    "effective": (assignment.effective_to + timedelta(days=1)).isoformat(),
+                    "from": assignment.project.name,
+                    "to": "Inactive" if assignment.release_disposition == ReleaseDisposition.INACTIVE else "Available with supplier",
+                    "detail": f"{assignment.trade} · {_rate_label(assignment, assignment.company.settings.currency_code)}",
+                    "reason": assignment.end_reason or assignment.reason or "Released from project",
+                    "audit": release_event.get("actor") or "Audit trail",
+                    "recordedAt": release_event.get("createdAt"),
+                })
+
+    result.sort(key=lambda row: (str(row.get("effective") or ""), str(row.get("recordedAt") or "")), reverse=True)
+    return result

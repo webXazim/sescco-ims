@@ -20,54 +20,77 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.64":
-    fail(f"VERSION must be 1.0.64, found {version!r}")
+if version != "1.0.70":
+    fail(f"VERSION must be 1.0.70, found {version!r}")
 
 contract = json.loads(text("merge/release-candidate.json"))
 if contract.get("release") != version:
     fail("release-candidate contract does not match VERSION")
-if contract.get("previous_release") != "1.0.63":
-    fail("release-candidate predecessor must remain 1.0.63")
-if contract.get("previous_archive_sha256") != "8291351ac88c883796d899f31fbffbb32416b79f53e1ad8be1d3485fd0049d9e":
-    fail("1.0.63 predecessor checksum changed")
+if contract.get("previous_release") != "1.0.69-postgresql-search-query-hardening":
+    fail("1.0.70 predecessor must remain the 1.0.69 PostgreSQL query-hardening release")
+if contract.get("previous_archive_sha256") != "04a1034fd4ae7b60dffd84991d13d4481fff5aa70d881a05ab39cff82d467c2a":
+    fail("1.0.69 predecessor checksum changed")
 if contract.get("feature_freeze") is not True:
-    fail("final release must remain feature-frozen")
+    fail("1.0.70 must remain feature-frozen")
 if contract.get("schema_change_in_release") is not False:
-    fail("1.0.64 must not claim a schema change")
+    fail("1.0.70 must not introduce another schema change")
+if contract.get("schema_change_scope") != "none; carries forward the 1.0.69 PostgreSQL search indexes":
+    fail("1.0.70 schema-change scope changed")
 if contract.get("payroll_formula_change_in_release") is not False:
-    fail("1.0.64 must not claim a Payroll formula change")
+    fail("1.0.70 must not claim a Payroll formula change")
 if set(contract.get("required_seed_profiles") or []) != {"functional", "realistic", "benchmark"}:
     fail("required seed profiles changed")
+for required in ("scripts/verify-payroll-query-hardening.py", "scripts/verify-payroll-browser-scale.py"):
+    if required not in (contract.get("required_static_gates") or []):
+        fail(f"final scale freeze is missing required gate: {required}")
+required_benchmark = set(contract.get("required_benchmark_gates") or [])
+if not any("payroll_browser_scale_report" in item for item in required_benchmark):
+    fail("benchmark-scale server report is not release-required")
+if not any("certify-payroll-browser-scale.py" in item for item in required_benchmark):
+    fail("live Chromium scale certification is not release-required")
 
 notes = text("RELEASE_NOTES.md")
-if not notes.startswith("# 1.0.64 — Production freeze / release candidate\n"):
-    fail("1.0.64 release notes must be the first release entry")
+if not notes.startswith("# 1.0.70 — 5K/2K browser benchmark certification & production freeze\n"):
+    fail("1.0.70 release notes must be the first release entry")
 readme = text("README.md")
-if "SESCCO MS 1.0.64 — Production freeze / release candidate" not in readme:
-    fail("README does not identify the 1.0.64 packaged release")
+if "SESCCO MS 1.0.70 — 5K/2K browser benchmark certification & production freeze" not in readme:
+    fail("README does not identify the 1.0.70 packaged release")
 
 payroll_template = text("templates/payroll/app.html")
 for asset in ("payroll/css/v2/payroll-controls.css", "payroll/js/app.js"):
-    pattern = re.escape(asset) + r"' %\}\?v=1\.0\.64"
+    pattern = re.escape(asset) + r"' %\}\?v=1\.0\.70"
     if not re.search(pattern, payroll_template):
-        fail(f"Payroll asset cache buster is not frozen at 1.0.64 for {asset}")
+        fail(f"Payroll asset cache buster is not frozen at 1.0.70 for {asset}")
 
-production_e2e = json.loads(text("merge/payroll-production-e2e.json"))
-if production_e2e.get("release") != "1.0.64":
-    fail("Payroll production-E2E contract is not carried forward to 1.0.64")
+for rel in (
+    "merge/payroll-production-e2e.json",
+    "merge/payroll-directory-runtime.json",
+    "merge/payroll-assignment-runtime.json",
+    "merge/payroll-timesheet-scale.json",
+    "merge/payroll-bootstrap-search.json",
+    "merge/payroll-query-hardening.json",
+    "merge/payroll-browser-scale.json",
+):
+    if json.loads(text(rel)).get("release") != "1.0.70":
+        fail(f"release-scoped contract is not frozen at 1.0.70: {rel}")
 
 freeze = text("scripts/verify-production-freeze.sh")
 for rel in contract.get("required_static_gates") or []:
     if Path(rel).name not in freeze and rel not in freeze:
         fail(f"production freeze lost required static gate: {rel}")
 if "verify-release-candidate.py" not in freeze:
-    fail("production freeze does not verify the final release-candidate contract")
+    fail("production freeze does not verify the release-candidate contract")
 
 release_tasks = text("scripts/release-tasks.sh")
-if "verify-release-candidate.py" not in release_tasks:
-    fail("release tasks do not verify the final release-candidate contract")
-if "verify-payroll-production-e2e.py" not in release_tasks:
-    fail("release tasks lost Payroll production-E2E verification")
+for needle in (
+    "verify-release-candidate.py",
+    "verify-payroll-production-e2e.py",
+    "verify-payroll-bootstrap-search.py",
+    "verify-payroll-query-hardening.py",
+    "verify-payroll-browser-scale.py",
+):
+    if needle not in release_tasks:
+        fail(f"release tasks lost required verification: {needle}")
 
 certify = text("scripts/certify-payroll-production-e2e.sh")
 for needle in (
@@ -78,6 +101,11 @@ for needle in (
     if needle not in certify:
         fail(f"runtime Payroll certification lost required gate: {needle}")
 
+browser_certify = text("scripts/certify-payroll-browser-scale.py")
+for needle in ("#timesheetSearch", "#rentalAssignmentSearch", "#rentalTimesheetSearch", "#globalSearchInput"):
+    if needle not in browser_certify:
+        fail(f"live browser certification lost required surface: {needle}")
+
 rehearsal = text("scripts/rehearse-production-freeze.sh")
 for needle in ("certify-payroll-production-e2e.sh", "payroll-e2e-certification.txt", "run_manage test --noinput"):
     if needle not in rehearsal:
@@ -87,6 +115,4 @@ deploy = text(contract["deployment_entrypoint"])
 if "scripts/verify-production-freeze.sh" not in deploy:
     fail("canonical production deployment no longer verifies the packaged freeze")
 
-# Archive bytecode/cache hygiene is enforced at packaging time; running Python verifiers may create caches.
-
-print("Verified SESCCO MS 1.0.64 production freeze / release-candidate contract.")
+print("Verified SESCCO MS 1.0.70 5K/2K browser benchmark certification/freeze contract.")

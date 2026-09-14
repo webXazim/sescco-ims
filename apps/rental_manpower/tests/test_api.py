@@ -62,6 +62,22 @@ class RentalMasterApiTests(TestCase):
         self.assertEqual(payload["supplierId"], str(self.supplier.pk))
         self.assertIsNone(payload["projectId"])
 
+    def test_worker_detail_get_returns_master_and_assignment_history_for_thin_bootstrap(self):
+        worker = create_worker(
+            actor_membership=self.membership,
+            supplier_id=self.supplier.pk,
+            worker_number="RW-DETAIL",
+            full_name="Detail Worker",
+            status="Active",
+        )
+        response = self.client.get(
+            reverse("rental_manpower:worker-detail-api", kwargs={"worker_id": worker.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["worker"]["id"], str(worker.pk))
+        self.assertEqual(payload["assignments"], [])
+
     def test_project_detail_uses_shared_uuid_reference(self):
         from apps.rental_manpower.services import create_project
 
@@ -256,6 +272,61 @@ class RentalAssignmentApiTests(TestCase):
         self.assertEqual(supplier_response.status_code, 200)
         self.assertEqual(supplier_response.json()["meta"]["count"], 1)
         self.assertEqual(supplier_response.json()["results"][0]["id"], str(self.supplier.pk))
+
+    def test_assignment_lifecycle_views_are_server_paged(self):
+        from apps.rental_manpower.services import create_worker
+
+        assigned = self.client.post(
+            reverse("rental_manpower:assignments-api"),
+            data=json.dumps({
+                "action": "assign",
+                "worker_id": str(self.worker.pk),
+                "project_id": str(self.project.reference),
+                "trade": "Helper",
+                "rate_type": "hourly",
+                "rate": "12.50",
+                "effective_date": date.today().isoformat(),
+                "reason": "Paged lifecycle coverage",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(assigned.status_code, 201)
+        pool_worker = create_worker(
+            actor_membership=self.membership,
+            supplier_id=self.supplier.pk,
+            worker_number="RW-POOL",
+            full_name="Pool Worker",
+        )
+
+        activity = self.client.get(
+            reverse("rental_manpower:assignments-api"),
+            {"view": "activity", "page": 1, "page_size": 1, "sort": "effective", "direction": "desc"},
+        )
+        self.assertEqual(activity.status_code, 200)
+        self.assertEqual(activity.json()["meta"]["pageSize"], 1)
+        self.assertEqual(activity.json()["meta"]["count"], 1)
+        self.assertEqual(activity.json()["results"][0]["worker"]["id"], str(self.worker.pk))
+
+        deployment = self.client.get(
+            reverse("rental_manpower:assignments-api"),
+            {"view": "deployment", "page": 1, "page_size": 1, "sort": "worker", "direction": "asc"},
+        )
+        self.assertEqual(deployment.status_code, 200)
+        self.assertEqual(deployment.json()["meta"]["count"], 1)
+        self.assertEqual(deployment.json()["results"][0]["id"], str(self.worker.pk))
+
+        pool = self.client.get(
+            reverse("rental_manpower:assignments-api"),
+            {"view": "pool", "page": 1, "page_size": 1, "sort": "worker", "direction": "asc"},
+        )
+        self.assertEqual(pool.status_code, 200)
+        self.assertGreaterEqual(pool.json()["meta"]["count"], 1)
+        self.assertIn(str(pool_worker.pk), {row["id"] for row in pool.json()["results"]})
+
+        summary = self.client.get(reverse("rental_manpower:assignments-api"), {"view": "summary"})
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()["summary"]["assigned"], 1)
+        self.assertGreaterEqual(summary.json()["summary"]["available"], 1)
 
     def test_future_assignment_can_be_cancelled_without_effective_date(self):
         future_date = date.today() + timedelta(days=14)

@@ -1,3 +1,13 @@
+# 1.0.70 browser-scale validation
+
+The 1.0.70 artifact adds the final large-data certification layer for the 2,000 Internal / 5,000 Rental benchmark profile. In this artifact-building environment the complete static contract chain passes, including directory cancellation/loading state, Assignment Lifecycle server pagination, Attendance/Timesheet bounded pages and delta mutations, thin Payroll bootstrap, server-backed global search, PostgreSQL query hardening, the 12-scenario / 77-critical-test production-E2E contract, release-candidate binding and infrastructure/lifecycle freezes.
+
+`python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits` must be run against the seeded PostgreSQL benchmark database. A live browser certification runner is included at `scripts/certify-payroll-browser-scale.py`; it checks rapid search, page changes, stuck-loading state and bounded row counts using Chromium/Playwright and writes `payroll-browser-certification.json`. The runner itself and Chromium launch path were validated here, but a truthful live SESCCO benchmark run requires the deployed Django/PostgreSQL application and benchmark login credentials.
+
+The application Django runtime is still not installed in this artifact-building Python environment, so the real Django/PostgreSQL runtime suites and live application browser benchmark are not claimed as executed here.
+
+---
+
 # Validation report
 
 ## Upgrade 12 static validation completed in this build environment

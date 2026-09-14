@@ -1,8 +1,10 @@
+import json
 from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
@@ -18,6 +20,7 @@ class RentalTimesheetTests(TestCase):
         self.company=Company.objects.create(name='Timesheet Co',slug='rental-ts')
         self.user=User.objects.create_user(username='owner-ts')
         self.owner=CompanyMembership.objects.create(company=self.company,user=self.user,role=AccessRole.OWNER)
+        self.client.force_login(self.user)
         self.supplier=create_supplier(actor_membership=self.owner,code='SUP-T',name='Supplier T')
         self.project=create_project(actor_membership=self.owner,code='PRJ-T',name='Project T',start_date=date(2026,8,1))
         self.worker=create_worker(actor_membership=self.owner,supplier_id=self.supplier.pk,worker_number='RW-T',full_name='Worker T')
@@ -35,7 +38,7 @@ class RentalTimesheetTests(TestCase):
 
     def test_full_period_can_submit_approve_and_lock(self):
         entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,day),'value':'OFF'} for day in range(1,32)]
-        save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
+        period=save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
         draft_revision=period.revision
         period=transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='submit')
         self.assertEqual(period.status,RentalTimesheetStatus.SUBMITTED)
@@ -97,3 +100,33 @@ class RentalTimesheetTests(TestCase):
         save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,15),'value':'8'}])
         with self.assertRaises(ValidationError):
             change_worker_rate(actor_membership=self.owner,worker_id=self.worker.pk,rate_type='Hourly',rate='16',effective_date=date(2026,8,15),reason='Retroactive revision')
+
+    def test_timesheet_api_is_server_paged_and_returns_project_roster_only(self):
+        for index in range(2, 32):
+            worker=create_worker(actor_membership=self.owner,supplier_id=self.supplier.pk,worker_number=f"RW-{index:03d}",full_name=f"Paged Worker {index:02d}")
+            assign_worker(actor_membership=self.owner,worker_id=worker.pk,project_id=self.project.pk,trade='Mason',rate_type='Hourly',rate='14',effective_date=date(2026,8,1))
+        response=self.client.get(
+            reverse('rental_manpower:timesheets-api'),
+            {'project_id':str(self.project.reference),'period':'2026-08','page':1,'page_size':25},
+        )
+        self.assertEqual(response.status_code,200)
+        payload=response.json()
+        self.assertEqual(len(payload['roster']),25)
+        self.assertEqual(payload['meta']['count'],31)
+        self.assertEqual(payload['meta']['totalPages'],2)
+
+    def test_timesheet_patch_returns_small_delta_not_full_project_month(self):
+        response=self.client.patch(
+            reverse('rental_manpower:timesheets-api'),
+            data=json.dumps({'project_id':str(self.project.reference),'period':'2026-08','entries':[{'worker_id':str(self.worker.pk),'work_date':'2026-08-01','value':'8'}]}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code,200)
+        payload=response.json()
+        self.assertTrue(payload['deltaOnly'])
+        self.assertNotIn('records',payload)
+        self.assertNotIn('roster',payload)
+        self.assertEqual(payload['changes'][0]['workerId'],str(self.worker.pk))
+        self.assertEqual(payload['changes'][0]['day'],1)
+        self.assertEqual(payload['changes'][0]['value'],'8')
+

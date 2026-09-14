@@ -1,3 +1,66 @@
+# 1.0.70 — 5K/2K browser benchmark certification & production freeze
+
+- Freezes the large-data runtime work introduced in 1.0.65–1.0.69: cancellation-aware directory search, Assignment Lifecycle server pagination, bounded Attendance/Timesheet pages, thin Payroll bootstrap, server-backed global search and PostgreSQL query/index hardening.
+- Adds `merge/payroll-browser-scale.json` and `scripts/verify-payroll-browser-scale.py` to enforce the complete 2,000 Internal / 5,000 Rental browser-scale boundary from backend selectors through rendered page limits.
+- Adds `payroll_browser_scale_report` for benchmark-database certification of 100-row Internal Attendance, Internal Employee search, Rental Worker search, Rental Assignment activity and Rental Project Timesheet payload/query bounds. The report can require the full 2,000/5,000 seed volume and fail on payload/query limits.
+- Adds `scripts/certify-payroll-browser-scale.py`, a live Chromium/Playwright runner for rapid search, pagination and loading-state checks across Internal Attendance, Rental Assignment Lifecycle, Rental Project Timesheets and global search. It writes `payroll-browser-certification.json` evidence and does not hard-code portable sub-second timing assumptions; the default stuck-interaction ceiling is 10 seconds and can be overridden for the release environment.
+- Extends the curated Payroll production-E2E suite with a browser-scale regression scenario, bringing the frozen certification contract to 12 high-risk scenarios and 77 critical test methods across 20 evidence files / 15 runtime labels.
+- Carries the 1.0.69 PostgreSQL `pg_trgm` and concurrent index migrations forward unchanged. This release adds no schema migration, Payroll formula change, lifecycle semantic change or new user feature.
+- Binds the final release to the exact 1.0.69 archive SHA-256 and requires both the static browser-scale gate and benchmark/live-browser evidence before calling the large-data performance work fully certified.
+
+# 1.0.69 — PostgreSQL search & query hardening
+
+- Replaces join-heavy Internal Employee, Internal Attendance and Rental Worker live-search filters with correlated `EXISTS` predicates so server pagination no longer depends on large assignment joins followed by `DISTINCT`.
+- Reworks Rental Assignment Activity text search to use indexed worker/project subqueries plus assignment-local text predicates instead of broad joined text scans.
+- Adds PostgreSQL `pg_trgm` GIN indexes for high-cardinality employee/worker identity fields and assignment trade/reason text used by live Payroll search.
+- Adds partial current-organization/current-project lookup indexes for branch, department and Rental assignment scopes.
+- Builds the new indexes with `AddIndexConcurrently` in non-atomic migrations so production search hardening does not require a long table-write lock.
+- Adds `merge/payroll-query-hardening.json` and `scripts/verify-payroll-query-hardening.py`, and makes the query-hardening gate mandatory in production freeze and release tasks.
+- Adds `payroll_search_query_report` for post-deploy query-count/timing checks and optional PostgreSQL `EXPLAIN` output against the benchmark database.
+- This release changes indexes/query plans only; Payroll formulas, lifecycle semantics, permissions and benchmark seed data are unchanged.
+
+# 1.0.68 — Thin Payroll bootstrap & server-backed global search
+
+- Bounds the initial Payroll HTML bootstrap to 50 Internal employee masters and 50 Rental worker masters instead of serializing the complete 2,000/5,000 benchmark workforce into every page load.
+- Removes Rental assignment history from the initial shell payload and defers complete workforce masters to the few legacy profile/transaction selectors that actually require them.
+- Defers salary setup, Internal payroll-period data and salary-payment readiness until their routes are opened; Attendance remains on its existing bounded 50-row bootstrap.
+- Replaces Ctrl/Cmd+K browser scans of all employees/workers with cancellation-aware server directory search across employees, branches, departments, workers, projects and suppliers, limited to five results per entity type after a 320 ms debounce.
+- Adds direct backend hydration for employee and Rental worker deep links so profiles outside the initial 50-row bootstrap still open correctly.
+- Merges only Payroll/WPS readiness identities returned by server contexts rather than loading the whole employee directory for financial screens.
+- Keeps Adjustment person selectors correct by lazily hydrating the complete relevant master only when that transaction route is opened.
+- Adds `merge/payroll-bootstrap-search.json` and `scripts/verify-payroll-bootstrap-search.py` and carries the thin-bootstrap/search gate into production freeze and release tasks.
+- No database migration, Payroll formula, permission, lifecycle or benchmark-seed semantic change.
+
+# 1.0.67 — Attendance & Timesheet scale cutover
+
+- Moves Internal Attendance, Internal Overtime and Rental Project Timesheets to bounded 25/50/100-row server pages for the 2,000/5,000 benchmark dataset.
+- Rental Timesheets now render only the backend project-period roster and no longer scan the complete 5,000-worker master or all assignment histories in the browser.
+- Adds cancellation-aware 320 ms search/filter requests for Internal Attendance and Rental Timesheets so obsolete requests cannot queue behind the active query or overwrite newer results.
+- Attendance and Rental Timesheet cell/OT mutations return compact deltas instead of resending the complete monthly roster and daily matrix.
+- Adds server aggregate summaries for full-period employee/worker counts, regular hours, overtime and missing entries while table rendering remains bounded to the visible page.
+- Bounds the initial Internal Attendance bootstrap to 50 rows; arbitrary attendance imports force only the current bounded page to refresh after commit.
+- Keeps client CSV export intentionally bounded to the current filtered page and labels it accordingly; exact full filtered export remains a later server-export concern.
+- Adds Django regression coverage and `merge/payroll-timesheet-scale.json` / `scripts/verify-payroll-timesheet-scale.py` to prevent full-roster payloads or browser-side scans from returning.
+- No database migration, Payroll formula, permission or lifecycle semantic change.
+
+# 1.0.66 — Rental Assignment Lifecycle server pagination
+
+- Moves Assignment Activity, Current Deployment and Supplier Pool off the complete browser-side rental-worker/history scan and onto bounded backend views.
+- Adds 25/50/100-row server pagination, server-side search/supplier/project/event filtering, request cancellation and stale-response protection for Assignment Lifecycle.
+- Replaces route-level history/integrity scans with server summary counts and mutation-driven cache invalidation.
+- Keeps existing assignment mutation semantics, audit history, Payroll formulas and database schema unchanged.
+
+# 1.0.65 — Payroll directory search & loading hotfix
+
+- Fixes the server-directory completion-order defect that rendered the active page before clearing `loading`, which could leave Rental Workforce and the other paged master directories permanently showing “Loading directory…” after the backend response had already completed.
+- Adds one AbortController-owned request per server-backed Payroll directory. Fast search/filter changes now abort obsolete requests instead of allowing stale network work to accumulate behind the current query.
+- Raises the six server-directory search inputs to a 320 ms cancellation-aware debounce: Branches / Offices, Departments, Internal Employees, Projects, Manpower Suppliers and Rental Workforce.
+- Preserves the last valid page of rows while a replacement query is loading so search no longer blanks the table into a full-height loading state; Rental Workforce shows a small `Refreshing…` status while the bounded replacement page is in flight.
+- Replaces per-row full-master `findIndex` scans with one ID→index map when merging paged directory results, and recalculates salary display data only for the returned employee page instead of all 2,000 benchmark employees after every search response.
+- Adds a failed-request key so a backend error does not create an automatic render/retry loop. Explicit Retry remains available and clears that failure authority before requesting again.
+- Keeps existing server pagination/page-size limits and stale-response request IDs intact. No Payroll formula, lifecycle, permission, database schema or benchmark seed behavior changes in this hotfix.
+- Adds `merge/payroll-directory-runtime.json` and `scripts/verify-payroll-directory-runtime.py`, and wires the runtime-search contract into the packaged Payroll/frontend and production-freeze gates.
+
 # 1.0.64 — Production freeze / release candidate
 
 - Seed hotfix: adds an explicit `--allow-mixed-scale-seed` test-only override so realistic/benchmark DEMO/RDEMO fixtures can be added beside existing test masters while refusing any target month that contains non-DEMO Internal attendance/payroll history.

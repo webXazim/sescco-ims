@@ -158,18 +158,23 @@ def workers_for_company(
         queryset = queryset.filter(archived_at__isnull=True, supplier__archived_at__isnull=True)
     if query.strip():
         q = query.strip()
-        queryset = queryset.filter(
+        assignment_search = WorkerAssignment.objects.for_company(company).filter(
+            worker_id=OuterRef("pk")
+        ).filter(
+            Q(trade__icontains=q)
+            | Q(project__code__icontains=q)
+            | Q(project__name__icontains=q)
+        )
+        queryset = queryset.annotate(_assignment_search_match=Exists(assignment_search)).filter(
             Q(worker_number__icontains=q)
             | Q(full_name__icontains=q)
             | Q(national_id__icontains=q)
             | Q(phone__icontains=q)
             | Q(supplier__code__icontains=q)
             | Q(supplier__name__icontains=q)
-            | Q(rental_assignments__trade__icontains=q)
-            | Q(rental_assignments__project__code__icontains=q)
-            | Q(rental_assignments__project__name__icontains=q)
             | Q(notes__icontains=q)
-        ).distinct()
+            | Q(_assignment_search_match=True)
+        )
     if status:
         queryset = queryset.filter(status=status)
     if supplier_id:
@@ -208,21 +213,25 @@ def workers_for_company(
             queryset = queryset.filter(Q(status=RentalWorkerStatus.INACTIVE) | Q(supplier__status=SupplierStatus.INACTIVE))
         elif normalized == "terminated":
             queryset = queryset.filter(Q(status=RentalWorkerStatus.TERMINATED) | Q(supplier__status=SupplierStatus.TERMINATED))
+        elif normalized == "pool":
+            queryset = queryset.filter(
+                Q(status=RentalWorkerStatus.ACTIVE, supplier__status=SupplierStatus.ACTIVE, _has_current_assignment=False, _has_future_assignment=False)
+                | Q(status=RentalWorkerStatus.INACTIVE)
+                | Q(supplier__status=SupplierStatus.INACTIVE)
+            )
         elif normalized not in {"", "all", "archived"}:
             raise ValueError("Unknown rental worker operational status.")
     if project_id == "unassigned":
         queryset = queryset.filter(_has_current_assignment=False)
     elif project_id:
-        queryset = queryset.filter(
-            rental_assignments__project_id=project_id,
-            rental_assignments__cancelled_at__isnull=True,
-            rental_assignments__effective_from__lte=today,
-        ).filter(Q(rental_assignments__effective_to__isnull=True) | Q(rental_assignments__effective_to__gte=today))
+        queryset = queryset.annotate(
+            _current_project_match=Exists(current_assignments.filter(project_id=project_id))
+        ).filter(_current_project_match=True)
     if trade:
         queryset = queryset.filter(_display_trade=trade)
     if rate_type:
         queryset = queryset.filter(_display_rate_type=rate_type)
-    return queryset.distinct().order_by("worker_number", "full_name")
+    return queryset.order_by("worker_number", "full_name")
 
 
 def serialize_supplier(supplier: ManpowerSupplier, financial: dict[str, object] | None = None) -> dict[str, object]:
@@ -470,18 +479,39 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
     }
 
 
-def rental_master_context(*, company, period_start: date | None = None) -> dict[str, object]:
+def rental_master_context(
+    *,
+    company,
+    period_start: date | None = None,
+    worker_limit: int | None = None,
+    include_assignments: bool = True,
+) -> dict[str, object]:
+    """Return the Rental master bootstrap.
+
+    The production shell uses a bounded worker bootstrap and does not embed complete
+    assignment histories. Server-paged Workforce/Assignment/Timesheet APIs remain the
+    authority for large collections.
+    """
     from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
     from apps.rental_manpower.selectors.settlements import rental_financial_metrics_for_period
 
     period_start = (period_start or timezone.localdate()).replace(day=1)
     suppliers = list(suppliers_for_company(company=company, archived=None))
     projects = list(projects_for_company(company=company))
-    workers = list(workers_for_company(company=company, archived=None))
-    assignments = assignment_context(company=company)
+    worker_qs = workers_for_company(company=company, archived=None)
+    total_worker_count = worker_qs.count()
+    active_worker_count = worker_qs.filter(status=RentalWorkerStatus.ACTIVE).count()
+    workers = list(worker_qs[:worker_limit] if worker_limit else worker_qs)
+    assignments = assignment_context(company=company) if include_assignments else {
+        "assignmentsByWorker": {},
+        "asOf": timezone.localdate().isoformat(),
+        "summary": {},
+    }
     financial_metrics = rental_financial_metrics_for_period(company=company, period_start=period_start)
     supplier_metrics = financial_metrics["suppliers"]
     project_metrics = financial_metrics["projects"]
+    assigned_count = sum(int(getattr(item, "assigned_worker_count", 0)) for item in suppliers)
+    available_count = sum(max(0, int(getattr(item, "active_worker_count", 0)) - int(getattr(item, "assigned_worker_count", 0))) for item in suppliers)
     return {
         "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
         "financialPeriod": period_start.strftime("%B %Y"),
@@ -493,12 +523,16 @@ def rental_master_context(*, company, period_start: date | None = None) -> dict[
         "assignmentsByWorker": assignments["assignmentsByWorker"],
         "assignmentAsOf": assignments["asOf"],
         "assignmentSummary": assignments["summary"],
+        "bootstrapComplete": worker_limit is None or len(workers) >= total_worker_count,
         "summary": {
             "supplierCount": len(suppliers),
             "activeSupplierCount": sum(item.status == SupplierStatus.ACTIVE for item in suppliers),
             "projectCount": len(projects),
             "activeProjectCount": sum(item.status == ProjectStatus.ACTIVE for item in projects),
-            "workerCount": len(workers),
-            "activeWorkerCount": sum(item.status == RentalWorkerStatus.ACTIVE for item in workers),
+            "workerCount": total_worker_count,
+            "activeWorkerCount": active_worker_count,
+            "assignedWorkerCount": assigned_count,
+            "availableWorkerCount": available_count,
+            "bootstrapWorkerCount": len(workers),
         },
     }
