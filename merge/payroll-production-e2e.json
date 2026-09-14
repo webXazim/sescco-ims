@@ -1,5 +1,5 @@
 {
-  "release": "1.0.78",
+  "release": "1.0.79",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [

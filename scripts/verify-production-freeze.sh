@@ -13,6 +13,8 @@ require_text() {
 sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
+bash scripts/verify-payroll-frontend.sh
+
 bash scripts/verify-select-timesheet-ux.sh
 bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-payroll-reference-coverage.py

@@ -47,7 +47,7 @@ def main() -> int:
 
     base = args.base_url.rstrip("/") + "/"
     evidence: dict[str, object] = {
-        "release": "1.0.78",
+        "release": "1.0.79",
         "base_url": base,
         "limits": {
             "max_table_rows": 100,

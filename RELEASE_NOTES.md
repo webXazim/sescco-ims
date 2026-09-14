@@ -1,3 +1,11 @@
+# 1.0.79 — Payroll frontend freeze-manifest hotfix
+
+- Fixes the deployment failure in `scripts/verify-payroll-frontend.sh` where `merge/payroll-frontend-assets.sha256` still contained the pre-1.0.78 hash for `static/payroll/js/app.js`.
+- Freezes the actual 1.0.78/1.0.79 Payroll JavaScript bundle hash so the merged-frontend deployment guard validates the exact shipped asset instead of rejecting it.
+- Adds the merged Payroll frontend verifier to the top-level production-freeze chain, preventing a future release from passing the broad source freeze while carrying a stale narrow frontend manifest.
+- Carries forward the 1.0.78 WPS Reports performance hotfix unchanged; there is no Payroll formula, schema, lifecycle, or application behavior change in this release.
+- Binds this hotfix to the exact 1.0.78 predecessor archive SHA-256 `4f05fda6d0bac3235fd46bfbd7ae5e66809a20ab6dd1a86af6d95a521821a98d`.
+
 # 1.0.78 — Reports/WPS performance hotfix
 
 - Fixes the Reports page freeze/long refresh observed with the 2,020-profile WPS report even though the visible table was already server-paginated.

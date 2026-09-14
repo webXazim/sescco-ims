@@ -1,5 +1,5 @@
 {
-  "release": "1.0.78",
+  "release": "1.0.79",
   "purpose": "Freeze the 2,000 Internal / 5,000 Rental browser-scale contract so large Payroll screens remain bounded from PostgreSQL through API payload, browser state and rendered DOM.",
   "benchmark_volume": {
     "internal_employees": 2000,
