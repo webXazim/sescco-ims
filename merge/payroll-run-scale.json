@@ -1,5 +1,5 @@
 {
-  "release": "1.0.79",
+  "release": "1.0.82",
   "purpose": "Move Internal Payroll Run register and review rows to bounded server pages while preserving exact period totals, workflow authority and previous-period variance semantics.",
   "payroll_run_directory": {
     "endpoint": "/api/internal/payroll/?surface=run",

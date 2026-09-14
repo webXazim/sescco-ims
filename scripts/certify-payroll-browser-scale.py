@@ -47,7 +47,7 @@ def main() -> int:
 
     base = args.base_url.rstrip("/") + "/"
     evidence: dict[str, object] = {
-        "release": "1.0.79",
+        "release": "1.0.82",
         "base_url": base,
         "limits": {
             "max_table_rows": 100,
@@ -184,6 +184,8 @@ def main() -> int:
 
         # Rental directory and all three assignment lifecycle views.
         search_surface(name="rental-workforce-directory", workspace="rental", route="rental-workforce", input_selector="#rentalSearch", row_selector=".rental-worker-table tbody tr", query="RDEMO")
+
+        search_surface(name="rental-worker-adjustments", workspace="rental", route="adjustments", input_selector="#adjustmentSearch", row_selector=".adjustment-ledger-table tbody tr", query="RDEMO")
 
         started = open_route("rental", "rental-assignments", "#rentalAssignmentSearch")
         rapid_search("#rentalAssignmentSearch", "RDEMO")

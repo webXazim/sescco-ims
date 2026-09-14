@@ -1050,6 +1050,8 @@
     adjustmentStatus: 'All',
     adjustmentProject: 'All projects',
     adjustmentSupplier: 'All suppliers',
+    adjustmentProjectSearch: '',
+    adjustmentSupplierSearch: '',
     adjustmentPage: 1,
     adjustmentPageSize: Number(localStorage.getItem('payroll-ui-adjustment-page-size') || 50),
     adjustmentContext: null,
@@ -7204,6 +7206,65 @@
     }
   }
 
+  function rentalAdjustmentRequest(period = state.period) {
+    const params = new URLSearchParams({
+      period:periodKeyFromLabel(period), page:String(state.adjustmentPage || 1),
+      page_size:String(state.adjustmentPageSize || 50), search:state.adjustmentSearch || '',
+      type:state.adjustmentType || 'All', status:state.adjustmentStatus || 'All',
+      project_search:state.adjustmentProjectSearch || '', supplier_search:state.adjustmentSupplierSearch || ''
+    });
+    return { url:`/api/rental/adjustments/?${params.toString()}`, key:`rental|${period}|${params.toString()}` };
+  }
+
+  function cancelRentalAdjustmentRequest() {
+    cancelInternalAdjustmentRequest();
+  }
+
+  async function loadRentalAdjustmentPage(period = state.period, { force=false, render=true } = {}) {
+    const request=rentalAdjustmentRequest(period);
+    if(!force && state.adjustmentServer.key===request.key && state.adjustmentContext?.surface==='rental_adjustments_page')return state.adjustmentContext;
+    cancelRentalAdjustmentRequest();
+    const controller=new AbortController();
+    const requestId=Number(state.adjustmentServer.requestId||0)+1;
+    state.adjustmentServer.controller=controller;state.adjustmentServer.requestId=requestId;state.adjustmentServer.pendingKey=request.key;state.adjustmentServer.loading=true;state.adjustmentServer.error='';
+    try {
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(requestId!==state.adjustmentServer.requestId||controller.signal.aborted)return null;
+      state.adjustmentContext=payload;
+      state.adjustmentServer.key=request.key;state.adjustmentServer.meta={...(payload.meta||{})};
+      state.adjustmentPage=Number(payload.meta?.page||state.adjustmentPage||1);
+      if(render&&state.workspace==='rental'&&state.period===period&&currentRoute()==='adjustments')renderRoute();
+      return payload;
+    } catch(error) {
+      if(error?.name==='AbortError')return null;
+      state.adjustmentServer.error=error.message||'Worker adjustments could not be loaded.';
+      if(render&&currentRoute()==='adjustments'&&state.workspace==='rental')renderRoute();
+      return null;
+    } finally {
+      if(requestId===state.adjustmentServer.requestId){state.adjustmentServer.loading=false;state.adjustmentServer.pendingKey='';state.adjustmentServer.controller=null;}
+    }
+  }
+
+  function applyRentalAdjustmentDelta(adjustment) {
+    if(!adjustment?.id||!adjustment?.workerId)return;
+    const workerId=adjustment.workerId;
+    const existing=(state.rentalAdjustments[workerId]||[]).filter(item=>item.id!==adjustment.id);
+    state.rentalAdjustments[workerId]=[adjustment,...existing];
+  }
+
+  async function refreshRentalAdjustmentAuthority(period = state.period, adjustment = null) {
+    if(adjustment)applyRentalAdjustmentDelta(adjustment);
+    // Rental adjustments are financial inputs to a later settlement calculation. Invalidate
+    // any previously cached settlement mega-context, but never reload it just to refresh the
+    // Worker Adjustments page. The dedicated page API is the only live-register authority.
+    state.rentalSettlementLoadedPeriods.delete(period);
+    delete state.rentalSettlementContexts[period];
+    if(currentRoute()==='adjustments'&&state.workspace==='rental') {
+      await loadRentalAdjustmentPage(period,{force:true,render:false});
+      renderRoute();
+    }
+  }
+
   async function loadInternalAdjustmentPage(period = state.period, { force=false, render=true } = {}) {
     const request=internalAdjustmentRequest(period);
     if(!force && state.adjustmentServer.key===request.key && state.adjustmentContext)return state.adjustmentContext;
@@ -7271,18 +7332,27 @@
         }));
       });
     }
-    Object.entries(state.rentalAdjustments || {}).forEach(([workerId, items]) => {
-      const worker = rentalWorkerById(workerId);
-      if (!worker) return;
-      const supplier = rentalWorkerSupplier(worker);
-      (items || []).forEach(item => rows.push({
-        ...item, type:adjustmentNormalizeType(item.type), workforce:'Rental Worker', workforceKey:'Rental', personId:worker.id,
-        personName:item.personName || worker.name, personCode:item.personCode || rentalWorkerCode(worker),
-        supplierId:item.supplierId || worker.supplierId || null, supplier:item.supplier || supplier?.name || 'Supplier not linked',
-        projectId:item.projectId || null, project:item.project || (item.projectId ? state.projects.find(p=>p.id===item.projectId)?.name : 'Project') || 'Project',
-        source:item.source || 'Company database', immutable:!!item.immutable
+    if (state.workspace === 'rental' && currentRoute()==='adjustments' && state.adjustmentContext?.surface === 'rental_adjustments_page') {
+      (state.adjustmentContext.results || []).forEach(item => rows.push({
+        ...item, type:adjustmentNormalizeType(item.type), workforce:'Rental Worker', workforceKey:'Rental',
+        personId:item.personId || item.workerId, personName:item.personName || 'Rental worker', personCode:item.personCode || '',
+        supplierId:item.supplierId || null, supplier:item.supplier || 'Supplier', projectId:item.projectId || null,
+        project:item.project || 'Project', source:item.source || 'Company database', immutable:!!item.immutable
       }));
-    });
+    } else {
+      Object.entries(state.rentalAdjustments || {}).forEach(([workerId, items]) => {
+        const worker = rentalWorkerById(workerId);
+        if (!worker) return;
+        const supplier = rentalWorkerSupplier(worker);
+        (items || []).forEach(item => rows.push({
+          ...item, type:adjustmentNormalizeType(item.type), workforce:'Rental Worker', workforceKey:'Rental', personId:worker.id,
+          personName:item.personName || worker.name, personCode:item.personCode || rentalWorkerCode(worker),
+          supplierId:item.supplierId || worker.supplierId || null, supplier:item.supplier || supplier?.name || 'Supplier not linked',
+          projectId:item.projectId || null, project:item.project || (item.projectId ? state.projects.find(p=>p.id===item.projectId)?.name : 'Project') || 'Project',
+          source:item.source || 'Company database', immutable:!!item.immutable
+        }));
+      });
+    }
     return rows;
   }
   function allAdjustmentRows() {
@@ -7296,6 +7366,9 @@
   function adjustmentFilteredRows() {
     if (state.workspace === 'internal' && state.adjustmentContext?.surface === 'adjustments_page') {
       return allAdjustmentRows().filter(row=>row.workforceKey==='Internal');
+    }
+    if (state.workspace === 'rental' && state.adjustmentContext?.surface === 'rental_adjustments_page') {
+      return allAdjustmentRows().filter(row=>row.workforceKey==='Rental');
     }
     const q = state.adjustmentSearch.trim().toLowerCase();
     return allAdjustmentRows().filter(row => {
@@ -7312,7 +7385,7 @@
   }
 
   function adjustmentPeriodSummary(rows = allAdjustmentRows()) {
-    if (state.workspace === 'internal' && state.adjustmentContext?.summary) {
+    if ((state.workspace === 'internal' && state.adjustmentContext?.surface === 'adjustments_page' || state.workspace === 'rental' && state.adjustmentContext?.surface === 'rental_adjustments_page') && state.adjustmentContext?.summary) {
       const value=state.adjustmentContext.summary;
       return {count:Number(value.count||0),earnings:Number(value.earnings||0),deductions:Number(value.deductions||0),advanceIssues:Number(value.advanceIssues||0),pending:Number(value.pending||0)};
     }
@@ -7370,7 +7443,7 @@
     </div>`;
   }
   function adjustmentPaginationTemplate() {
-    if (state.workspace !== 'internal') return '';
+    if (!['adjustments_page','rental_adjustments_page'].includes(state.adjustmentContext?.surface || '')) return '';
     const meta=state.adjustmentContext?.meta || {};
     const count=Number(meta.count||0), page=Number(meta.page||state.adjustmentPage||1), pageSize=Number(meta.pageSize||state.adjustmentPageSize||50), totalPages=Math.max(1,Number(meta.totalPages||1));
     const start=Number(meta.rangeStart||0), end=Number(meta.rangeEnd||0);
@@ -7380,16 +7453,16 @@
   function adjustmentRegisterTemplate() {
     const rows = adjustmentFilteredRows();
     const workspaceRows = allAdjustmentRows().filter(row=>state.workspace==='rental'?row.workforceKey==='Rental':row.workforceKey==='Internal');
-    const serverFilters=state.workspace==='internal' ? (state.adjustmentContext?.filters||{}) : null;
+    const serverFilters=['adjustments_page','rental_adjustments_page'].includes(state.adjustmentContext?.surface||'') ? (state.adjustmentContext?.filters||{}) : null;
     const types = serverFilters ? (serverFilters.types||[]).map(item=>item.label) : [...new Set(workspaceRows.map(row=>adjustmentNormalizeType(row.type)))].sort();
     const statuses = serverFilters ? (serverFilters.statuses||[]).map(item=>item.label) : [...new Set(workspaceRows.map(row=>row.status).filter(Boolean))].sort();
-    const matchingCount=state.workspace==='internal' ? Number(state.adjustmentContext?.meta?.count||0) : rows.length;
+    const matchingCount=['adjustments_page','rental_adjustments_page'].includes(state.adjustmentContext?.surface||'') ? Number(state.adjustmentContext?.meta?.count||0) : rows.length;
     return `<section class="panel panel--flush adjustment-ledger-panel">
       <div class="adjustment-filterbar">
         <div class="search-field adjustment-search">${icon('search')}<input id="adjustmentSearch" type="search" value="${escapeHtml(state.adjustmentSearch)}" placeholder="Search person, type, reference or reason…"></div>
         <select class="select" id="adjustmentType"><option>All</option>${types.map(type=>`<option ${state.adjustmentType===type?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select>
         <select class="select" id="adjustmentStatus"><option>All</option>${statuses.map(status=>`<option ${state.adjustmentStatus===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select>
-        ${state.workspace==='rental'?`<select class="select" id="adjustmentProject"><option>All projects</option>${state.projects.filter(project=>!project.legacyInternal).map(project=>`<option value="${escapeHtml(project.id)}" ${state.adjustmentProject===project.id?'selected':''}>${escapeHtml(project.name)}</option>`).join('')}</select><select class="select" id="adjustmentSupplier"><option>All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(supplier=>`<option value="${escapeHtml(supplier.id)}" ${state.adjustmentSupplier===supplier.id?'selected':''}>${escapeHtml(supplier.name)}</option>`).join('')}</select>`:''}
+        ${state.workspace==='rental'?`<div class="search-field adjustment-scope-search">${icon('search')}<input id="adjustmentProjectSearch" type="search" value="${escapeHtml(state.adjustmentProjectSearch)}" placeholder="Project…"></div><div class="search-field adjustment-scope-search">${icon('search')}<input id="adjustmentSupplierSearch" type="search" value="${escapeHtml(state.adjustmentSupplierSearch)}" placeholder="Supplier…"></div>`:''}
         <button class="btn btn--ghost" data-adjustment-reset>Reset</button>
       </div>
       <div class="table-meta"><span><strong>${matchingCount}</strong> matching transaction${matchingCount===1?'':'s'}</span><span>Draft/Review items are visible but do not change payroll or rental settlement.</span></div>
@@ -7422,19 +7495,17 @@
       const contextReady=state.adjustmentContext?.surface==='adjustments_page'&&state.adjustmentContext?.period===periodKeyFromLabel(state.period)&&state.adjustmentContext?.view===state.adjustmentView;
       if(!contextReady)return `<section class="page adjustments-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="table-empty table-empty--card"><strong>Loading adjustments…</strong><span>Fetching a bounded server page and exact period totals.</span></div></section>`;
     }
-    if (state.workspace === 'rental' && !state.rentalMasterComplete) {
-      if (!state.rentalMasterLoading) hydrateCompleteMaster('workers');
-      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental worker directory…</strong><span>The complete worker master is fetched only for rental transaction ownership.</span></div></section>`;
-    }
-    if (state.workspace === 'rental' && !state.rentalSettlementLoadedPeriods.has(state.period)) {
-      loadRentalSettlementContext(state.period);
-      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental adjustments…</strong><span>Fetching company-scoped settlement transactions from the server.</span></div></section>`;
+    if (state.workspace === 'rental') {
+      const request=rentalAdjustmentRequest(state.period);
+      if(state.adjustmentServer.key!==request.key&&state.adjustmentServer.pendingKey!==request.key)queueMicrotask(()=>loadRentalAdjustmentPage(state.period));
+      const contextReady=state.adjustmentContext?.surface==='rental_adjustments_page'&&state.adjustmentContext?.period===periodKeyFromLabel(state.period);
+      if(!contextReady)return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental adjustments…</strong><span>Fetching one bounded transaction page and exact period totals.</span></div></section>`;
     }
     if (state.workspace === 'rental' && state.adjustmentView === 'balances') state.adjustmentView='register';
     const rows=allAdjustmentRows().filter(row=>state.workspace==='rental'?row.workforceKey==='Rental':row.workforceKey==='Internal');
     const summary=adjustmentPeriodSummary(rows), balances=adjustmentAdvanceBalances();
     const activeBalanceCount=state.workspace==='internal'?Number(state.adjustmentContext?.balanceSummary?.activeCount||0):balances.filter(row=>row.balance>0).length;
-    const totalTransactionCount=state.workspace==='internal'?Number(state.adjustmentContext?.summary?.count||0):rows.length;
+    const totalTransactionCount=Number(state.adjustmentContext?.summary?.count||rows.length||0);
     const content=state.workspace==='rental' ? adjustmentRegisterTemplate() : (state.adjustmentView==='balances'?adjustmentBalancesTemplate():adjustmentRegisterTemplate());
     return `<section class="page adjustments-page ${state.workspace==='internal'?'ui-v2-prs-internal-page ui-v2-prs-internal-execution-page':''}">
       <div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Controlled Transactions</span><h1>${state.workspace==='rental'?'Worker Adjustments':'Advances & Adjustments'}</h1><p>${state.workspace==='rental'?'Project-attributed rental-worker advances, fines, bonuses, reimbursements and other settlement adjustments.':'Company-employee advances, recoveries, fines, bonuses, reimbursements and other payroll adjustments.'}</p><span class="period-note">Working period: <strong>${escapeHtml(state.period)}</strong></span></div><div class="page-head__actions">${state.workspace==='rental'?'<button class="btn btn--secondary" data-route-link="rental-settlements">Supplier Settlements</button>':'<button class="btn btn--secondary" data-route-link="payroll-runs">Internal Payroll</button>'}<button class="btn btn--primary" data-quick-add="advance">${icon('plus')} New Transaction</button></div></div>
@@ -7451,7 +7522,10 @@
 
   function adjustmentFindMutable(id) {
     const serverItem=(state.adjustmentContext?.results||[]).find(row=>row.id===id);
-    if(serverItem) return {item:serverItem,kind:'internal',personId:serverItem.personId||serverItem.employeeId};
+    if(serverItem) {
+      const rental=state.adjustmentContext?.surface==='rental_adjustments_page';
+      return {item:serverItem,kind:rental?'rental':'internal',personId:serverItem.personId||serverItem.workerId||serverItem.employeeId};
+    }
     for (const [employeeId,items] of Object.entries(state.internalAdjustments||{})) {
       const item=(items||[]).find(row=>row.id===id); if(item) return {item,kind:'internal',personId:employeeId};
     }
@@ -7474,39 +7548,135 @@
     if(!workforceSelect||!personSelect)return;
     const preferred=state.drawerContext?.personId || '';
     const isRental=workforceSelect.value==='Rental Worker';
-    if(isRental){
-      const options=state.rentalWorkers.map(worker=>({value:worker.id,label:`${rentalWorkerCode(worker)} · ${worker.name}`}));
-      personSelect.innerHTML=options.map(item=>`<option value="${escapeHtml(item.value)}" ${item.value===preferred?'selected':''}>${escapeHtml(item.label)}</option>`).join('');
-      if(preferred&&options.some(item=>item.value===preferred))personSelect.value=preferred;
+    const personSearch=drawerBody.querySelector('#adjustmentPersonSearch');
+
+    if(!isRental){
+      const selectedEmployee=state.employees.find(item=>item.id===preferred) || null;
+      const renderOptions=(rows, selected=personSelect.value||preferred)=>{
+        const options=[...(rows||[])];
+        const selectedCached=state.employees.find(item=>item.id===selected);
+        if(selectedCached&&!options.some(item=>item.id===selectedCached.id))options.unshift(selectedCached);
+        personSelect.innerHTML=`<option value="">Search and select an employee</option>${options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId||item.employeeNumber||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
+        if(selected&&options.some(item=>item.id===selected))personSelect.value=selected;
+      };
+      renderOptions(selectedEmployee?[selectedEmployee]:[],preferred);
+      if(!personSearch)return;
+      let timer=null;
+      personSearch.addEventListener('input',()=>{
+        clearTimeout(timer);
+        timer=setTimeout(async()=>{
+          const query=personSearch.value.trim();
+          if(query.length<2){renderOptions(selectedEmployee?[selectedEmployee]:[],personSelect.value||preferred);return;}
+          try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
+          const controller=new AbortController();state.adjustmentPersonLookupController=controller;
+          try{
+            const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
+            const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
+            if(state.adjustmentPersonLookupController!==controller)return;
+            const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);renderOptions(rows,personSelect.value||preferred);
+          }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
+        },280);
+      });
       return;
     }
-    const selectedEmployee=state.employees.find(item=>item.id===preferred) || null;
-    const renderOptions=(rows, selected=personSelect.value||preferred)=>{
-      const options=[...(rows||[])];
-      const selectedCached=state.employees.find(item=>item.id===selected);
-      if(selectedCached&&!options.some(item=>item.id===selectedCached.id))options.unshift(selectedCached);
-      personSelect.innerHTML=`<option value="">Search and select an employee</option>${options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId||item.employeeNumber||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
-      if(selected&&options.some(item=>item.id===selected))personSelect.value=selected;
+
+    const projectSelect=drawerBody.querySelector('[name="adjustment-project"]');
+    const projectSearch=drawerBody.querySelector('#adjustmentProjectSearch');
+    const projectHint=drawerBody.querySelector('#adjustmentProjectHint');
+    const dateInput=drawerBody.querySelector('[name="adjustment-date"]');
+    if(!projectSelect||!personSearch||!projectSearch||!dateInput)return;
+    const preferredProject=state.drawerContext?.projectId || '';
+    let personTimer=null, projectTimer=null;
+    let personRows=[];
+    let projectRows=[];
+    const transactionDate=()=>dateInput.value || rentalTodayIso();
+
+    const renderWorkerOptions=(rows, selected=personSelect.value||preferred)=>{
+      personRows=[...(rows||[])];
+      const cached=state.rentalWorkers.find(item=>item.id===selected);
+      if(cached&&!personRows.some(item=>item.id===cached.id))personRows.unshift({id:cached.id,code:rentalWorkerCode(cached),name:cached.name,supplier:cached.supplier||''});
+      personSelect.innerHTML=`<option value="">Search and select a worker</option>${personRows.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.code||'')} · ${escapeHtml(item.name||'')}${item.supplier?` · ${escapeHtml(item.supplier)}`:''}</option>`).join('')}`;
+      if(selected&&personRows.some(item=>item.id===selected))personSelect.value=selected;
     };
-    renderOptions(selectedEmployee?[selectedEmployee]:[],preferred);
-    const input=drawerBody.querySelector('#adjustmentPersonSearch');
-    if(!input)return;
-    let timer=null;
-    input.addEventListener('input',()=>{
-      clearTimeout(timer);
-      timer=setTimeout(async()=>{
-        const query=input.value.trim();
-        if(query.length<2){renderOptions(selectedEmployee?[selectedEmployee]:[],personSelect.value||preferred);return;}
-        try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
-        const controller=new AbortController();state.adjustmentPersonLookupController=controller;
-        try{
-          const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
-          const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
-          if(state.adjustmentPersonLookupController!==controller)return;
-          const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);renderOptions(rows,personSelect.value||preferred);
-        }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
-      },280);
+    const renderProjectOptions=(rows, selected=projectSelect.value||preferredProject)=>{
+      projectRows=[...(rows||[])];
+      const hasWorker=Boolean(personSelect.value);
+      projectSelect.innerHTML=`<option value="">${hasWorker?'Select an eligible project':'Select a worker first'}</option>${projectRows.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.code||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
+      projectSelect.disabled=!hasWorker||projectRows.length===0;
+      projectSearch.disabled=!hasWorker;
+      if(selected&&projectRows.some(item=>item.id===selected))projectSelect.value=selected;
+      else if(projectRows.length===1)projectSelect.value=projectRows[0].id;
+      if(projectHint){
+        const chosen=projectRows.find(item=>item.id===projectSelect.value);
+        projectHint.textContent=!hasWorker?'Select a worker first. Projects are restricted to that worker\'s effective assignment on the transaction date.':chosen?`${chosen.supplier||'Managed supplier'} · ${chosen.trade||'Assigned trade'} · effective ${transactionDate()}`:projectRows.length?'Select the project effective for this transaction date.':'No eligible active project assignment exists on this date.';
+      }
+    };
+
+    const lookupWorkers=async({query='',selectedId=''}={})=>{
+      if(!selectedId&&query.trim().length<2){renderWorkerOptions([],personSelect.value||preferred);return [];}
+      try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
+      const controller=new AbortController();state.adjustmentPersonLookupController=controller;
+      try{
+        const params=new URLSearchParams({mode:'workers',transaction_date:transactionDate()});
+        if(query.trim())params.set('q',query.trim());
+        if(selectedId)params.set('worker_id',selectedId);
+        const payload=await appApi(`/api/rental/adjustments/lookup/?${params.toString()}`,{signal:controller.signal});
+        if(state.adjustmentPersonLookupController!==controller)return [];
+        const rows=[...(payload.results||[])];
+        renderWorkerOptions(rows,selectedId||personSelect.value||preferred);
+        return rows;
+      }catch(error){if(error?.name!=='AbortError')showToast('Worker search unavailable',error.message);return [];}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
+    };
+
+    const lookupProjects=async({query='',selectedId=''}={})=>{
+      const workerId=personSelect.value;
+      if(!workerId){renderProjectOptions([], '');return [];}
+      try{state.adjustmentProjectLookupController?.abort();}catch{/* settled */}
+      const controller=new AbortController();state.adjustmentProjectLookupController=controller;
+      try{
+        const params=new URLSearchParams({mode:'projects',worker_id:workerId,transaction_date:transactionDate()});
+        if(query.trim())params.set('q',query.trim());
+        const payload=await appApi(`/api/rental/adjustments/lookup/?${params.toString()}`,{signal:controller.signal});
+        if(state.adjustmentProjectLookupController!==controller)return [];
+        const rows=[...(payload.results||[])];renderProjectOptions(rows,selectedId||projectSelect.value||preferredProject);return rows;
+      }catch(error){if(error?.name!=='AbortError')showToast('Project lookup unavailable',error.message);return [];}finally{if(state.adjustmentProjectLookupController===controller)state.adjustmentProjectLookupController=null;}
+    };
+
+    renderWorkerOptions([],preferred);
+    renderProjectOptions([],preferredProject);
+    personSearch.addEventListener('input',()=>{
+      clearTimeout(personTimer);
+      personTimer=setTimeout(()=>lookupWorkers({query:personSearch.value}),260);
     });
+    personSelect.addEventListener('change',()=>{
+      projectSearch.value='';
+      renderProjectOptions([], '');
+      if(personSelect.value)lookupProjects({selectedId:preferredProject});
+    });
+    projectSearch.addEventListener('input',()=>{
+      clearTimeout(projectTimer);
+      projectTimer=setTimeout(()=>lookupProjects({query:projectSearch.value}),260);
+    });
+    dateInput.addEventListener('change',async()=>{
+      const selected=personSelect.value;
+      projectSearch.value='';
+      renderProjectOptions([], '');
+      if(!selected)return;
+      const rows=await lookupWorkers({selectedId:selected});
+      if(!rows.some(item=>item.id===selected)){
+        personSelect.value='';
+        renderProjectOptions([], '');
+        showToast('Worker assignment changed','The selected worker has no eligible project assignment on the new transaction date. Search again.');
+        return;
+      }
+      await lookupProjects();
+    });
+    if(preferred){
+      queueMicrotask(async()=>{
+        const rows=await lookupWorkers({selectedId:preferred});
+        if(rows.some(item=>item.id===preferred))await lookupProjects({selectedId:preferredProject});
+      });
+    }
   }
 
 
@@ -7643,26 +7813,46 @@
     return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1><p>${state.workspace==='rental'?'Final project timesheets, supplier settlements, supplier invoices and supplier-payment receipts.':'Final salary slips, internal timesheets and salary-payment receipts.'}</p></div><div class="page-head__actions"><button class="btn btn--primary" data-document-generate>${icon('plus')} Finalize Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong><small>Immutable final records</small></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="Finalize document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document preview'}</strong><span>${selected?`${escapeHtml(documentTypeLabel(selected.type))} · ${escapeHtml(selected.period||'')}`:'Select a document from the list'}</span></div><div class="document-preview-toolbar__actions"><button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${documentSnapshotSummary(selected)}</div>${selected?`<div class="document-info-strip"><div><span>Document</span><strong>${escapeHtml(selected.number)}</strong></div><div><span>Source</span><strong>${escapeHtml(selected.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(selected.status)}</strong></div><div><span>Integrity</span><strong>${selected.integrityOk?'Verified':'Failed'}</strong></div></div>`:''}</section></div></section>`;
   }
 
-  async function openDocumentGenerateDrawer() {
-    state.drawerType='document-generate';state.drawerContext=null;drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Finalize Document';drawerTitle.textContent='Finalize business document';
-    drawerBody.innerHTML='<section class="form-section"><div class="table-empty"><strong>Loading eligible source records…</strong><span>Only controlled final/locked/paid records can be finalized.</span></div></section>';
-    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+  let documentSourceController=null;
+  let documentSourceTimer=null;
+  function documentSourceTypesForWorkspace(){return state.workspace==='rental'?['rental_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']:['salary_slip','internal_timesheet','salary_payment_receipt'];}
+  function cancelDocumentSourceRequest(){if(documentSourceController){try{documentSourceController.abort();}catch{}}documentSourceController=null;}
+  async function loadDocumentSourceOptions({force=false}={}){
+    if(state.drawerType!=='document-generate')return false;
+    const typeSelect=drawerBody.querySelector('[name="document-type"]'),search=drawerBody.querySelector('[name="document-source-search"]'),sourceSelect=drawerBody.querySelector('[name="document-source"]'),hint=drawerBody.querySelector('[data-document-source-hint]');
+    if(!typeSelect||!sourceSelect)return false;
+    const type=typeSelect.value,q=(search?.value||'').trim();
+    const requiresSearch=['salary_slip','salary_payment_receipt'].includes(type);
+    if(requiresSearch&&q.length<2){cancelDocumentSourceRequest();state.drawerContext={...(state.drawerContext||{}),sources:[]};sourceSelect.innerHTML='<option value="">Type at least 2 characters to search</option>';sourceSelect.disabled=true;drawerSave.disabled=true;if(hint)hint.textContent='Search is server-backed and returns at most 25 eligible records.';return false;}
+    cancelDocumentSourceRequest();documentSourceController=new AbortController();
+    sourceSelect.disabled=true;sourceSelect.innerHTML='<option value="">Searching eligible records…</option>';drawerSave.disabled=true;if(hint)hint.textContent='Searching controlled source records…';
+    const params=new URLSearchParams({workspace:state.workspace,period:periodKeyFromLabel(state.period),type,limit:'25'});if(q)params.set('q',q);
     try{
-      const payload=await appApi(`/api/documents/sources/?workspace=${encodeURIComponent(state.workspace)}&period=${encodeURIComponent(periodKeyFromLabel(state.period))}`);
-      const sources=(payload.sources||[]).filter(item=>!item.finalized);
-      state.drawerContext={sources};
-      if(!sources.length){drawerBody.innerHTML=`<section class="form-section"><div class="table-empty"><strong>No eligible sources for ${escapeHtml(state.period)}.</strong><span>Complete and lock/approve/pay the owning business record first, or the document may already be finalized.</span></div></section>`;return;}
-      drawerSave.disabled=false;
-      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>Final documents are immutable and can be created only once for each source/type.</span></div><div class="form-grid"><label class="form-field form-field--full"><span>Source record</span><select name="document-source">${sources.map((item,index)=>`<option value="${index}">${escapeHtml(documentTypeLabel(item.type))} · ${escapeHtml(item.label)}${item.amount!==null&&item.amount!==undefined?` · ${escapeHtml(formatCurrency(item.amount))}`:''}</option>`).join('')}</select></label><div class="form-field form-field--full"><span>Working period</span><strong>${escapeHtml(state.period)}</strong></div></div></section><section class="form-section" data-document-invoice-fields hidden><div class="form-section__head"><strong>Supplier invoice details</strong><span>Enter the supplier-issued invoice identity and explicit VAT amount. The backend does not infer tax treatment.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`;
-      const sourceSelect=drawerBody.querySelector('[name="document-source"]');
-      const sync=()=>{const item=sources[Number(sourceSelect.value)||0];drawerBody.querySelector('[data-document-invoice-fields]').hidden=item?.type!=='supplier_invoice';};
-      sourceSelect.addEventListener('change',sync);sync();
-    }catch(error){drawerBody.innerHTML=`<section class="form-section"><div class="table-empty"><strong>Eligible sources could not be loaded.</strong><span>${escapeHtml(error.message)}</span></div></section>`;showToast('Document sources unavailable',error.message);}
+      const payload=await appApi(`/api/documents/sources/?${params.toString()}`,{signal:documentSourceController.signal});
+      const sources=payload.sources||[];state.drawerContext={...(state.drawerContext||{}),sources,type};
+      if(!sources.length){sourceSelect.innerHTML='<option value="">No eligible unfinalized source found</option>';sourceSelect.disabled=true;drawerSave.disabled=true;if(hint)hint.textContent=requiresSearch?'Try a different employee/payment search.':'No controlled source matches this period/search, or it is already finalized.';return false;}
+      sourceSelect.innerHTML=`<option value="">Select a controlled source</option>${sources.map(item=>`<option value="${escapeHtml(item.sourceId)}">${escapeHtml(documentTypeLabel(item.type))} · ${escapeHtml(item.label)}${item.amount!==null&&item.amount!==undefined?` · ${escapeHtml(formatCurrency(item.amount))}`:''}</option>`).join('')}`;
+      sourceSelect.disabled=false;drawerSave.disabled=true;if(hint)hint.textContent=`${sources.length} result${sources.length===1?'':'s'} · maximum 25 per search.`;return true;
+    }catch(error){if(error?.name==='AbortError')return false;sourceSelect.innerHTML='<option value="">Source search failed</option>';sourceSelect.disabled=true;if(hint)hint.textContent=error.message;showToast('Document sources unavailable',error.message);return false;}
+    finally{documentSourceController=null;}
+  }
+
+  async function openDocumentGenerateDrawer() {
+    state.drawerType='document-generate';state.drawerContext={sources:[]};drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Finalize Document';drawerTitle.textContent='Finalize business document';
+    const types=documentSourceTypesForWorkspace();const preferred=(state.documentTab!=='all'&&types.includes(state.documentTab))?state.documentTab:types[0];
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>Choose one document type, then search a bounded set of eligible final/locked/paid source records. Full Payroll masters are never loaded into this drawer.</span></div><div class="form-grid"><label class="form-field"><span>Document type</span><select name="document-type">${types.map(type=>`<option value="${type}" ${type===preferred?'selected':''}>${escapeHtml(documentTypeLabel(type))}</option>`).join('')}</select></label><label class="form-field"><span>Working period</span><strong>${escapeHtml(state.period)}</strong></label><label class="form-field form-field--full"><span>Find source record</span><div class="table-toolbar__search">${icon('search')}<input name="document-source-search" type="search" placeholder="Search employee, payment, supplier, settlement or project" autocomplete="off"></div><span class="field-hint">Search results are company-scoped and capped at 25.</span></label><label class="form-field form-field--full"><span>Source record</span><select name="document-source" disabled><option value="">Loading eligible records…</option></select><span class="field-hint" data-document-source-hint>Only controlled unfinalized records can be selected.</span></label></div></section><section class="form-section" data-document-invoice-fields hidden><div class="form-section__head"><strong>Supplier invoice details</strong><span>The finalized invoice uses the approved SESCCO A4 company headpad and snapshots invoice identity, VAT and settlement values immutably.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`;
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    const typeSelect=drawerBody.querySelector('[name="document-type"]'),search=drawerBody.querySelector('[name="document-source-search"]'),sourceSelect=drawerBody.querySelector('[name="document-source"]'),invoiceFields=drawerBody.querySelector('[data-document-invoice-fields]');
+    const syncType=()=>{invoiceFields.hidden=typeSelect.value!=='supplier_invoice';if(search)search.value='';state.drawerContext={sources:[],type:typeSelect.value};loadDocumentSourceOptions({force:true});};
+    typeSelect.addEventListener('change',syncType);
+    search?.addEventListener('input',()=>{clearTimeout(documentSourceTimer);documentSourceTimer=setTimeout(()=>loadDocumentSourceOptions({force:true}),250);});
+    sourceSelect?.addEventListener('change',()=>{drawerSave.disabled=!sourceSelect.value;});
+    syncType();
   }
 
   async function generateDocumentFromDrawer(get) {
-    const sources=state.drawerContext?.sources||[];const index=Number(get('document-source')||0);const source=sources[index];
-    if(!source){showToast('Source required','Choose an eligible controlled record.');return false;}
+    const sourceId=get('document-source');const sources=state.drawerContext?.sources||[];const source=sources.find(item=>item.sourceId===sourceId);
+    if(!source){showToast('Source required','Search and choose an eligible controlled record.');return false;}
     const body={document_type:source.type,source_id:source.sourceId};
     if(source.type==='supplier_invoice'){
       const invoiceNumber=get('document-invoice-number').trim(),issueDate=get('document-issue-date'),vat=Number(get('document-vat-amount')||0),subtotal=Number(source.amount||0);
@@ -7673,6 +7863,7 @@
     try{const payload=await appApi('/api/documents/',{method:'POST',body});const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';state.documentPage=1;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';closeDrawer();if(currentRoute()!=='documents')navigate('documents');else renderRoute();showToast('Document finalized',`${doc.number} is stored as an immutable final snapshot.`);return true;}
     catch(error){drawerSave.disabled=false;showToast('Document could not be finalized',error.message);return false;}
   }
+
 
   function printDocumentRecord(doc) {
     if(!doc)return;
@@ -8246,15 +8437,17 @@
     document.querySelectorAll('[data-document-print]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===state.selectedDocumentId);printDocumentRecord(doc);}));
     document.querySelectorAll('[data-adjustment-view]').forEach(btn => btn.addEventListener('click', () => { cancelInternalAdjustmentRequest(); state.adjustmentView=btn.dataset.adjustmentView; state.adjustmentPage=1; renderRoute(); }));
     const adjustmentSearch=document.getElementById('adjustmentSearch');
-    bindPayrollSearch(adjustmentSearch,value=>{state.adjustmentSearch=value;state.adjustmentPage=1;},{delay:320,beforeRender:()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();}});
+    bindPayrollSearch(adjustmentSearch,value=>{state.adjustmentSearch=value;state.adjustmentPage=1;},{delay:320,beforeRender:()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();else if(state.workspace==='rental')cancelRentalAdjustmentRequest();}});
     const adjustmentWorkforce=document.getElementById('adjustmentWorkforce'); if(adjustmentWorkforce) adjustmentWorkforce.addEventListener('change',()=>{state.adjustmentWorkforce=adjustmentWorkforce.value;renderRoute();});
-    const adjustmentType=document.getElementById('adjustmentType'); if(adjustmentType) adjustmentType.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentType=adjustmentType.value;state.adjustmentPage=1;renderRoute();});
-    const adjustmentStatus=document.getElementById('adjustmentStatus'); if(adjustmentStatus) adjustmentStatus.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentStatus=adjustmentStatus.value;state.adjustmentPage=1;renderRoute();});
-    const adjustmentProject=document.getElementById('adjustmentProject'); if(adjustmentProject) adjustmentProject.addEventListener('change',()=>{state.adjustmentProject=adjustmentProject.value;renderRoute();});
-    const adjustmentSupplier=document.getElementById('adjustmentSupplier'); if(adjustmentSupplier) adjustmentSupplier.addEventListener('change',()=>{state.adjustmentSupplier=adjustmentSupplier.value;renderRoute();});
-    document.querySelectorAll('[data-adjustment-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.adjustmentPage);if(Number.isFinite(page)&&page>0){cancelInternalAdjustmentRequest();state.adjustmentPage=page;renderRoute();}}));
-    const adjustmentPageSize=document.getElementById('adjustmentPageSize'); if(adjustmentPageSize) adjustmentPageSize.addEventListener('change',()=>{cancelInternalAdjustmentRequest();state.adjustmentPageSize=Number(adjustmentPageSize.value)||50;state.adjustmentPage=1;localStorage.setItem('payroll-ui-adjustment-page-size',String(state.adjustmentPageSize));renderRoute();});
-    document.querySelectorAll('[data-adjustment-reset]').forEach(btn=>btn.addEventListener('click',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentSearch='';state.adjustmentWorkforce='All';state.adjustmentType='All';state.adjustmentStatus='All';state.adjustmentProject='All projects';state.adjustmentSupplier='All suppliers';state.adjustmentPage=1;renderRoute();}));
+    const adjustmentType=document.getElementById('adjustmentType'); if(adjustmentType) adjustmentType.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();else if(state.workspace==='rental')cancelRentalAdjustmentRequest();state.adjustmentType=adjustmentType.value;state.adjustmentPage=1;renderRoute();});
+    const adjustmentStatus=document.getElementById('adjustmentStatus'); if(adjustmentStatus) adjustmentStatus.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();else if(state.workspace==='rental')cancelRentalAdjustmentRequest();state.adjustmentStatus=adjustmentStatus.value;state.adjustmentPage=1;renderRoute();});
+    const adjustmentProjectSearch=document.getElementById('adjustmentProjectSearch');
+    bindPayrollSearch(adjustmentProjectSearch,value=>{state.adjustmentProjectSearch=value;state.adjustmentPage=1;},{delay:320,beforeRender:()=>cancelRentalAdjustmentRequest()});
+    const adjustmentSupplierSearch=document.getElementById('adjustmentSupplierSearch');
+    bindPayrollSearch(adjustmentSupplierSearch,value=>{state.adjustmentSupplierSearch=value;state.adjustmentPage=1;},{delay:320,beforeRender:()=>cancelRentalAdjustmentRequest()});
+    document.querySelectorAll('[data-adjustment-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.adjustmentPage);if(Number.isFinite(page)&&page>0){if(state.workspace==='rental')cancelRentalAdjustmentRequest();else cancelInternalAdjustmentRequest();state.adjustmentPage=page;renderRoute();}}));
+    const adjustmentPageSize=document.getElementById('adjustmentPageSize'); if(adjustmentPageSize) adjustmentPageSize.addEventListener('change',()=>{if(state.workspace==='rental')cancelRentalAdjustmentRequest();else cancelInternalAdjustmentRequest();state.adjustmentPageSize=Number(adjustmentPageSize.value)||50;state.adjustmentPage=1;localStorage.setItem('payroll-ui-adjustment-page-size',String(state.adjustmentPageSize));renderRoute();});
+    document.querySelectorAll('[data-adjustment-reset]').forEach(btn=>btn.addEventListener('click',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();else if(state.workspace==='rental')cancelRentalAdjustmentRequest();state.adjustmentSearch='';state.adjustmentWorkforce='All';state.adjustmentType='All';state.adjustmentStatus='All';state.adjustmentProject='All projects';state.adjustmentSupplier='All suppliers';state.adjustmentProjectSearch='';state.adjustmentSupplierSearch='';state.adjustmentPage=1;renderRoute();}));
     document.querySelectorAll('[data-adjustment-detail]').forEach(btn=>btn.addEventListener('click',()=>openAdjustmentDetailDrawer(btn.dataset.adjustmentDetail)));
     document.querySelectorAll('[data-adjustment-action]').forEach(btn=>btn.addEventListener('click',async()=>{
       const found=adjustmentFindMutable(btn.dataset.adjustmentId); if(!found){showToast('Read-only transaction','This transaction cannot be changed from the current workflow state.');return;}
@@ -8274,8 +8467,7 @@
       btn.disabled = true;
       try {
         const payload = await appApi(`/api/rental/adjustments/${encodeURIComponent(found.item.id)}/workflow/`, { method:'POST', body:{ action } });
-        applyRentalSettlementPayload(payload);
-        renderRoute();
+        await refreshRentalAdjustmentAuthority(state.period, payload.adjustment || null);
         showToast(action==='approve'?'Transaction approved':'Transaction submitted', action==='approve' ? `${adjustmentNormalizeType(found.item.type)} is now eligible for the matching rental settlement calculation.` : 'The transaction is awaiting approval and remains excluded from settlement calculation.');
       } catch (error) {
         showToast('Transaction workflow failed', error.message);
@@ -9535,16 +9727,12 @@
         const context = state.drawerContext || {};
         const isRental = state.workspace === 'rental';
         const workforce = isRental ? 'Rental Worker' : 'Internal Employee';
-        const internalOptions = state.employees.map(employee => ({ value:employee.id, label:`EMP ${employee.employeeId} · ${employee.name}` }));
-        const rentalOptions = state.rentalWorkers.map(worker => ({ value:worker.id, label:`${rentalWorkerCode(worker)} · ${worker.name}` }));
-        const selectedPerson = context.personId || (isRental ? rentalOptions[0]?.value : internalOptions[0]?.value) || '';
-        const projectOptions = isRental ? state.projects.map(project => ({value:project.id,label:`${project.name} · ${project.code}`})) : [{value:'',label:'Internal employee-level'}];
         const types = isRental ? ['Worker Advance','Fine / Penalty','Bonus','Reimbursement','Other Earning','Other Deduction'] : ['Salary Advance','Advance Recovery','Fine','Bonus','Reimbursement','Other Earning','Other Deduction'];
         const ownerFields = [
           namedSelectFieldValue('Workforce type','adjustment-workforce',[workforce],workforce),
-          ...(isRental ? [] : [`<div class="form-field form-field--wide"><label for="adjustmentPersonSearch">Find employee</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentPersonSearch" type="search" placeholder="Search employee name or ID" autocomplete="off"></div><span class="field-hint">Server search returns at most 25 matching employees.</span></div>`]),
-          `<div class="form-field form-field--wide"><label for="adjustment-person">Person</label><select class="select" id="adjustment-person" name="adjustment-person"></select><span class="field-hint">Managed employee/worker master only.</span></div>`,
-          namedSelectOptions(isRental?'Project':'Project','adjustment-project',projectOptions,context.projectId || projectOptions[0]?.value || ''),
+          `<div class="form-field form-field--wide"><label for="adjustmentPersonSearch">Find ${isRental?'worker':'employee'}</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentPersonSearch" type="search" placeholder="Search ${isRental?'worker name, ID or supplier':'employee name or ID'}" autocomplete="off"></div><span class="field-hint">Server search returns at most 25 ${isRental?'workers with an effective assignment on the transaction date':'matching employees'}.</span></div>`,
+          `<div class="form-field form-field--wide"><label for="adjustment-person">Person</label><select class="select" id="adjustment-person" name="adjustment-person"><option value="">Search and select ${isRental?'a worker':'an employee'}</option></select><span class="field-hint">Managed ${isRental?'worker':'employee'} master only. Search results are never loaded as a full directory.</span></div>`,
+          ...(isRental ? [`<div class="form-field form-field--wide"><label for="adjustmentProjectSearch">Find project</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentProjectSearch" type="search" placeholder="Search eligible project" autocomplete="off" disabled></div><span class="field-hint" id="adjustmentProjectHint">Select a worker first. Projects are restricted to that worker's effective assignment on the transaction date.</span></div>`,`<div class="form-field form-field--wide"><label for="adjustment-project">Project</label><select class="select" id="adjustment-project" name="adjustment-project" disabled><option value="">Select a worker first</option></select><span class="field-hint">Only assignment-valid active projects are selectable.</span></div>`] : [namedSelectOptions('Project','adjustment-project',[{value:'',label:'Internal employee-level'}],'')]),
           namedSelectFieldValue('Transaction type','adjustment-type',types,context.type || (isRental?'Worker Advance':'Salary Advance'))
         ];
         const amountFields = [
@@ -10208,6 +10396,10 @@
     state.salaryStructureEmployeeLookupController=null;
     try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
     state.adjustmentPersonLookupController=null;
+    try{state.adjustmentProjectLookupController?.abort();}catch{/* settled */}
+    state.adjustmentProjectLookupController=null;
+    cancelDocumentSourceRequest();
+    clearTimeout(documentSourceTimer);documentSourceTimer=null;
     drawer.classList.remove('is-open');
     drawerScrim.classList.remove('is-open');
     drawer.setAttribute('aria-hidden', 'true');
@@ -10372,7 +10564,6 @@
       const period = get('adjustment-period') || state.period;
       const status = get('adjustment-status') || 'Draft';
       const projectId = get('adjustment-project') || null;
-      const project = projectId ? state.projects.find(item=>item.id===projectId) : null;
       const reference = get('adjustment-reference');
       const reason = get('adjustment-reason');
       const recoveryPlan = get('adjustment-recovery-plan') || 'No automatic schedule';
@@ -10410,8 +10601,7 @@
         }
         return;
       }
-      const worker=rentalWorkerById(personId); if(!worker){showToast('Worker not found','Choose a valid rental worker.');return;}
-      if (!projectId || !project) { drawerBody.querySelector('[name="adjustment-project"]')?.focus(); showToast('Project required','Rental adjustments must be attributed to a managed project.'); return; }
+      if (!projectId) { drawerBody.querySelector('[name="adjustment-project"]')?.focus(); showToast('Project required',"Select the worker's assignment-valid project for the effective date."); return; }
       drawerSave.disabled = true;
       try {
         const payload = await appApi('/api/rental/adjustments/', {
@@ -10427,9 +10617,11 @@
             reference
           }
         });
-        applyRentalSettlementPayload(payload);
+        applyRentalAdjustmentDelta(payload.adjustment || null);
+        state.rentalSettlementLoadedPeriods.delete(period);
+        delete state.rentalSettlementContexts[period];
         closeDrawer();
-        if (currentRoute()==='adjustments') renderRoute();
+        if (currentRoute()==='adjustments') await refreshRentalAdjustmentAuthority(state.period, payload.adjustment || null);
         else { state.rentalWorkerTab='advances'; renderRoute(); }
         showToast('Transaction saved', `${type} · ${formatCurrency(amount)} · Draft. Submit and approval are separate audited actions.`);
       } catch (error) {
@@ -10483,7 +10675,9 @@
             period:periodKeyFromLabel(state.period), adjustment_type:'advance',
             amount, reason:reason || 'Worker advance', reference:''
           }});
-          applyRentalSettlementPayload(payload);
+          applyRentalAdjustmentDelta(payload.adjustment || null);
+          state.rentalSettlementLoadedPeriods.delete(state.period);
+          delete state.rentalSettlementContexts[state.period];
           closeDrawer(); state.rentalWorkerTab='advances'; renderRoute();
           showToast('Worker advance saved', `${formatCurrency(amount)} was recorded as a Draft settlement deduction for ${worker.name}.`);
         } catch (error) { drawerSave.disabled=false; showToast('Advance could not be saved', error.message); }

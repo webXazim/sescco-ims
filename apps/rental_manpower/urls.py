@@ -9,6 +9,7 @@ urlpatterns = [
     path("api/rental/settlements/calculate/", api.rental_settlements_calculate_api, name="settlements-calculate-api"),
     path("api/rental/settlements/workflow/", api.rental_settlements_workflow_api, name="settlements-workflow-api"),
     path("api/rental/adjustments/", api.rental_adjustments_api, name="adjustments-api"),
+    path("api/rental/adjustments/lookup/", api.rental_adjustment_lookup_api, name="adjustment-lookup-api"),
     path("api/rental/adjustments/<uuid:adjustment_id>/", api.rental_adjustment_detail_api, name="adjustment-detail-api"),
     path("api/rental/adjustments/<uuid:adjustment_id>/workflow/", api.rental_adjustment_workflow_api, name="adjustment-workflow-api"),
     path("api/rental/supplier-payments/", api.supplier_payments_api, name="supplier-payments-api"),

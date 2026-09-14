@@ -4,11 +4,15 @@ import hashlib
 import json
 import uuid
 import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db.utils import NotSupportedError
+from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -17,7 +21,8 @@ from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
 from apps.documents.models import BusinessDocument, DocumentType, DocumentWorkspace
-from apps.documents.services import verify_document_snapshot
+from apps.documents.services import finalize_business_document, verify_document_snapshot
+from apps.documents.services.documents import SESCCO_SUPPLIER_INVOICE_LETTERHEAD, _packaged_brand_asset_snapshot
 
 
 def snapshot_hash(value) -> str:
@@ -97,6 +102,63 @@ class BusinessDocumentIntegrityTests(TestCase):
             response = self.client.get(reverse("documents:document-brand-asset", kwargs={"document_id": branded.id, "kind": "logo"}))
             self.assertEqual(response.status_code, 200)
             self.assertEqual(b"".join(response.streaming_content), payload)
+
+
+    def test_packaged_sescco_supplier_letterhead_is_a4_hash_verified_and_served(self):
+        descriptor = _packaged_brand_asset_snapshot(SESCCO_SUPPLIER_INVOICE_LETTERHEAD)
+        asset_path = Path(settings.BASE_DIR) / descriptor["package_path"]
+        payload = asset_path.read_bytes()
+        self.assertEqual(descriptor["sha256"], hashlib.sha256(payload).hexdigest())
+        self.assertEqual(payload[:8], b"\x89PNG\r\n\x1a\n")
+        width = int.from_bytes(payload[16:20], "big")
+        height = int.from_bytes(payload[20:24], "big")
+        self.assertEqual((width, height), (2480, 3508))
+
+        snapshot = dict(self.snapshot)
+        snapshot["issuer"] = dict(snapshot["issuer"])
+        snapshot["issuer"]["branding"] = {
+            "mode": "letterhead", "logo": None, "letterhead": descriptor, "watermark": None,
+            "profile": "sescco_supplier_invoice_v1",
+        }
+        branded = BusinessDocument.objects.create(
+            company=self.company, workspace=DocumentWorkspace.RENTAL, document_type=DocumentType.SUPPLIER_INVOICE,
+            document_number="SINV-0000001", title="Supplier Invoice · Supplier", entity_reference="SUP-001",
+            entity_name="Supplier", source_model="rental_manpower.suppliersettlement", source_id=uuid.uuid4(),
+            source_reference="SSET-0001", external_reference="INV-001", snapshot=snapshot,
+            source_fingerprint="d" * 64, snapshot_fingerprint=snapshot_hash(snapshot),
+            finalized_at=timezone.now(), finalized_by=self.user,
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("documents:document-brand-asset", kwargs={"document_id": branded.id, "kind": "letterhead"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), payload)
+
+    def test_supplier_invoice_finalization_forces_versioned_sescco_headpad(self):
+        invoice_snapshot = {
+            "kind": DocumentType.SUPPLIER_INVOICE,
+            "invoice": {"supplier_invoice_number": "INV-HEADPAD-1", "issue_date": "2026-09-14", "subtotal": "100.00", "vat_amount": "15.00", "vat_rate": "15.00", "total": "115.00", "payment_terms": "30 days"},
+            "supplier": {"code": "SUP-001", "name": "Supplier"},
+            "project": {"code": "PRJ-001", "name": "Project"},
+            "totals": {"net": "100.00"},
+            "lines": [],
+        }
+        fake_source = SimpleNamespace(
+            pk=uuid.uuid4(), updated_at=timezone.now(), snapshot_fingerprint="e" * 64, source_fingerprint="",
+            _meta=SimpleNamespace(label_lower="rental_manpower.suppliersettlement"),
+        )
+        payload = (DocumentWorkspace.RENTAL, fake_source, (invoice_snapshot, "SUP-001", "Supplier", timezone.now().date().replace(day=1), "SSET-001"))
+        with patch("apps.documents.services.documents._load_source", return_value=payload), patch("apps.documents.services.documents.record_audit_event"):
+            document = finalize_business_document(
+                actor_membership=self.membership, document_type=DocumentType.SUPPLIER_INVOICE,
+                source_id=fake_source.pk, invoice={"invoice_number": "INV-HEADPAD-1"},
+            )
+        branding = document.snapshot["issuer"]["branding"]
+        self.assertEqual(branding["mode"], "letterhead")
+        self.assertEqual(branding["profile"], "sescco_supplier_invoice_v1")
+        self.assertEqual(branding["letterhead"]["package_path"], SESCCO_SUPPLIER_INVOICE_LETTERHEAD)
+        self.assertIsNone(branding["watermark"])
+        self.assertEqual(document.snapshot["document_schema_version"], "2.0")
+        self.assertTrue(document.snapshot["invoice"]["total_in_words"])
 
     def test_final_document_cannot_be_saved_updated_or_deleted(self):
         self.document.title = "Changed"

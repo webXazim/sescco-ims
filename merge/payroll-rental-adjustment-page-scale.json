@@ -1,0 +1,25 @@
+{
+  "release": "1.0.82",
+  "surface": "rental_worker_adjustments",
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "default_page_size": 50,
+  "server_search": true,
+  "server_filters": [
+    "type",
+    "status",
+    "project_search",
+    "supplier_search"
+  ],
+  "exact_period_summary": true,
+  "settlement_context_on_page_load": false,
+  "settlement_context_on_mutation": false,
+  "full_project_supplier_option_render": false,
+  "stale_request_cancellation": true,
+  "compact_mutations": true,
+  "schema_change": false,
+  "payroll_formula_change": false
+}

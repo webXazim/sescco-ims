@@ -1,5 +1,5 @@
 {
-  "release": "1.0.79",
+  "release": "1.0.82",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -34,6 +34,8 @@
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-rental-adjustment-selector-scale.py",
+    "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
     "scripts/verify-payroll-shared-surfaces-scale.py",
     "scripts/verify-payroll-final-browser-certification.py",
@@ -45,7 +47,8 @@
     "scripts/verify-payroll-performance.py",
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
-    "scripts/verify-lifecycle-retention-contract.py"
+    "scripts/verify-lifecycle-retention-contract.py",
+    "scripts/verify-payroll-document-production.py"
   ],
   "scenarios": [
     {
@@ -307,6 +310,36 @@
       "evidence": {
         "apps/core/tests/test_management_reporting.py": [
           "test_interactive_wps_report_does_not_decrypt_payment_destinations"
+        ]
+      }
+    },
+    {
+      "id": "rental-adjustment-selector-scale-regression",
+      "description": "Rental adjustment owner/project selection stays bounded and assignment-aware at large worker/project counts.",
+      "evidence": {
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_worker_lookup_is_search_gated_and_assignment_aware",
+          "test_project_lookup_is_restricted_to_effective_worker_assignment",
+          "test_project_lookup_requires_worker_and_never_lists_global_project_master"
+        ]
+      }
+    },
+    {
+      "id": "rental-adjustment-page-scale-regression",
+      "description": "Rental Worker Adjustments opens from its own bounded register instead of the Rental Settlement mega-context and keeps mutations compact.",
+      "evidence": {
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_adjustment_register_is_server_paginated_with_exact_summary",
+          "test_adjustment_create_returns_compact_delta_not_settlement_context"
+        ]
+      }
+    },
+    {
+      "id": "payroll-document-production-hardening",
+      "evidence": {
+        "apps/documents/tests/test_documents.py": [
+          "test_packaged_sescco_supplier_letterhead_is_a4_hash_verified_and_served",
+          "test_supplier_invoice_finalization_forces_versioned_sescco_headpad"
         ]
       }
     }

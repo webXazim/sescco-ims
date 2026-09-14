@@ -1,0 +1,26 @@
+{
+  "release": "1.0.82",
+  "surface": "rental-adjustment-drawer",
+  "worker_lookup": {
+    "server_backed": true,
+    "minimum_query_chars": 2,
+    "max_results": 25,
+    "assignment_date_aware": true,
+    "full_master_hydration": false
+  },
+  "project_lookup": {
+    "server_backed": true,
+    "requires_worker": true,
+    "max_results": 25,
+    "effective_assignment_only": true,
+    "active_project_only": true,
+    "full_master_hydration": false
+  },
+  "browser_safety": {
+    "abort_stale_worker_requests": true,
+    "abort_stale_project_requests": true,
+    "revalidate_on_date_change": true,
+    "save_does_not_require_directory_cache": true
+  },
+  "server_authority": "create_rental_adjustment transactionally revalidates company, lifecycle, active project and effective worker/project assignment"
+}

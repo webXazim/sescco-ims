@@ -420,3 +420,152 @@ class RentalAssignmentApiTests(TestCase):
         response=self.client.post(wurl, data=json.dumps({"action":"archive","reason":"Ended"}), content_type="application/json")
         self.assertEqual(response.status_code,200); self.assertTrue(response.json()["worker"]["archived"])
 
+
+
+class RentalAdjustmentLookupApiTests(TestCase):
+    def setUp(self):
+        from apps.rental_manpower.services import assign_worker, create_project
+
+        self.company = Company.objects.create(name="Lookup Co", slug="lookup-co")
+        self.user = User.objects.create_user(username="lookup-user", password="test-password")
+        self.membership = CompanyMembership.objects.create(
+            company=self.company,
+            user=self.user,
+            role=AccessRole.RENTAL_MANPOWER_OFFICER,
+        )
+        self.client.force_login(self.user)
+        self.supplier = create_supplier(
+            actor_membership=self.membership,
+            code="LOOK-SUP",
+            name="Lookup Supplier",
+        )
+        self.worker = create_worker(
+            actor_membership=self.membership,
+            supplier_id=self.supplier.pk,
+            worker_number="LOOK-001",
+            full_name="Lookup Worker",
+            status="Active",
+        )
+        self.project = create_project(
+            actor_membership=self.membership,
+            code="LOOK-PRJ",
+            name="Lookup Project",
+            start_date=date(2026, 9, 1),
+        )
+        assign_worker(
+            actor_membership=self.membership,
+            worker_id=self.worker.pk,
+            project_id=self.project.reference,
+            trade="Mason",
+            rate_type="hourly",
+            rate="12.50",
+            effective_date=date(2026, 9, 1),
+            reason="Lookup test assignment",
+        )
+
+    def test_worker_lookup_is_search_gated_and_assignment_aware(self):
+        url = reverse("rental_manpower:adjustment-lookup-api")
+        empty = self.client.get(url, {"mode": "workers", "transaction_date": "2026-09-14", "q": "L"})
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.json()["results"], [])
+        self.assertTrue(empty.json()["requiresQuery"])
+
+        response = self.client.get(url, {"mode": "workers", "transaction_date": "2026-09-14", "q": "Lookup"})
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], str(self.worker.pk))
+        self.assertEqual(rows[0]["supplier"], "Lookup Supplier")
+        self.assertLessEqual(len(rows), 25)
+
+        before_assignment = self.client.get(url, {"mode": "workers", "transaction_date": "2026-08-31", "q": "Lookup"})
+        self.assertEqual(before_assignment.status_code, 200)
+        self.assertEqual(before_assignment.json()["results"], [])
+
+    def test_project_lookup_is_restricted_to_effective_worker_assignment(self):
+        from apps.rental_manpower.services import create_project
+
+        other_project = create_project(
+            actor_membership=self.membership,
+            code="OTHER-PRJ",
+            name="Other Project",
+            start_date=date(2026, 9, 1),
+        )
+        url = reverse("rental_manpower:adjustment-lookup-api")
+        response = self.client.get(
+            url,
+            {
+                "mode": "projects",
+                "worker_id": str(self.worker.pk),
+                "transaction_date": "2026-09-14",
+                "q": "Project",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()["results"]
+        self.assertEqual([row["id"] for row in rows], [str(self.project.reference)])
+        self.assertNotIn(str(other_project.reference), {row["id"] for row in rows})
+        self.assertEqual(rows[0]["trade"], "Mason")
+        self.assertEqual(rows[0]["supplier"], "Lookup Supplier")
+
+    def test_project_lookup_requires_worker_and_never_lists_global_project_master(self):
+        url = reverse("rental_manpower:adjustment-lookup-api")
+        response = self.client.get(url, {"mode": "projects", "transaction_date": "2026-09-14"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["results"], [])
+        self.assertTrue(response.json()["requiresWorker"])
+
+
+    def test_adjustment_register_is_server_paginated_with_exact_summary(self):
+        from apps.rental_manpower.services import create_rental_adjustment
+
+        for index in range(30):
+            create_rental_adjustment(
+                actor_membership=self.membership,
+                worker_id=self.worker.pk,
+                project_id=self.project.reference,
+                transaction_date=date(2026, 9, 14),
+                period_start=date(2026, 9, 1),
+                adjustment_type="advance" if index % 2 == 0 else "bonus",
+                amount="10.00",
+                reason=f"Scale row {index:02d}",
+                reference="",
+            )
+        url = reverse("rental_manpower:adjustments-api")
+        response = self.client.get(url, {"period": "2026-09", "page": 1, "page_size": 25})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["surface"], "rental_adjustments_page")
+        self.assertEqual(payload["meta"]["count"], 30)
+        self.assertEqual(payload["meta"]["pageSize"], 25)
+        self.assertEqual(len(payload["results"]), 25)
+        self.assertEqual(payload["summary"]["count"], 30)
+        self.assertNotIn("settlements", payload)
+        self.assertNotIn("payments", payload)
+        self.assertNotIn("timesheetScopes", payload)
+        self.assertNotIn("projectWorkflows", payload)
+
+    def test_adjustment_create_returns_compact_delta_not_settlement_context(self):
+        url = reverse("rental_manpower:adjustments-api")
+        response = self.client.post(
+            url,
+            data=json.dumps({
+                "worker_id": str(self.worker.pk),
+                "project_id": str(self.project.reference),
+                "transaction_date": "2026-09-14",
+                "period": "2026-09",
+                "adjustment_type": "bonus",
+                "amount": "75.00",
+                "reason": "Compact mutation test",
+                "reference": "CMP-001",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["period"], "2026-09")
+        self.assertEqual(payload["adjustment"]["personCode"], "LOOK-001")
+        self.assertNotIn("settlements", payload)
+        self.assertNotIn("payments", payload)
+        self.assertNotIn("timesheetScopes", payload)
+        self.assertNotIn("projectWorkflows", payload)

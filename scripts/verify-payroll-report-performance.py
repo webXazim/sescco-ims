@@ -31,8 +31,8 @@ def function_source(source: str, name: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.79":
-    fail(f"VERSION must be 1.0.79, found {version!r}")
+if version != "1.0.82":
+    fail(f"VERSION must be 1.0.82, found {version!r}")
 
 contract = json.loads(text("merge/payroll-report-performance.json"))
 if contract.get("release") != version:
@@ -44,7 +44,7 @@ if contract.get("predecessor", {}).get("sha256") != "e5b3b5830025cfe40775524fd28
 if set(contract.get("page_sizes") or []) != {25, 50, 100}:
     fail("report page sizes must remain 25/50/100")
 if contract.get("schema_change") is not False or contract.get("payroll_formula_change") is not False:
-    fail("1.0.79 report hotfix must not change schema or Payroll formulas")
+    fail("1.0.82 report hotfix must not change schema or Payroll formulas")
 
 reports = text("apps/core/management/reports.py")
 wps = function_source(reports, "_interactive_wps")
@@ -125,4 +125,4 @@ for rel in ("scripts/verify-production-freeze.sh", "scripts/release-tasks.sh"):
     if "verify-payroll-report-performance.py" not in text(rel):
         fail(f"{rel} does not enforce the report-performance hotfix gate")
 
-print("Verified SESCCO MS 1.0.79 report/WPS performance hotfix: projection-only WPS rows, in-place report refresh and explicit WPS scale certification.")
+print("Verified SESCCO MS 1.0.82 report/WPS performance hotfix: projection-only WPS rows, in-place report refresh and explicit WPS scale certification.")

@@ -16,8 +16,8 @@ def text(path: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.79":
-    fail(f"VERSION must be 1.0.79, found {version!r}")
+if version != "1.0.82":
+    fail(f"VERSION must be 1.0.82, found {version!r}")
 
 contract = json.loads(text("merge/payroll-bootstrap-search.json"))
 if contract.get("release") != version:
@@ -86,4 +86,4 @@ if '@require_http_methods(["GET", "PATCH", "DELETE"])' not in rental_api:
 if '"assignments": serialized_assignment_history' not in rental_api:
     fail("rental worker detail GET must return assignment history")
 
-print("Verified SESCCO MS 1.0.79 thin Payroll bootstrap and server-backed global search contract.")
+print("Verified SESCCO MS 1.0.82 thin Payroll bootstrap and server-backed global search contract.")

@@ -32,6 +32,7 @@ from apps.rental_manpower.models import RentalTimesheetPeriod, RentalWorker
 from apps.rental_manpower.project_adapter import project_public_id
 from apps.rental_manpower.selectors.assignments import assignments_for_company, serialized_assignment_activity
 from apps.rental_manpower.selectors.masters import serialize_worker, workers_for_company
+from apps.rental_manpower.selectors.settlements import rental_adjustment_page_context
 from apps.rental_manpower.selectors.timesheets import rental_timesheet_context
 
 
@@ -178,6 +179,14 @@ class Command(BaseCommand):
             lambda: [serialize_worker(row) for row in workers_for_company(company=company, query=query)[:100]],
         )
         check("Rental worker search", worker_page, qcount, pbytes, row_count=len(worker_page))
+
+        rental_adjustments, qcount, pbytes = self._measure(
+            "Rental worker adjustments page (100)",
+            lambda: rental_adjustment_page_context(
+                company=company, period_start=period_start, page=1, page_size=100, search=query
+            ),
+        )
+        check("Rental worker adjustments", rental_adjustments, qcount, pbytes, row_count=len(rental_adjustments.get("results", [])))
 
         assignment_payload, qcount, pbytes = self._measure(
             "Rental assignment activity segments (100)",

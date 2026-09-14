@@ -10,7 +10,7 @@ is reserved for administrator accounts and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.79 — Payroll frontend freeze-manifest hotfix**.
+Current packaged release: **SESCCO MS 1.0.82 — Payroll document production hardening & SESCCO supplier headpad**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
@@ -167,3 +167,4 @@ The merged platform now includes the production Internal and Rental Payroll back
 ```
 
 The override only permits namespaced `DEMO-*` / `RDEMO-*` scale records and refuses the seed if a target scale month contains non-DEMO Internal attendance/payroll history.
+.

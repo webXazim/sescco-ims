@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.79":
-    fail("certification contract release must be 1.0.79")
+if contract.get("release") != "1.0.82":
+    fail("certification contract release must be 1.0.82")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -64,6 +64,7 @@ required_verifiers = {
     "scripts/verify-payroll-action-parity.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
+    "scripts/verify-payroll-document-production.py",
     "scripts/verify-full-demo-seed.py",
     "scripts/verify-payroll-scale-seed.py",
     "scripts/verify-payroll-performance.py",
@@ -73,6 +74,8 @@ required_verifiers = {
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-rental-adjustment-selector-scale.py",
+    "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
     "scripts/verify-payroll-shared-surfaces-scale.py",
     "scripts/verify-payroll-report-performance.py",
@@ -105,6 +108,9 @@ required_scenarios = {
     "salary-setup-scale-regression",
     "payroll-run-scale-regression",
     "payroll-adjustment-scale-regression",
+    "rental-adjustment-selector-scale-regression",
+    "rental-adjustment-page-scale-regression",
+    "payroll-document-production-hardening",
     "salary-payment-scale-regression",
     "shared-payroll-surfaces-scale-regression",
     "report-wps-performance-regression",

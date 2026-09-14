@@ -29,12 +29,15 @@ python3 scripts/verify-payroll-employee-residual-scale.py
 python3 scripts/verify-payroll-salary-setup-scale.py
 python3 scripts/verify-payroll-run-scale.py
 python3 scripts/verify-payroll-adjustment-scale.py
+python3 scripts/verify-payroll-rental-adjustment-selector-scale.py
+python3 scripts/verify-payroll-rental-adjustment-page-scale.py
 python3 scripts/verify-payroll-payment-scale.py
 python3 scripts/verify-payroll-shared-surfaces-scale.py
 python3 scripts/verify-payroll-final-browser-certification.py
 python3 scripts/verify-payroll-report-performance.py
 python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py
+python3 scripts/verify-payroll-document-production.py
 python3 scripts/verify-payroll-output-e2e.py
 python3 scripts/verify-full-demo-seed.py
 python3 scripts/verify-payroll-scale-seed.py

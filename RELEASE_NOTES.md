@@ -1,3 +1,37 @@
+# 1.0.82 — Payroll document production hardening & SESCCO supplier headpad
+
+- Uses the approved SESCCO A4 company headpad supplied in `Electronic PAD - PDF` as a versioned, hash-verified packaged letterhead for every newly finalized Supplier Invoice. The full-page artwork is rendered at 2480×3508 and snapshotted by SHA-256 so historical invoices cannot silently switch branding.
+- Keeps Supplier Invoice letterhead independent from general company-branding settings: the official headpad is forced for this document type and its embedded watermark is not double-rendered.
+- Hardens print/PDF layout for all seven immutable Payroll document types with A4 page contracts, repeated table headers, row/signature break protection, long-table page safety, explicit overtime sections, payment evidence, totals, and amount-in-words where financially relevant.
+- Upgrades Supplier Invoice output with invoice/settlement/document identity, supplier CR/VAT/address, project/service period, worker-level regular/overtime hours, subtotal, VAT rate/amount, grand total, payment terms, amount in words and authorized-signature space.
+- Upgrades Internal and Rental payment receipts with payment date/reference/method/evidence and amount in words; Internal and Rental timesheet prints now include their overtime snapshots instead of omitting them.
+- Replaces the unbounded Finalize Document source dropdown with a type-first, server-backed source search capped at 25 eligible records. Salary-slip and salary-payment receipt lookup requires a two-character search, stale requests are aborted, and already-finalized sources are excluded in PostgreSQL.
+- Adds a dedicated Payroll document production release gate, packaged-headpad integrity tests, and supplier-invoice branding regression evidence. No schema migration and no Payroll calculation formula change.
+- Binds this release to the exact 1.0.81 predecessor archive SHA-256 `2dbef2c67179bdaceb4e99f87dc403cb05a28f26032d296618faca9a0b833b57`.
+
+# 1.0.81 — Worker Adjustments page scale cutover
+
+- Replaces the Rental Worker Adjustments page dependency on the full Rental Settlement context with a dedicated 25/50/100-row server-paginated register.
+- Computes exact period transaction count, Approved earnings/deductions and awaiting-approval KPIs with database aggregates instead of hydrating every adjustment in browser memory.
+- Moves Worker Adjustments search, type/status, Project and Supplier filtering to server authority; Project/Supplier filters are searchable text inputs rather than full-master `<option>` lists.
+- Adds stale-request cancellation and bounded page state for rapid Worker Adjustments search/filter/page changes.
+- Changes Rental adjustment create/update/workflow responses to compact single-adjustment deltas instead of returning settlements, payments, timesheet scopes and project workflows.
+- Invalidates cached Rental Settlement authority after an adjustment mutation without reloading that heavy context just to refresh Worker Adjustments.
+- Extends the 2,000 Internal / 5,000 Rental browser certification matrix with Rental Worker Adjustments as an explicit 24th high-cardinality surface, including server report and live Chromium coverage.
+- Adds dedicated static and Django regression evidence. No schema or Payroll formula change.
+- Binds this release to the exact 1.0.80 predecessor archive SHA-256 `64f297d9af26ffb4dc56f700c5195a40ec3afd397656f4fcb420d2f26e0d61dd`.
+
+# 1.0.80 — Rental adjustment selector scale safety
+
+- Replaces Rental Worker and Project master dropdown hydration in the Worker Adjustments drawer with bounded server-backed lookup.
+- Worker search requires at least two characters and returns at most 25 company-scoped workers that have an effective assignment on the selected transaction date.
+- Project search requires a selected worker and returns at most 25 active projects from that worker's effective assignment on the selected date; it cannot enumerate the global project master.
+- Changing the effective date revalidates the selected worker and project, stale worker/project requests are aborted, and invalid selections are cleared before submission.
+- Removes the complete Rental Worker master hydration previously triggered by the Rental Adjustments page solely for transaction ownership.
+- Removes save-time dependence on browser worker/project caches; `create_rental_adjustment` remains the transactional authority for company scope, lifecycle, active project and effective assignment validation.
+- Adds dedicated selector-scale static verification and three Django regression tests. No schema or Payroll formula change.
+- Binds this release to the exact 1.0.79 predecessor archive SHA-256 `b51d771d99faab346f6970728821ccbcfd25842e930e14ff5e4e71a261b7d3a9`.
+
 # 1.0.79 — Payroll frontend freeze-manifest hotfix
 
 - Fixes the deployment failure in `scripts/verify-payroll-frontend.sh` where `merge/payroll-frontend-assets.sha256` still contained the pre-1.0.78 hash for `static/payroll/js/app.js`.

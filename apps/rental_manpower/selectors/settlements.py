@@ -4,13 +4,16 @@ from calendar import month_name, monthrange
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Prefetch, Sum
+from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+from django.db.models import Count, Prefetch, Q, Sum
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
 from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
+from apps.rental_manpower.models.settlements import EARNING_ADJUSTMENT_TYPES
 from apps.rental_manpower.models import (
-    RentalAdjustment, RentalAdjustmentEffect, RentalAdjustmentStatus, RentalSettlementStatus,
+    RentalAdjustment, RentalAdjustmentEffect, RentalAdjustmentStatus, RentalAdjustmentType, RentalSettlementStatus,
     SupplierPayment, SupplierPaymentAllocation, SupplierPaymentStatus, SupplierSettlement,
     SupplierSettlementAdjustmentLine, SupplierSettlementLine, SupplierSettlementRateLine, RentalTimesheetEntry, RentalTimesheetPeriod, RentalTimesheetStatus,
     rental_adjustment_effect,
@@ -147,6 +150,123 @@ def serialize_rental_adjustment(item: RentalAdjustment) -> dict[str, object]:
         "submittedBy": _user_label(item.submitted_by), "approvedAt": item.approved_at.isoformat() if item.approved_at else None,
         "approvedBy": _user_label(item.approved_by), "immutable": item.status == RentalAdjustmentStatus.APPROVED,
         "source": "Company database", "workforce": "Rental Manpower", "workforceKey": "Rental",
+    }
+
+
+
+
+def _rental_adjustment_page_number(value: object) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _rental_adjustment_page_size(value: object) -> int:
+    try:
+        parsed = int(value or 50)
+    except (TypeError, ValueError):
+        parsed = 50
+    return parsed if parsed in {25, 50, 100} else 50
+
+
+def _rental_adjustment_choice(value: object, choices, field: str) -> str:
+    raw = str(value or '').strip()
+    if not raw or raw.lower() == 'all':
+        return ''
+    normalized = raw.lower().replace('-', '_').replace(' ', '_')
+    for choice_value, choice_label in choices:
+        if raw == choice_value or raw.lower() == str(choice_label).lower() or normalized == str(choice_value).lower():
+            return str(choice_value)
+    raise ValidationError({field: f'Select a valid {field} filter.'})
+
+
+def _rental_adjustment_period_summary(*, company, period_start: date) -> dict[str, object]:
+    start, _end = _month_bounds(period_start)
+    queryset = RentalAdjustment.objects.for_company(company).filter(period_start=start)
+    earning_types = list(EARNING_ADJUSTMENT_TYPES)
+    values = queryset.aggregate(
+        count=Count('pk'),
+        earnings=Sum('amount', filter=Q(status=RentalAdjustmentStatus.APPROVED, adjustment_type__in=earning_types)),
+        deductions=Sum('amount', filter=Q(status=RentalAdjustmentStatus.APPROVED) & ~Q(adjustment_type__in=earning_types)),
+        pending=Count('pk', filter=~Q(status=RentalAdjustmentStatus.APPROVED)),
+    )
+    return {
+        'count': int(values['count'] or 0),
+        'earnings': str(values['earnings'] or ZERO),
+        'deductions': str(values['deductions'] or ZERO),
+        'advanceIssues': '0.00',
+        'pending': int(values['pending'] or 0),
+    }
+
+
+def rental_adjustment_page_context(
+    *, company, period_start: date, membership=None, page: object = 1, page_size: object = 50,
+    search: str = '', adjustment_type: str = 'All', status: str = 'All',
+    project_id: str = '', supplier_id: str = '', project_search: str = '', supplier_search: str = '',
+) -> dict[str, object]:
+    """Bounded Worker Adjustments register independent of the settlement mega-context.
+
+    The live adjustments page must never hydrate settlements, payment allocations, timesheet
+    scopes, or the complete adjustment month before pagination. Only the visible page gets
+    related users/project data; exact KPI totals are database aggregates.
+    """
+    start, _end = _month_bounds(period_start)
+    page_number = _rental_adjustment_page_number(page)
+    size = _rental_adjustment_page_size(page_size)
+    type_value = _rental_adjustment_choice(adjustment_type, RentalAdjustmentType.choices, 'type')
+    status_value = _rental_adjustment_choice(status, RentalAdjustmentStatus.choices, 'status')
+    queryset = RentalAdjustment.objects.for_company(company).filter(period_start=start)
+    query = str(search or '').strip()
+    if query:
+        normalized_query = query.lower().replace(' ', '_')
+        queryset = queryset.filter(
+            Q(worker_name__icontains=query)
+            | Q(worker_number__icontains=query)
+            | Q(project_name__icontains=query)
+            | Q(supplier_name__icontains=query)
+            | Q(reason__icontains=query)
+            | Q(reference__icontains=query)
+            | Q(adjustment_type__icontains=normalized_query)
+        )
+    if type_value:
+        queryset = queryset.filter(adjustment_type=type_value)
+    if status_value:
+        queryset = queryset.filter(status=status_value)
+    if project_id and project_id != 'All projects':
+        project = rental_project_for_company(company=company, identifier=project_id)
+        queryset = queryset.filter(project_id=project.pk)
+    if supplier_id and supplier_id != 'All suppliers':
+        queryset = queryset.filter(supplier_id=supplier_id)
+    project_query = str(project_search or '').strip()
+    if project_query:
+        queryset = queryset.filter(Q(project_name__icontains=project_query) | Q(project_code__icontains=project_query))
+    supplier_query = str(supplier_search or '').strip()
+    if supplier_query:
+        queryset = queryset.filter(Q(supplier_name__icontains=supplier_query) | Q(supplier_code__icontains=supplier_query))
+    queryset = queryset.select_related('project', 'submitted_by', 'approved_by').order_by('-transaction_date', '-created_at', '-pk')
+    paginator = Paginator(queryset, size)
+    page_obj = paginator.get_page(page_number)
+    return {
+        'surface': 'rental_adjustments_page',
+        'period': f'{start:%Y-%m}',
+        'view': 'register',
+        'results': [serialize_rental_adjustment(item) for item in page_obj.object_list],
+        'summary': _rental_adjustment_period_summary(company=company, period_start=start),
+        'meta': {
+            'count': paginator.count,
+            'page': page_obj.number,
+            'pageSize': size,
+            'totalPages': paginator.num_pages,
+            'rangeStart': page_obj.start_index() if paginator.count else 0,
+            'rangeEnd': page_obj.end_index() if paginator.count else 0,
+        },
+        'filters': {
+            'types': [{'value': value, 'label': label} for value, label in RentalAdjustmentType.choices],
+            'statuses': [{'value': value, 'label': label} for value, label in RentalAdjustmentStatus.choices],
+        },
+        'canEdit': _rental_permissions(membership)['edit'],
+        'canApprove': _rental_permissions(membership)['approve'],
     }
 
 

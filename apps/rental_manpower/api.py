@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
@@ -35,6 +35,7 @@ from apps.rental_manpower.selectors import (
     serialize_worker,
     suppliers_for_company,
     workers_for_company,
+    rental_adjustment_page_context,
     rental_settlement_context,
     rental_financial_metrics_for_period,
     serialize_rental_adjustment,
@@ -960,6 +961,115 @@ def rental_settlements_workflow_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.RENTAL)
+def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
+    """Bounded, assignment-aware owner/project lookup for the rental adjustment drawer.
+
+    This endpoint deliberately returns compact selector rows rather than serializing the
+    full worker/project masters.  Results are company-scoped, lifecycle-safe, capped at
+    25 rows, and constrained to an assignment effective on ``transaction_date``.  The
+    create service remains the final transactional authority.
+    """
+    try:
+        mode = str(request.GET.get("mode", "workers")).strip().lower()
+        if mode not in {"workers", "projects"}:
+            raise ValidationError({"mode": "mode must be workers or projects."})
+        transaction_date = parse_date(request.GET.get("transaction_date"), "transaction_date")
+        query = str(request.GET.get("q", "")).strip()
+        worker_id = str(request.GET.get("worker_id", "")).strip()
+
+        if mode == "workers":
+            assignments = (
+                WorkerAssignment.objects.for_company(request.company)
+                .filter(worker_id=OuterRef("pk"), cancelled_at__isnull=True, effective_from__lte=transaction_date)
+                .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
+                .filter(
+                    project__status=ProjectStatus.ACTIVE,
+                    project__deleted_at__isnull=True,
+                )
+                .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
+                .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
+            )
+            rows = (
+                RentalWorker.objects.for_company(request.company)
+                .select_related("supplier")
+                .filter(
+                    deleted_at__isnull=True, archived_at__isnull=True,
+                    supplier__deleted_at__isnull=True, supplier__archived_at__isnull=True,
+                )
+                .annotate(_has_effective_assignment=Exists(assignments))
+                .filter(_has_effective_assignment=True)
+            )
+            if worker_id:
+                rows = rows.filter(pk=worker_id)
+            elif len(query) < 2:
+                return JsonResponse({"ok": True, "results": [], "limit": 25, "requiresQuery": True})
+            if query:
+                rows = rows.filter(
+                    Q(worker_number__icontains=query)
+                    | Q(full_name__icontains=query)
+                    | Q(national_id__icontains=query)
+                    | Q(supplier__code__icontains=query)
+                    | Q(supplier__name__icontains=query)
+                )
+            results = [
+                {
+                    "id": str(worker.pk),
+                    "code": worker.worker_number,
+                    "name": worker.full_name,
+                    "supplierId": str(worker.supplier_id),
+                    "supplierCode": worker.supplier.code,
+                    "supplier": worker.supplier.name,
+                }
+                for worker in rows.order_by("worker_number", "full_name")[:25]
+            ]
+            return JsonResponse({"ok": True, "results": results, "limit": 25, "requiresQuery": False})
+
+        if not worker_id:
+            return JsonResponse({"ok": True, "results": [], "limit": 25, "requiresWorker": True})
+        assignments = (
+            WorkerAssignment.objects.for_company(request.company)
+            .select_related("project", "worker", "worker__supplier")
+            .filter(
+                worker_id=worker_id, cancelled_at__isnull=True, effective_from__lte=transaction_date,
+                worker__deleted_at__isnull=True, worker__archived_at__isnull=True,
+                worker__supplier__deleted_at__isnull=True, worker__supplier__archived_at__isnull=True,
+                project__status=ProjectStatus.ACTIVE, project__deleted_at__isnull=True,
+            )
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
+            .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
+            .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
+        )
+        if query:
+            assignments = assignments.filter(
+                Q(project__code__icontains=query)
+                | Q(project__name__icontains=query)
+                | Q(project__client_name__icontains=query)
+                | Q(project__location__icontains=query)
+            )
+        results = [
+            {
+                "id": project_public_id(item.project),
+                "code": item.project.code,
+                "name": item.project.name,
+                "client": item.project.client_name,
+                "location": item.project.location,
+                "assignmentId": str(item.pk),
+                "trade": item.trade,
+                "supplierId": str(item.worker.supplier_id),
+                "supplierCode": item.worker.supplier.code,
+                "supplier": item.worker.supplier.name,
+            }
+            for item in assignments.order_by("project__code", "-effective_from", "-created_at")[:25]
+        ]
+        return JsonResponse({"ok": True, "results": results, "limit": 25, "requiresWorker": False})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.RENTAL)
 def rental_adjustments_api(request: HttpRequest) -> JsonResponse:
@@ -968,7 +1078,20 @@ def rental_adjustments_api(request: HttpRequest) -> JsonResponse:
             period_start = _request_period(request)
             return JsonResponse({
                 "ok": True,
-                **rental_settlement_context(company=request.company, period_start=period_start, membership=request.company_membership),
+                **rental_adjustment_page_context(
+                    company=request.company,
+                    period_start=period_start,
+                    membership=request.company_membership,
+                    page=request.GET.get("page", 1),
+                    page_size=request.GET.get("page_size", 50),
+                    search=str(request.GET.get("search") or ""),
+                    adjustment_type=str(request.GET.get("type") or "All"),
+                    status=str(request.GET.get("status") or "All"),
+                    project_id=str(request.GET.get("project") or ""),
+                    supplier_id=str(request.GET.get("supplier") or ""),
+                    project_search=str(request.GET.get("project_search") or ""),
+                    supplier_search=str(request.GET.get("supplier_search") or ""),
+                ),
             })
         body = json_body(request)
         period_start = _request_period(request, body)
@@ -984,10 +1107,15 @@ def rental_adjustments_api(request: HttpRequest) -> JsonResponse:
             reference=str(body.get("reference") or ""),
             request=request,
         )
+        adjustment = (
+            RentalAdjustment.objects.for_company(request.company)
+            .select_related("project", "submitted_by", "approved_by")
+            .get(pk=adjustment.pk)
+        )
         return JsonResponse({
             "ok": True,
+            "period": f"{period_start:%Y-%m}",
             "adjustment": serialize_rental_adjustment(adjustment),
-            **rental_settlement_context(company=request.company, period_start=period_start, membership=request.company_membership),
         }, status=201)
     except Exception as exc:
         return handle_api_error(exc)
@@ -1009,10 +1137,15 @@ def rental_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonRes
             request=request,
             **changes,
         )
+        adjustment = (
+            RentalAdjustment.objects.for_company(request.company)
+            .select_related("project", "submitted_by", "approved_by")
+            .get(pk=adjustment.pk)
+        )
         return JsonResponse({
             "ok": True,
+            "period": f"{current.period_start:%Y-%m}",
             "adjustment": serialize_rental_adjustment(adjustment),
-            **rental_settlement_context(company=request.company, period_start=current.period_start, membership=request.company_membership),
         })
     except Exception as exc:
         return handle_api_error(exc)
@@ -1031,10 +1164,15 @@ def rental_adjustment_workflow_api(request: HttpRequest, adjustment_id) -> JsonR
             reason=str(body.get("reason") or ""),
             request=request,
         )
+        adjustment = (
+            RentalAdjustment.objects.for_company(request.company)
+            .select_related("project", "submitted_by", "approved_by")
+            .get(pk=adjustment.pk)
+        )
         return JsonResponse({
             "ok": True,
+            "period": f"{current.period_start:%Y-%m}",
             "adjustment": serialize_rental_adjustment(adjustment),
-            **rental_settlement_context(company=request.company, period_start=current.period_start, membership=request.company_membership),
         })
     except Exception as exc:
         return handle_api_error(exc)

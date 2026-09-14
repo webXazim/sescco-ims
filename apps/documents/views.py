@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.files.storage import default_storage
@@ -34,11 +37,19 @@ def document_brand_asset(request, document_id, kind: str):
     if kind not in {"logo", "letterhead", "watermark"}:
         raise Http404("Unknown branding asset.")
     descriptor = (((document.snapshot or {}).get("issuer") or {}).get("branding") or {}).get(kind)
-    if not descriptor or not descriptor.get("storage_key"):
+    if not descriptor:
         raise Http404("Branding asset is not part of this document snapshot.")
-    storage_key = descriptor["storage_key"]
     try:
-        handle = default_storage.open(storage_key, "rb")
+        if descriptor.get("storage_key"):
+            handle = default_storage.open(descriptor["storage_key"], "rb")
+        elif descriptor.get("package_path"):
+            package_root = (Path(settings.BASE_DIR) / "apps" / "documents" / "assets").resolve()
+            asset_path = (Path(settings.BASE_DIR) / descriptor["package_path"]).resolve()
+            if package_root != asset_path.parent or not asset_path.is_file():
+                raise Http404("Historical packaged branding asset is unavailable.")
+            handle = asset_path.open("rb")
+        else:
+            raise Http404("Branding asset is not part of this document snapshot.")
         digest = hashlib.sha256()
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)

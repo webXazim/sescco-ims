@@ -4,9 +4,11 @@ import hashlib
 import json
 import mimetypes
 from datetime import date
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
@@ -343,12 +345,15 @@ def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, A
             raise ValidationError({"total": "Invoice total must equal subtotal plus VAT amount."})
         if subtotal != settlement.total_net:
             raise ValidationError({"subtotal": "Supplier invoice subtotal must equal the approved settlement net amount."})
+        vat_rate = (vat_amount * Decimal("100") / subtotal) if subtotal else Decimal("0")
         snapshot["invoice"] = {
             "supplier_invoice_number": external_number,
             "issue_date": issue_date.isoformat(),
             "subtotal": _money(subtotal),
             "vat_amount": _money(vat_amount),
+            "vat_rate": f"{vat_rate.quantize(Decimal('0.01')):.2f}",
             "total": _money(total),
+            "payment_terms": settlement.supplier.payment_terms or "",
         }
     return snapshot, settlement.supplier_code, settlement.supplier_name, settlement.period_start, settlement.settlement_number
 
@@ -418,6 +423,25 @@ def _prefix(document_type: str) -> tuple[str, str]:
     }[document_type]
 
 
+SESCCO_SUPPLIER_INVOICE_LETTERHEAD = "apps/documents/assets/sescco-supplier-invoice-letterhead-v1.png"
+
+
+def _packaged_brand_asset_snapshot(relative_path: str) -> dict[str, str]:
+    root = Path(settings.BASE_DIR).resolve()
+    asset = (root / relative_path).resolve()
+    if root not in asset.parents or not asset.is_file():
+        raise ValidationError("The packaged SESCCO document-branding asset is unavailable.")
+    digest = hashlib.sha256()
+    with asset.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "package_path": relative_path,
+        "sha256": digest.hexdigest(),
+        "content_type": mimetypes.guess_type(asset.name)[0] or "application/octet-stream",
+    }
+
+
 def _brand_asset_snapshot(field) -> dict[str, str] | None:
     if not field or not getattr(field, "name", ""):
         return None
@@ -472,7 +496,16 @@ def finalize_business_document(
     letterhead = _brand_asset_snapshot(getattr(company_settings, "document_letterhead", None))
     watermark = _brand_asset_snapshot(getattr(company_settings, "document_watermark", None))
     branding_mode = getattr(company_settings, "document_branding_mode", "standard")
-    if branding_mode == "letterhead" and not letterhead:
+    branding_profile = "company_settings"
+    if normalized_type == DocumentType.SUPPLIER_INVOICE:
+        # SESCCO supplier invoices always use the approved A4 headpad supplied for production.
+        # The versioned packaged asset is fingerprinted into the immutable document snapshot so
+        # historical invoices cannot silently switch artwork after finalization.
+        letterhead = _packaged_brand_asset_snapshot(SESCCO_SUPPLIER_INVOICE_LETTERHEAD)
+        watermark = None  # The official headpad already carries the SESCCO watermark.
+        branding_mode = "letterhead"
+        branding_profile = "sescco_supplier_invoice_v1"
+    elif branding_mode == "letterhead" and not letterhead:
         branding_mode = "standard"
     snapshot["issuer"] = {
         "name": company.name,
@@ -491,12 +524,18 @@ def finalize_business_document(
             "logo": logo,
             "letterhead": letterhead,
             "watermark": watermark,
+            "profile": branding_profile,
         },
     }
+    snapshot["document_schema_version"] = "2.0"
     currency = snapshot["issuer"]["currency"]
     if normalized_type == DocumentType.SALARY_SLIP:
         snapshot["salary_in_words"] = money_to_words(snapshot["net"], currency)
     elif normalized_type == DocumentType.SALARY_PAYMENT_RECEIPT:
+        snapshot["payment"]["amount_in_words"] = money_to_words(snapshot["payment"]["amount"], currency)
+    elif normalized_type == DocumentType.SUPPLIER_INVOICE:
+        snapshot["invoice"]["total_in_words"] = money_to_words(snapshot["invoice"]["total"], currency)
+    elif normalized_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
         snapshot["payment"]["amount_in_words"] = money_to_words(snapshot["payment"]["amount"], currency)
     source_fingerprint = getattr(source, "snapshot_fingerprint", "") or getattr(source, "source_fingerprint", "") or _json_hash({
         "model": source_model,

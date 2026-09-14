@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.79":
-    fail(f"VERSION must be 1.0.79, found {version!r}")
+if version != "1.0.82":
+    fail(f"VERSION must be 1.0.82, found {version!r}")
 
 contract = json.loads(text("merge/payroll-final-browser-certification.json"))
 if contract.get("release") != version:
@@ -39,7 +39,7 @@ if int(contract.get("max_global_search_results") or 0) != 30:
 if int(contract.get("max_context_payload_bytes") or 0) > 2_500_000:
     fail("payload budget was loosened above 2.5 MB")
 if contract.get("schema_change") is not False or contract.get("payroll_formula_change") is not False:
-    fail("1.0.79 must not introduce schema or payroll-formula changes")
+    fail("1.0.82 must not introduce schema or payroll-formula changes")
 
 required_surfaces = {
     "internal-employee-directory",
@@ -59,6 +59,7 @@ required_surfaces = {
     "management-approval-center",
     "management-audit-trail",
     "rental-workforce-directory",
+    "rental-worker-adjustments",
     "rental-project-timesheets",
     "rental-overtime",
     "rental-assignment-activity",
@@ -78,6 +79,7 @@ for rel in (
     "merge/payroll-salary-setup-scale.json",
     "merge/payroll-run-scale.json",
     "merge/payroll-adjustment-scale.json",
+    "merge/payroll-rental-adjustment-page-scale.json",
     "merge/payroll-payment-scale.json",
     "merge/payroll-shared-surfaces-scale.json",
 ):
@@ -130,6 +132,7 @@ for needle in (
     "cancelSalaryStructureRequest",
     "cancelPayrollRunRequest",
     "cancelInternalAdjustmentRequest",
+    "cancelRentalAdjustmentRequest",
     "cancelPaymentBatchRowsRequest",
     "cancelPaymentReadinessRequest('bank_csv')",
     "cancelPaymentReadinessRequest('wps')",
@@ -181,6 +184,7 @@ report = text("apps/core/management/commands/payroll_browser_scale_report.py")
 for needle in (
     "Payroll run page (100)",
     "Internal adjustment register (100)",
+    "Rental worker adjustments page (100)",
     "Internal advance balances (100)",
     "Salary payment readiness / bank (100)",
     "Salary payment readiness / WPS (100)",
@@ -220,4 +224,4 @@ if "scripts/verify-payroll-final-browser-certification.py" not in (candidate.get
 if not any("certify-payroll-browser-scale.py" in item for item in (candidate.get("required_benchmark_gates") or [])):
     fail("release candidate no longer requires live Chromium certification")
 
-print("Verified SESCCO MS 1.0.79 final 2K/5K Payroll browser-certification freeze contract.")
+print("Verified SESCCO MS 1.0.82 final 2K/5K Payroll browser-certification freeze contract across 24 high-cardinality surfaces.")

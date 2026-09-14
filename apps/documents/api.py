@@ -7,6 +7,7 @@ from datetime import date
 
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import IntegrityError
+from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
@@ -103,6 +104,11 @@ def documents_api(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["GET"])
 @api_company_required
 def document_sources_api(request: HttpRequest) -> JsonResponse:
+    """Return a bounded searchable set of eligible source records for one document type.
+
+    Final-document creation must never hydrate the full employee/worker/payment/settlement master.
+    The browser selects a document type first, then searches a maximum of 25 company-scoped sources.
+    """
     try:
         workspace = request.GET.get("workspace", "").strip()
         period_start = _period(request.GET.get("period", ""))
@@ -111,41 +117,129 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         membership = request.company_membership
         from apps.accounts.permissions import membership_can_workspace
         from apps.accounts.roles import Workspace
-        sources = []
+
         if workspace == "internal":
             if not membership_can_workspace(membership, Workspace.INTERNAL):
                 raise PermissionDenied("Your role cannot access Internal Company documents.")
-            from apps.internal_payroll.models import AttendancePeriod, AttendancePeriodStatus, PayrollRunLine, PayrollRunStatus, SalaryPaymentRow, SalaryPaymentRowStatus
-            final_runs = [PayrollRunStatus.APPROVED, PayrollRunStatus.PAYMENT_PROCESSING, PayrollRunStatus.PAID, PayrollRunStatus.CLOSED]
-            lines = PayrollRunLine.objects.for_company(request.company).filter(run__period_start=period_start, run__status__in=final_runs).select_related("run").order_by("employee_number")
-            for row in lines:
-                sources.append({"type": DocumentType.SALARY_SLIP, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name}", "status": row.run.get_status_display(), "amount": str(row.net)})
-            attendance = AttendancePeriod.objects.for_company(request.company).filter(period_start=period_start, status=AttendancePeriodStatus.LOCKED).first()
-            if attendance:
-                sources.append({"type": DocumentType.INTERNAL_TIMESHEET, "sourceId": str(attendance.id), "label": f"Internal Timesheet · {period_start:%B %Y}", "status": "Locked", "amount": None})
-            payments = SalaryPaymentRow.objects.for_company(request.company).filter(batch__run__period_start=period_start, status=SalaryPaymentRowStatus.PAID).select_related("batch").order_by("employee_number", "paid_at")
-            for row in payments:
-                sources.append({"type": DocumentType.SALARY_PAYMENT_RECEIPT, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name} · {row.transaction_reference or row.batch.reference}", "status": "Paid", "amount": str(row.amount)})
+            allowed_types = {
+                DocumentType.SALARY_SLIP,
+                DocumentType.INTERNAL_TIMESHEET,
+                DocumentType.SALARY_PAYMENT_RECEIPT,
+            }
         elif workspace == "rental":
             if not membership_can_workspace(membership, Workspace.RENTAL):
                 raise PermissionDenied("Your role cannot access Rental Manpower documents.")
-            from apps.rental_manpower.models import RentalTimesheetPeriod, RentalTimesheetStatus, SupplierPayment, SupplierPaymentStatus, SupplierSettlement, RentalSettlementStatus
-            for row in RentalTimesheetPeriod.objects.for_company(request.company).filter(period_start=period_start, status=RentalTimesheetStatus.LOCKED).select_related("project").order_by("project__code"):
-                sources.append({"type": DocumentType.RENTAL_TIMESHEET, "sourceId": str(row.id), "label": f"{row.project.code} · {row.project.name}", "status": "Locked", "amount": None})
-            final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED]
-            for row in SupplierSettlement.objects.for_company(request.company).filter(period_start=period_start, status__in=final_settlements).order_by("project_code", "supplier_code"):
-                base = {"sourceId": str(row.id), "label": f"{row.settlement_number} · {row.supplier_name} · {row.project_name}", "status": row.get_status_display(), "amount": str(row.total_net)}
-                sources.append({"type": DocumentType.SUPPLIER_SETTLEMENT, **base})
-                sources.append({"type": DocumentType.SUPPLIER_INVOICE, **base})
-            payment_ids = SupplierPayment.objects.for_company(request.company).filter(allocations__settlement__period_start=period_start, status=SupplierPaymentStatus.PAID).distinct().values_list("id", flat=True)
-            for row in SupplierPayment.objects.for_company(request.company).filter(id__in=payment_ids).order_by("payment_date", "payment_number"):
-                sources.append({"type": DocumentType.SUPPLIER_PAYMENT_RECEIPT, "sourceId": str(row.id), "label": f"{row.payment_number} · {row.supplier_name}", "status": "Paid", "amount": str(row.amount)})
+            allowed_types = {
+                DocumentType.RENTAL_TIMESHEET,
+                DocumentType.SUPPLIER_SETTLEMENT,
+                DocumentType.SUPPLIER_INVOICE,
+                DocumentType.SUPPLIER_PAYMENT_RECEIPT,
+            }
         else:
             raise ValidationError({"workspace": "Workspace must be internal or rental."})
-        existing = set(BusinessDocument.objects.for_company(request.company).values_list("document_type", "source_id"))
-        for item in sources:
-            item["finalized"] = (item["type"], uuid.UUID(item["sourceId"])) in existing
-        return JsonResponse({"ok": True, "sources": sources})
+
+        requested_type = request.GET.get("type", "").strip()
+        if not requested_type:
+            raise ValidationError({"type": "Choose a document type before searching source records."})
+        try:
+            document_type = DocumentType(requested_type).value
+        except ValueError as exc:
+            raise ValidationError({"type": "Unsupported document type."}) from exc
+        if document_type not in allowed_types:
+            raise PermissionDenied("This document type is not available in the selected workspace.")
+
+        query = request.GET.get("q", "").strip()
+        try:
+            limit = min(25, max(1, int(request.GET.get("limit", 25))))
+        except (TypeError, ValueError):
+            limit = 25
+
+        source_model_by_type = {
+            DocumentType.SALARY_SLIP: "internal_payroll.payrollrunline",
+            DocumentType.INTERNAL_TIMESHEET: "internal_payroll.attendanceperiod",
+            DocumentType.SALARY_PAYMENT_RECEIPT: "internal_payroll.salarypaymentrow",
+            DocumentType.RENTAL_TIMESHEET: "rental_manpower.rentaltimesheetperiod",
+            DocumentType.SUPPLIER_SETTLEMENT: "rental_manpower.suppliersettlement",
+            DocumentType.SUPPLIER_INVOICE: "rental_manpower.suppliersettlement",
+            DocumentType.SUPPLIER_PAYMENT_RECEIPT: "rental_manpower.supplierpayment",
+        }
+        existing = BusinessDocument.objects.for_company(request.company).filter(
+            document_type=document_type,
+            source_model=source_model_by_type[document_type],
+            source_id=OuterRef("pk"),
+        )
+        sources: list[dict[str, object]] = []
+
+        if document_type == DocumentType.SALARY_SLIP:
+            if len(query) >= 2:
+                from apps.internal_payroll.models import PayrollRunLine, PayrollRunStatus
+                final_runs = [PayrollRunStatus.APPROVED, PayrollRunStatus.PAYMENT_PROCESSING, PayrollRunStatus.PAID, PayrollRunStatus.CLOSED]
+                rows = (
+                    PayrollRunLine.objects.for_company(request.company)
+                    .filter(run__period_start=period_start, run__status__in=final_runs)
+                    .filter(Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(position__icontains=query))
+                    .annotate(_finalized=Exists(existing))
+                    .filter(_finalized=False)
+                    .select_related("run")
+                    .order_by("employee_number")[:limit]
+                )
+                for row in rows:
+                    sources.append({"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name}", "status": row.run.get_status_display(), "amount": str(row.net)})
+        elif document_type == DocumentType.INTERNAL_TIMESHEET:
+            from apps.internal_payroll.models import AttendancePeriod, AttendancePeriodStatus
+            rows = (
+                AttendancePeriod.objects.for_company(request.company)
+                .filter(period_start=period_start, status=AttendancePeriodStatus.LOCKED)
+                .annotate(_finalized=Exists(existing))
+                .filter(_finalized=False)[:1]
+            )
+            for row in rows:
+                sources.append({"type": document_type, "sourceId": str(row.id), "label": f"Internal Timesheet · {period_start:%B %Y}", "status": "Locked", "amount": None})
+        elif document_type == DocumentType.SALARY_PAYMENT_RECEIPT:
+            if len(query) >= 2:
+                from apps.internal_payroll.models import SalaryPaymentRow, SalaryPaymentRowStatus
+                rows = (
+                    SalaryPaymentRow.objects.for_company(request.company)
+                    .filter(batch__run__period_start=period_start, status=SalaryPaymentRowStatus.PAID)
+                    .filter(Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(transaction_reference__icontains=query) | Q(batch__reference__icontains=query))
+                    .annotate(_finalized=Exists(existing))
+                    .filter(_finalized=False)
+                    .select_related("batch")
+                    .order_by("employee_number", "paid_at")[:limit]
+                )
+                for row in rows:
+                    sources.append({"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name} · {row.transaction_reference or row.batch.reference}", "status": "Paid", "amount": str(row.amount)})
+        elif document_type == DocumentType.RENTAL_TIMESHEET:
+            from apps.rental_manpower.models import RentalTimesheetPeriod, RentalTimesheetStatus
+            rows = RentalTimesheetPeriod.objects.for_company(request.company).filter(period_start=period_start, status=RentalTimesheetStatus.LOCKED)
+            if query:
+                rows = rows.filter(Q(project__code__icontains=query) | Q(project__name__icontains=query))
+            rows = rows.annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("project").order_by("project__code")[:limit]
+            for row in rows:
+                sources.append({"type": document_type, "sourceId": str(row.id), "label": f"{row.project.code} · {row.project.name}", "status": "Locked", "amount": None})
+        elif document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
+            from apps.rental_manpower.models import SupplierSettlement, RentalSettlementStatus
+            final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED]
+            rows = SupplierSettlement.objects.for_company(request.company).filter(period_start=period_start, status__in=final_settlements)
+            if query:
+                rows = rows.filter(Q(settlement_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query) | Q(project_code__icontains=query) | Q(project_name__icontains=query))
+            rows = rows.annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("project_code", "supplier_code")[:limit]
+            for row in rows:
+                sources.append({"type": document_type, "sourceId": str(row.id), "label": f"{row.settlement_number} · {row.supplier_name} · {row.project_name}", "status": row.get_status_display(), "amount": str(row.total_net)})
+        elif document_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
+            from apps.rental_manpower.models import SupplierPayment, SupplierPaymentStatus
+            rows = SupplierPayment.objects.for_company(request.company).filter(allocations__settlement__period_start=period_start, status=SupplierPaymentStatus.PAID).distinct()
+            if query:
+                rows = rows.filter(Q(payment_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query) | Q(transaction_reference__icontains=query))
+            rows = rows.annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("payment_date", "payment_number")[:limit]
+            for row in rows:
+                sources.append({"type": document_type, "sourceId": str(row.id), "label": f"{row.payment_number} · {row.supplier_name}", "status": "Paid", "amount": str(row.amount)})
+
+        return JsonResponse({
+            "ok": True,
+            "sources": sources,
+            "meta": {"limit": limit, "query": query, "type": document_type, "requiresSearch": document_type in {DocumentType.SALARY_SLIP, DocumentType.SALARY_PAYMENT_RECEIPT}},
+        })
     except Exception as exc:
         return _errors(exc)
 
