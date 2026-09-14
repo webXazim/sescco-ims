@@ -119,7 +119,12 @@ def _report_payload(request: HttpRequest) -> dict[str, object]:
         page=request.GET.get("page", 1),
         page_size=request.GET.get("page_size", 50),
     )
-    periods = [{"key": item.strftime("%Y-%m"), "label": item.strftime("%B %Y")} for item in available_report_periods(request.company)]
+    include_periods = request.GET.get("include_periods", "1").strip().lower() not in {"0", "false", "no"}
+    periods = (
+        [{"key": item.strftime("%Y-%m"), "label": item.strftime("%B %Y")} for item in available_report_periods(request.company)]
+        if include_periods
+        else []
+    )
     return {"ok": True, "report": report, "periods": periods}
 
 

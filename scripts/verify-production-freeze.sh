@@ -30,6 +30,7 @@ python3 scripts/verify-payroll-adjustment-scale.py
 python3 scripts/verify-payroll-payment-scale.py
 python3 scripts/verify-payroll-shared-surfaces-scale.py
 python3 scripts/verify-payroll-final-browser-certification.py
+python3 scripts/verify-payroll-report-performance.py
 python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py
 python3 scripts/verify-payroll-output-e2e.py

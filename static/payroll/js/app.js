@@ -1189,6 +1189,7 @@
     managementLoadingPeriod: null,
     reportContexts: {},
     reportContext: null,
+    reportPeriods: [],
     reportPage: 1,
     reportPageSize: Number(localStorage.getItem('payroll-ui-report-page-size') || 50),
     reportServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
@@ -7696,19 +7697,48 @@
   ];
 
   function reportAllowedTypes(){return state.workspace==='management'?['workforce-cost']:state.workspace==='rental'?['rental-project-cost','supplier-cost','overtime','advances','transfers','payments']:['internal-payroll','overtime','advances','payments','wps'];}
+  let reportSearchTimer=null;
   function reportRequest(){
-    const params=new URLSearchParams({workspace:state.workspace,type:state.reportType,period:periodKeyFromLabel(state.reportPeriod),page:String(state.reportPage||1),page_size:String(state.reportPageSize||50)});
-    if(state.reportSearch.trim())params.set('q',state.reportSearch.trim());
-    const url=`/api/reports/?${params.toString()}`;return {url,key:url};
+    const keyParams=new URLSearchParams({workspace:state.workspace,type:state.reportType,period:periodKeyFromLabel(state.reportPeriod),page:String(state.reportPage||1),page_size:String(state.reportPageSize||50)});
+    if(state.reportSearch.trim())keyParams.set('q',state.reportSearch.trim());
+    const params=new URLSearchParams(keyParams);
+    // Period choices are stable across page/search interactions. After the first report
+    // response, skip their two extra database queries on every subsequent refresh.
+    if(state.reportPeriods.length)params.set('include_periods','0');
+    return {url:`/api/reports/?${params.toString()}`,key:`/api/reports/?${keyParams.toString()}`};
   }
-  function cancelReportRequest(){const server=state.reportServer;if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;}
+  function setReportBusy(active){
+    if(currentRoute()!=='reports')return;
+    const viewer=pageRoot?.querySelector('.report-viewer');if(viewer)viewer.setAttribute('aria-busy',String(Boolean(active)));
+    const chip=pageRoot?.querySelector('.report-live-chip');if(chip)chip.innerHTML=`<span></span>${active?'Refreshing…':'Company database'}`;
+  }
+  function cancelReportRequest(){const server=state.reportServer;if(reportSearchTimer){clearTimeout(reportSearchTimer);reportSearchTimer=null;}if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;setReportBusy(false);}
+  function renderReportsInPlace(){
+    if(currentRoute()!=='reports')return;
+    pageRoot.innerHTML=reportsTemplate();
+    applyV2PrimitiveClasses(pageRoot);
+    applyInternalExecutionV2Classes(pageRoot);
+    applyRentalOperationsV2Classes(pageRoot);
+    applyRentalFinancialV2Classes(pageRoot);
+    applyRecordsManagementV2Classes(pageRoot);
+    applyPayrollControlClasses(pageRoot);
+    enhancePayrollSortableTables(pageRoot);
+    wireReportActions();
+  }
   async function loadReportContext({render=true,force=false}={}){
     const request=reportRequest(),server=state.reportServer;
     if(!force&&server.key===request.key&&state.reportContext)return true;if(server.pendingKey===request.key)return false;
-    cancelReportRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';state.reportLoadingKey=request.key;
-    try{const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;state.reportContext={report:payload.report,periods:payload.periods||[]};server.key=request.key;server.meta=payload.report?.meta||{};if(render&&currentRoute()==='reports')renderRoute();return true;}
-    catch(error){if(error?.name==='AbortError')return false;server.error=error.message;state.reportContext={error:error.message,report:null,periods:[]};showToast('Report unavailable',error.message);if(render&&currentRoute()==='reports')renderRoute();return false;}
-    finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;state.reportLoadingKey=null;}}
+    cancelReportRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';state.reportLoadingKey=request.key;setReportBusy(true);
+    try{
+      const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;
+      if((payload.periods||[]).length)state.reportPeriods=payload.periods;
+      state.reportContext={report:payload.report,periods:state.reportPeriods};server.key=request.key;server.meta=payload.report?.meta||{};server.loading=false;
+      if(render&&currentRoute()==='reports')renderReportsInPlace();return true;
+    }
+    catch(error){
+      if(error?.name==='AbortError')return false;server.error=error.message;server.loading=false;state.reportContext={error:error.message,report:null,periods:state.reportPeriods};showToast('Report unavailable',error.message);if(render&&currentRoute()==='reports')renderReportsInPlace();return false;
+    }
+    finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;state.reportLoadingKey=null;setReportBusy(false);}}
   }
   function reportModel(){const request=reportRequest(),cached=state.reportContext;if((!cached||state.reportServer.key!==request.key)&&state.reportServer.pendingKey!==request.key)queueMicrotask(()=>loadReportContext());return state.reportServer.key===request.key?cached:null;}
   function reportFilteredRows(report){return report?.rows||[];}
@@ -7717,11 +7747,11 @@
   function reportsTemplate() {
     const allowed=reportAllowedTypes();if(!allowed.includes(state.reportType)){state.reportType=allowed[0];state.reportPage=1;}
     const catalog=reportCatalog.filter(item=>allowed.includes(item.id));const cached=reportModel();const report=cached?.report;const rows=reportFilteredRows(report);
-    const periodOptions=(cached?.periods?.length?cached.periods:[{key:periodKeyFromLabel(state.reportPeriod),label:state.reportPeriod}]);
+    const periodOptions=(state.reportPeriods.length?state.reportPeriods:(cached?.periods?.length?cached.periods:[{key:periodKeyFromLabel(state.reportPeriod),label:state.reportPeriod}]));
     if(!report)return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>Server-generated reporting from controlled payroll, settlement, payment and assignment records.</p></div></div><div class="table-empty table-empty--card"><strong>${state.reportServer.error?'Report could not be loaded':'Loading report…'}</strong><span>${escapeHtml(state.reportServer.error||`Fetching one bounded page for ${state.reportPeriod} from the company database.`)}</span></div></section>`;
     const meta=report.meta||{};const count=Number(meta.count||0),page=Number(meta.page||state.reportPage||1),pageSize=Number(meta.pageSize||state.reportPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
     const rangeStart=Number(meta.rangeStart||0),rangeEnd=Number(meta.rangeEnd||0),loading=state.reportServer.loading;
-    return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>${state.workspace==='management'?'Compare finalized workforce cost without merging operational ledgers.':state.workspace==='rental'?'Analyze approved supplier manpower, assignments, adjustments and payments.':'Analyze payroll snapshots, employee overtime, adjustments, salary payments and WPS configuration.'}</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-report-print>${icon('document')} Print Page</button><button class="btn btn--primary" data-report-export>Export CSV</button></div></div><div class="report-layout"><aside class="report-catalog"><div class="report-catalog__head"><strong>Report library</strong><span>${catalog.length} reports</span></div>${catalog.map(item=>`<button class="report-catalog__item ${state.reportType===item.id?'is-active':''}" data-report-type="${item.id}"><span>${item.code}</span><span><strong>${item.title}</strong><small>${item.meta}</small></span>${icon('chevron')}</button>`).join('')}</aside><div class="report-main"><section class="panel panel--flush report-viewer"><div class="report-viewer__head"><div><span class="eyebrow">${escapeHtml(state.reportPeriod)}</span><h2>${escapeHtml(report.title)}</h2><p>${escapeHtml(report.description)}</p></div><span class="report-live-chip"><span></span>${loading?'Refreshing…':'Company database'}</span></div><div class="report-filterbar"><div class="search-field">${icon('search')}<input id="reportSearch" type="search" value="${escapeHtml(state.reportSearch)}" placeholder="Search this report…"></div><select class="select" id="reportPeriod">${periodOptions.map(item=>`<option ${state.reportPeriod===item.label?'selected':''} value="${escapeHtml(item.label)}">${escapeHtml(item.label)}</option>`).join('')}</select><button class="btn btn--ghost" data-report-reset>Reset</button></div><div class="report-kpis">${(report.kpis||[]).map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><div class="table-wrap report-table-wrap"><table class="data-table report-table"><thead><tr>${(report.columns||[]).map(column=>`<th class="${reportNumericColumn(column)?'num':''}">${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map((value,index)=>`<td class="${reportNumericColumn(report.columns[index])?'num':''}">${escapeHtml(value)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${Math.max(1,(report.columns||[]).length)}"><div class="table-empty"><strong>No records for this report.</strong><span>Change the period or search. No estimated rows are generated.</span></div></td></tr>`}</tbody></table></div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${rangeStart.toLocaleString()}</strong>–<strong>${rangeEnd.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-report-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-report-page="${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="reportPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div><div class="report-source-note"><span>${icon('info')}</span><p><strong>Data note.</strong> ${escapeHtml(report.sourceNote||'This report reads controlled company records.')} Interactive rows are database-paginated; CSV export remains the explicit full-result path.</p></div></section></div></div></section>`;
+    return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>${state.workspace==='management'?'Compare finalized workforce cost without merging operational ledgers.':state.workspace==='rental'?'Analyze approved supplier manpower, assignments, adjustments and payments.':'Analyze payroll snapshots, employee overtime, adjustments, salary payments and WPS configuration.'}</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-report-print>${icon('document')} Print Page</button><button class="btn btn--primary" data-report-export>Export CSV</button></div></div><div class="report-layout"><aside class="report-catalog"><div class="report-catalog__head"><strong>Report library</strong><span>${catalog.length} reports</span></div>${catalog.map(item=>`<button class="report-catalog__item ${state.reportType===item.id?'is-active':''}" data-report-type="${item.id}"><span>${item.code}</span><span><strong>${item.title}</strong><small>${item.meta}</small></span>${icon('chevron')}</button>`).join('')}</aside><div class="report-main"><section class="panel panel--flush report-viewer"><div class="report-viewer__head"><div><span class="eyebrow">${escapeHtml(state.reportPeriod)}</span><h2>${escapeHtml(report.title)}</h2><p>${escapeHtml(report.description)}</p></div><span class="report-live-chip"><span></span>${loading?'Refreshing…':'Company database'}</span></div><div class="report-filterbar"><div class="search-field">${icon('search')}<input id="reportSearch" type="search" value="${escapeHtml(state.reportSearch)}" placeholder="Search this report…"></div><select class="select" id="reportPeriod">${periodOptions.map(item=>`<option ${state.reportPeriod===item.label?'selected':''} value="${escapeHtml(item.label)}">${escapeHtml(item.label)}</option>`).join('')}</select><button class="btn btn--ghost" data-report-reset>Reset</button></div><div class="report-kpis">${(report.kpis||[]).map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><div class="table-wrap report-table-wrap"><table class="data-table report-table"><thead><tr>${(report.columns||[]).map(column=>`<th data-no-sort="true" class="${reportNumericColumn(column)?'num':''}">${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map((value,index)=>`<td class="${reportNumericColumn(report.columns[index])?'num':''}">${escapeHtml(value)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${Math.max(1,(report.columns||[]).length)}"><div class="table-empty"><strong>No records for this report.</strong><span>Change the period or search. No estimated rows are generated.</span></div></td></tr>`}</tbody></table></div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${rangeStart.toLocaleString()}</strong>–<strong>${rangeEnd.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-report-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-report-page="${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="reportPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div><div class="report-source-note"><span>${icon('info')}</span><p><strong>Data note.</strong> ${escapeHtml(report.sourceNote||'This report reads controlled company records.')} Interactive rows are database-paginated; CSV export remains the explicit full-result path.</p></div></section></div></div></section>`;
   }
 
   function exportCurrentReport() {
@@ -7735,6 +7765,38 @@
     const rows=reportFilteredRows(report);const win=window.open('','_blank','width=1150,height=900');if(!win){showToast('Print window blocked','Allow pop-ups to print this report.');return;}
     const head=(report.columns||[]).map(value=>`<th>${escapeHtml(value)}</th>`).join('');const body=rows.map(row=>`<tr>${row.map(value=>`<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(report.title)} — ${escapeHtml(state.reportPeriod)}</title><style>body{font-family:Arial,sans-serif;color:#111;margin:32px}.head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:14px;margin-bottom:22px}.head h1{font-size:20px;margin:0 0 4px}.head p{margin:0;color:#666;font-size:11px}.meta{text-align:right;font-size:11px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{padding:7px 6px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}th{background:#f6f6f6;font-size:9px;text-transform:uppercase}.note{margin-top:18px;padding-top:10px;border-top:1px solid #ddd;font-size:9px;color:#666}@media print{body{margin:12mm}}</style></head><body><div class="head"><div><h1>${escapeHtml(report.title)}</h1><p>${escapeHtml(report.description)}</p></div><div class="meta"><strong>${escapeHtml(state.reportPeriod)}</strong><br>${escapeHtml(serverAccess.company_name||'Company')}</div></div><table><thead><tr>${head}</tr></thead><tbody>${body||`<tr><td colspan="${Math.max(1,(report.columns||[]).length)}">No records.</td></tr>`}</tbody></table><div class="note">${escapeHtml(report.sourceNote||'')}</div><script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script></body></html>`);win.document.close();
+  }
+
+  function wireReportActions() {
+    document.querySelectorAll('[data-report-type]').forEach(btn=>btn.addEventListener('click',()=>{
+      if(btn.dataset.reportType===state.reportType)return;
+      cancelReportRequest();state.reportType=btn.dataset.reportType;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);setReportBusy(true);void loadReportContext({render:true,force:true});
+    }));
+    const reportSearch=document.getElementById('reportSearch');
+    if(reportSearch){
+      const commit=()=>{
+        const cursor=reportSearch.selectionStart;state.reportSearch=reportSearch.value;state.reportPage=1;cancelReportRequest();setReportBusy(true);
+        reportSearchTimer=setTimeout(async()=>{
+          reportSearchTimer=null;await loadReportContext({render:true,force:true});
+          const next=document.getElementById('reportSearch');if(next){next.focus({preventScroll:true});if(typeof cursor==='number')next.setSelectionRange(cursor,cursor);}
+        },320);
+      };
+      reportSearch.addEventListener('input',commit);reportSearch.addEventListener('search',commit);
+    }
+    const reportPeriod=document.getElementById('reportPeriod');if(reportPeriod)reportPeriod.addEventListener('change',()=>{
+      cancelReportRequest();state.reportPeriod=reportPeriod.value;state.reportPage=1;localStorage.setItem('payroll-ui-report-period',state.reportPeriod);setReportBusy(true);void loadReportContext({render:true,force:true});
+    });
+    document.querySelectorAll('[data-report-page]').forEach(btn=>btn.addEventListener('click',()=>{
+      const page=Number(btn.dataset.reportPage||1);if(page===state.reportPage)return;cancelReportRequest();state.reportPage=page;setReportBusy(true);void loadReportContext({render:true,force:true});
+    }));
+    const reportPageSize=document.getElementById('reportPageSize');if(reportPageSize)reportPageSize.addEventListener('change',()=>{
+      cancelReportRequest();state.reportPageSize=Number(reportPageSize.value||50);state.reportPage=1;localStorage.setItem('payroll-ui-report-page-size',String(state.reportPageSize));setReportBusy(true);void loadReportContext({render:true,force:true});
+    });
+    document.querySelectorAll('[data-report-reset]').forEach(btn=>btn.addEventListener('click',()=>{
+      cancelReportRequest();state.reportSearch='';state.reportPage=1;setReportBusy(true);void loadReportContext({render:true,force:true});
+    }));
+    document.querySelectorAll('[data-report-export]').forEach(btn=>btn.addEventListener('click',exportCurrentReport));
+    document.querySelectorAll('[data-report-print]').forEach(btn=>btn.addEventListener('click',printCurrentReport));
   }
 
   function settingsInputRow(name, label, value, hint='', attrs='') {
@@ -8164,15 +8226,8 @@
     document.querySelectorAll('[data-bank-template-edit]').forEach(btn=>btn.addEventListener('click',()=>openBankTemplateDrawer(state.exportTemplateDetailId||state.bankTemplateId)));
     document.querySelectorAll('[data-bank-template-preview]').forEach(btn=>btn.addEventListener('click',()=>{const template=bankTemplatesAll().find(item=>item.id===state.exportTemplateDetailId)||bankTemplateById();if(template)showToast('Export headers',(template.headers||template.columns.map(key=>bankColumnCatalog[key]||key)).join(' · '));}));
     const bankResultFile=document.getElementById('bankResultFile'); if(bankResultFile) bankResultFile.addEventListener('change',async()=>{const file=bankResultFile.files?.[0];if(!file)return;const batch=[...paymentBatchesForPeriod()].filter(item=>item.channelValue==='bank_csv').sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];if(!batch){showToast('No bank batch','Prepare and start a bank salary-payment batch first.');return;}await importPaymentResults(batch.id,file);});
-    document.querySelectorAll('[data-report-type]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportType=btn.dataset.reportType;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);renderRoute();}));
-    document.querySelectorAll('[data-open-report]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportType=btn.dataset.openReport||'workforce-cost';state.reportPeriod=btn.dataset.reportPeriod||state.period;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);if(currentRoute()==='reports')renderRoute();else navigate('reports');}));
-    const reportSearch=document.getElementById('reportSearch'); bindPayrollSearch(reportSearch,value=>{state.reportSearch=value;state.reportPage=1;},{delay:320,beforeRender:()=>cancelReportRequest()});
-    const reportPeriod=document.getElementById('reportPeriod'); if(reportPeriod) reportPeriod.addEventListener('change',()=>{cancelReportRequest();state.reportPeriod=reportPeriod.value;state.reportPage=1;localStorage.setItem('payroll-ui-report-period',state.reportPeriod);renderRoute();});
-    document.querySelectorAll('[data-report-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.reportPage||1);if(page===state.reportPage)return;cancelReportRequest();state.reportPage=page;renderRoute();}));
-    const reportPageSize=document.getElementById('reportPageSize'); if(reportPageSize) reportPageSize.addEventListener('change',()=>{cancelReportRequest();state.reportPageSize=Number(reportPageSize.value||50);state.reportPage=1;localStorage.setItem('payroll-ui-report-page-size',String(state.reportPageSize));renderRoute();});
-    document.querySelectorAll('[data-report-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportSearch='';state.reportPage=1;renderRoute();}));
-    document.querySelectorAll('[data-report-export]').forEach(btn=>btn.addEventListener('click',exportCurrentReport));
-    document.querySelectorAll('[data-report-print]').forEach(btn=>btn.addEventListener('click',printCurrentReport));
+    document.querySelectorAll('[data-open-report]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportType=btn.dataset.openReport||'workforce-cost';state.reportPeriod=btn.dataset.reportPeriod||state.period;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);if(currentRoute()==='reports'){setReportBusy(true);void loadReportContext({render:true,force:true});}else navigate('reports');}));
+    wireReportActions();
     document.querySelectorAll('[data-settings-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.settingsTab=btn.dataset.settingsTab;localStorage.setItem('payroll-ui-settings-tab',state.settingsTab);renderRoute();}));
     document.querySelectorAll('[data-settings-save]').forEach(btn=>btn.addEventListener('click',saveSettingsFromPage));
     document.querySelectorAll('[data-brand-upload]').forEach(btn=>btn.addEventListener('click',()=>document.querySelector(`[data-brand-file="${btn.dataset.brandUpload}"]`)?.click()));

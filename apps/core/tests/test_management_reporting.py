@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import patch
 
 from django.test import TestCase
 
@@ -10,6 +11,7 @@ from apps.core.management import (
 )
 from apps.core.management_api import _csv_cell
 from apps.core.models import Company
+from apps.internal_payroll.models import EmployeePaymentProfile, InternalEmployee, PaymentDestination
 from apps.core.selectors.record_management import record_management_context, record_management_page_context
 
 
@@ -45,6 +47,27 @@ class ManagementReadModelTests(TestCase):
         self.assertEqual(report["rows"], [])
         self.assertEqual(report["title"], "Internal Payroll")
 
+
+    def test_interactive_wps_report_does_not_decrypt_payment_destinations(self):
+        employee = InternalEmployee.objects.create(
+            company=self.company, employee_number="DEMO-001", full_name="Demo Employee", joining_date=date(2024, 1, 1)
+        )
+        EmployeePaymentProfile.objects.create(
+            company=self.company, employee=employee, destination_type=PaymentDestination.SALARY_CARD,
+            account_holder_name="Demo Employee", bank_name="Demo Payroll Bank", bank_code="DEMO",
+            salary_card_number="CARD-0001", wps_enabled=True,
+        )
+        with patch("apps.core.encryption.decrypt_text", side_effect=AssertionError("interactive WPS report must not decrypt destination secrets")):
+            report = build_report_page(
+                company=self.company, report_type="wps", period_start=self.period, workspace="internal",
+                query="", page=1, page_size=25,
+            )
+        self.assertEqual(report["meta"]["count"], 1)
+        self.assertEqual(len(report["rows"]), 1)
+        self.assertEqual(report["rows"][0][0], "DEMO-001")
+        self.assertEqual(report["rows"][0][2], "Salary card")
+        self.assertEqual(report["rows"][0][6], "Configured")
+        self.assertEqual(report["kpis"][0], ["Profiles", 1])
 
     def test_management_shell_and_shared_record_registers_are_deferred_and_paginated(self):
         summary = management_summary_context(company=self.company, period_start=self.period)

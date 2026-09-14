@@ -1,12 +1,16 @@
 {
-  "release": "1.0.77",
+  "release": "1.0.78",
   "purpose": "Final 2,000 Internal / 5,000 Rental Payroll browser certification freeze. Every high-cardinality live Payroll surface must remain server-authoritative, request-cancellable and bounded to at most 100 rendered business rows.",
   "benchmark_volume": {
     "internal_employees": 2000,
     "rental_workers": 5000,
     "history_months": 12
   },
-  "page_sizes": [25, 50, 100],
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
   "max_rendered_business_rows": 100,
   "max_assignment_expanded_rows": 200,
   "max_global_search_results": 30,

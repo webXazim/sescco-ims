@@ -47,7 +47,7 @@ def main() -> int:
 
     base = args.base_url.rstrip("/") + "/"
     evidence: dict[str, object] = {
-        "release": "1.0.77",
+        "release": "1.0.78",
         "base_url": base,
         "limits": {
             "max_table_rows": 100,
@@ -166,7 +166,14 @@ def main() -> int:
 
         # Shared records/reporting surfaces added in 1.0.76.
         search_surface(name="documents", workspace="internal", route="documents", input_selector="#documentSearch", row_selector=".document-list-item", query="DEMO")
-        search_surface(name="reports", workspace="internal", route="reports", input_selector="#reportSearch", row_selector=".report-table tbody tr", query="DEMO")
+        started = open_route("internal", "reports", "#reportSearch")
+        wps_report = page.locator('[data-report-type="wps"]')
+        wps_report.click()
+        page.locator('[data-report-type="wps"].is-active').wait_for(state="visible")
+        rapid_search("#reportSearch", "DEMO")
+        page.wait_for_timeout(500)
+        rows = bounded_rows("reports", ".report-table tbody tr")
+        record("reports", started, rows=rows, report_type="wps")
         search_surface(name="archive", workspace="internal", route="archive", input_selector="#recordManagementSearch", row_selector=".records-bin-page table tbody tr", query="DEMO")
         search_surface(name="delete-recovery", workspace="internal", route="trash", input_selector="#recordManagementSearch", row_selector=".records-bin-page table tbody tr", query="DEMO")
 

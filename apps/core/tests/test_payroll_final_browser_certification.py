@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 class FinalPayrollBrowserCertificationContractTests(SimpleTestCase):
     def test_final_payroll_browser_certification_contract_is_frozen(self):
         contract = json.loads((ROOT / "merge/payroll-final-browser-certification.json").read_text(encoding="utf-8"))
-        self.assertEqual(contract["release"], "1.0.77")
+        self.assertEqual(contract["release"], "1.0.78")
         self.assertEqual(contract["benchmark_volume"]["internal_employees"], 2000)
         self.assertEqual(contract["benchmark_volume"]["rental_workers"], 5000)
         self.assertEqual(contract["page_sizes"], [25, 50, 100])
@@ -51,3 +51,5 @@ class FinalPayrollBrowserCertificationContractTests(SimpleTestCase):
             "global-server-search",
         ):
             self.assertIn(scenario, runner)
+        self.assertIn('[data-report-type="wps"]', runner)
+        self.assertIn('report_type="wps"', runner)

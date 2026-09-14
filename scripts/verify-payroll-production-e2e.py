@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.77":
-    fail("certification contract release must be 1.0.77")
+if contract.get("release") != "1.0.78":
+    fail("certification contract release must be 1.0.78")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -75,6 +75,7 @@ required_verifiers = {
     "scripts/verify-payroll-adjustment-scale.py",
     "scripts/verify-payroll-payment-scale.py",
     "scripts/verify-payroll-shared-surfaces-scale.py",
+    "scripts/verify-payroll-report-performance.py",
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
@@ -106,6 +107,7 @@ required_scenarios = {
     "payroll-adjustment-scale-regression",
     "salary-payment-scale-regression",
     "shared-payroll-surfaces-scale-regression",
+    "report-wps-performance-regression",
 }
 scenario_ids = {row.get("id") for row in scenarios}
 if not required_scenarios.issubset(scenario_ids):

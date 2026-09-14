@@ -337,14 +337,77 @@ def _interactive_payments(company, period_start, workspace, *, query: str, page:
 
 
 def _interactive_wps(company, period_start, *, query: str, page: int, page_size: int):
-    qs = EmployeePaymentProfile.objects.for_company(company).select_related("employee")
-    if query:
-        qs = qs.filter(Q(employee__employee_number__icontains=query) | Q(employee__full_name__icontains=query) | Q(bank_name__icontains=query) | Q(bank_code__icontains=query))
-    qs = qs.order_by("employee__employee_number")
-    count = qs.count(); page, offset, meta = _page_meta(count=count, page=page, page_size=page_size)
-    rows = [[item.employee.employee_number, item.employee.full_name, item.get_destination_type_display(), item.bank_name, item.bank_code, "Yes" if item.wps_enabled else "No", "Configured" if (item.iban_fingerprint or item.salary_card_fingerprint) else "Missing destination"] for item in qs[offset:offset + page_size]]
+    # Report rows intentionally project only non-secret display fields. Loading full
+    # EmployeePaymentProfile model instances would deserialize/decrypt IBAN and salary-card
+    # ciphertext even though this report never displays those values. At benchmark volume
+    # that hidden crypto work can make a genuinely paginated page feel frozen.
     base = EmployeePaymentProfile.objects.for_company(company)
-    report = {"title": "WPS / Salary Payment Setup", "description": "Employee payment-destination configuration used by the salary-payment readiness validator.", "columns": ["Employee ID", "Employee", "Destination", "Bank", "Bank Code", "WPS Enabled", "Destination Status"], "rows": rows, "kpis": [["Profiles", base.count()], ["WPS Enabled", base.filter(wps_enabled=True).count()], ["Configured", base.filter(Q(iban_fingerprint__gt="") | Q(salary_card_fingerprint__gt="")).count()], ["Period", period_start.strftime("%B %Y")]], "sourceNote": "This is configuration visibility only. Actual export readiness remains enforced by the selected bank/WPS template at batch preparation time."}
+    totals = base.aggregate(
+        profiles=Count("id"),
+        wps_enabled=Count("id", filter=Q(wps_enabled=True)),
+        configured=Count(
+            "id",
+            filter=Q(iban_fingerprint__gt="") | Q(salary_card_fingerprint__gt=""),
+        ),
+    )
+    qs = base
+    if query:
+        qs = qs.filter(
+            Q(employee__employee_number__icontains=query)
+            | Q(employee__full_name__icontains=query)
+            | Q(bank_name__icontains=query)
+            | Q(bank_code__icontains=query)
+        )
+        count = qs.count()
+    else:
+        count = int(totals["profiles"] or 0)
+    qs = qs.order_by("employee__employee_number")
+    page, offset, meta = _page_meta(count=count, page=page, page_size=page_size)
+    destination_labels = dict(EmployeePaymentProfile._meta.get_field("destination_type").choices)
+    page_rows = qs.values_list(
+        "employee__employee_number",
+        "employee__full_name",
+        "destination_type",
+        "bank_name",
+        "bank_code",
+        "wps_enabled",
+        "iban_fingerprint",
+        "salary_card_fingerprint",
+    )[offset:offset + page_size]
+    rows = [
+        [
+            employee_number,
+            employee_name,
+            destination_labels.get(destination_type, destination_type),
+            bank_name,
+            bank_code,
+            "Yes" if wps_enabled else "No",
+            "Configured" if (iban_fingerprint or salary_card_fingerprint) else "Missing destination",
+        ]
+        for (
+            employee_number,
+            employee_name,
+            destination_type,
+            bank_name,
+            bank_code,
+            wps_enabled,
+            iban_fingerprint,
+            salary_card_fingerprint,
+        ) in page_rows
+    ]
+    report = {
+        "title": "WPS / Salary Payment Setup",
+        "description": "Employee payment-destination configuration used by the salary-payment readiness validator.",
+        "columns": ["Employee ID", "Employee", "Destination", "Bank", "Bank Code", "WPS Enabled", "Destination Status"],
+        "rows": rows,
+        "kpis": [
+            ["Profiles", totals["profiles"] or 0],
+            ["WPS Enabled", totals["wps_enabled"] or 0],
+            ["Configured", totals["configured"] or 0],
+            ["Period", period_start.strftime("%B %Y")],
+        ],
+        "sourceNote": "This is configuration visibility only. Actual export readiness remains enforced by the selected bank/WPS template at batch preparation time.",
+    }
     return report, meta
 
 

@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.77":
-    fail(f"VERSION must be 1.0.77, found {version!r}")
+if version != "1.0.78":
+    fail(f"VERSION must be 1.0.78, found {version!r}")
 
 contract = json.loads(text("merge/payroll-browser-scale.json"))
 if contract.get("release") != version:
@@ -145,7 +145,7 @@ for needle in (
     'route="bank-export"',
     'route="wps"',
     'route="documents"',
-    'route="reports"',
+    'open_route("internal", "reports"',
     'route="management-audit"',
     'result_count > 30',
     'rows > 100',

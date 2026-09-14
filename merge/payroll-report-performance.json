@@ -1,0 +1,32 @@
+{
+  "release": "1.0.78",
+  "predecessor": {
+    "release": "1.0.77",
+    "artifact": "sescco-ims-1.0.77-full-payroll-browser-certification-production-freeze.zip",
+    "sha256": "e5b3b5830025cfe40775524fd28947ae423e0fec68c3e26d1cde2ad3338926c6"
+  },
+  "purpose": "Close the Reports/WPS performance gap found after the 1.0.77 browser freeze: keep interactive report rows paginated without decrypting unused payment secrets, avoid repeated report-period queries, and refresh the report viewer without rebuilding the whole Payroll shell.",
+  "page_sizes": [25, 50, 100],
+  "backend_contract": {
+    "wps_projection_only": true,
+    "decrypt_sensitive_destination_fields": false,
+    "single_kpi_aggregate": true,
+    "reuse_profile_count_when_unfiltered": true,
+    "period_choices_can_be_omitted_after_first_response": true
+  },
+  "browser_contract": {
+    "in_place_report_refresh": true,
+    "abort_obsolete_requests": true,
+    "debounced_server_search": true,
+    "preserve_search_focus": true,
+    "skip_page_local_client_sorting": true,
+    "keep_previous_view_visible_while_refresh_runs": true
+  },
+  "runtime_benchmarks": [
+    "WPS report page (100)",
+    "WPS report search (100)"
+  ],
+  "live_browser_report_type": "wps",
+  "schema_change": false,
+  "payroll_formula_change": false
+}

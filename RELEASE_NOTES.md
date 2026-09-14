@@ -1,3 +1,15 @@
+# 1.0.78 — Reports/WPS performance hotfix
+
+- Fixes the Reports page freeze/long refresh observed with the 2,020-profile WPS report even though the visible table was already server-paginated.
+- The interactive WPS report now projects only the display fields needed by the current 25/50/100-row page. It no longer hydrates `EmployeePaymentProfile` instances or decrypts encrypted IBAN/salary-card destination fields that are not displayed.
+- WPS profile, WPS-enabled and configured KPIs are computed in one database aggregate; the unfiltered page reuses that profile count instead of issuing another count query.
+- Report period choices are fetched on the first report request and reused by the browser, avoiding repeated PayrollRun/SupplierSettlement period queries during search and pagination.
+- Search, report-type, period, page and page-size interactions now refresh the report viewer in place instead of rebuilding the entire Payroll shell. The existing report stays visible while the replacement page is loading, stale requests are aborted, and search focus/cursor are restored.
+- Removes misleading page-local client sorting from server-paginated report tables.
+- Extends the deployment benchmark and live Chromium certification to explicitly exercise the WPS Report page and WPS Report search at the 2,000-employee benchmark scale.
+- Adds a Django regression that fails if the interactive WPS report attempts to decrypt payment-destination secrets.
+- No schema change and no Payroll formula change.
+
 # 1.0.77 — Full 2K/5K Payroll browser certification & final production freeze
 
 - Expands the final browser-scale contract across all 23 high-cardinality Payroll surfaces completed through 1.0.71–1.0.76, covering Internal directories/timesheets, Salary Setup, Payroll Runs/Review, Advances & Adjustments, Salary Payments, Bank/WPS, Documents, Reports, Archive/Delete, Management Approval/Audit, Rental workforce/timesheets/assignments, and global search.

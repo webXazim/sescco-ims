@@ -317,6 +317,24 @@ class Command(BaseCommand):
         )
         check("Internal report", report_page, qcount, pbytes, row_count=len(report_page.get("rows", [])))
 
+        wps_report_page, qcount, pbytes = self._measure(
+            "WPS report page (100)",
+            lambda: build_report_page(
+                company=company, report_type="wps", period_start=period_start, workspace="internal",
+                query="", page=1, page_size=100
+            ),
+        )
+        check("WPS report", wps_report_page, qcount, pbytes, row_count=len(wps_report_page.get("rows", [])))
+
+        wps_report_search, qcount, pbytes = self._measure(
+            "WPS report search (100)",
+            lambda: build_report_page(
+                company=company, report_type="wps", period_start=period_start, workspace="internal",
+                query=query, page=1, page_size=100
+            ),
+        )
+        check("WPS report search", wps_report_search, qcount, pbytes, row_count=len(wps_report_search.get("rows", [])))
+
         archive_page, qcount, pbytes = self._measure(
             "Archive page (100)",
             lambda: record_management_page_context(

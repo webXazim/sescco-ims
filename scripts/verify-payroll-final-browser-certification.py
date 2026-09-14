@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.77":
-    fail(f"VERSION must be 1.0.77, found {version!r}")
+if version != "1.0.78":
+    fail(f"VERSION must be 1.0.78, found {version!r}")
 
 contract = json.loads(text("merge/payroll-final-browser-certification.json"))
 if contract.get("release") != version:
@@ -39,7 +39,7 @@ if int(contract.get("max_global_search_results") or 0) != 30:
 if int(contract.get("max_context_payload_bytes") or 0) > 2_500_000:
     fail("payload budget was loosened above 2.5 MB")
 if contract.get("schema_change") is not False or contract.get("payroll_formula_change") is not False:
-    fail("1.0.77 must not introduce schema or payroll-formula changes")
+    fail("1.0.78 must not introduce schema or payroll-formula changes")
 
 required_surfaces = {
     "internal-employee-directory",
@@ -169,6 +169,9 @@ runner_needles = (
 for needle in runner_needles:
     if needle not in runner:
         fail(f"expanded live Chromium runner lost required coverage/bound: {needle}")
+if '[data-report-type="wps"]' not in runner or 'report_type="wps"' not in runner:
+    fail("live browser Reports certification does not explicitly exercise the WPS report variant")
+
 try:
     ast.parse(runner)
 except SyntaxError as exc:
@@ -183,6 +186,8 @@ for needle in (
     "Salary payment readiness / WPS (100)",
     "Documents page (100)",
     "Internal report page (100)",
+    "WPS report page (100)",
+    "WPS report search (100)",
     "Archive page (100)",
     "Delete recovery page (100)",
     "Management approvals page (100)",
@@ -215,4 +220,4 @@ if "scripts/verify-payroll-final-browser-certification.py" not in (candidate.get
 if not any("certify-payroll-browser-scale.py" in item for item in (candidate.get("required_benchmark_gates") or [])):
     fail("release candidate no longer requires live Chromium certification")
 
-print("Verified SESCCO MS 1.0.77 final 2K/5K Payroll browser-certification freeze contract.")
+print("Verified SESCCO MS 1.0.78 final 2K/5K Payroll browser-certification freeze contract.")

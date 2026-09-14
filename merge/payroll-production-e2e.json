@@ -1,5 +1,5 @@
 {
-  "release": "1.0.77",
+  "release": "1.0.78",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -37,6 +37,7 @@
     "scripts/verify-payroll-payment-scale.py",
     "scripts/verify-payroll-shared-surfaces-scale.py",
     "scripts/verify-payroll-final-browser-certification.py",
+    "scripts/verify-payroll-report-performance.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
     "scripts/verify-full-demo-seed.py",
@@ -297,6 +298,15 @@
       "evidence": {
         "apps/core/tests/test_payroll_final_browser_certification.py": [
           "test_final_payroll_browser_certification_contract_is_frozen"
+        ]
+      }
+    },
+    {
+      "id": "report-wps-performance-regression",
+      "description": "Interactive WPS Reports stay page-bounded without decrypting payment destination secrets, and the browser refreshes the report viewer in place.",
+      "evidence": {
+        "apps/core/tests/test_management_reporting.py": [
+          "test_interactive_wps_report_does_not_decrypt_payment_destinations"
         ]
       }
     }

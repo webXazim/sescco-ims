@@ -1,5 +1,5 @@
 {
-  "release": "1.0.77",
+  "release": "1.0.78",
   "purpose": "Keep Rental Assignment Lifecycle responsive under benchmark workforce/history scale by moving Activity, Current Deployment and Supplier Pool to bounded server-side filtering and pagination.",
   "endpoint": "/api/rental/assignments/",
   "views": [
