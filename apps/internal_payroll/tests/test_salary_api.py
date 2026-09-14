@@ -89,6 +89,68 @@ class SalarySetupApiTests(TestCase):
         self.assertEqual(payload["structure"]["otPolicySnapshot"]["multiplier"], "1.5000")
         self.assertEqual(len(payload["history"]), 1)
 
+
+    def test_salary_structure_directory_is_bounded_and_history_is_employee_scoped(self):
+        basic_response = self._post_json(
+            reverse("internal_payroll:salary-components-api"),
+            {
+                "code": "BASIC",
+                "name": "Basic Salary",
+                "category": "Earning",
+                "recurrence": "Recurring",
+                "calculation": "Fixed Amount",
+                "wps_mapping": "Basic Salary",
+                "status": "Active",
+            },
+        )
+        basic = basic_response.json()["component"]
+        second = create_employee(
+            actor_membership=self.membership,
+            employee_number="0002",
+            full_name="Second API Employee",
+            joining_date=date(2021, 1, 1),
+            branch_id=self.employee.organization_assignments.get(effective_to__isnull=True).branch_id,
+            department_id=self.employee.organization_assignments.get(effective_to__isnull=True).department_id,
+            position="Payroll Analyst",
+        )
+        self._post_json(
+            reverse("internal_payroll:salary-structures-api"),
+            {
+                "employee_id": str(self.employee.pk),
+                "effective_from": "2025-01-01",
+                "components": [{"component_id": basic["id"], "amount": "4000.00"}],
+            },
+        )
+
+        response = self.client.get(
+            reverse("internal_payroll:salary-structures-api"),
+            {"page": 1, "page_size": 1, "q": "API Employee"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertIn("employee", payload["results"][0])
+        self.assertIn("structure", payload["results"][0])
+        self.assertEqual(payload["meta"]["pageSize"], 1)
+        self.assertEqual(payload["meta"]["coverage"]["employeeCount"], 2)
+        self.assertEqual(payload["meta"]["coverage"]["configuredCount"], 1)
+        self.assertEqual(payload["meta"]["coverage"]["needsSetupCount"], 1)
+
+        history_response = self.client.get(
+            reverse("internal_payroll:salary-structures-api"),
+            {"employee": str(self.employee.pk)},
+        )
+        self.assertEqual(history_response.status_code, 200)
+        history_payload = history_response.json()
+        self.assertEqual(len(history_payload["history"]), 1)
+        self.assertEqual(history_payload["current"]["employeeId"], str(self.employee.pk))
+
+        needs_setup = self.client.get(
+            reverse("internal_payroll:salary-structures-api"),
+            {"page": 1, "page_size": 50, "setup": "needs_setup"},
+        ).json()
+        self.assertEqual([row["employee"]["id"] for row in needs_setup["results"]], [str(second.pk)])
+
     def test_rental_only_role_cannot_read_salary_setup(self):
         rental_user = User.objects.create_user(username="salary-rental")
         CompanyMembership.objects.create(

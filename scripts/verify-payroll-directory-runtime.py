@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.70":
-    fail(f"VERSION must be 1.0.70, found {version!r}")
+if version != "1.0.77":
+    fail(f"VERSION must be 1.0.77, found {version!r}")
 
 contract = json.loads(text("merge/payroll-directory-runtime.json"))
 if contract.get("release") != version:
@@ -58,7 +58,8 @@ for needle in (
     "refreshing:!current && rows.length>0 && pending",
     "bindPayrollSearch(input,setter,{delay:320,beforeRender:()=>cancelServerDirectoryRequest(kind)});",
     "const indexById=new Map(collection.map((item,index)=>[item.id,index]));",
-    "(rows || []).forEach(record=>{const employee=collection[indexById.get(record.id)]",
+    "(rows || []).forEach(record => {",
+    "employeeDirectoryCacheLimit: 250",
 ):
     if needle not in js:
         fail(f"directory runtime protection missing: {needle}")

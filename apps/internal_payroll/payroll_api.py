@@ -10,7 +10,9 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
-from apps.internal_payroll.selectors import payroll_period_context, serialize_payroll_policy
+from apps.internal_payroll.models import PayrollAdjustment
+from apps.internal_payroll.selectors import payroll_period_context, serialize_payroll_adjustment, serialize_payroll_policy
+from apps.internal_payroll.selectors.payroll import payroll_adjustment_page_context, payroll_run_page_context
 from apps.internal_payroll.services import (
     calculate_payroll_run,
     create_payroll_adjustment,
@@ -61,16 +63,25 @@ def _decimal(value: object, field: str, *, optional: bool = False) -> Decimal | 
 def payroll_api(request: HttpRequest) -> JsonResponse:
     try:
         period_start = _request_period(request)
-        return JsonResponse(
-            {
-                "ok": True,
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=period_start,
-                    membership=request.company_membership,
-                ),
-            }
-        )
+        if str(request.GET.get("surface") or "").strip().lower() == "run":
+            context = payroll_run_page_context(
+                company=request.company,
+                period_start=period_start,
+                membership=request.company_membership,
+                page=request.GET.get("page", 1),
+                page_size=request.GET.get("page_size", 50),
+                search=str(request.GET.get("search") or ""),
+                branch=str(request.GET.get("branch") or "All branches"),
+                department=str(request.GET.get("department") or "All departments"),
+                readiness=str(request.GET.get("readiness") or "All"),
+            )
+        else:
+            context = payroll_period_context(
+                company=request.company,
+                period_start=period_start,
+                membership=request.company_membership,
+            )
+        return JsonResponse({"ok": True, **context})
     except Exception as exc:
         return handle_api_error(exc)
 
@@ -105,16 +116,17 @@ def payroll_calculate_api(request: HttpRequest) -> JsonResponse:
             period_start=period_start,
             request=request,
         )
-        return JsonResponse(
-            {
-                "ok": True,
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=period_start,
-                    membership=request.company_membership,
-                ),
-            }
+        context = (
+            payroll_run_page_context(
+                company=request.company, period_start=period_start, membership=request.company_membership,
+                page=body.get("page", 1), page_size=body.get("page_size", 50),
+                search=str(body.get("search") or ""), branch=str(body.get("branch") or "All branches"),
+                department=str(body.get("department") or "All departments"), readiness=str(body.get("readiness") or "All"),
+            )
+            if str(body.get("surface") or "").strip().lower() == "run"
+            else payroll_period_context(company=request.company, period_start=period_start, membership=request.company_membership)
         )
+        return JsonResponse({"ok": True, **context})
     except Exception as exc:
         return handle_api_error(exc)
 
@@ -142,16 +154,17 @@ def payroll_workflow_api(request: HttpRequest) -> JsonResponse:
                 confirmed=body.get("confirmed") is True,
                 request=request,
             )
-        return JsonResponse(
-            {
-                "ok": True,
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=period_start,
-                    membership=request.company_membership,
-                ),
-            }
+        context = (
+            payroll_run_page_context(
+                company=request.company, period_start=period_start, membership=request.company_membership,
+                page=body.get("page", 1), page_size=body.get("page_size", 50),
+                search=str(body.get("search") or ""), branch=str(body.get("branch") or "All branches"),
+                department=str(body.get("department") or "All departments"), readiness=str(body.get("readiness") or "All"),
+            )
+            if str(body.get("surface") or "").strip().lower() == "run"
+            else payroll_period_context(company=request.company, period_start=period_start, membership=request.company_membership)
         )
+        return JsonResponse({"ok": True, **context})
     except Exception as exc:
         return handle_api_error(exc)
 
@@ -165,10 +178,15 @@ def payroll_adjustments_api(request: HttpRequest) -> JsonResponse:
             return JsonResponse(
                 {
                     "ok": True,
-                    **payroll_period_context(
+                    **payroll_adjustment_page_context(
                         company=request.company,
                         period_start=period_start,
-                        membership=request.company_membership,
+                        page=request.GET.get("page", 1),
+                        page_size=request.GET.get("page_size", 50),
+                        search=str(request.GET.get("search") or ""),
+                        adjustment_type=str(request.GET.get("type") or "All"),
+                        status=str(request.GET.get("status") or "All"),
+                        view=str(request.GET.get("view") or "register"),
                     ),
                 }
             )
@@ -188,15 +206,13 @@ def payroll_adjustments_api(request: HttpRequest) -> JsonResponse:
             recovery_start=parse_optional_date(body.get("recovery_start"), "recovery_start"),
             request=request,
         )
+        adjustment = PayrollAdjustment.objects.for_company(request.company).select_related("employee", "submitted_by", "approved_by").get(pk=adjustment.pk)
         return JsonResponse(
             {
                 "ok": True,
                 "adjustmentId": str(adjustment.pk),
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=period_start,
-                    membership=request.company_membership,
-                ),
+                "period": f"{period_start:%Y-%m}",
+                "adjustment": serialize_payroll_adjustment(adjustment),
             },
             status=201,
         )
@@ -231,14 +247,12 @@ def payroll_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonRe
             values=values,
             request=request,
         )
+        adjustment = PayrollAdjustment.objects.for_company(request.company).select_related("employee", "submitted_by", "approved_by").get(pk=adjustment.pk)
         return JsonResponse(
             {
                 "ok": True,
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=adjustment.period_start,
-                    membership=request.company_membership,
-                ),
+                "period": f"{adjustment.period_start:%Y-%m}",
+                "adjustment": serialize_payroll_adjustment(adjustment),
             }
         )
     except Exception as exc:
@@ -257,14 +271,12 @@ def payroll_adjustment_workflow_api(request: HttpRequest, adjustment_id) -> Json
             reason=str(body.get("reason") or ""),
             request=request,
         )
+        adjustment = PayrollAdjustment.objects.for_company(request.company).select_related("employee", "submitted_by", "approved_by").get(pk=adjustment.pk)
         return JsonResponse(
             {
                 "ok": True,
-                **payroll_period_context(
-                    company=request.company,
-                    period_start=adjustment.period_start,
-                    membership=request.company_membership,
-                ),
+                "period": f"{adjustment.period_start:%Y-%m}",
+                "adjustment": serialize_payroll_adjustment(adjustment),
             }
         )
     except Exception as exc:

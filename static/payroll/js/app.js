@@ -146,9 +146,9 @@
     if (index >= 0) collection.splice(index, 1, record);
     else collection.push(record);
     if (state?.serverDirectories) {
-      if (collection === state.branches) invalidateServerDirectories('branches','employees');
-      else if (collection === state.departments) invalidateServerDirectories('departments','employees');
-      else if (collection === state.employees) invalidateServerDirectories('employees','branches','departments');
+      if (collection === state.branches) { invalidateServerDirectories('branches','employees'); invalidateEmployeeScaleContexts(); }
+      else if (collection === state.departments) { invalidateServerDirectories('departments','employees'); invalidateEmployeeScaleContexts(); }
+      else if (collection === state.employees) { invalidateServerDirectories('employees','branches','departments'); invalidateEmployeeScaleContexts(); }
       else if (collection === state.projects) invalidateServerDirectories('projects','suppliers','workers');
       else if (collection === state.suppliers) invalidateServerDirectories('suppliers','projects','workers');
       else if (collection === state.rentalWorkers) invalidateServerDirectories('workers','suppliers','projects');
@@ -956,6 +956,7 @@
   }
   const storedRentalTimesheetProject = localStorage.getItem('payroll-ui-rental-timesheet-project') || '';
   const storedRentalSettlementProject = localStorage.getItem('payroll-ui-rental-settlement-project') || '';
+  const internalBootstrapEmployeeIds = new Set((internalMaster.employees || []).map(item => item.id).filter(Boolean));
   const initialRentalTimesheetProject = preferredRentalProjectId(rentalProjectCandidates, storedRentalTimesheetProject);
   const initialRentalSettlementProject = preferredRentalProjectId(rentalProjectCandidates, storedRentalSettlementProject || storedRentalTimesheetProject);
 
@@ -965,8 +966,17 @@
     accessRole: serverAccess.role,
     managementCostMode: localStorage.getItem('payroll-ui-management-cost-mode') || 'latest',
     managementApprovalFilter: 'All',
+    managementApprovalPage: 1,
+    managementApprovalPageSize: Number(localStorage.getItem('payroll-ui-management-approval-page-size') || 50),
+    managementApprovalContext: null,
+    managementApprovalServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     managementAuditSearch: '',
     managementAuditType: 'All activity',
+    managementAuditPage: 1,
+    managementAuditPageSize: Number(localStorage.getItem('payroll-ui-management-audit-page-size') || 50),
+    managementAuditContext: null,
+    managementAuditServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
+    managementSummaryServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'' },
     sidebarCollapsed: localStorage.getItem('payroll-ui-sidebar') === 'collapsed',
     projectSearch: '',
     projectStatus: 'All',
@@ -1040,12 +1050,18 @@
     adjustmentStatus: 'All',
     adjustmentProject: 'All projects',
     adjustmentSupplier: 'All suppliers',
+    adjustmentPage: 1,
+    adjustmentPageSize: Number(localStorage.getItem('payroll-ui-adjustment-page-size') || 50),
+    adjustmentContext: null,
+    adjustmentServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
+    adjustmentPersonLookupController: null,
     salarySetupTab: 'components',
     salaryComponentSearch: '',
     salaryComponentType: 'All',
     salaryComponentStatus: 'Active',
     overtimePolicyStatus: 'Active',
     salaryStructureSearch: '',
+    salaryStructureSetup: 'All',
     timesheetWorkspace: localStorage.getItem('payroll-ui-timesheet-workspace') || 'internal',
     timesheetFullscreen: false,
     internalTimesheetPeriod: localStorage.getItem('payroll-ui-internal-timesheet-period') || defaultInternalPeriod,
@@ -1101,6 +1117,9 @@
     attendanceLoadingPeriod: null,
     attendanceServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{ ...(attendanceBootstrap.meta || {}) } },
     payrollSearch: '',
+    payrollPage: 1,
+    payrollPageSize: Number(localStorage.getItem('payroll-ui-run-page-size') || 50),
+    payrollServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     payrollBranch: 'All branches',
     payrollDepartment: 'All departments',
     payrollProject: 'All projects',
@@ -1116,6 +1135,10 @@
     bankExportSearch: '',
     bankExportStatus: 'All',
     bankExportBranch: 'All branches',
+    bankReadinessPage: 1,
+    bankReadinessPageSize: Number(localStorage.getItem('payroll-ui-bank-readiness-page-size') || 50),
+    bankReadinessContext: null,
+    bankReadinessServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     bankTemplateId: localStorage.getItem('payroll-ui-bank-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'bank_csv' && item.active && !item.archived)?.id || null,
     exportTemplateDetailId: null,
     bankTemplates: [...(paymentBootstrap.templates || [])],
@@ -1125,12 +1148,21 @@
     wpsTemplateId: localStorage.getItem('payroll-ui-wps-template-id') || (paymentBootstrap.templates || []).find(item => item.channel === 'wps' && item.active && !item.archived)?.id || null,
     wpsStatusFilter: 'All',
     wpsSearch: '',
+    wpsPage: 1,
+    wpsPageSize: Number(localStorage.getItem('payroll-ui-wps-page-size') || 50),
+    wpsReadinessContext: null,
+    wpsReadinessServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     wpsBatches: (paymentBootstrap.batches || []).filter(item => item.channelValue === 'wps'),
     wpsValidation: {},
     paymentTab: 'internal',
     selectedInternalPaymentBatchId: localStorage.getItem('payroll-ui-selected-internal-payment-batch') || null,
     paymentStatusFilter: 'All',
     paymentSearch: '',
+    paymentPage: 1,
+    paymentPageSize: Number(localStorage.getItem('payroll-ui-payment-page-size') || 50),
+    paymentBatchContext: null,
+    paymentBatchServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
+    paymentProfileCache: {},
     paymentSupplierFilter: 'All suppliers',
     paymentMethodFilter: 'All methods',
     paymentPayableFilter: 'Open',
@@ -1145,6 +1177,10 @@
     documentSearch: '',
     documentPeriodFilter: localStorage.getItem('payroll-ui-document-period') || 'All periods',
     documentStatusFilter: 'All statuses',
+    documentPage: 1,
+    documentPageSize: Number(localStorage.getItem('payroll-ui-document-page-size') || 50),
+    documentContext: null,
+    documentServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     selectedDocumentId: localStorage.getItem('payroll-ui-selected-document') || null,
     businessDocuments: [...(documentsBootstrap.documents || [])],
     documentDetails: {},
@@ -1152,13 +1188,17 @@
     managementContexts: managementBootstrap.periodLabel ? { [managementBootstrap.periodLabel]: managementBootstrap } : {},
     managementLoadingPeriod: null,
     reportContexts: {},
+    reportContext: null,
+    reportPage: 1,
+    reportPageSize: Number(localStorage.getItem('payroll-ui-report-page-size') || 50),
+    reportServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     reportLoadingKey: null,
     reportType: localStorage.getItem('payroll-ui-report-type') || 'workforce-cost',
     reportPeriod: localStorage.getItem('payroll-ui-report-period') || localStorage.getItem('payroll-ui-period') || defaultInternalPeriod,
     reportSearch: '',
     settingsTab: localStorage.getItem('payroll-ui-settings-tab') || 'general',
     systemSettings,
-    recordManagement: { archive:[...(recordManagementBootstrap.archive || [])], trash:[...(recordManagementBootstrap.trash || [])], retentionDays:Number(recordManagementBootstrap.retentionDays || 30) },
+    recordManagement: { archive:[], trash:[], retentionDays:Number(recordManagementBootstrap.retentionDays || 30), contexts:{}, page:{archive:1,trash:1}, pageSize:{archive:50,trash:50}, search:{archive:'',trash:''}, servers:{archive:{key:'',pendingKey:'',controller:null,requestId:0,loading:false,error:'',meta:{}},trash:{key:'',pendingKey:'',controller:null,requestId:0,loading:false,error:'',meta:{}}} },
     drawerType: null,
     drawerContext: null,
     branches: [...(internalMaster.branches || [])],
@@ -1167,6 +1207,16 @@
     internalMasterSummary: { ...(internalMaster.summary || {}) },
     internalMasterComplete: internalMaster.bootstrapComplete !== false,
     internalMasterLoading: false,
+    employeeDirectorySummary: { ...(internalMaster.summary || {}) },
+    employeeDirectorySummaryLoaded: false,
+    employeeDirectorySummaryLoading: false,
+    employeeDirectorySummaryController: null,
+    employeeDirectorySummaryRequestId: 0,
+    employeeDirectoryCacheOrder: [],
+    employeeDirectoryCacheLimit: 250,
+    organizationEmployeeContexts: {},
+    organizationEmployeeLoading: new Set(),
+    organizationEmployeeControllers: new Map(),
     projects: [...(rentalMaster.projects || [])],
     suppliers: [...(rentalMaster.suppliers || [])],
     employees: [...(internalMaster.employees || [])],
@@ -1180,6 +1230,11 @@
     overtimePolicies: [...(salarySetup.overtimePolicies || [])],
     salaryStructures: { ...(salarySetup.salaryStructures || {}) },
     salaryStructureHistory: { ...(salarySetup.salaryStructureHistory || {}) },
+    salaryStructureHistoryLoaded: new Set(Object.keys(salarySetup.salaryStructureHistory || {})),
+    salaryStructureHistoryLoading: new Set(),
+    salaryStructureDirectory: {results:[],meta:{coverage:{}},key:'',pendingKey:'',failedKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:50},
+    salaryStructureDirectoryEmployeeIds: [],
+    salaryStructureEmployeeLookupController: null,
     globalSearchServer: { controller:null, requestId:0, loading:false, error:'', query:'', results:[] },
     serverDirectories: {
       branches:{results:[],meta:{},key:'',pendingKey:'',failedKey:'',filterKey:'',loading:false,error:'',controller:null,requestId:0,page:1,pageSize:25},
@@ -1204,18 +1259,33 @@
   function directoryEntityMerge(kind, rows) {
     const collection = directoryMasterCollection(kind);
     if (!collection) return;
-    // Directory pages are bounded, but the shell master cache can contain thousands of
-    // records. Build one index map instead of scanning the full master for every row.
+    // Directory pages are bounded, but the shell cache can still grow while a user pages
+    // through thousands of records. Build one ID index for the returned page and keep the
+    // Internal Employee cache bounded until a legacy route explicitly asks for the full master.
     const indexById=new Map(collection.map((item,index)=>[item.id,index]));
+    const rowIds=[];
     (rows || []).forEach(record => {
+      if(!record?.id)return;
+      rowIds.push(record.id);
       const index=indexById.get(record.id);
       if (index !== undefined) collection.splice(index, 1, { ...collection[index], ...record });
       else { indexById.set(record.id,collection.length); collection.push(record); }
     });
-    if (kind === 'employees') {
-      // Only the returned page changed. Recomputing every employee salary on each search
-      // response made high-cardinality directory searches unnecessarily CPU-heavy.
-      (rows || []).forEach(record=>{const employee=collection[indexById.get(record.id)];if(employee)employee.basicSalary=salaryBasicForEmployee(employee);});
+    if (kind === 'employees' && !state.internalMasterComplete && !state.internalMasterLoading) {
+      rowIds.forEach(id=>{
+        const previous=state.employeeDirectoryCacheOrder.indexOf(id);
+        if(previous>=0)state.employeeDirectoryCacheOrder.splice(previous,1);
+        state.employeeDirectoryCacheOrder.push(id);
+      });
+      const protectedIds=new Set([...internalBootstrapEmployeeIds,...rowIds]);
+      const openEmployeeId=currentEmployeeId();
+      if(openEmployeeId)protectedIds.add(openEmployeeId);
+      while(collection.length>state.employeeDirectoryCacheLimit && state.employeeDirectoryCacheOrder.length){
+        const candidate=state.employeeDirectoryCacheOrder.shift();
+        if(!candidate||protectedIds.has(candidate))continue;
+        const index=collection.findIndex(item=>item.id===candidate);
+        if(index>=0)collection.splice(index,1);
+      }
     }
   }
   function directoryFilterValueByName(collection, value, allLabel) {
@@ -1398,6 +1468,111 @@
     });
   }
 
+  function employeeSummaryUrl({branchId='',departmentId='',period=state.period}={}) {
+    const params=new URLSearchParams();
+    if(branchId)params.set('branch',branchId);
+    if(departmentId)params.set('department',departmentId);
+    if(period)params.set('period',periodKeyFromLabel(period));
+    return `/api/internal/employees/summary/?${params.toString()}`;
+  }
+
+  async function loadEmployeeDirectorySummary({force=false,render=true}={}) {
+    if(state.employeeDirectorySummaryLoaded&&!force)return state.employeeDirectorySummary;
+    if(state.employeeDirectorySummaryLoading){
+      if(!force)return null;
+      try{state.employeeDirectorySummaryController?.abort();}catch{/* completed request */}
+    }
+    const controller=new AbortController();
+    const requestId=++state.employeeDirectorySummaryRequestId;
+    state.employeeDirectorySummaryController=controller;
+    state.employeeDirectorySummaryLoading=true;
+    try {
+      const payload=await appApi(employeeSummaryUrl(),{signal:controller.signal});
+      if(requestId!==state.employeeDirectorySummaryRequestId)return null;
+      state.employeeDirectorySummary={...(state.employeeDirectorySummary||{}),...(payload.summary||{})};
+      state.internalMasterSummary={...(state.internalMasterSummary||{}),...(payload.summary||{})};
+      state.employeeDirectorySummaryLoaded=true;
+      if(render&&((currentRoute()==='internal-employees'&&!currentEmployeeId())||(currentRoute()==='overview'&&state.workspace==='internal')))renderRoute();
+      return state.employeeDirectorySummary;
+    } catch(error) {
+      if(error?.name==='AbortError')return null;
+      showToast('Employee summary unavailable',error.message);
+      return null;
+    } finally {
+      if(requestId===state.employeeDirectorySummaryRequestId){
+        state.employeeDirectorySummaryLoading=false;
+        state.employeeDirectorySummaryController=null;
+      }
+    }
+  }
+
+  function organizationEmployeeContextKey(kind,id,period=state.period) {
+    return `${kind}:${id}:${periodKeyFromLabel(period)}`;
+  }
+
+  async function loadOrganizationEmployeeContext(kind,id,{force=false,render=true}={}) {
+    if(!['branch','department'].includes(kind)||!id)return null;
+    const period=state.period;
+    const key=organizationEmployeeContextKey(kind,id,period);
+    if(!force&&state.organizationEmployeeContexts[key])return state.organizationEmployeeContexts[key];
+    const previousController=state.organizationEmployeeControllers.get(key);
+    if(previousController){
+      if(!force)return null;
+      try{previousController.abort();}catch{/* completed request */}
+    }
+    const controller=new AbortController();
+    state.organizationEmployeeControllers.set(key,controller);
+    state.organizationEmployeeLoading.add(key);
+    try {
+      const params=new URLSearchParams({
+        archived:'current',
+        period:periodKeyFromLabel(period),
+        sort:'employee',
+        direction:'asc',
+        page:'1',
+        page_size:'50'
+      });
+      params.set(kind,id);
+      const [directoryPayload,summaryPayload]=await Promise.all([
+        appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal}),
+        appApi(employeeSummaryUrl(kind==='branch'?{branchId:id,period}:{departmentId:id,period}),{signal:controller.signal})
+      ]);
+      if(state.organizationEmployeeControllers.get(key)!==controller)return null;
+      const rows=[...(directoryPayload.results||[])];
+      directoryEntityMerge('employees',rows);
+      const context={rows,meta:{...(directoryPayload.meta||{})},summary:{...(summaryPayload.summary||{})}};
+      state.organizationEmployeeContexts[key]=context;
+      const activeId=kind==='branch'?currentBranchId():currentDepartmentId();
+      if(render&&activeId===id&&state.period===period)renderRoute();
+      return context;
+    } catch(error) {
+      if(error?.name==='AbortError')return null;
+      showToast('Organization workforce unavailable',error.message);
+      return null;
+    } finally {
+      if(state.organizationEmployeeControllers.get(key)===controller){
+        state.organizationEmployeeControllers.delete(key);
+        state.organizationEmployeeLoading.delete(key);
+      }
+    }
+  }
+
+  function organizationEmployeeContext(kind,id,period=state.period) {
+    return state.organizationEmployeeContexts[organizationEmployeeContextKey(kind,id,period)]||null;
+  }
+
+  function invalidateEmployeeScaleContexts() {
+    try{state.employeeDirectorySummaryController?.abort();}catch{/* completed request */}
+    state.employeeDirectorySummaryRequestId+=1;
+    state.employeeDirectorySummaryController=null;
+    state.employeeDirectorySummaryLoading=false;
+    state.employeeDirectorySummaryLoaded=false;
+    state.organizationEmployeeControllers.forEach(controller=>{try{controller.abort();}catch{/* completed request */}});
+    state.organizationEmployeeControllers.clear();
+    state.organizationEmployeeLoading.clear();
+    state.organizationEmployeeContexts={};
+  }
+
   async function hydrateCompleteMaster(kind,{render=true}={}) {
     const isEmployee=kind==='employees';
     const isWorker=kind==='workers';
@@ -1429,31 +1604,117 @@
     }
   }
 
+  function salaryStructureRequest() {
+    const store=state.salaryStructureDirectory;
+    const params=new URLSearchParams({
+      page:String(store.page||1),
+      page_size:String(store.pageSize||50),
+      sort:'employee',
+      direction:'asc'
+    });
+    if(state.salaryStructureSearch.trim())params.set('q',state.salaryStructureSearch.trim());
+    if(state.salaryStructureSetup==='Configured')params.set('setup','configured');
+    else if(state.salaryStructureSetup==='Needs setup')params.set('setup','needs_setup');
+    const url=`/api/internal/salary/structures/?${params.toString()}`;
+    return {url,key:url};
+  }
+
+  function cancelSalaryStructureRequest({clearPending=true}={}) {
+    const store=state.salaryStructureDirectory;
+    if(store.controller){try{store.controller.abort();}catch{/* settled */}}
+    store.controller=null;
+    store.requestId=Number(store.requestId||0)+1;
+    if(clearPending){store.pendingKey='';store.loading=false;}
+  }
+
+  async function loadSalaryStructureDirectory({force=false,render=true}={}) {
+    const store=state.salaryStructureDirectory;
+    const request=salaryStructureRequest();
+    if(!force&&(store.key===request.key||store.pendingKey===request.key))return store;
+    if(store.controller){try{store.controller.abort();}catch{/* settled */}}
+    const controller=new AbortController();
+    const requestId=Number(store.requestId||0)+1;
+    store.requestId=requestId;store.controller=controller;store.pendingKey=request.key;store.failedKey='';store.loading=true;store.error='';
+    try {
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(store.requestId!==requestId||store.pendingKey!==request.key)return store;
+      store.results=[...(payload.results||[])];
+      store.meta={...(payload.meta||{})};
+      store.page=Number(store.meta.page||store.page||1);
+      store.key=request.key;store.pendingKey='';store.failedKey='';store.loading=false;store.controller=null;
+      const employeeRows=[];
+      const nextEmployeeIds=(store.results||[]).map(row=>row?.employee?.id).filter(Boolean);
+      const nextEmployeeIdSet=new Set(nextEmployeeIds);
+      (state.salaryStructureDirectoryEmployeeIds||[]).forEach(employeeId=>{
+        if(!nextEmployeeIdSet.has(employeeId)&&!state.salaryStructureHistoryLoaded.has(employeeId))delete state.salaryStructures[employeeId];
+      });
+      state.salaryStructureDirectoryEmployeeIds=nextEmployeeIds;
+      store.results.forEach(row=>{
+        const employee=row?.employee; if(!employee?.id)return;
+        employeeRows.push(employee);
+        if(row.structure)state.salaryStructures[employee.id]=row.structure;
+        else delete state.salaryStructures[employee.id];
+      });
+      if(employeeRows.length)directoryEntityMerge('employees',employeeRows);
+      if(render&&currentRoute()==='salary-setup')renderRoute();
+      return store;
+    } catch(error) {
+      if(error?.name==='AbortError')return store;
+      if(store.requestId===requestId&&store.pendingKey===request.key){
+        store.pendingKey='';store.loading=false;store.controller=null;store.failedKey=request.key;store.error=error.message||'Salary structures unavailable.';
+        if(render&&currentRoute()==='salary-setup')renderRoute();
+      }
+      return null;
+    }
+  }
+
+  function salaryStructureDirectoryView() {
+    const store=state.salaryStructureDirectory; const request=salaryStructureRequest();
+    const current=store.key===request.key, pending=store.pendingKey===request.key, failed=store.failedKey===request.key;
+    if(!current&&!pending&&!failed)queueMicrotask(()=>loadSalaryStructureDirectory());
+    return {rows:[...(store.results||[])],meta:{...(store.meta||{})},loading:pending||(store.loading&&!current),refreshing:!current&&(store.results||[]).length>0&&pending,error:failed?store.error:''};
+  }
+
+  function invalidateSalaryStructureDirectory() {
+    cancelSalaryStructureRequest();
+    const store=state.salaryStructureDirectory;store.key='';store.failedKey='';store.error='';
+  }
+
+  async function loadSalaryStructureHistory(employeeId,{force=false,render=false}={}) {
+    if(!employeeId)return null;
+    if(!force&&state.salaryStructureHistoryLoaded.has(employeeId))return state.salaryStructureHistory[employeeId]||[];
+    if(state.salaryStructureHistoryLoading.has(employeeId))return null;
+    state.salaryStructureHistoryLoading.add(employeeId);
+    try {
+      const payload=await appApi(`/api/internal/salary/structures/?employee=${encodeURIComponent(employeeId)}`);
+      const history=[...(payload.history||payload.results||[])];
+      state.salaryStructureHistory[employeeId]=history;
+      state.salaryStructureHistoryLoaded.add(employeeId);
+      if(payload.current)state.salaryStructures[employeeId]=payload.current; else delete state.salaryStructures[employeeId];
+      const employee=state.employees.find(item=>item.id===employeeId); if(employee)employee.basicSalary=salaryBasicForEmployee(employee);
+      if(render)renderRoute();
+      return history;
+    } catch(error) {
+      showToast('Salary structure unavailable',error.message);
+      return null;
+    } finally {
+      state.salaryStructureHistoryLoading.delete(employeeId);
+    }
+  }
+
   async function loadSalarySetup({force=false}={}) {
     if(!force&&state.salarySetupLoaded)return true;
     if(state.salarySetupLoading)return false;
     state.salarySetupLoading=true;
     try {
-      const [componentsPayload,policiesPayload,structuresPayload]=await Promise.all([
+      const [componentsPayload,policiesPayload]=await Promise.all([
         appApi('/api/internal/salary/components/?status=all'),
         appApi('/api/internal/salary/overtime-policies/?status=all'),
-        appApi('/api/internal/salary/structures/'),
       ]);
       state.salaryComponents=[...(componentsPayload.results||[])];
       state.overtimePolicies=[...(policiesPayload.results||[])];
-      state.salaryStructures={};
-      state.salaryStructureHistory={};
-      const asOf=companyTodayIso;
-      (structuresPayload.results||[]).forEach(structure=>{
-        const employeeId=structure.employeeId;
-        if(!employeeId)return;
-        (state.salaryStructureHistory[employeeId] ||= []).push(structure);
-        const effective=String(structure.effective||'');
-        const effectiveTo=String(structure.effectiveTo||'');
-        if(!state.salaryStructures[employeeId]&&effective<=asOf&&(!effectiveTo||effectiveTo>=asOf))state.salaryStructures[employeeId]=structure;
-      });
       state.salarySetupLoaded=true;
-      state.employees.forEach(employee=>{employee.basicSalary=salaryBasicForEmployee(employee);});
+      await loadSalaryStructureDirectory({force,render:false});
       if(currentRoute()==='salary-setup')renderRoute();
       return true;
     } catch(error) {
@@ -1748,9 +2009,9 @@
     const notificationMenu = document.getElementById('notificationMenu');
     if (notificationMenu) {
       if (state.workspace === 'management') {
-        const approvals = managementApprovalItems();
-        const critical = approvals.filter(item=>item.severity==='Critical').length;
-        notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Company control attention</strong><span>${approvals.length} items</span></div><a href="#/management-approvals" class="notice-row"><span class="notice-icon ${critical?'notice-icon--warn':''}">${critical?'!':'A'}</span><span><strong>${critical ? `${critical} critical control item${critical===1?'':'s'}` : 'Approval center'}</strong><small>Internal payroll and rental settlement reviews stay separately attributable.</small></span></a><a href="#/management-cost" class="notice-row"><span class="notice-icon">C</span><span><strong>Workforce cost visibility</strong><small>Compare finalized Internal and Rental costs without merging operational records.</small></span></a><a href="#/management-audit" class="notice-row"><span class="notice-icon">AU</span><span><strong>Audit trail</strong><small>Review payroll, settlement, assignment and payment lifecycle events.</small></span></a>`;
+        const approvals = managementApprovalItems(),approvalSummary=managementCurrentContext()?.approvalSummary||{};
+        const critical = Number(approvalSummary.critical||0),approvalCount=Number(approvalSummary.count||approvals.length);
+        notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Company control attention</strong><span>${approvalCount} items</span></div><a href="#/management-approvals" class="notice-row"><span class="notice-icon ${critical?'notice-icon--warn':''}">${critical?'!':'A'}</span><span><strong>${critical ? `${critical} critical control item${critical===1?'':'s'}` : 'Approval center'}</strong><small>Internal payroll and rental settlement reviews stay separately attributable.</small></span></a><a href="#/management-cost" class="notice-row"><span class="notice-icon">C</span><span><strong>Workforce cost visibility</strong><small>Compare finalized Internal and Rental costs without merging operational records.</small></span></a><a href="#/management-audit" class="notice-row"><span class="notice-icon">AU</span><span><strong>Audit trail</strong><small>Review payroll, settlement, assignment and payment lifecycle events.</small></span></a>`;
       } else if (state.workspace === 'rental') {
         notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Rental manpower controls</strong><span>Current workspace</span></div><a href="#/timesheets" class="notice-row"><span class="notice-icon">T</span><span><strong>Project timesheets</strong><small>Review supplier manpower hours before settlement.</small></span></a><a href="#/rental-assignments" class="notice-row"><span class="notice-icon notice-icon--warn">!</span><span><strong>Assignment changes</strong><small>Transfers, trade and rate changes remain effective-dated.</small></span></a><a href="#/rental-settlements" class="notice-row"><span class="notice-icon">S</span><span><strong>Supplier settlements</strong><small>Approved timesheets feed supplier payable calculations.</small></span></a><a href="#/suppliers" class="notice-row"><span class="notice-icon">SP</span><span><strong>Supplier deployment</strong><small>Review active and available workers by company.</small></span></a>`;
       } else {
@@ -1808,11 +2069,12 @@
   }
 
   function internalOverviewTemplate() {
-    const summary=state.internalMasterSummary||{};
+    if (!state.employeeDirectorySummaryLoaded && !state.employeeDirectorySummaryLoading) loadEmployeeDirectorySummary({ render:true });
+    const summary=state.employeeDirectorySummaryLoaded ? state.employeeDirectorySummary : (state.internalMasterSummary||{});
     const activeEmployeeCount=Number(summary.activeEmployeeCount ?? state.employees.filter(item=>item.status==='Active').length);
     const branchCount = state.branches.filter(item => item.status === 'Active').length;
     const departmentCount = state.departments.filter(item => item.status === 'Active').length;
-    const salaryConfigured = state.salarySetupLoaded ? state.employees.filter(item=>item.status==='Active'&&!!employeeProfileData(item).salary).length : null;
+    const salaryConfigured = summary.salaryConfiguredCount === undefined || summary.salaryConfiguredCount === null ? null : Number(summary.salaryConfiguredCount);
     const paymentKey=paymentPeriodKey(state.period);
     const paymentCtx=state.paymentContexts?.[paymentKey]||null;
     const wpsReady=paymentCtx ? Number(paymentCtx.wpsReadiness?.readyCount||0) : null;
@@ -1830,7 +2092,7 @@
       <div class="summary-strip ui-v2-payroll-summary-strip">
         <div class="summary-item ui-v2-payroll-metric"><span>Active employees</span><strong>${activeEmployeeCount.toLocaleString()}</strong><small>${branchCount} active branch${branchCount === 1 ? '' : 'es'}</small></div>
         <div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${departmentCount}</strong><small>Organization masters</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${salaryConfiguredLabel}</strong><small>${salaryConfigured===null?'Loaded only when Salary Setup opens':'Current numeric structures'}</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${salaryConfiguredLabel}</strong><small>${salaryConfigured===null?'Server summary loading':'Current salary structures'}</small></div>
         <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReadyLabel}</strong><small>${wpsReady===null?'Loaded only when Bank / WPS opens':'Bank / identity source records'}</small></div>
       </div>
       <section class="ui-v2-payroll-financial-shortcut ui-v2-prs-financial-shortcut">
@@ -1849,7 +2111,7 @@
         <section class="panel ui-v2-payroll-panel">
           <header><div><span>Payroll readiness</span><h2>Load only what you open</h2></div></header>
           <div class="ui-v2-payroll-attention">
-            <article><span>SS</span><div><strong>${salaryConfigured===null?'Salary setup deferred':`${Math.max(0,activeEmployeeCount-salaryConfigured)} salary records incomplete`}</strong><small>Salary structures are fetched only when Salary Setup is opened.</small></div></article>
+            <article><span>SS</span><div><strong>${salaryConfigured===null?'Salary summary loading':`${Math.max(0,activeEmployeeCount-salaryConfigured)} salary records incomplete`}</strong><small>Coverage comes from a server aggregate; full salary structures remain deferred until Salary Setup opens.</small></div></article>
             <article><span>BK</span><div><strong>${wpsReady===null?'Payment readiness deferred':`${Math.max(0,activeEmployeeCount-wpsReady)} employees not WPS-ready`}</strong><small>Bank/WPS readiness is fetched only when the payment workspace is opened.</small></div></article>
           </div>
         </section>
@@ -1969,29 +2231,34 @@
     return state.managementContexts[state.period] || null;
   }
 
+  function cancelManagementSummaryRequest() {
+    const server=state.managementSummaryServer;if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;state.managementLoadingPeriod=null;
+  }
+
   async function loadManagementContext(period = state.period, { render = true, force = false } = {}) {
-    if (state.managementLoadingPeriod === period) return;
-    if (!force && state.managementContexts[period]) return;
-    state.managementLoadingPeriod = period;
+    const key=String(period||state.period),server=state.managementSummaryServer;
+    if(!force&&server.key===key&&state.managementContexts[key])return true;if(server.pendingKey===key)return false;
+    cancelManagementSummaryRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=key;server.loading=true;server.error='';state.managementLoadingPeriod=key;
     try {
-      const payload = await appApi(`/api/management/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
-      const context = payload.management || {};
-      if (context.periodLabel) state.managementContexts[context.periodLabel] = context;
-      if (render && state.workspace === 'management') renderRoute();
+      const payload = await appApi(`/api/management/summary/?period=${encodeURIComponent(periodKeyFromLabel(key))}`,{signal:controller.signal});
+      if(requestId!==server.requestId)return false;const context = payload.management || {};
+      if (context.periodLabel) state.managementContexts[context.periodLabel] = context;server.key=key;
+      if (render && state.workspace === 'management') renderRoute();return true;
     } catch (error) {
-      showToast('Management data unavailable', error.message);
+      if(error?.name==='AbortError')return false;server.error=error.message;showToast('Management data unavailable', error.message);return false;
     } finally {
-      state.managementLoadingPeriod = null;
+      if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;state.managementLoadingPeriod=null;}
     }
   }
 
-  function managementApprovalItems() {
-    return managementCurrentContext()?.approvals || [];
-  }
+  function managementApprovalItems() { return managementCurrentContext()?.approvals || []; }
+  function managementApprovalRequest(){const params=new URLSearchParams({filter:state.managementApprovalFilter,page:String(state.managementApprovalPage||1),page_size:String(state.managementApprovalPageSize||50)});const url=`/api/management/approvals/?${params.toString()}`;return {url,key:url};}
+  function cancelManagementApprovalRequest(){const server=state.managementApprovalServer;if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;}
+  async function loadManagementApprovals({render=true,force=false}={}){const request=managementApprovalRequest(),server=state.managementApprovalServer;if(!force&&server.key===request.key&&state.managementApprovalContext)return true;if(server.pendingKey===request.key)return false;cancelManagementApprovalRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';try{const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;state.managementApprovalContext=payload;server.key=request.key;server.meta=payload.meta||{};if(render&&currentRoute()==='management-approvals')renderRoute();return true;}catch(error){if(error?.name==='AbortError')return false;server.error=error.message;showToast('Approval Center unavailable',error.message);if(render&&currentRoute()==='management-approvals')renderRoute();return false;}finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;}}}
 
-  function managementAuditEvents() {
-    return managementCurrentContext()?.audit || [];
-  }
+  function managementAuditRequest(){const params=new URLSearchParams({page:String(state.managementAuditPage||1),page_size:String(state.managementAuditPageSize||50)});if(state.managementAuditSearch.trim())params.set('q',state.managementAuditSearch.trim());if(state.managementAuditType!=='All activity')params.set('type',state.managementAuditType);const url=`/api/management/audit/?${params.toString()}`;return {url,key:url};}
+  function cancelManagementAuditRequest(){const server=state.managementAuditServer;if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;}
+  async function loadManagementAudit({render=true,force=false}={}){const request=managementAuditRequest(),server=state.managementAuditServer;if(!force&&server.key===request.key&&state.managementAuditContext)return true;if(server.pendingKey===request.key)return false;cancelManagementAuditRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';try{const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;state.managementAuditContext=payload;server.key=request.key;server.meta=payload.meta||{};if(render&&currentRoute()==='management-audit')renderRoute();return true;}catch(error){if(error?.name==='AbortError')return false;server.error=error.message;showToast('Audit Trail unavailable',error.message);if(render&&currentRoute()==='management-audit')renderRoute();return false;}finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;}}}
 
   function managementWorkspaceLink(workspace, route, label) {
     return `<button class="text-link" data-management-open="${escapeHtml(workspace)}|${escapeHtml(route)}">${escapeHtml(label)} →</button>`;
@@ -2006,16 +2273,16 @@
     const ctx = managementCurrentContext();
     if (!ctx) return managementLoadingTemplate('Loading company workforce control…');
     const internal = ctx.internal || {}, rental = ctx.rental || {}, payments = ctx.payments || {};
-    const approvals = ctx.approvals || [], critical = approvals.filter(item => item.severity === 'Critical').length;
+    const approvals = ctx.approvals || [], approvalSummary=ctx.approvalSummary||{};const critical=Number(approvalSummary.critical||0),approvalCount=Number(approvalSummary.count||approvals.length);
     return `<section class="page management-overview">
-      <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Company Control · ${escapeHtml(ctx.periodLabel || state.period)}</span><h1>Company Workforce Control</h1><p>Compare controlled Internal Company payroll and Rental Manpower settlement records without merging their operational ledgers.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="management-audit">Audit Trail</button><button class="btn btn--primary" data-route-link="management-approvals">Approval Center${approvals.length?` · ${approvals.length}`:''}</button></div></div>
+      <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Company Control · ${escapeHtml(ctx.periodLabel || state.period)}</span><h1>Company Workforce Control</h1><p>Compare controlled Internal Company payroll and Rental Manpower settlement records without merging their operational ledgers.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="management-audit">Audit Trail</button><button class="btn btn--primary" data-route-link="management-approvals">Approval Center${approvalCount?` · ${approvalCount}`:''}</button></div></div>
       <div class="management-boundary-banner"><span class="management-boundary-banner__icon">MG</span><div><strong>Read-only aggregate</strong><span>Financial values come from controlled payroll and supplier-settlement snapshots. Management does not calculate or mutate operational records.</span></div><span class="management-role-chip">${escapeHtml(roleDefinition().label)}</span></div>
       <div class="management-workforce-cards">
         <article class="management-workforce-card management-workforce-card--internal"><div class="management-workforce-card__head"><span>IC</span><div><strong>Internal Company</strong><small>Branches · Departments · Employees</small></div>${managementWorkspaceLink('internal','overview','Open workspace')}</div><div class="management-workforce-card__metrics"><div><span>Current employees</span><strong>${Number(ctx.headcount?.internal||0)}</strong></div><div><span>Selected payroll</span><strong>${internal.finalized?formatCurrency(internal.net):'Not finalized'}</strong><small>${escapeHtml(internal.status||'Not calculated')}</small></div><div><span>Salary payment outstanding</span><strong>${formatCurrency(payments.internal?.pending||0)}</strong><small>${Number(payments.internal?.failed||0)} failed/reversed</small></div></div></article>
         <article class="management-workforce-card management-workforce-card--rental"><div class="management-workforce-card__head"><span>RM</span><div><strong>Rental Manpower</strong><small>Suppliers · Workers · Projects</small></div>${managementWorkspaceLink('rental','overview','Open workspace')}</div><div class="management-workforce-card__metrics"><div><span>Currently assigned workers</span><strong>${Number(ctx.headcount?.rental||0)}</strong></div><div><span>Approved settlement cost</span><strong>${rental.finalized?formatCurrency(rental.net):'Not finalized'}</strong><small>${Number(rental.records||0)} settlement${Number(rental.records||0)===1?'':'s'}</small></div><div><span>Supplier outstanding</span><strong>${formatCurrency(payments.rental?.outstanding||0)}</strong><small>${Number(payments.rental?.failed||0)} failed/reversed</small></div></div></article>
       </div>
       <section class="panel panel--flush management-comparison-card"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(ctx.periodLabel || state.period)} cost comparability</h2><p>Combined cost is shown only when both domains have finalized records for the same period.</p></div><button class="text-link" data-route-link="management-cost">Full cost view →</button></div><div class="management-comparison-grid"><div><span>Internal finalized payroll</span><strong>${internal.finalized?formatCurrency(internal.net):'Not finalized'}</strong><small>${escapeHtml(internal.status||'—')}</small></div><div><span>Rental approved settlements</span><strong>${rental.finalized?formatCurrency(rental.net):'Not finalized'}</strong><small>${Number(rental.records||0)} finalized settlement${Number(rental.records||0)===1?'':'s'}</small></div><div class="${ctx.comparable?'is-comparable':'is-incomplete'}"><span>Comparable workforce cost</span><strong>${ctx.comparable?formatCurrency(ctx.combined):'Not comparable yet'}</strong><small>${ctx.comparable?'Both controlled sources are finalized.':'No estimated or draft values are added.'}</small></div></div></section>
-      <div class="grid-2 management-control-grid"><section class="panel"><div class="panel__head"><div><h2>Approval & exception center</h2><p>Cross-workspace attention while record ownership remains unchanged.</p></div><span class="placeholder__stage ${critical?'placeholder__stage--warn':''}">${critical?`${critical} critical`:`${approvals.length} open`}</span></div><div class="management-approval-mini">${approvals.slice(0,5).map(item=>`<button data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}"><span class="management-approval-dot management-approval-dot--${String(item.severity||'Review').toLowerCase()}"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div><em>${escapeHtml(item.workspace==='internal'?'Internal':'Rental')}</em>${icon('chevron')}</button>`).join('')||'<div class="empty-inline">No review or payment exceptions are currently recorded.</div>'}</div></section><section class="panel"><div class="panel__head"><div><h2>Access boundary</h2><p>Server-enforced access for the authenticated company membership.</p></div>${roleDefinition().view_access?'<button class="text-link" data-route-link="access-roles">View roles →</button>':''}</div><div class="management-access-summary"><div><span>Current role</span><strong>${escapeHtml(roleDefinition().label)}</strong><small>${escapeHtml(roleDefinition().description)}</small></div><div class="management-access-badges">${roleDefinition().workspaces.map(workspace=>`<span>${workspace==='internal'?'IC':workspace==='rental'?'RM':'MG'} · ${workspace}</span>`).join('')}</div></div></section></div>
+      <div class="grid-2 management-control-grid"><section class="panel"><div class="panel__head"><div><h2>Approval & exception center</h2><p>Cross-workspace attention while record ownership remains unchanged.</p></div><span class="placeholder__stage ${critical?'placeholder__stage--warn':''}">${critical?`${critical} critical`:`${approvalCount} open`}</span></div><div class="management-approval-mini">${approvals.slice(0,5).map(item=>`<button data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}"><span class="management-approval-dot management-approval-dot--${String(item.severity||'Review').toLowerCase()}"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div><em>${escapeHtml(item.workspace==='internal'?'Internal':'Rental')}</em>${icon('chevron')}</button>`).join('')||'<div class="empty-inline">No review or payment exceptions are currently recorded.</div>'}</div></section><section class="panel"><div class="panel__head"><div><h2>Access boundary</h2><p>Server-enforced access for the authenticated company membership.</p></div>${roleDefinition().view_access?'<button class="text-link" data-route-link="access-roles">View roles →</button>':''}</div><div class="management-access-summary"><div><span>Current role</span><strong>${escapeHtml(roleDefinition().label)}</strong><small>${escapeHtml(roleDefinition().description)}</small></div><div class="management-access-badges">${roleDefinition().workspaces.map(workspace=>`<span>${workspace==='internal'?'IC':workspace==='rental'?'RM':'MG'} · ${workspace}</span>`).join('')}</div></div></section></div>
     </section>`;
   }
 
@@ -2027,19 +2294,21 @@
   }
 
   function managementApprovalsTemplate() {
-    const ctx=managementCurrentContext(); if(!ctx)return managementLoadingTemplate('Loading approval center…');
-    const all=ctx.approvals||[]; const types=['All','Critical','Review','Payment','Internal Payroll','Rental Settlement','Adjustment'];
-    const rows=state.managementApprovalFilter==='All'?all:state.managementApprovalFilter==='Critical'||state.managementApprovalFilter==='Review'?all.filter(item=>item.severity===state.managementApprovalFilter):all.filter(item=>item.type===state.managementApprovalFilter);
-    const counts={critical:all.filter(i=>i.severity==='Critical').length,review:all.filter(i=>i.severity==='Review').length,internal:all.filter(i=>i.workspace==='internal').length,rental:all.filter(i=>i.workspace==='rental').length};
-    return `<section class="page management-approval-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Controls</span><h1>Approval Center</h1><p>A read-only consolidated queue of real workflow decisions and payment exceptions. Actions remain in each owning workspace.</p></div></div><div class="summary-strip summary-strip--4"><div class="summary-item ${counts.critical?'summary-item--attention':''}"><span>Critical</span><strong>${counts.critical}</strong><small>Payment exceptions</small></div><div class="summary-item"><span>Review queue</span><strong>${counts.review}</strong><small>Controlled next actions</small></div><div class="summary-item"><span>Internal Company</span><strong>${counts.internal}</strong></div><div class="summary-item"><span>Rental Manpower</span><strong>${counts.rental}</strong></div></div><section class="data-panel"><div class="management-approval-filters">${types.map(type=>`<button class="${state.managementApprovalFilter===type?'is-active':''}" data-management-approval-filter="${escapeHtml(type)}">${escapeHtml(type)}<span>${type==='All'?all.length:type==='Critical'?counts.critical:type==='Review'?counts.review:all.filter(item=>item.type===type).length}</span></button>`).join('')}</div><div class="management-approval-list">${rows.length?rows.map(item=>`<article class="management-approval-item management-approval-item--${String(item.severity||'Review').toLowerCase()}"><span class="management-approval-item__mark">${item.severity==='Critical'?'!':'R'}</span><div><div class="management-approval-item__meta"><span>${escapeHtml(item.workspace==='internal'?'Internal Company':'Rental Manpower')}</span><span>${escapeHtml(item.type)}</span><span>${escapeHtml(item.period||'')}</span></div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p></div><button class="btn btn--secondary btn--sm" data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}">Open owning record</button></article>`).join(''):'<div class="table-empty table-empty--card"><strong>No items in this filter.</strong><span>No matching controlled review/payment exceptions are currently recorded.</span></div>'}</div></section></section>`;
+    const request=managementApprovalRequest(),server=state.managementApprovalServer,context=state.managementApprovalContext;
+    if((!context||server.key!==request.key)&&server.pendingKey!==request.key)queueMicrotask(()=>loadManagementApprovals());
+    const rows=context?.approvals||[],summary=context?.summary||managementCurrentContext()?.approvalSummary||{},types=context?.filters?.types||['All','Critical','Review','Payment','Internal Payroll','Rental Settlement','Adjustment'];
+    const meta=context?.meta||server.meta||{},count=Number(meta.count||0),page=Number(meta.page||state.managementApprovalPage||1),pageSize=Number(meta.pageSize||state.managementApprovalPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
+    const typeCounts=summary.typeCounts||{};const filterCount=type=>type==='All'?Number(summary.count||0):type==='Critical'?Number(summary.critical||0):type==='Review'?Number(summary.review||0):Number(typeCounts[type]||0);
+    const list=server.error?`<div class="table-empty table-empty--card"><strong>Approval Center unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-management-approval-retry>Retry</button></div>`:rows.length?rows.map(item=>`<article class="management-approval-item management-approval-item--${String(item.severity||'Review').toLowerCase()}"><span class="management-approval-item__mark">${item.severity==='Critical'?'!':'R'}</span><div><div class="management-approval-item__meta"><span>${escapeHtml(item.workspace==='internal'?'Internal Company':'Rental Manpower')}</span><span>${escapeHtml(item.type)}</span><span>${escapeHtml(item.period||'')}</span></div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p></div><button class="btn btn--secondary btn--sm" data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}">Open owning record</button></article>`).join(''):`<div class="table-empty table-empty--card"><strong>${server.loading?'Loading approval records…':'No items in this filter.'}</strong><span>${server.loading?'Fetching one bounded page from the company database.':'No matching controlled review/payment exceptions are currently recorded.'}</span></div>`;
+    return `<section class="page management-approval-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Controls</span><h1>Approval Center</h1><p>A read-only consolidated queue of real workflow decisions and payment exceptions. Actions remain in each owning workspace.</p></div></div><div class="summary-strip summary-strip--4"><div class="summary-item ${Number(summary.critical||0)?'summary-item--attention':''}"><span>Critical</span><strong>${Number(summary.critical||0)}</strong><small>Payment exceptions</small></div><div class="summary-item"><span>Review queue</span><strong>${Number(summary.review||0)}</strong><small>Controlled next actions</small></div><div class="summary-item"><span>Internal Company</span><strong>${Number(summary.internal||0)}</strong></div><div class="summary-item"><span>Rental Manpower</span><strong>${Number(summary.rental||0)}</strong></div></div><section class="data-panel"><div class="management-approval-filters">${types.map(type=>`<button class="${state.managementApprovalFilter===type?'is-active':''}" data-management-approval-filter="${escapeHtml(type)}">${escapeHtml(type)}<span>${filterCount(type)}</span></button>`).join('')}</div><div class="management-approval-list">${list}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${Number(meta.rangeStart||0).toLocaleString()}</strong>–<strong>${Number(meta.rangeEnd||0).toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-management-approval-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-management-approval-page="${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="managementApprovalPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></section></section>`;
   }
 
   function managementAuditTemplate() {
-    const ctx=managementCurrentContext(); if(!ctx)return managementLoadingTemplate('Loading audit trail…');
-    const q=state.managementAuditSearch.trim().toLowerCase(); const all=ctx.audit||[];
-    const types=['All activity',...new Set(all.map(item=>item.type).filter(Boolean))];
-    const rows=all.filter(item=>{const typeMatch=state.managementAuditType==='All activity'||item.type===state.managementAuditType; const text=`${item.workspace} ${item.area||''} ${item.type||''} ${item.period||''} ${item.actor||''} ${item.action||''} ${item.detail||''}`.toLowerCase(); return typeMatch&&(!q||text.includes(q));});
-    return `<section class="page management-audit-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Governance</span><h1>Cross-workspace Audit Trail</h1><p>Append-only audit events captured by Django services across Internal Company, Rental Manpower, access, documents and core infrastructure.</p></div></div><section class="data-panel"><div class="table-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="managementAuditSearch" type="search" value="${escapeHtml(state.managementAuditSearch)}" placeholder="Search actor, action, reference…"></div><select class="select" id="managementAuditType">${types.map(type=>`<option ${state.managementAuditType===type?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select><span class="inline-stat"><strong>${rows.length}</strong> events</span></div><div class="management-audit-list">${rows.length?rows.map(item=>`<article class="management-audit-row"><span class="management-audit-row__workspace management-audit-row__workspace--${escapeHtml(item.workspace)}">${item.workspace==='internal'?'IC':item.workspace==='rental'?'RM':'MG'}</span><div class="management-audit-row__copy"><div><strong>${escapeHtml(item.action)}</strong><span>${escapeHtml(item.type||item.area||'Audit')}${item.period?` · ${escapeHtml(item.period)}`:''}</span></div><p>${escapeHtml(item.detail||'No additional record label.')}</p><small>${escapeHtml(item.actor||'System')} · ${escapeHtml(payrollTimestamp(item.date))}</small></div></article>`).join(''):'<div class="table-empty table-empty--card"><strong>No matching audit events.</strong><span>Change the filter to inspect other recorded events.</span></div>'}</div></section></section>`;
+    const request=managementAuditRequest(),server=state.managementAuditServer,context=state.managementAuditContext;
+    if((!context||server.key!==request.key)&&server.pendingKey!==request.key)queueMicrotask(()=>loadManagementAudit());
+    const rows=context?.audit||[],types=context?.filters?.types||['All activity'],meta=context?.meta||server.meta||{};const count=Number(meta.count||0),page=Number(meta.page||state.managementAuditPage||1),pageSize=Number(meta.pageSize||state.managementAuditPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
+    const list=server.error?`<div class="table-empty table-empty--card"><strong>Audit Trail unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-management-audit-retry>Retry</button></div>`:rows.length?rows.map(item=>`<article class="management-audit-row"><span class="management-audit-row__workspace management-audit-row__workspace--${escapeHtml(item.workspace)}">${item.workspace==='internal'?'IC':item.workspace==='rental'?'RM':'MG'}</span><div class="management-audit-row__copy"><div><strong>${escapeHtml(item.action)}</strong><span>${escapeHtml(item.type||item.area||'Audit')}${item.period?` · ${escapeHtml(item.period)}`:''}</span></div><p>${escapeHtml(item.detail||'No additional record label.')}</p><small>${escapeHtml(item.actor||'System')} · ${escapeHtml(payrollTimestamp(item.date))}</small></div></article>`).join(''):`<div class="table-empty table-empty--card"><strong>${server.loading?'Loading audit events…':'No matching audit events.'}</strong><span>${server.loading?'Fetching one bounded page from the append-only audit ledger.':'Change the filter to inspect other recorded events.'}</span></div>`;
+    return `<section class="page management-audit-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Governance</span><h1>Cross-workspace Audit Trail</h1><p>Append-only audit events captured by Django services across Internal Company, Rental Manpower, access, documents and core infrastructure.</p></div></div><section class="data-panel"><div class="table-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="managementAuditSearch" type="search" value="${escapeHtml(state.managementAuditSearch)}" placeholder="Search actor, action, reference…"></div><select class="select" id="managementAuditType">${types.map(type=>`<option ${state.managementAuditType===type?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select><span class="inline-stat"><strong>${count.toLocaleString()}</strong> events</span></div><div class="management-audit-list">${list}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${Number(meta.rangeStart||0).toLocaleString()}</strong>–<strong>${Number(meta.rangeEnd||0).toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-management-audit-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-management-audit-page="${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="managementAuditPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></section></section>`;
   }
 
   function accessRolesTemplate() {
@@ -2063,7 +2332,8 @@
   }
 
   function branchPayrollTotals(branchId) {
-    const rows = payrollRowsForDisplay().filter(row => row.branchId === branchId || state.employees.find(employee => employee.id === row.employeeId)?.branchId === branchId);
+    const branch=state.branches.find(item=>item.id===branchId);
+    const rows = payrollRowsForDisplay().filter(row => row.branchId === branchId || (!!branch && row.branch === branch.name));
     return payrollTotals(rows);
   }
 
@@ -2081,8 +2351,7 @@
   function departmentPayrollTotals(departmentIdOrName) {
     const department = state.departments.find(item => item.id === departmentIdOrName) || departmentByName(departmentIdOrName);
     if (!department) return payrollTotals([]);
-    const currentIds = new Set(departmentEmployees(department.id).map(employee => employee.id));
-    return payrollTotals(payrollRowsForDisplay().filter(row => row.department ? row.department === department.name : currentIds.has(row.employeeId)));
+    return payrollTotals(payrollRowsForDisplay().filter(row => row.department === department.name || row.departmentId === department.id));
   }
 
   function employeeOrganizationHistory(employee) {
@@ -2113,49 +2382,58 @@
     if (!branches.some(item => item.id === state.branchSelectedId)) state.branchSelectedId = branches[0]?.id || '';
     const selected = branches.find(item => item.id === state.branchSelectedId) || branches[0] || null;
     const active = state.branches.filter(branch => branch.status === 'Active').length;
-    const activeEmployees = state.employees.filter(employee => employee.status === 'Active');
-    const unassigned = state.employees.filter(employee => !employee.branchId).length;
-    const selectedEmployees = selected ? branchEmployees(selected.id) : [];
+    const assigned = state.branches.reduce((sum,branch)=>sum+Number(branch.employeeCount||0),0);
+    const companyEmployeeCount=Number(state.employeeDirectorySummary?.employeeCount ?? state.internalMasterSummary?.employeeCount ?? assigned);
+    const unassigned=Math.max(0,companyEmployeeCount-assigned);
+    const selectedContext=selected?organizationEmployeeContext('branch',selected.id):null;
+    const selectedSummary=selectedContext?.summary||{};
+    const selectedEmployeeCount=Number(selectedSummary.employeeCount ?? selected?.employeeCount ?? 0);
+    const selectedActiveCount=Number(selectedSummary.activeEmployeeCount ?? selected?.activeEmployeeCount ?? 0);
+    const selectedDepartments=selectedContext?Number((selectedSummary.departmentDistribution||[]).length):null;
+    const selectedReady=selectedContext?Number(selectedSummary.wpsConfiguredCount||0):null;
     const selectedTotals = selected ? branchPayrollTotals(selected.id) : payrollTotals([]);
-    const selectedReady = selectedEmployees.filter(employee => employee.wps === 'Ready').length;
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Branches & Offices</h1><p class="ui-v2-body">Company offices are organization masters for internal employees. Inactive values remain in history but are unavailable for new assignments.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="departments">Departments</button><button class="btn btn--primary" data-quick-add="branch">${icon('plus')} Add Branch / Office</button></div></div>
-      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${state.employees.filter(employee=>!employee.deleted).length - unassigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All current employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${largestBranchActive}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Reversible cascade</strong><small>Archive or 30-day Delete</small></div></div>
+      <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Branches / offices</span><strong>${state.branches.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>${unassigned ? `${unassigned} need branch assignment` : 'All current employee masters assigned'}</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest branch</span><strong>${largestBranchActive}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Reversible cascade</strong><small>Archive or 30-day Delete</small></div></div>
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="branchSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.branchSearch)}" placeholder="Search branch, code, city, manager or address"></div><select id="branchStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter branch status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.branchStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="branchSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort branches"><option value="code-asc" ${state.branchSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.branchSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.branchSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.branchSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.branchSearch || state.branchStatus !== 'Active' || state.branchSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-branch-reset>Reset</button>' : ''}</div></section>
       ${branches.length ? `<div class="ui-v2-payroll-master-grid">
         <section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Branch / office directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="branch">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${branches.map(branch => { const activeCount=branchActiveCounts.get(branch.id)||0; return `<button type="button" data-select-branch="${escapeHtml(branch.id)}" class="${selected?.id === branch.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('branch')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.code)} · ${escapeHtml(branch.type || 'Branch')} · ${escapeHtml(branch.location || 'Location not set')}${branch.status !== 'Active' ? ` · ${escapeHtml(branch.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${activeCount}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section>
-        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Departments represented</span><strong>${branchDepartmentCount(selected.id)}</strong></div><div><span>WPS ready</span><strong>${selectedReady}/${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore previous state':'Archive branch / office and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
+        <section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('branch')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>${escapeHtml(selected.location || 'Location not set')}</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedActiveCount}</strong></div><div><span>Departments represented</span><strong>${selectedDepartments==null?'Open':selectedDepartments}</strong></div><div><span>WPS profiles ready</span><strong>${selectedReady==null?'Open':`${selectedReady}/${selectedEmployeeCount}`}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-branch="${escapeHtml(selected.id)}">Open branch</button><button class="btn btn--secondary btn--sm" data-branch-employees-filter="${escapeHtml(selected.id)}">View employees</button>${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update current master details',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive branch / office',hint:selected.archived?'Restore previous state':'Archive branch / office and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section>
       </div>` : `<section class="ui-v2-payroll-panel">${directoryEmptyState('branches',directory,'<div class="table-empty table-empty--card"><strong>No branches match these filters.</strong><span>Change the search/status filter or add a new office master.</span><button class="btn btn--primary btn--sm" data-quick-add="branch">Add Branch / Office</button></div>')}</section>`}
       ${directoryPagination('branches',directory.meta)}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branches and offices are company-controlled masters. Moving an employee creates effective-dated organization history rather than rewriting prior payroll context.</span></div>
     </section>`;
   }
 
-  function branchProfileTemplate(branch) {
+  function branchProfileTemplate(branch, context=null) {
     if (!branch) return `<section class="page"><div class="placeholder"><div class="placeholder__inner"><h2>Branch not found</h2><button class="btn btn--secondary" data-route-link="branches">Back to Branches</button></div></div></section>`;
-    const employees = branchEmployees(branch.id);
-    const departmentRows = state.departments.map(department=>({department,employees:employees.filter(item=>item.departmentId===department.id || item.department===department.name)})).filter(row=>row.employees.length);
+    if (!context) return `<section class="page"><div class="table-empty table-empty--card"><strong>Loading branch workforce…</strong><span>Fetching a bounded employee page and server-side branch totals.</span></div></section>`;
+    const employees=[...(context.rows||[])];
+    const summary=context.summary||{};
+    const employeeCount=Number(summary.employeeCount ?? branch.employeeCount ?? employees.length);
+    const activeCount=Number(summary.activeEmployeeCount ?? branch.activeEmployeeCount ?? 0);
+    const wpsReady=Number(summary.wpsConfiguredCount||0);
+    const salaryReady=Number(summary.salaryConfiguredCount||0);
+    const attendanceEntered=Number(summary.attendanceEnteredCount||0);
+    const departmentRows=(summary.departmentDistribution||[]).map(item=>({department:state.departments.find(department=>department.id===item.id)||{id:item.id,name:item.name},count:Number(item.count||0)}));
     const totals = branchPayrollTotals(branch.id);
-    const wpsReady = employees.filter(item=>item.wps==='Ready').length;
-    const activeEmployees = employees.filter(item=>item.status==='Active');
-    const timesheetRecord = state.timesheets?.[state.internalTimesheetPeriod || state.period] || {};
-    const attendanceEntered = employees.filter(employee=>timesheetRecord[employee.id]).length;
     const tab = state.branchTab;
+    const rosterNote=employeeCount>employees.length?`<div class="table-meta"><span>Showing <strong>${employees.length}</strong> of <strong>${employeeCount}</strong> employees.</span><button class="text-link" data-branch-employees-filter="${escapeHtml(branch.id)}">Open full employee register →</button></div>`:'';
     let content = '';
     if (tab === 'employees') {
-      content = `<section class="data-panel"><div class="section-headline"><div><h2>Employees in ${escapeHtml(branch.name)}</h2><p>Branch membership is organizational—not a project assignment.</p></div><button class="btn btn--primary btn--sm" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Salary Setup</th><th>WPS</th><th>Status</th><th></th></tr></thead><tbody>${employees.length?employees.map(employee=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id)}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}</span></button></td><td>${escapeHtml(employee.position)}</td><td>${departmentByName(employee.department)?`<button class="entity-link" data-open-department="${escapeHtml(employee.departmentId || departmentByName(employee.department)?.id)}">${escapeHtml(employee.department)}</button>`:escapeHtml(employee.department)}</td><td>${employeeProfileData(employee).salary?'<span class="readiness readiness--ready"><span></span>Configured</span>':'<span class="readiness readiness--warn"><span></span>Needs setup</span>'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${statusBadge(employee.status)}</td><td><button class="icon-btn icon-btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}" title="Change branch / department">${icon('edit')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No employees in this branch.</strong><span>Add or transfer an internal employee here.</span></div></td></tr>`}</tbody></table></div></section>`;
+      content = `<section class="data-panel"><div class="section-headline"><div><h2>Employees in ${escapeHtml(branch.name)}</h2><p>Branch membership is organizational—not a project assignment.</p></div><button class="btn btn--primary btn--sm" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button></div>${rosterNote}<div class="table-scroll"><table class="data-table"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Salary Setup</th><th>WPS</th><th>Status</th><th></th></tr></thead><tbody>${employees.length?employees.map(employee=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id)}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}</span></button></td><td>${escapeHtml(employee.position)}</td><td>${employee.departmentId?`<button class="entity-link" data-open-department="${escapeHtml(employee.departmentId)}">${escapeHtml(employee.department)}</button>`:escapeHtml(employee.department||'—')}</td><td>${employee.salaryConfigured?'<span class="readiness readiness--ready"><span></span>Configured</span>':'<span class="readiness readiness--warn"><span></span>Needs setup</span>'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${statusBadge(employee.status)}</td><td><button class="icon-btn icon-btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}" title="Change branch / department">${icon('edit')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No employees in this branch.</strong><span>Add or transfer an internal employee here.</span></div></td></tr>`}</tbody></table></div></section>`;
     } else if (tab === 'departments') {
-      content = `<section class="data-panel"><div class="section-headline"><div><h2>Departments represented</h2><p>Department masters are reusable across multiple offices.</p></div><button class="btn btn--secondary btn--sm" data-quick-add="department">${icon('plus')} Add Department</button></div><div class="department-card-grid">${departmentRows.length?departmentRows.map(({department,employees:rows})=>{const deptTotals=departmentPayrollTotals(department.id);return `<button class="department-card organization-department-card" data-open-department="${escapeHtml(department.id)}"><span>${icon('department')}</span><div><strong>${escapeHtml(department.name)}</strong><small>${rows.length} employee${rows.length===1?'':'s'} in this branch · ${formatCurrency(deptTotals.net||0)} total dept net</small></div>${icon('chevron')}</button>`}).join(''):`<div class="table-empty table-empty--card"><strong>No represented departments</strong><span>Add employees or change their organization assignment.</span></div>`}</div></section>`;
+      content = `<section class="data-panel"><div class="section-headline"><div><h2>Departments represented</h2><p>Department masters are reusable across multiple offices.</p></div><button class="btn btn--secondary btn--sm" data-quick-add="department">${icon('plus')} Add Department</button></div><div class="department-card-grid">${departmentRows.length?departmentRows.map(({department,count})=>{const deptTotals=departmentPayrollTotals(department.id);return `<button class="department-card organization-department-card" data-open-department="${escapeHtml(department.id)}"><span>${icon('department')}</span><div><strong>${escapeHtml(department.name)}</strong><small>${count} employee${count===1?'':'s'} in this branch · ${formatCurrency(deptTotals.net||0)} total dept net</small></div>${icon('chevron')}</button>`}).join(''):`<div class="table-empty table-empty--card"><strong>No represented departments</strong><span>Add employees or change their organization assignment.</span></div>`}</div></section>`;
     } else if (tab === 'attendance') {
-      content = `<div class="profile-grid profile-grid--wide-side"><section class="panel panel--flush"><div class="section-headline"><div><h2>${escapeHtml(state.internalTimesheetPeriod || state.period)} attendance</h2><p>Branch-scoped view of internal attendance readiness.</p></div><button class="btn btn--primary btn--sm" data-open-branch-timesheet="${escapeHtml(branch.id)}">Open Attendance</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${activeEmployees.length} active</small></div><div><span>Attendance entered</span><strong>${attendanceEntered}/${employees.length}</strong><small>Current internal timesheet</small></div><div><span>Timesheet status</span><strong>${escapeHtml(timesheetStatus())}</strong><small>Company-wide period status</small></div><div><span>Branch WPS ready</span><strong>${wpsReady}/${employees.length}</strong><small>Bank/identity setup</small></div></div></section><aside class="detail-card"><div class="detail-card__head"><h3>Branch payroll control</h3></div><p>Attendance is filtered by branch, but approval remains part of the controlled internal-company timesheet and payroll period.</p></aside></div>`;
+      content = `<div class="profile-grid profile-grid--wide-side"><section class="panel panel--flush"><div class="section-headline"><div><h2>${escapeHtml(state.internalTimesheetPeriod || state.period)} attendance</h2><p>Branch-scoped view of internal attendance readiness.</p></div><button class="btn btn--primary btn--sm" data-open-branch-timesheet="${escapeHtml(branch.id)}">Open Attendance</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employeeCount}</strong><small>${activeCount} active</small></div><div><span>Attendance entered</span><strong>${attendanceEntered}/${employeeCount}</strong><small>Employees with recorded period entries</small></div><div><span>Timesheet status</span><strong>${escapeHtml(timesheetStatus())}</strong><small>Company-wide period status</small></div><div><span>WPS profiles ready</span><strong>${wpsReady}/${employeeCount}</strong><small>Active WPS-enabled profiles</small></div></div></section><aside class="detail-card"><div class="detail-card__head"><h3>Branch payroll control</h3></div><p>Attendance is filtered by branch, but approval remains part of the controlled internal-company timesheet and payroll period.</p></aside></div>`;
     } else if (tab === 'payroll') {
-      content = `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(state.period)} branch payroll</h2><p>Internal salary totals grouped by company branch.</p></div><button class="btn btn--secondary btn--sm" data-open-branch-payroll="${escapeHtml(branch.id)}">Open Payroll Run</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong></div><div><span>Gross payroll</span><strong>${formatCurrency(totals.gross||0)}</strong></div><div><span>Deductions</span><strong>${formatCurrency((totals.advances||0)+(totals.deductions||0))}</strong></div><div><span>Net payable</span><strong>${formatCurrency(totals.net||0)}</strong></div></div></section>`;
+      content = `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(state.period)} branch payroll</h2><p>Internal salary totals grouped by company branch.</p></div><button class="btn btn--secondary btn--sm" data-open-branch-payroll="${escapeHtml(branch.id)}">Open Payroll Run</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employeeCount}</strong></div><div><span>Gross payroll</span><strong>${formatCurrency(totals.gross||0)}</strong></div><div><span>Deductions</span><strong>${formatCurrency((totals.advances||0)+(totals.deductions||0))}</strong></div><div><span>Net payable</span><strong>${formatCurrency(totals.net||0)}</strong></div></div></section>`;
     } else if (tab === 'documents') {
-      content = `<section class="data-panel"><div class="section-headline"><div><h2>Branch payroll documents</h2><p>Salary slips and internal-company documents remain employee/payroll records but can be reviewed by branch.</p></div><button class="btn btn--secondary btn--sm" data-route-link="documents">Open Document Center</button></div><div class="document-grid"><button class="document-tile" data-route-link="documents"><span>SL</span><div><strong>Salary Slips</strong><small>${employees.length} branch employees</small></div><em>Internal</em>${icon('chevron')}</button><button class="document-tile" data-route-link="bank-export"><span>BK</span><div><strong>Bank / WPS Export</strong><small>${wpsReady}/${employees.length} WPS-ready employees</small></div><em>Payment</em>${icon('chevron')}</button></div></section>`;
+      content = `<section class="data-panel"><div class="section-headline"><div><h2>Branch payroll documents</h2><p>Salary slips and internal-company documents remain employee/payroll records but can be reviewed by branch.</p></div><button class="btn btn--secondary btn--sm" data-route-link="documents">Open Document Center</button></div><div class="document-grid"><button class="document-tile" data-route-link="documents"><span>SL</span><div><strong>Salary Slips</strong><small>${employeeCount} branch employees</small></div><em>Internal</em>${icon('chevron')}</button><button class="document-tile" data-route-link="bank-export"><span>BK</span><div><strong>Bank / WPS Export</strong><small>${wpsReady}/${employeeCount} WPS-profile-ready employees</small></div><em>Payment</em>${icon('chevron')}</button></div></section>`;
     } else {
-      content = `<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Organization snapshot</h2><p>Employees and departments attached to this company office.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${activeEmployees.length} active</small></div><div><span>Departments</span><strong>${departmentRows.length}</strong><small>Represented in this branch</small></div><div><span>WPS ready</span><strong>${wpsReady}/${employees.length}</strong><small>Bank / identity readiness</small></div><div><span>Net payroll</span><strong>${formatCurrency(totals.net||0)}</strong><small>${escapeHtml(state.period)}</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department mix</h2><p>Current employee-master assignments.</p></div></div><div class="composition-block">${departmentRows.length?departmentRows.map(({department,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-department="${escapeHtml(department.id)}">${escapeHtml(department.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employees assigned yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Branch details</h3><button class="text-link" data-edit-branch="${escapeHtml(branch.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(branch.code)}</dd></div><div><dt>Type</dt><dd>${escapeHtml(branch.type||'Branch')}</dd></div><div><dt>Location</dt><dd>${escapeHtml(branch.location)}</dd></div><div><dt>Address</dt><dd>${escapeHtml(branch.address||'—')}</dd></div><div><dt>Manager</dt><dd>${escapeHtml(branch.manager||'—')}</dd></div><div><dt>Status</dt><dd>${escapeHtml(branch.status)}</dd></div>${branch.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(branch.archivedReason)}</dd></div>`:''}</dl></section><section class="detail-card"><div class="detail-card__head"><h3>Quick actions</h3></div><div class="stack-actions"><button data-open-branch-timesheet="${escapeHtml(branch.id)}">Attendance & OT ${icon('chevron')}</button><button data-open-branch-payroll="${escapeHtml(branch.id)}">Branch Payroll ${icon('chevron')}</button><button data-route-link="bank-export">Bank / WPS ${icon('chevron')}</button></div></section></aside></div>`;
+      content = `<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Organization snapshot</h2><p>Employees and departments attached to this company office.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employeeCount}</strong><small>${activeCount} active</small></div><div><span>Departments</span><strong>${departmentRows.length}</strong><small>Represented in this branch</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employeeCount}</strong><small>Current structures</small></div><div><span>WPS profiles ready</span><strong>${wpsReady}/${employeeCount}</strong><small>Active WPS-enabled profiles</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department mix</h2><p>Current employee-master assignments.</p></div></div><div class="composition-block">${departmentRows.length?departmentRows.map(({department,count})=>{const pct=employeeCount?Math.round(count/employeeCount*100):0;return `<div class="composition-row"><button class="text-link" data-open-department="${escapeHtml(department.id)}">${escapeHtml(department.name)}</button><div><i style="width:${pct}%"></i></div><strong>${count}</strong></div>`}).join(''):'<div class="empty-inline">No employees assigned yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Branch details</h3><button class="text-link" data-edit-branch="${escapeHtml(branch.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(branch.code)}</dd></div><div><dt>Type</dt><dd>${escapeHtml(branch.type||'Branch')}</dd></div><div><dt>Location</dt><dd>${escapeHtml(branch.location)}</dd></div><div><dt>Address</dt><dd>${escapeHtml(branch.address||'—')}</dd></div><div><dt>Manager</dt><dd>${escapeHtml(branch.manager||'—')}</dd></div><div><dt>Status</dt><dd>${escapeHtml(branch.status)}</dd></div>${branch.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(branch.archivedReason)}</dd></div>`:''}</dl></section><section class="detail-card"><div class="detail-card__head"><h3>Quick actions</h3></div><div class="stack-actions"><button data-open-branch-timesheet="${escapeHtml(branch.id)}">Attendance & OT ${icon('chevron')}</button><button data-open-branch-payroll="${escapeHtml(branch.id)}">Branch Payroll ${icon('chevron')}</button><button data-route-link="bank-export">Bank / WPS ${icon('chevron')}</button></div></section></aside></div>`;
     }
-    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employees.length} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${branch.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(branch.id)}"`},'separator',{label:branch.archived?'Restore from archive':'Archive branch / office',hint:branch.archived?'Restore previous state':'Archive branch and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|${branch.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch assignments are effective-dated internal organization records and remain separate from rental project assignments.</span></div></section>`;
+    return `<section class="page branch-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="branches">Branches & Offices</button><span>›</span><span>${escapeHtml(branch.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--project">${icon('branch')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(branch.name)}</h1>${statusBadge(branch.status)}</div><div class="entity-subline"><span>${escapeHtml(branch.code)}</span><span>·</span><span>${escapeHtml(branch.location)}</span><span>·</span><span>${employeeCount} employees</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${branch.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-branch-context="${escapeHtml(branch.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit branch / office',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-branch="${escapeHtml(branch.id)}"`},'separator',{label:branch.archived?'Restore from archive':'Archive branch / office',hint:branch.archived?'Restore previous state':'Archive branch and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|${branch.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="branch|${escapeHtml(branch.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['departments','Departments'],['attendance','Attendance & OT'],['payroll','Payroll'],['documents','Documents']].map(([id,label])=>`<button data-branch-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Branch profiles use server-side totals and a bounded 50-row workforce preview; the full employee register remains server-paginated.</span></div></section>`;
   }
 
   function departmentsTemplate() {
@@ -2165,40 +2443,48 @@
     if (!departments.some(item => item.id === state.departmentSelectedId)) state.departmentSelectedId = departments[0]?.id || '';
     const selected = departments.find(item => item.id === state.departmentSelectedId) || departments[0] || null;
     const active = state.departments.filter(item=>item.status==='Active').length;
-    const assigned = state.employees.filter(item=>item.department).length;
+    const assigned = Number(state.employeeDirectorySummary?.employeeCount ?? state.internalMasterSummary?.employeeCount ?? 0);
     const counts = state.departments.map(department => Number(department.activeEmployeeCount || 0));
-    const selectedEmployees = selected ? departmentEmployees(selected.id) : [];
-    const selectedBranches = new Set(selectedEmployees.map(employee=>employee.branchId).filter(Boolean)).size;
+    const selectedContext=selected?organizationEmployeeContext('department',selected.id):null;
+    const selectedSummary=selectedContext?.summary||{};
+    const selectedEmployeeCount=Number(selectedSummary.employeeCount ?? selected?.employeeCount ?? 0);
+    const selectedActiveCount=Number(selectedSummary.activeEmployeeCount ?? selected?.activeEmployeeCount ?? 0);
+    const selectedBranches=selectedContext?Number((selectedSummary.branchDistribution||[]).length):null;
     const selectedTotals = selected ? departmentPayrollTotals(selected.id) : payrollTotals([]);
     return `<section class="page ui-v2-payroll-page ui-v2-prs-internal-page ui-v2-prs-organization-master">
       <div class="page-head ui-v2-page-header ui-v2-payroll-page-head"><div class="page-head__copy ui-v2-page-header__copy"><span class="eyebrow ui-v2-eyebrow">Internal Company · Organization</span><h1 class="ui-v2-title-lg">Departments</h1><p class="ui-v2-body">Departments are published organization masters used across employee assignment, filtering and reporting. Inactive values remain available to historical records.</p></div><div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="branches">Branches & Offices</button><button class="btn btn--primary" data-quick-add="department">${icon('plus')} Add Department</button></div></div>
       <div class="summary-strip ui-v2-payroll-summary-strip"><div class="summary-item ui-v2-payroll-metric"><span>Departments</span><strong>${state.departments.length}</strong><small>${active} active</small></div><div class="summary-item ui-v2-payroll-metric"><span>Employees assigned</span><strong>${assigned}</strong><small>Internal company records</small></div><div class="summary-item ui-v2-payroll-metric"><span>Largest department</span><strong>${Math.max(0,...counts)}</strong><small>Active employees</small></div><div class="summary-item ui-v2-payroll-metric"><span>Master policy</span><strong>Deactivate</strong><small>No destructive delete of referenced values</small></div></div>
       <section class="ui-v2-payroll-panel ui-v2-prs-master-filter"><div class="ui-v2-payroll-register__toolbar"><div class="table-toolbar__search ui-v2-filter-bar__search">${icon('search')}<input id="departmentSearch" class="ui-v2-input" type="search" value="${escapeHtml(state.departmentSearch)}" placeholder="Search department, code or notes"></div><select id="departmentStatusFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Filter department status">${['All','Active','Inactive','Archived'].map(status => `<option value="${status}" ${state.departmentStatus === status ? 'selected' : ''}>${status === 'All' ? 'All statuses' : status}</option>`).join('')}</select><select id="departmentSortFilter" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Sort departments"><option value="code-asc" ${state.departmentSort==='code-asc'?'selected':''}>Code A–Z</option><option value="name-asc" ${state.departmentSort==='name-asc'?'selected':''}>Name A–Z</option><option value="name-desc" ${state.departmentSort==='name-desc'?'selected':''}>Name Z–A</option><option value="employees-desc" ${state.departmentSort==='employees-desc'?'selected':''}>Most employees</option></select>${state.departmentSearch || state.departmentStatus !== 'Active' || state.departmentSort !== 'code-asc' ? '<button class="btn btn--secondary btn--sm" type="button" data-department-reset>Reset</button>' : ''}</div></section>
-      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedEmployees.filter(employee=>employee.status==='Active').length}</strong></div><div><span>Branches represented</span><strong>${selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployees.length}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel">${directoryEmptyState('departments',directory,'<div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div>')}</section>`}
+      ${departments.length ? `<div class="ui-v2-payroll-master-grid"><section class="ui-v2-payroll-panel ui-v2-payroll-master-list"><header><div><span>Organization</span><h2>Department directory</h2></div><button class="btn btn--ghost btn--sm" data-quick-add="department">${icon('plus')} Add</button></header><div class="ui-v2-payroll-list">${departments.map(department => { const count=departmentActiveCounts.get(department.id)||0; return `<button type="button" data-select-department="${escapeHtml(department.id)}" class="${selected?.id === department.id ? 'is-selected' : ''}"><span class="ui-v2-payroll-list__icon">${icon('department')}</span><span class="ui-v2-payroll-list__copy"><strong>${escapeHtml(department.name)}</strong><small>${escapeHtml(department.code)} · Internal Company${department.status !== 'Active' ? ` · ${escapeHtml(department.status)}` : ''}</small></span><span class="ui-v2-payroll-list__value"><strong>${count}</strong><small>employees</small></span>${icon('chevron')}</button>`; }).join('')}</div></section><section class="ui-v2-payroll-panel ui-v2-payroll-master-detail"><header><div><span>${escapeHtml(selected.code)}</span><h2>${escapeHtml(selected.name)}</h2></div>${statusBadge(selected.status)}</header><div class="ui-v2-payroll-master-detail__hero"><span>${icon('department')}</span><div><strong>${escapeHtml(selected.name)}</strong><small>Internal Company organization department</small></div></div><div class="ui-v2-payroll-master-detail__stats"><div><span>Active employees</span><strong>${selectedActiveCount}</strong></div><div><span>Branches represented</span><strong>${selectedBranches==null?'Open':selectedBranches}</strong></div><div><span>Total records</span><strong>${selectedEmployeeCount}</strong></div><div><span>${escapeHtml(state.period)} net</span><strong>${formatCurrency(selectedTotals.net || 0)}</strong></div></div><div class="ui-v2-payroll-master-detail__actions"><button class="btn btn--primary btn--sm" data-open-department="${escapeHtml(selected.id)}">Open department</button><button class="btn btn--secondary btn--sm" data-department-employees-filter="${escapeHtml(selected.id)}">Open employees</button>${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current department master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(selected.id)}"`},'separator',{label:selected.archived?'Restore from archive':'Archive department',hint:selected.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|${selected.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(selected.id)}|delete"`}],{compact:true})}</div></section></div>` : `<section class="ui-v2-payroll-panel">${directoryEmptyState('departments',directory,'<div class="table-empty table-empty--card"><strong>No departments match these filters.</strong><span>Change the search/status filter or add a department master.</span><button class="btn btn--primary btn--sm" data-quick-add="department">Add Department</button></div>')}</section>`}
       ${directoryPagination('departments',directory.meta)}
       <div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department edits affect the current master only; employee organization history and closed payroll snapshots remain attributable to their original effective records.</span></div>
     </section>`;
   }
 
-  function departmentProfileTemplate(department) {
+  function departmentProfileTemplate(department, context=null) {
     if (!department) return `<section class="page"><div class="placeholder"><div class="placeholder__inner"><h2>Department not found</h2><button class="btn btn--secondary" data-route-link="departments">Back to Departments</button></div></div></section>`;
-    const employees = departmentEmployees(department.id);
-    const branchRows = state.branches.map(branch=>({branch,employees:employees.filter(employee=>employee.branchId===branch.id)})).filter(row=>row.employees.length);
+    if (!context) return `<section class="page"><div class="table-empty table-empty--card"><strong>Loading department workforce…</strong><span>Fetching a bounded employee page and server-side department totals.</span></div></section>`;
+    const employees=[...(context.rows||[])];
+    const summary=context.summary||{};
+    const employeeCount=Number(summary.employeeCount ?? department.employeeCount ?? employees.length);
+    const activeCount=Number(summary.activeEmployeeCount ?? department.activeEmployeeCount ?? 0);
+    const ready=Number(summary.wpsConfiguredCount||0);
+    const salaryReady=Number(summary.salaryConfiguredCount||0);
+    const branchRows=(summary.branchDistribution||[]).map(item=>({branch:state.branches.find(branch=>branch.id===item.id)||{id:item.id,name:item.name},count:Number(item.count||0)}));
     const totals = departmentPayrollTotals(department.id);
-    const ready = employees.filter(employee=>employee.wps==='Ready').length;
-    const salaryReady = employees.filter(employee=>!!employeeProfileData(employee).salary).length;
     const tab = state.departmentTab;
+    const rosterNote=employeeCount>employees.length?`<div class="table-meta"><span>Showing <strong>${employees.length}</strong> of <strong>${employeeCount}</strong> employees.</span><button class="text-link" data-department-employees-filter="${escapeHtml(department.id)}">Open full employee register →</button></div>`:'';
     let content='';
     if (tab==='employees') {
-      content=`<section class="data-panel"><div class="section-headline"><div><h2>${escapeHtml(department.name)} employees</h2><p>Employees across every branch using this department master.</p></div><button class="btn btn--primary btn--sm" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Employee</th><th>Position</th><th>Branch / Office</th><th>Salary Setup</th><th>WPS</th><th>Status</th><th></th></tr></thead><tbody>${employees.length?employees.map(employee=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id)}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}</span></button></td><td>${escapeHtml(employee.position)}</td><td>${employee.branchId?`<button class="entity-link" data-open-branch="${escapeHtml(employee.branchId)}">${escapeHtml(employee.branch)}</button>`:'—'}</td><td>${employeeProfileData(employee).salary?'<span class="readiness readiness--ready"><span></span>Configured</span>':'<span class="readiness readiness--warn"><span></span>Needs setup</span>'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${statusBadge(employee.status)}</td><td><button class="icon-btn icon-btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">${icon('edit')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No employees in this department.</strong><span>Add a company employee or change an existing employee's department.</span></div></td></tr>`}</tbody></table></div></section>`;
+      content=`<section class="data-panel"><div class="section-headline"><div><h2>${escapeHtml(department.name)} employees</h2><p>Employees across every branch using this department master.</p></div><button class="btn btn--primary btn--sm" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button></div>${rosterNote}<div class="table-scroll"><table class="data-table"><thead><tr><th>Employee</th><th>Position</th><th>Branch / Office</th><th>Salary Setup</th><th>WPS</th><th>Status</th><th></th></tr></thead><tbody>${employees.length?employees.map(employee=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id)}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}</span></button></td><td>${escapeHtml(employee.position)}</td><td>${employee.branchId?`<button class="entity-link" data-open-branch="${escapeHtml(employee.branchId)}">${escapeHtml(employee.branch)}</button>`:'—'}</td><td>${employee.salaryConfigured?'<span class="readiness readiness--ready"><span></span>Configured</span>':'<span class="readiness readiness--warn"><span></span>Needs setup</span>'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${statusBadge(employee.status)}</td><td><button class="icon-btn icon-btn--sm" data-change-employee-organization="${escapeHtml(employee.id)}">${icon('edit')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No employees in this department.</strong><span>Add a company employee or change an existing employee's department.</span></div></td></tr>`}</tbody></table></div></section>`;
     } else if (tab==='branches') {
-      content=`<section class="data-panel"><div class="section-headline"><div><h2>Branch representation</h2><p>Where this department currently has employees.</p></div></div><div class="department-card-grid">${branchRows.length?branchRows.map(({branch,employees:rows})=>`<button class="department-card" data-open-branch="${escapeHtml(branch.id)}"><span>${icon('branch')}</span><div><strong>${escapeHtml(branch.name)}</strong><small>${rows.length} ${escapeHtml(department.name)} employee${rows.length===1?'':'s'}</small></div>${icon('chevron')}</button>`).join(''):`<div class="table-empty table-empty--card"><strong>Not represented in any branch</strong><span>This master remains available for future employees.</span></div>`}</div></section>`;
+      content=`<section class="data-panel"><div class="section-headline"><div><h2>Branch representation</h2><p>Where this department currently has employees.</p></div></div><div class="department-card-grid">${branchRows.length?branchRows.map(({branch,count})=>`<button class="department-card" data-open-branch="${escapeHtml(branch.id)}"><span>${icon('branch')}</span><div><strong>${escapeHtml(branch.name)}</strong><small>${count} ${escapeHtml(department.name)} employee${count===1?'':'s'}</small></div>${icon('chevron')}</button>`).join(''):`<div class="table-empty table-empty--card"><strong>Not represented in any branch</strong><span>This master remains available for future employees.</span></div>`}</div></section>`;
     } else if (tab==='payroll') {
-      content=`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(state.period)} department payroll</h2><p>Company payroll aggregated across every branch for this department.</p></div><button class="btn btn--secondary btn--sm" data-open-department-payroll="${escapeHtml(department.id)}">Open Payroll Run</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong></div><div><span>Gross payroll</span><strong>${formatCurrency(totals.gross||0)}</strong></div><div><span>Deductions</span><strong>${formatCurrency((totals.advances||0)+(totals.deductions||0))}</strong></div><div><span>Net payable</span><strong>${formatCurrency(totals.net||0)}</strong></div></div></section>`;
+      content=`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(state.period)} department payroll</h2><p>Company payroll aggregated across every branch for this department.</p></div><button class="btn btn--secondary btn--sm" data-open-department-payroll="${escapeHtml(department.id)}">Open Payroll Run</button></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employeeCount}</strong></div><div><span>Gross payroll</span><strong>${formatCurrency(totals.gross||0)}</strong></div><div><span>Deductions</span><strong>${formatCurrency((totals.advances||0)+(totals.deductions||0))}</strong></div><div><span>Net payable</span><strong>${formatCurrency(totals.net||0)}</strong></div></div></section>`;
     } else {
-      content=`<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department snapshot</h2><p>Cross-branch internal-company organization view.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employees.length}</strong><small>${employees.filter(item=>item.status==='Active').length} active</small></div><div><span>Branches</span><strong>${branchRows.length}</strong><small>Currently represented</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employees.length}</strong><small>Configured structures</small></div><div><span>WPS ready</span><strong>${ready}/${employees.length}</strong><small>Payment-data readiness</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Branch distribution</h2><p>Employees grouped by office.</p></div></div><div class="composition-block">${branchRows.length?branchRows.map(({branch,employees:rows})=>{const pct=employees.length?Math.round(rows.length/employees.length*100):0;return `<div class="composition-row"><button class="text-link" data-open-branch="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</button><div><i style="width:${pct}%"></i></div><strong>${rows.length}</strong></div>`}).join(''):'<div class="empty-inline">No employee assignments yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Department details</h3><button class="text-link" data-edit-department="${escapeHtml(department.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(department.code)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(department.status)}</dd></div>${department.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(department.archivedReason)}</dd></div>`:''}<div><dt>Employees</dt><dd>${employees.length}</dd></div><div><dt>Current net payroll</dt><dd>${formatCurrency(totals.net||0)}</dd></div></dl>${department.notes?`<p class="organization-notes">${escapeHtml(department.notes)}</p>`:''}</section></aside></div>`;
+      content=`<div class="profile-grid profile-grid--overview"><div class="profile-main-stack"><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Department snapshot</h2><p>Cross-branch internal-company organization view.</p></div></div><div class="project-kpis internal-kpis"><div><span>Employees</span><strong>${employeeCount}</strong><small>${activeCount} active</small></div><div><span>Branches</span><strong>${branchRows.length}</strong><small>Currently represented</small></div><div><span>Salary setup</span><strong>${salaryReady}/${employeeCount}</strong><small>Configured structures</small></div><div><span>WPS profiles ready</span><strong>${ready}/${employeeCount}</strong><small>Active WPS-enabled profiles</small></div></div></section><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Branch distribution</h2><p>Employees grouped by office.</p></div></div><div class="composition-block">${branchRows.length?branchRows.map(({branch,count})=>{const pct=employeeCount?Math.round(count/employeeCount*100):0;return `<div class="composition-row"><button class="text-link" data-open-branch="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</button><div><i style="width:${pct}%"></i></div><strong>${count}</strong></div>`}).join(''):'<div class="empty-inline">No employee assignments yet.</div>'}</div></section></div><aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Department details</h3><button class="text-link" data-edit-department="${escapeHtml(department.id)}">Edit</button></div><dl class="detail-list"><div><dt>Code</dt><dd>${escapeHtml(department.code)}</dd></div><div><dt>Status</dt><dd>${escapeHtml(department.status)}</dd></div>${department.archivedReason?`<div><dt>Archive reason</dt><dd>${escapeHtml(department.archivedReason)}</dd></div>`:''}<div><dt>Employees</dt><dd>${employeeCount}</dd></div><div><dt>Current net payroll</dt><dd>${formatCurrency(totals.net||0)}</dd></div></dl>${department.notes?`<p class="organization-notes">${escapeHtml(department.notes)}</p>`:''}</section></aside></div>`;
     }
-    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employees.length} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${department.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(department.id)}"`},'separator',{label:department.archived?'Restore from archive':'Archive department',hint:department.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|${department.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department changes do not rewrite historical payroll snapshots or organization audit events.</span></div></section>`;
+    return `<section class="page department-profile-page ui-v2-payroll-page ui-v2-payroll-employee-profile ui-v2-prs-internal-page"><div class="profile-crumb ui-v2-payroll-profile-crumb"><button class="text-link text-link--muted" data-route-link="departments">Departments</button><span>›</span><span>${escapeHtml(department.code)}</span></div><header class="entity-header"><div class="entity-header__identity"><span class="entity-avatar entity-avatar--supplier">${icon('department')}</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(department.name)}</h1>${statusBadge(department.status)}</div><div class="entity-subline"><span>${escapeHtml(department.code)}</span><span>·</span><span>${employeeCount} employees</span><span>·</span><span>${branchRows.length} branches</span></div></div></div><div class="entity-header__actions ui-v2-payroll-entity-header__actions">${department.status==='Active'?`<button class="btn btn--primary" data-quick-add="internal-employee" data-employee-department-context="${escapeHtml(department.id)}">${icon('plus')} Add Employee</button>`:''}${lifecycleActionsMenu([{label:'Edit department',hint:'Update the current organization master',iconName:'edit',attrs:`data-edit-department="${escapeHtml(department.id)}"`},'separator',{label:department.archived?'Restore from archive':'Archive department',hint:department.archived?'Restore previous state':'Archive department and current employee scope',iconName:'info',attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|${department.archived?'restore':'archive'}"`},{label:'Delete',hint:'Delete with 30-day recovery; current employee scope follows automatically',iconName:'trash',danger:true,attrs:`data-organization-lifecycle="department|${escapeHtml(department.id)}|delete"`}])}</div></header><nav class="tabs profile-tabs">${[['overview','Overview'],['employees','Employees'],['branches','Branches'],['payroll','Payroll']].map(([id,label])=>`<button data-department-tab="${id}" class="${tab===id?'is-active':''}">${label}</button>`).join('')}</nav><div class="profile-content ui-v2-payroll-profile-content">${content}</div><div class="source-banner ui-v2-payroll-source-note">${icon('info')}<span>Department profiles use server-side totals and a bounded 50-row workforce preview; the full employee register remains server-paginated.</span></div></section>`;
   }
 
   function employeeWpsBadge(value) {
@@ -2254,11 +2540,15 @@
   function internalEmployeesTemplate() {
     const directory = serverDirectoryView('employees');
     const employees = directory.rows;
-    const currentEmployees = state.employees.filter(e => !e.deleted && !e.archived);
-    const archivedCount = state.employees.filter(e => !e.deleted && e.archived).length;
-    const active = currentEmployees.filter(e => e.status === 'Active').length;
-    const wpsReady = currentEmployees.filter(e => e.wps === 'Ready').length;
-    const configuredSalary = currentEmployees.filter(e => !!employeeProfileData(e).salary).length;
+    if(!state.employeeDirectorySummaryLoaded&&!state.employeeDirectorySummaryLoading){
+      queueMicrotask(()=>loadEmployeeDirectorySummary());
+    }
+    const summary=state.employeeDirectorySummary||state.internalMasterSummary||{};
+    const currentEmployeeCount=Number(summary.employeeCount ?? directory.meta.count ?? employees.length);
+    const archivedCount=summary.archivedEmployeeCount==null?null:Number(summary.archivedEmployeeCount||0);
+    const active=Number(summary.activeEmployeeCount ?? 0);
+    const configuredSalary=summary.salaryConfiguredCount==null?null:Number(summary.salaryConfiguredCount||0);
+    const wpsReady=summary.wpsConfiguredCount==null?null:Number(summary.wpsConfiguredCount||0);
     const dimensions = [
       state.branches.filter(b => b.status === 'Active').length,
       state.departments.filter(d => d.status === 'Active').length
@@ -2272,10 +2562,10 @@
         <div class="page-head__actions ui-v2-page-header__actions"><button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button><button class="btn btn--secondary" data-employee-export>Export</button><button class="btn btn--primary" data-quick-add="internal-employee">${icon('plus')} Add Employee</button></div>
       </div>
       <div class="summary-strip ui-v2-payroll-summary-strip">
-        <div class="summary-item ui-v2-payroll-metric"><span>Current employee records</span><strong>${currentEmployees.length}</strong><small>${active} active · ${archivedCount} archived retained</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Current employee records</span><strong>${currentEmployeeCount}</strong><small>${active} active${archivedCount==null?'':` · ${archivedCount} archived retained`}</small></div>
         <div class="summary-item ui-v2-payroll-metric"><span>Organization dimensions</span><strong>${dimensions}</strong><small>Branch + department in current preset</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${configuredSalary}/${currentEmployees.length || 0}</strong><small>Current employee structures available</small></div>
-        <div class="summary-item ui-v2-payroll-metric"><span>WPS ready</span><strong>${wpsReady}/${currentEmployees.length || 0}</strong><small>Current employee payment records</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>Salary configured</span><strong>${configuredSalary==null?'—':`${configuredSalary}/${currentEmployeeCount}`}</strong><small>Server-authoritative current structures</small></div>
+        <div class="summary-item ui-v2-payroll-metric"><span>WPS profiles ready</span><strong>${wpsReady==null?'—':`${wpsReady}/${currentEmployeeCount}`}</strong><small>Active WPS-enabled payment profiles</small></div>
       </div>
       <section class="data-panel ui-v2-payroll-panel ui-v2-payroll-register">
         <div class="table-toolbar ui-v2-payroll-register__toolbar ui-v2-payroll-register__toolbar--dimensions">
@@ -2289,7 +2579,7 @@
         <div class="table-meta ui-v2-payroll-table-meta"><span><strong>${Number(directory.meta.count ?? employees.length).toLocaleString()}</strong> employee${Number(directory.meta.count ?? employees.length) === 1 ? '' : 's'}</span><span>Organization filters use the employee's current effective branch and department assignment.</span></div>
         <div class="table-scroll ui-v2-table-wrap ui-v2-payroll-table-wrap">
           <table class="data-table ui-v2-table ui-v2-payroll-table employee-table"><thead><tr><th>Employee</th><th>Organization</th><th>Position</th><th>Salary base</th><th>WPS</th><th>Status</th><th aria-label="Open"></th></tr></thead>
-          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${salaryBasicForEmployee(employee) != null ? formatCurrency(salaryBasicForEmployee(employee)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${employee.archived ? statusBadge('Archived') : statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7">${directoryEmptyState('employees',directory,'<div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div>')}</td></tr>`}</tbody></table>
+          <tbody>${employees.length ? employees.map(employee => `<tr class="ui-v2-payroll-clickable-row" data-ui-v2-row-action="true" data-open-employee="${escapeHtml(employee.id)}" tabindex="0" aria-label="Open ${escapeHtml(employee.name)} profile"><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)}${employee.email ? ` · ${escapeHtml(employee.email)}` : ''}</span></div></td><td><div class="table-primary ui-v2-table__primary"><strong>${escapeHtml(employee.branch || 'Branch not set')}</strong><span>${escapeHtml(employee.department || 'Department not set')}</span></div></td><td>${escapeHtml(employee.position || '—')}</td><td class="table-money ui-v2-table__numeric">${employee.basicSalary != null ? formatCurrency(Number(employee.basicSalary)) : '—'}</td><td>${employeeWpsBadge(employee.wps)}</td><td>${employee.archived ? statusBadge('Archived') : statusBadge(employee.status)}</td><td class="ui-v2-prs-row-arrow">${icon('chevron')}</td></tr>`).join('') : `<tr><td colspan="7">${directoryEmptyState('employees',directory,'<div class="table-empty"><strong>No employees match these filters.</strong><span>Change the search or organization filters, or add a new internal employee.</span></div>')}</td></tr>`}</tbody></table>
         </div>
       </section>
       ${directoryPagination('employees',directory.meta)}
@@ -2321,7 +2611,8 @@
 
   async function loadEmployeeProfileContext(employeeId, period = state.period, { force = false, render = true } = {}) {
     const key = employeeProfileContextKey(employeeId, period);
-    if (!force && state.employeeProfileContexts[key]) return state.employeeProfileContexts[key];
+    const employeeCached = state.employees.some(item => item.id === employeeId);
+    if (!force && state.employeeProfileContexts[key] && employeeCached) return state.employeeProfileContexts[key];
     if (state.employeeProfileLoading.has(key)) return null;
     state.employeeProfileLoading.add(key);
     try {
@@ -2367,7 +2658,7 @@
       loaded: !!serverProfile,
       salary,
       attendance,
-      adjustments: (state.internalAdjustments?.[employeeId] || []),
+      adjustments: (serverProfile?.adjustments || []),
       payrollHistory: serverProfile?.payrollHistory || [],
       documents,
       activity: serverProfile?.activity || []
@@ -2433,6 +2724,8 @@
   }
 
   function employeeProfileSalary(employee, profile) {
+    if(!state.salarySetupLoaded&&!state.salarySetupLoading)queueMicrotask(()=>loadSalarySetup());
+    if(employee?.id&&!state.salaryStructureHistoryLoaded.has(employee.id)&&!state.salaryStructureHistoryLoading.has(employee.id))queueMicrotask(()=>loadSalaryStructureHistory(employee.id,{render:true}));
     if (!profile.salary) return `
       <div class="profile-grid profile-grid--wide-side">
         <section class="panel panel--flush">
@@ -3203,15 +3496,17 @@
   }
 
   function salarySetupTemplate() {
-    if(!state.salarySetupLoaded||!state.internalMasterComplete){
-      if(!state.salarySetupLoaded&&!state.salarySetupLoading)loadSalarySetup();
-      if(!state.internalMasterComplete&&!state.internalMasterLoading)hydrateCompleteMaster('employees');
-      return `<section class="page salary-setup-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="table-empty table-empty--card"><strong>Loading salary setup…</strong><span>Fetching salary configuration and the employee master only for this workspace.</span></div></section>`;
+    if(!state.salarySetupLoaded){
+      if(!state.salarySetupLoading)loadSalarySetup();
+      return `<section class="page salary-setup-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="table-empty table-empty--card"><strong>Loading salary setup…</strong><span>Fetching bounded salary configuration for this workspace.</span></div></section>`;
     }
+    const structureView=salaryStructureDirectoryView();
+    const coverage=structureView.meta.coverage||{};
+    const employeeCount=Number(coverage.employeeCount ?? state.internalMasterSummary?.employeeCount ?? 0);
+    const configuredEmployees=Number(coverage.configuredCount ?? 0);
     const activeComponents = state.salaryComponents.filter(item => item.status === 'Active');
     const earningCount = activeComponents.filter(item => item.category === 'Earning').length;
     const deductionCount = activeComponents.filter(item => item.category === 'Deduction').length;
-    const configuredEmployees = state.employees.filter(employee => !!employeeProfileData(employee).salary).length;
     const activeOt = state.overtimePolicies.filter(item => item.status === 'Active').length;
     const tabs = [
       ['components','Components'],
@@ -3236,7 +3531,7 @@
 
         <div class="salary-setup-summary">
           <div><span>Active components</span><strong>${activeComponents.length}</strong><small>${earningCount} earnings · ${deductionCount} deductions</small></div>
-          <div><span>Employee coverage</span><strong>${configuredEmployees}/${state.employees.length}</strong><small>${state.employees.length - configuredEmployees} need salary setup</small></div>
+          <div><span>Employee coverage</span><strong>${configuredEmployees}/${employeeCount}</strong><small>${Math.max(0,employeeCount-configuredEmployees)} need salary setup</small></div>
           <div><span>OT policies</span><strong>${activeOt}</strong><small>${activeOt ? 'Configurable formula available' : 'No active overtime policy'}</small></div>
           <div><span>WPS mapping</span><strong>${activeComponents.filter(item => item.wpsMap && item.wpsMap !== 'Not mapped').length}</strong><small>Components mapped to export fields</small></div>
         </div>
@@ -3291,36 +3586,49 @@
       </section>`;
   }
 
+  function salaryStructurePagination(meta={}) {
+    const store=state.salaryStructureDirectory;
+    const count=Number(meta.count||0), page=Number(meta.page||store.page||1), totalPages=Number(meta.totalPages||1), pageSize=Number(meta.pageSize||store.pageSize||50);
+    const start=count?((page-1)*pageSize+1):0, finish=Math.min(count,page*pageSize);
+    return `<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${start.toLocaleString()}</strong>–<strong>${finish.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-salary-structure-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${Math.max(totalPages,1)}</span><button type="button" data-salary-structure-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="salaryStructurePageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div>`;
+  }
+
   function salaryStructuresTab() {
-    const q = state.salaryStructureSearch.trim().toLowerCase();
-    const employees = state.employees.filter(employee => !q || `${employee.name} ${employee.employeeId} ${employee.position} ${employee.department}`.toLowerCase().includes(q));
-    const configured = state.employees.filter(employee => !!employeeProfileData(employee).salary).length;
+    const view=salaryStructureDirectoryView();
+    const coverage=view.meta.coverage||{};
+    const configured=Number(coverage.configuredCount||0);
+    const employeeCount=Number(coverage.employeeCount||0);
+    const percent=employeeCount?Math.round(configured/employeeCount*100):0;
+    const rows=view.rows;
     return `
       <section class="data-panel salary-config-panel">
-        <div class="section-headline salary-structure-head"><div><h2>Employee salary structures</h2><p>Each employee keeps an effective-dated structure. Effective-dated history is retained; changes create the next effective record and never rewrite a closed payroll period.</p></div><button class="btn btn--primary" data-salary-structure-new>${icon('plus')} Assign Structure</button></div>
+        <div class="section-headline salary-structure-head"><div><h2>Employee salary structures</h2><p>Each employee keeps an effective-dated structure. Effective-dated history is retained; the register is server-paginated and full history loads only for the employee being opened or changed.</p></div><button class="btn btn--primary" data-salary-structure-new>${icon('plus')} Assign Structure</button></div>
         <div class="structure-coverage">
-          <div class="structure-coverage__copy"><span>Configuration coverage</span><strong>${configured} of ${state.employees.length} employees</strong><small>${state.employees.length - configured} records still need a numeric salary structure.</small></div>
-          <div class="structure-progress"><span style="width:${state.employees.length ? Math.round(configured/state.employees.length*100) : 0}%"></span></div>
-          <em>${state.employees.length ? Math.round(configured/state.employees.length*100) : 0}%</em>
+          <div class="structure-coverage__copy"><span>Configuration coverage</span><strong>${configured} of ${employeeCount} employees</strong><small>${Math.max(0,employeeCount-configured)} records still need a numeric salary structure.</small></div>
+          <div class="structure-progress"><span style="width:${percent}%"></span></div>
+          <em>${percent}%</em>
         </div>
         <div class="table-toolbar table-toolbar--inner">
           <div class="table-toolbar__search">${icon('search')}<input id="salaryStructureSearch" type="search" value="${escapeHtml(state.salaryStructureSearch)}" placeholder="Search employee, ID or position"></div>
+          <select class="select salary-status-select" id="salaryStructureSetupFilter"><option ${state.salaryStructureSetup==='All'?'selected':''}>All</option><option ${state.salaryStructureSetup==='Configured'?'selected':''}>Configured</option><option ${state.salaryStructureSetup==='Needs setup'?'selected':''}>Needs setup</option></select>
           <button class="btn btn--secondary" data-route-link="internal-employees">Employee Directory</button>
         </div>
+        ${view.refreshing?'<div class="ui-v2-payroll-inline-loading">Refreshing salary structures…</div>':''}
         <div class="table-scroll">
           <table class="data-table salary-structures-table">
             <thead><tr><th>Employee</th><th>Current Structure</th><th>Basic Salary</th><th>Fixed Earnings</th><th>Fixed Deductions</th><th>Overtime</th><th>Effective Until</th><th></th></tr></thead>
-            <tbody>${employees.map(employee => {
-              const profile = employeeProfileData(employee);
-              const salary = profile.salary;
-              if (!salary) return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${employee.id}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)} · ${escapeHtml(employee.position)}</span></button></td><td><span class="setup-state setup-state--needed">Needs setup</span></td><td>—</td><td>—</td><td>—</td><td>Company policy</td><td><span class="table-secondary">—</span></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${employee.id}">Configure</button></td></tr>`;
-              const earnings = salary.components.filter(c => c.type === 'earning').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
-              const deductions = salary.components.filter(c => c.type === 'deduction').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
-              const basic = salaryBasicComponent(salary)?.amount;
-              return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${employee.id}"><strong>${escapeHtml(employee.name)}</strong><span>EMP ${escapeHtml(employee.employeeId)} · ${escapeHtml(employee.position)}</span></button></td><td><span class="setup-state setup-state--ready">Configured</span><div class="table-secondary">Effective ${escapeHtml(salary.effective || 'Current')}</div></td><td class="table-money"><strong>${Number.isFinite(Number(basic)) ? formatCurrency(Number(basic)) : '—'}</strong></td><td class="table-money">${formatCurrency(earnings)}</td><td class="table-money">${formatCurrency(deductions)}</td><td><div class="table-primary">${escapeHtml(salary.otPolicy || 'Not assigned')}</div></td><td><div class="table-primary">${escapeHtml(salary.effectiveTo || 'Current')}</div></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${employee.id}">Create effective change</button></td></tr>`;
-            }).join('')}</tbody>
+            <tbody>${view.loading&&!rows.length?`<tr><td colspan="8"><div class="table-empty"><strong>Loading employee salary structures…</strong><span>Reading one bounded page from the payroll backend.</span></div></td></tr>`:view.error&&!rows.length?`<tr><td colspan="8"><div class="table-empty"><strong>Salary structures unavailable.</strong><span>${escapeHtml(view.error)}</span><button class="btn btn--secondary btn--sm" data-salary-structure-retry>Retry</button></div></td></tr>`:rows.length?rows.map(row => {
+              const employee=row.employee||{};
+              const salary=row.structure||null;
+              if (!salary) return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id||'')}"><strong>${escapeHtml(employee.name||'Employee')}</strong><span>EMP ${escapeHtml(employee.employeeId||'')} · ${escapeHtml(employee.position||'—')}</span></button></td><td><span class="setup-state setup-state--needed">Needs setup</span></td><td>—</td><td>—</td><td>—</td><td>Company policy</td><td><span class="table-secondary">—</span></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${escapeHtml(employee.id||'')}">Configure</button></td></tr>`;
+              const earnings=(salary.components||[]).filter(c=>c.type==='earning').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
+              const deductions=(salary.components||[]).filter(c=>c.type==='deduction').reduce((sum,c)=>sum+(Number(c.amount)||0),0);
+              const basic=salaryBasicComponent(salary)?.amount;
+              return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(employee.id||'')}"><strong>${escapeHtml(employee.name||'Employee')}</strong><span>EMP ${escapeHtml(employee.employeeId||'')} · ${escapeHtml(employee.position||'—')}</span></button></td><td><span class="setup-state setup-state--ready">Configured</span><div class="table-secondary">Effective ${escapeHtml(salary.effective||'Current')}</div></td><td class="table-money"><strong>${Number.isFinite(Number(basic))?formatCurrency(Number(basic)):'—'}</strong></td><td class="table-money">${formatCurrency(earnings)}</td><td class="table-money">${formatCurrency(deductions)}</td><td><div class="table-primary">${escapeHtml(salary.otPolicy||'Not assigned')}</div></td><td><div class="table-primary">${escapeHtml(salary.effectiveTo||'Current')}</div></td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-salary-structure-edit="${escapeHtml(employee.id||'')}">Create effective change</button></td></tr>`;
+            }).join(''):`<tr><td colspan="8"><div class="table-empty"><strong>No employees match this salary setup view.</strong><span>Change the search/setup filter or assign a structure to another employee.</span></div></td></tr>`}</tbody>
           </table>
         </div>
+        ${salaryStructurePagination(view.meta)}
       </section>`;
   }
 
@@ -4475,7 +4783,7 @@
   function emptyPayrollContext(period = state.period) {
     return {
       run: { id:null, exists:false, label:period, statusValue:'draft', status:'Draft', revision:0, calculatedAt:null, submittedAt:null, approvedAt:null, reviewerNote:'', canEdit:false, canApprove:false, totals:{} },
-      rows: [], sourceErrors: [], policy: { prorationMethod:'not_configured', prorationLabel:'Not configured', configured:false },
+      rows: [], summary:{employeeCount:0,basic:0,allowances:0,overtime:0,otherEarnings:0,gross:0,advanceRecovery:0,otherDeductions:0,deductions:0,net:0,ready:0,blocked:0,warning:0}, meta:{page:1,pageSize:state.payrollPageSize||50,count:0,totalPages:1,rangeStart:0,rangeEnd:0}, filters:{branches:[],departments:[]}, reviewSummary:{Critical:0,Warning:0,Info:0,All:0}, sourceErrors: [], policy: { prorationMethod:'not_configured', prorationLabel:'Not configured', configured:false },
       adjustments: [], adjustmentsByEmployee: {}, reviewHistory: [], attendanceStatus:'Not created', attendanceLocked:false,
       workflow:{statusValue:'draft',allowedActions:[],nextAction:null,canCalculate:false,canReset:false,canSubmitReview:false,canReturnForChanges:false,canApprove:false,sourceClear:false,attendanceCalculable:false,attendanceLocked:false},
       previous: { label:payrollPreviousPeriod(period), run:null, rows:[] }
@@ -4514,7 +4822,8 @@
     })));
     if (supersede) supersedePayrollAuthority('internal-payroll', label);
     state.payrollContexts[label] = payload;
-    state.payrollLoadedPeriods.add(label);
+    if (payload?.surface === 'payroll_run_page') state.payrollLoadedPeriods.delete(label);
+    else state.payrollLoadedPeriods.add(label);
     state.payrollRuns[label] = normalizedPayrollRun(payload);
     if (label === state.period) state.internalAdjustments = payload.adjustmentsByEmployee || {};
     const previous = payload?.previous;
@@ -4534,6 +4843,59 @@
   }
 
   if (payrollBootstrap.run?.label) applyPayrollPayload(payrollBootstrap, payrollBootstrap.run.label, { supersede:false });
+
+  function payrollRunRequest(period = state.period) {
+    const params = new URLSearchParams({
+      period: periodKeyFromLabel(period), surface:'run', page:String(state.payrollPage || 1),
+      page_size:String(state.payrollPageSize || 50), search:state.payrollSearch || '',
+      branch:state.payrollBranch || 'All branches', department:state.payrollDepartment || 'All departments',
+      readiness:state.payrollReadiness || 'All'
+    });
+    return { url:`/api/internal/payroll/?${params.toString()}`, key:`${period}|${params.toString()}` };
+  }
+
+  function cancelPayrollRunRequest() {
+    if (state.payrollServer?.controller) state.payrollServer.controller.abort();
+    if (state.payrollServer) {
+      state.payrollServer.controller = null;
+      state.payrollServer.pendingKey = '';
+      state.payrollServer.loading = false;
+    }
+  }
+
+  async function loadPayrollRunPage(period = state.period, { force = false, render = true } = {}) {
+    const request = payrollRunRequest(period);
+    if (!force && state.payrollServer.key === request.key && state.payrollContexts[period]) return state.payrollContexts[period];
+    cancelPayrollRunRequest();
+    const controller = new AbortController();
+    const requestId = Number(state.payrollServer.requestId || 0) + 1;
+    state.payrollServer.controller = controller;
+    state.payrollServer.requestId = requestId;
+    state.payrollServer.pendingKey = request.key;
+    state.payrollServer.loading = true;
+    state.payrollServer.error = '';
+    try {
+      const payload = await appApi(request.url, { signal:controller.signal });
+      if (requestId !== state.payrollServer.requestId || controller.signal.aborted) return null;
+      applyPayrollPayload(payload, period, { supersede:false });
+      state.payrollServer.key = request.key;
+      state.payrollServer.meta = { ...(payload.meta || {}) };
+      state.payrollPage = Number(payload.meta?.page || state.payrollPage || 1);
+      if (render && state.workspace === 'internal' && state.period === period && currentRoute() === 'payroll-runs') renderRoute();
+      return payload;
+    } catch (error) {
+      if (error?.name === 'AbortError') return null;
+      state.payrollServer.error = error.message || 'Payroll page could not be loaded.';
+      if (render && currentRoute() === 'payroll-runs') renderRoute();
+      return null;
+    } finally {
+      if (requestId === state.payrollServer.requestId) {
+        state.payrollServer.loading = false;
+        state.payrollServer.pendingKey = '';
+        state.payrollServer.controller = null;
+      }
+    }
+  }
 
   async function loadInternalPayrollPeriod(period = state.period, { force = false } = {}) {
     if (!force && state.payrollLoadedPeriods.has(period)) return state.payrollContexts[period];
@@ -4599,21 +4961,38 @@
     return [...(payrollContextForPeriod(period).rows || [])];
   }
 
+  function payrollRunMutationBody(extra = {}) {
+    return {
+      period:periodKeyFromLabel(), surface:'run', page:state.payrollPage || 1, page_size:state.payrollPageSize || 50,
+      search:state.payrollSearch || '', branch:state.payrollBranch || 'All branches',
+      department:state.payrollDepartment || 'All departments', readiness:state.payrollReadiness || 'All', ...extra
+    };
+  }
+
   async function requestPayrollCalculation() {
-    const payload = await appApi('/api/internal/payroll/calculate/', { method:'POST', body:{ period:periodKeyFromLabel() } });
-    return applyPayrollPayload(payload);
+    cancelPayrollRunRequest();
+    const payload = await appApi('/api/internal/payroll/calculate/', { method:'POST', body:payrollRunMutationBody() });
+    applyPayrollPayload(payload);
+    state.payrollServer.key = payrollRunRequest().key;
+    state.payrollServer.meta = { ...(payload.meta || {}) };
+    return payload;
   }
 
   async function requestPayrollWorkflow(action, { note = '', confirmed = false } = {}) {
-    const payload = await appApi('/api/internal/payroll/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), action, note, confirmed } });
-    return applyPayrollPayload(payload);
+    cancelPayrollRunRequest();
+    const payload = await appApi('/api/internal/payroll/workflow/', { method:'POST', body:payrollRunMutationBody({ action, note, confirmed }) });
+    applyPayrollPayload(payload);
+    state.payrollServer.key = payrollRunRequest().key;
+    state.payrollServer.meta = { ...(payload.meta || {}) };
+    return payload;
   }
 
   async function requestPayrollPolicy(prorationMethod) {
     const result = await appApi('/api/internal/payroll/policy/', { method:'PATCH', body:{ proration_method:prorationMethod } });
     const current = payrollContextForPeriod();
     current.policy = result.policy;
-    await loadInternalPayrollPeriod(state.period, { force:true });
+    if (currentRoute() === 'payroll-runs') await loadPayrollRunPage(state.period, { force:true });
+    else await loadInternalPayrollPeriod(state.period, { force:true });
     return result.policy;
   }
 
@@ -4683,7 +5062,7 @@
     const previousRun = previousPeriod ? state.payrollRuns[previousPeriod] : null;
     const previousRows = previousRun?.snapshot?.rows || [];
     const previousByEmployee = new Map(previousRows.map(row => [row.employeeId, row]));
-    const available = previousRows.length > 0;
+    const available = !!previousRun?.snapshot && Number(previousRun?.totals?.employeeCount || previousRows.length) > 0;
     const comparedRows = rows.map(row => {
       const previous = previousByEmployee.get(row.employeeId) || null;
       const currentNet = Number(row.net || 0);
@@ -4697,8 +5076,8 @@
       previousRun,
       available,
       rows: comparedRows,
-      currentTotals: payrollTotals(rows),
-      previousTotals: available ? payrollTotals(previousRows) : null
+      currentTotals: (() => { const summary=payrollContextForPeriod().summary || {}; return { ...payrollTotals(rows), net:Number(summary.net ?? payrollTotals(rows).net) }; })(),
+      previousTotals: previousRun?.totals ? { net:Number(previousRun.totals.net || 0) } : (available ? payrollTotals(previousRows) : null)
     };
   }
 
@@ -4749,20 +5128,21 @@
   }
 
   function payrollReviewTemplate(run, allRows) {
+    const context = payrollContextForPeriod();
     const review = payrollReviewIssues(allRows);
-    const counts = payrollReviewCounts(review.issues);
+    const counts = context.reviewSummary?.All !== undefined ? { Critical:Number(context.reviewSummary.Critical||0), Warning:Number(context.reviewSummary.Warning||0), Info:Number(context.reviewSummary.Info||0), All:Number(context.reviewSummary.All||0) } : { ...payrollReviewCounts(review.issues), All:review.issues.length };
     const filteredIssues = state.payrollReviewSeverity === 'All' ? review.issues : review.issues.filter(issue => issue.severity === state.payrollReviewSeverity);
     const critical = counts.Critical || 0;
     const comparison = review.comparison;
-    const workflow = payrollContextForPeriod().workflow || {};
+    const workflow = context.workflow || {};
     const canApprove = !!workflow.canApprove && critical === 0;
     const previousNet = comparison.previousTotals?.net ?? null;
     const currentNet = comparison.currentTotals.net;
     const netDelta = previousNet === null ? null : currentNet - previousNet;
     const netDeltaPct = previousNet ? netDelta / previousNet * 100 : null;
     const checklist = [
-      { label:'Salary structures and payroll calculations', ok:!allRows.some(row => row.blockers?.length), meta:allRows.some(row => row.blockers?.length) ? `${allRows.filter(row => row.blockers?.length).length} blocked` : 'No calculation blockers' },
-      { label:'Attendance & overtime snapshot', ok:payrollContextForPeriod().attendanceLocked, meta:payrollContextForPeriod().attendanceStatus || 'Not locked' },
+      { label:'Salary structures and payroll calculations', ok:Number(context.summary?.blocked || 0)===0, meta:Number(context.summary?.blocked || 0) ? `${Number(context.summary.blocked)} blocked` : 'No calculation blockers' },
+      { label:'Attendance & overtime snapshot', ok:context.attendanceLocked, meta:context.attendanceStatus || 'Not locked' },
       { label:'Critical review exceptions', ok:critical === 0, meta:critical ? `${critical} unresolved` : 'None' }
     ];
 
@@ -4775,9 +5155,9 @@
           </section>
 
           <section class="data-panel review-exceptions-panel">
-            <div class="panel__head panel__head--padded review-panel-head"><div><h2>Exception center</h2><p>Issues are generated from payroll inputs, attendance integrity, approved adjustments and period variance checks.</p></div><span class="review-total-count">${review.issues.length} issue${review.issues.length === 1 ? '' : 's'}</span></div>
+            <div class="panel__head panel__head--padded review-panel-head"><div><h2>Exception center</h2><p>Issues are generated from payroll inputs, attendance integrity, approved adjustments and period variance checks.</p></div><span class="review-total-count">${counts.All} issue${counts.All === 1 ? '' : 's'}</span></div>
             <div class="review-filterbar">
-              ${['All','Critical','Warning','Info'].map(level => `<button class="review-filter ${state.payrollReviewSeverity === level ? 'is-active' : ''}" data-review-severity="${level}"><span>${level}</span><em>${level === 'All' ? review.issues.length : counts[level] || 0}</em></button>`).join('')}
+              ${['All','Critical','Warning','Info'].map(level => `<button class="review-filter ${state.payrollReviewSeverity === level ? 'is-active' : ''}" data-review-severity="${level}"><span>${level}</span><em>${level === 'All' ? counts.All : counts[level] || 0}</em></button>`).join('')}
             </div>
             <div class="review-issue-list">
               ${filteredIssues.length ? filteredIssues.map(issue => `<div class="review-issue review-issue--${issue.severity.toLowerCase()}">
@@ -4799,6 +5179,7 @@
                 return `<tr><td><button class="entity-link entity-link--stack" data-open-employee="${row.employeeId}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position)}</span></button></td><td>${row.branchId ? `<button class="entity-link" data-open-branch="${row.branchId}">${escapeHtml(row.branch)}</button>` : '—'}</td><td class="num table-money"><strong>${formatCurrency(row.net)}</strong></td><td class="num table-money">${row.previousNet === null ? '<span class="table-secondary">—</span>' : formatCurrency(row.previousNet)}</td><td class="num table-money"><span class="variance-value ${row.deltaPct !== null && Math.abs(row.deltaPct) >= 10 ? 'is-alert' : ''}">${deltaText}</span>${pctText ? `<small>${pctText}</small>` : ''}</td><td class="num table-money">${row.otHours ? `${row.otHours}h<small>${formatCurrency(row.overtime)}</small>` : '—'}</td><td>${highest === 'Critical' ? payrollReviewSeverityBadge('Critical') : highest === 'Warning' ? payrollReviewSeverityBadge('Warning') : `<span class="review-clear-badge">✓ Clear</span>`}</td><td><button class="icon-btn icon-btn--sm" data-review-open-row="${row.employeeId}" aria-label="Review employee calculation">${icon('chevron')}</button></td></tr>`;
               }).join('')}
             </tbody></table></div>
+            ${payrollPageControls(payrollContextForPeriod().meta || {})}
           </section>
         </div>
 
@@ -4830,18 +5211,27 @@
       </div>`;
   }
 
+  function payrollPageControls(meta = payrollContextForPeriod().meta || {}) {
+    const page = Number(meta.page || 1), totalPages = Number(meta.totalPages || 1), count = Number(meta.count || 0);
+    const start = Number(meta.rangeStart || 0), end = Number(meta.rangeEnd || 0);
+    return `<div class="ui-v2-payroll-timesheet-footer payroll-run-pagination"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${start}–${end}</strong> of <strong>${count.toLocaleString()}</strong> matching employees</span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-payroll-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-payroll-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="payrollPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${Number(state.payrollPageSize)===25?'selected':''}>25</option><option value="50" ${Number(state.payrollPageSize)===50?'selected':''}>50</option><option value="100" ${Number(state.payrollPageSize)===100?'selected':''}>100</option></select></label></div></div>`;
+  }
+
   function payrollRunsTemplate() {
-    if (!state.payrollLoadedPeriods.has(state.period)) {
-      loadInternalPayrollPeriod(state.period);
-      return `<section class="page payroll-run-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Payroll · Internal Employees</div><h1>${escapeHtml(state.period)} Payroll</h1><p>Loading the company payroll period.</p></div></div><div class="table-empty table-empty--card"><strong>Loading payroll…</strong><span>Fetching the server-authoritative payroll inputs and saved snapshot.</span></div></section>`;
-    }
+    const request = payrollRunRequest(state.period);
+    if (state.payrollServer.key !== request.key && state.payrollServer.pendingKey !== request.key) queueMicrotask(() => loadPayrollRunPage(state.period));
     const context = payrollContextForPeriod();
+    if (context.surface !== 'payroll_run_page' && state.payrollServer.key !== request.key) {
+      return `<section class="page payroll-run-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Payroll · Internal Employees</div><h1>${escapeHtml(state.period)} Payroll</h1><p>Loading the bounded company payroll page.</p></div></div><div class="table-empty table-empty--card"><strong>Loading payroll…</strong><span>Fetching only the requested 25/50/100 payroll rows plus exact server totals.</span></div></section>`;
+    }
     const run = payrollRunRecord();
     const allRows = payrollRowsForDisplay();
-    const rows = payrollFilteredRows(allRows);
-    const totals = payrollTotals(allRows);
-    const branchOptions = ['All branches', ...Array.from(new Set(allRows.map(row => row.branch).filter(Boolean))).sort()];
-    const departmentOptions = ['All departments', ...Array.from(new Set(allRows.map(row => row.department).filter(Boolean))).sort()];
+    const rows = allRows;
+    const summary = context.summary || {};
+    const totals = { basic:Number(summary.basic||0), allowances:Number(summary.allowances||0), overtime:Number(summary.overtime||0), otherEarnings:Number(summary.otherEarnings||0), gross:Number(summary.gross||0), advances:Number(summary.advanceRecovery||0), deductions:Number(summary.otherDeductions||0), net:Number(summary.net||0), ready:Number(summary.ready||0), blocked:Number(summary.blocked||0), warning:Number(summary.warning||0) };
+    const meta = context.meta || state.payrollServer.meta || {page:1,pageSize:state.payrollPageSize,count:allRows.length,totalPages:1,rangeStart:allRows.length?1:0,rangeEnd:allRows.length};
+    const branchOptions = ['All branches', ...(context.filters?.branches || [])];
+    const departmentOptions = ['All departments', ...(context.filters?.departments || [])];
     const tsStatus = context.attendanceStatus || 'Not created';
     const calculationInputReady = ['Approved','Locked'].includes(tsStatus);
     const inputReady = !!context.attendanceLocked;
@@ -4864,12 +5254,12 @@
           <div class="page-head__actions payroll-head-actions">
             <button class="btn btn--secondary" data-route-link="timesheets">Open Timesheets</button>
             <button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button>
-            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${workflow.canSubmitReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${workflow.canApprove && !payrollReviewCounts(payrollReviewIssues(allRows).issues).Critical ? '' : 'disabled'}>Approve Payroll</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : ['Payment Processing','Paid','Closed'].includes(run.status) ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
+            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${workflow.canSubmitReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${workflow.canApprove && !Number(context.reviewSummary?.Critical || 0) ? '' : 'disabled'}>Approve Payroll</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : ['Payment Processing','Paid','Closed'].includes(run.status) ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
           </div>
         </div>
 
         <div class="summary-strip payroll-summary-strip">
-          <div class="summary-item"><span>Active employees</span><strong>${allRows.length}</strong><small>${statusSub}</small></div>
+          <div class="summary-item"><span>Active employees</span><strong>${Number(summary.employeeCount || 0).toLocaleString()}</strong><small>${statusSub}</small></div>
           <div class="summary-item"><span>Ready to calculate</span><strong>${totals.ready}</strong><small>${totals.blocked} blocked by setup</small></div>
           <div class="summary-item"><span>Gross payroll</span><strong>${formatCurrency(totals.gross)}</strong><small>${formatCurrency(totals.overtime)} overtime</small></div>
           <div class="summary-item"><span>Total deductions</span><strong>${formatCurrency(totals.advances + totals.deductions)}</strong><small>${formatCurrency(totals.advances)} advance recovery</small></div>
@@ -4881,6 +5271,7 @@
           ${payrollWorkflow(run.status)}
         </section>
 
+        ${state.payrollServer.error ? `<div class="payroll-blocker-banner"><span class="payroll-blocker-icon">!</span><span><strong>Payroll page could not be refreshed</strong><small>${escapeHtml(state.payrollServer.error)}</small></span></div>` : ''}
         <div class="source-banner source-banner--compact payroll-source-banner">${icon('info')}<span><strong>Server-authoritative calculation:</strong> payroll is derived from the approved attendance period, effective salary structures, saved overtime snapshots and approved adjustments. Calculation is all-or-nothing; unresolved source issues never become zero-value payroll rows.</span></div>
 
         <div class="payroll-view-switch"><button class="${state.payrollView === 'register' ? 'is-active' : ''}" data-payroll-view="register"><span>Payroll Register</span><small>Calculation rows & inputs</small></button><button class="${state.payrollView === 'review' ? 'is-active' : ''}" data-payroll-view="review"><span>Review & Validation</span><small>Exceptions · variance · approval</small></button></div>
@@ -4899,7 +5290,7 @@
             ${totals.blocked ? `<div class="payroll-blocker-banner"><span class="payroll-blocker-icon">!</span><span><strong>${totals.blocked} employee${totals.blocked === 1 ? '' : 's'} cannot be finalized yet</strong><small>Invalid salary inputs block calculation instead of being treated as zero salary.</small></span><button class="text-link" data-route-link="salary-setup">Fix salary setup →</button></div>` : ''}
             ${!calculationInputReady ? `<div class="payroll-input-warning"><span>${icon('timesheet')}</span><span><strong>Attendance & overtime is ${escapeHtml(tsStatus)}</strong><small>Payroll calculation requires an Approved or Locked attendance period.</small></span><button class="text-link" data-route-link="timesheets">Open Timesheets →</button></div>` : !inputReady ? `<div class="payroll-input-warning"><span>${icon('timesheet')}</span><span><strong>Attendance is Approved but not Locked</strong><small>Calculation is allowed, but Finance Review requires the attendance period to be Locked.</small></span><button class="text-link" data-route-link="timesheets">Lock Timesheet →</button></div>` : ''}
 
-            <div class="table-meta"><span><strong>${rows.length}</strong> of ${allRows.length} employees</span><span>${run.status === 'Draft' ? 'Preview uses current inputs; Calculate Payroll creates the run snapshot.' : 'Amounts below are read from the saved calculation snapshot until Recalculate is used.'}</span></div>
+            <div class="table-meta"><span><strong>${Number(meta.count || 0).toLocaleString()}</strong> matching · page ${Number(meta.page || 1)} of ${Number(meta.totalPages || 1)}</span><span>${run.status === 'Draft' ? 'Preview uses current inputs; Calculate Payroll creates the run snapshot.' : 'Amounts below are read from the saved calculation snapshot until Recalculate is used.'}</span></div>
             <div class="table-scroll payroll-table-scroll">
               <table class="data-table payroll-table">
                 <thead><tr><th>Employee</th><th>Branch / Office</th><th class="num">Basic</th><th class="num">Allowances</th><th class="num">OT</th><th class="num">Other Earnings</th><th class="num">Gross</th><th class="num">Advances</th><th class="num">Deductions</th><th class="num">Net Payable</th><th>Readiness</th><th></th></tr></thead>
@@ -4922,6 +5313,7 @@
                 ${rows.length ? `<tfoot><tr><td colspan="2"><strong>Visible rows</strong><small>${rows.length} employee${rows.length === 1 ? '' : 's'}</small></td><td class="num table-money">${formatCurrency(payrollTotals(rows).basic)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).allowances)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).overtime)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).otherEarnings)}</td><td class="num table-money"><strong>${formatCurrency(payrollTotals(rows).gross)}</strong></td><td class="num table-money">${formatCurrency(payrollTotals(rows).advances)}</td><td class="num table-money">${formatCurrency(payrollTotals(rows).deductions)}</td><td class="num table-money"><strong>${formatCurrency(payrollTotals(rows).net)}</strong></td><td colspan="2"></td></tr></tfoot>` : ''}
               </table>
             </div>
+            ${payrollPageControls(meta)}
             <div class="payroll-table-footer"><span>Amounts are shown in ${escapeHtml(currencyCode())}. Blocked rows never silently become zero-pay employees.</span>${workflow.canReset ? `<button class="text-link" data-payroll-reset-run>Reset run to Draft</button>` : ''}</div>
           </section>
 
@@ -4931,7 +5323,7 @@
               <div class="payroll-input-list">
                 <button data-route-link="salary-setup"><span class="payroll-input-icon">S</span><div><strong>Salary structures</strong><small>${totals.ready} ready · ${totals.blocked} blocked</small></div><em>${totals.blocked ? 'Fix' : 'Ready'}</em></button>
                 <button data-route-link="timesheets"><span class="payroll-input-icon">T</span><div><strong>Attendance & overtime</strong><small>${escapeHtml(tsStatus)}</small></div><em>${inputReady ? 'Locked' : calculationInputReady ? 'Approved' : 'Open'}</em></button>
-                <button data-route-link="adjustments"><span class="payroll-input-icon">A</span><div><strong>Period adjustments</strong><small>${allRows.reduce((n,row)=>n+(row.pendingAdjustments?.length||0),0)} pending · approved items calculate automatically</small></div><em>Review</em></button>
+                <button data-route-link="adjustments"><span class="payroll-input-icon">A</span><div><strong>Period adjustments</strong><small>${totals.warning} employee${totals.warning===1?'':'s'} with pending items · approved items calculate automatically</small></div><em>Review</em></button>
               </div>
             </section>
 
@@ -5041,7 +5433,9 @@
   function syncEmployeePaymentProfiles(context = paymentContextForPeriod()) {
     const profiles = context.profiles || {};
     const wpsRows = new Map((context.wpsReadiness?.employees || []).map(row => [row.employeeId, row]));
+    const touched = new Set([...Object.keys(profiles), ...wpsRows.keys()]);
     state.employees.forEach(employee => {
+      if (!touched.has(employee.id)) return;
       const profile = profiles[employee.id] || null;
       employee.paymentProfile = profile;
       employee.bank = profile?.bankName || '';
@@ -5090,6 +5484,7 @@
 
   async function loadSalaryPayments(period = state.period, { force = false } = {}) {
     const key = paymentPeriodKey(period);
+    if (force && key === paymentPeriodKey(state.period)) invalidatePaymentScaleContexts();
     if (!force && state.paymentLoadedPeriods.has(key)) {
       const cached = state.paymentContexts[key] || null;
       if (cached && paymentPeriodKey(state.period) === key) applyPaymentPayload(cached, { activate:true, supersede:false });
@@ -5111,6 +5506,152 @@
     } finally {
       if (state.paymentLoadingPeriod === key) state.paymentLoadingPeriod = null;
     }
+  }
+
+
+  function paymentReadinessServerFor(channel) {
+    return channel === 'wps' ? state.wpsReadinessServer : state.bankReadinessServer;
+  }
+
+  function paymentReadinessRequest(channel, period = state.period) {
+    const isWps = channel === 'wps';
+    const params = new URLSearchParams({
+      period:paymentPeriodKey(period), channel,
+      page:String(isWps ? state.wpsPage : state.bankReadinessPage),
+      page_size:String(isWps ? state.wpsPageSize : state.bankReadinessPageSize),
+      search:isWps ? state.wpsSearch : state.bankExportSearch,
+      status:isWps ? state.wpsStatusFilter : state.bankExportStatus,
+      branch:isWps ? '' : state.bankExportBranch
+    });
+    const templateId = isWps ? state.wpsTemplateId : state.bankTemplateId;
+    if (templateId) params.set('template_id', templateId);
+    return { url:`/api/internal/salary-payments/readiness/?${params.toString()}`, key:`${paymentPeriodKey(period)}|${params.toString()}` };
+  }
+
+  function cancelPaymentReadinessRequest(channel) {
+    const server = paymentReadinessServerFor(channel);
+    try { server?.controller?.abort(); } catch { /* settled */ }
+    if (server) { server.controller=null; server.pendingKey=''; server.loading=false; }
+  }
+
+  function applyPaymentReadinessPayload(payload) {
+    if (!payload?.period || !payload?.channel) return payload;
+    const context = state.paymentContexts[payload.period] || paymentContextForPeriod(payload.period);
+    const readiness = payload.readiness || {employees:[]};
+    const prop = payload.channel === 'wps' ? 'wpsReadiness' : 'bankReadiness';
+    context[prop] = readiness;
+    state.paymentContexts[payload.period] = context;
+    if (paymentPeriodKey(state.period) === payload.period) state.paymentContext = context;
+    const rows = readiness.employees || [];
+    context.profiles = context.profiles || {};
+    rows.forEach(row => { state.paymentProfileCache[row.employeeId] = row.profile || null; context.profiles[row.employeeId] = row.profile || null; });
+    directoryEntityMerge('employees', rows.map(row => ({
+      id:row.employeeId, employeeId:row.employeeCode, employeeNumber:row.employeeCode,
+      name:row.name, position:row.position || '', department:row.department || '',
+      branchId:row.branchId || null, branch:row.branch || '', nationalId:row.nationalId || '', address:row.address || ''
+    })));
+    syncEmployeePaymentProfiles(context);
+    return payload;
+  }
+
+  async function loadPaymentReadiness(channel, period = state.period, { force=false, render=true } = {}) {
+    const request = paymentReadinessRequest(channel, period);
+    const server = paymentReadinessServerFor(channel);
+    if (!force && server.key === request.key) return channel === 'wps' ? state.wpsReadinessContext : state.bankReadinessContext;
+    cancelPaymentReadinessRequest(channel);
+    const controller = new AbortController();
+    const requestId = Number(server.requestId || 0) + 1;
+    server.controller=controller; server.requestId=requestId; server.pendingKey=request.key; server.loading=true; server.error='';
+    try {
+      const payload = await appApi(request.url, {signal:controller.signal});
+      if (requestId !== server.requestId || controller.signal.aborted) return null;
+      applyPaymentReadinessPayload(payload);
+      server.key=request.key; server.meta={...(payload.meta || {})};
+      if (channel === 'wps') { state.wpsReadinessContext=payload; state.wpsPage=Number(payload.meta?.page || state.wpsPage || 1); }
+      else { state.bankReadinessContext=payload; state.bankReadinessPage=Number(payload.meta?.page || state.bankReadinessPage || 1); }
+      if (render && state.workspace === 'internal' && paymentPeriodKey(state.period) === payload.period && ['bank-export','wps'].includes(currentRoute())) renderRoute();
+      return payload;
+    } catch(error) {
+      if (error?.name === 'AbortError') return null;
+      server.error=error.message || 'Salary-payment readiness could not be loaded.';
+      if (render && ['bank-export','wps'].includes(currentRoute())) renderRoute();
+      return null;
+    } finally {
+      if (requestId === server.requestId) { server.loading=false; server.pendingKey=''; server.controller=null; }
+    }
+  }
+
+  function paymentBatchRowsRequest(batchId) {
+    const params = new URLSearchParams({
+      page:String(state.paymentPage || 1), page_size:String(state.paymentPageSize || 50),
+      search:state.paymentSearch || '', status:state.paymentStatusFilter || 'All'
+    });
+    return {url:`/api/internal/salary-payments/batches/${encodeURIComponent(batchId)}/rows/?${params.toString()}`, key:`${batchId}|${params.toString()}`};
+  }
+
+  function cancelPaymentBatchRowsRequest() {
+    try { state.paymentBatchServer?.controller?.abort(); } catch { /* settled */ }
+    if (state.paymentBatchServer) { state.paymentBatchServer.controller=null; state.paymentBatchServer.pendingKey=''; state.paymentBatchServer.loading=false; }
+  }
+
+  function invalidatePaymentScaleContexts() {
+    cancelPaymentReadinessRequest('bank_csv');
+    cancelPaymentReadinessRequest('wps');
+    cancelPaymentBatchRowsRequest();
+    state.bankReadinessServer.key=''; state.bankReadinessServer.meta={}; state.bankReadinessContext=null;
+    state.wpsReadinessServer.key=''; state.wpsReadinessServer.meta={}; state.wpsReadinessContext=null;
+    state.paymentBatchServer.key=''; state.paymentBatchServer.meta={}; state.paymentBatchContext=null;
+  }
+
+  function applyPaymentBatchRowsPayload(payload) {
+    if (!payload?.batch?.id) return payload;
+    const batch = {...payload.batch, rows:[...(payload.rows || [])], pageSummary:{...(payload.summary || {})}};
+    replaceStateRecord(state.paymentBatches, batch);
+    state.bankBatches = state.paymentBatches.filter(item => item.channelValue === 'bank_csv');
+    state.wpsBatches = state.paymentBatches.filter(item => item.channelValue === 'wps');
+    state.paymentBatchContext = payload;
+    directoryEntityMerge('employees', (payload.rows || []).map(row => ({id:row.employeeId, employeeId:row.employeeCode, employeeNumber:row.employeeCode, name:row.name})));
+    return payload;
+  }
+
+  async function loadPaymentBatchRows(batchId, { force=false, render=true } = {}) {
+    if (!batchId) return null;
+    const request=paymentBatchRowsRequest(batchId);
+    if (!force && state.paymentBatchServer.key===request.key && state.paymentBatchContext?.batch?.id===batchId) return state.paymentBatchContext;
+    cancelPaymentBatchRowsRequest();
+    const controller=new AbortController();
+    const requestId=Number(state.paymentBatchServer.requestId||0)+1;
+    state.paymentBatchServer.controller=controller; state.paymentBatchServer.requestId=requestId; state.paymentBatchServer.pendingKey=request.key; state.paymentBatchServer.loading=true; state.paymentBatchServer.error='';
+    try {
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(requestId!==state.paymentBatchServer.requestId||controller.signal.aborted)return null;
+      applyPaymentBatchRowsPayload(payload);
+      state.paymentBatchServer.key=request.key; state.paymentBatchServer.meta={...(payload.meta||{})}; state.paymentPage=Number(payload.meta?.page||state.paymentPage||1);
+      if(render&&state.workspace==='internal'&&currentRoute()==='payments')renderRoute();
+      return payload;
+    } catch(error) {
+      if(error?.name==='AbortError')return null;
+      state.paymentBatchServer.error=error.message||'Salary payment rows could not be loaded.';
+      if(render&&currentRoute()==='payments')renderRoute();
+      return null;
+    } finally {
+      if(requestId===state.paymentBatchServer.requestId){state.paymentBatchServer.loading=false;state.paymentBatchServer.pendingKey='';state.paymentBatchServer.controller=null;}
+    }
+  }
+
+  async function loadEmployeePaymentProfile(employeeId, { force=false } = {}) {
+    if (!employeeId) return null;
+    if (!force && Object.prototype.hasOwnProperty.call(state.paymentProfileCache, employeeId)) return state.paymentProfileCache[employeeId];
+    const payload=await appApi(`/api/internal/salary-payments/profiles/${encodeURIComponent(employeeId)}/`);
+    state.paymentProfileCache[employeeId]=payload.profile || null;
+    return payload.profile || null;
+  }
+
+  function paymentPager(meta, kind) {
+    const page=Number(meta?.page||1), totalPages=Math.max(1,Number(meta?.totalPages||1)), count=Number(meta?.count||0), start=Number(meta?.rangeStart||0), end=Number(meta?.rangeEnd||0);
+    const pageSize=kind==='wps'?state.wpsPageSize:kind==='bank'?state.bankReadinessPageSize:state.paymentPageSize;
+    const attr=kind==='wps'?'wps':kind==='bank'?'bank-readiness':'payment';
+    return `<div class="ui-v2-payroll-timesheet-pagination"><span>${count?`${start.toLocaleString()}–${end.toLocaleString()} of ${count.toLocaleString()}`:'0 rows'}</span><div><button class="btn btn--ghost btn--sm" data-${attr}-page="${Math.max(1,page-1)}" ${page<=1?'disabled':''}>Previous</button><span>Page ${page} / ${totalPages}</span><button class="btn btn--ghost btn--sm" data-${attr}-page="${Math.min(totalPages,page+1)}" ${page>=totalPages?'disabled':''}>Next</button><label>Rows <select id="${kind==='wps'?'wpsPageSize':kind==='bank'?'bankReadinessPageSize':'paymentPageSize'}">${[25,50,100].map(size=>`<option value="${size}" ${Number(pageSize)===size?'selected':''}>${size}</option>`).join('')}</select></label></div></div>`;
   }
 
   function paymentReadinessRows(channel) {
@@ -5142,16 +5683,15 @@
   }
 
   function wpsValidationRows() {
-    const q = state.wpsSearch.trim().toLowerCase();
-    return paymentReadinessRows('wps').filter(row => {
-      const statusMatch = state.wpsStatusFilter === 'All' || row.wpsStatus === state.wpsStatusFilter;
-      const text = `${row.employeeCode} ${row.name} ${row.position} ${row.bank} ${row.account} ${row.nationalId}`.toLowerCase();
-      return statusMatch && (!q || text.includes(q));
-    });
+    return paymentReadinessRows('wps');
   }
 
   function wpsAllRows() { return paymentReadinessRows('wps'); }
   function wpsSummary(rows = wpsAllRows()) {
+    const readiness=paymentContextForPeriod().wpsReadiness || {};
+    if (Number.isFinite(Number(readiness.employeeCount))) {
+      return { total:Number(readiness.employeeCount||0), ready:Number(readiness.readyCount||0), warning:0, blocked:Number(readiness.blockedCount||0), amount:Number(readiness.amount||0), readyAmount:Number(readiness.readyAmount||0) };
+    }
     return rows.reduce((out,row) => {
       out.total += 1; out.amount += Number(row.totalSalary || 0);
       if (row.wpsStatus === 'Ready') { out.ready += 1; out.readyAmount += Number(row.totalSalary || 0); }
@@ -5193,14 +5733,8 @@
   }
 
   function bankPaymentRows({ all = false } = {}) {
-    const q = state.bankExportSearch.trim().toLowerCase();
-    return paymentReadinessRows('bank_csv').filter(row => {
-      if (all) return true;
-      const statusMatch = state.bankExportStatus === 'All' || row.bankStatus === state.bankExportStatus;
-      const branchMatch = state.bankExportBranch === 'All branches' || row.branchId === state.bankExportBranch;
-      const text = `${row.employeeCode} ${row.name} ${row.branch} ${row.department} ${row.bank} ${row.account} ${row.reference}`.toLowerCase();
-      return statusMatch && branchMatch && (!q || text.includes(q));
-    });
+    // 1.0.75: search/status/branch are server-authoritative. The browser holds one bounded page only.
+    return paymentReadinessRows('bank_csv');
   }
 
   async function preparePaymentChannel(channel) {
@@ -5271,6 +5805,15 @@
     } catch (error) { showToast('Result import rejected', error.message); }
   }
 
+
+  async function refreshPaymentRowMutation(batchId) {
+    if (!batchId) return;
+    state.selectedInternalPaymentBatchId=batchId;
+    localStorage.setItem('payroll-ui-selected-internal-payment-batch',batchId);
+    await loadSalaryPayments(state.period,{force:true});
+    await loadPaymentBatchRows(batchId,{force:true,render:false});
+  }
+
   function paymentSetupAction() {
     return `<button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button>`;
   }
@@ -5281,11 +5824,14 @@
   }
 
   function wpsValidationTemplate() {
-    const context = paymentContextForPeriod(); const rows = wpsValidationRows(); const allRows = wpsAllRows(); const summary = wpsSummary(allRows); const readiness = context.wpsReadiness || {};
-    const blockers = readiness.companyBlockers || [];
-    return `<div class="wps-summary-strip"><div><span>Payroll status</span><strong>${escapeHtml(context.payrollStatusLabel || 'Not calculated')}</strong><small>Approved payroll required</small></div><div><span>WPS ready</span><strong>${summary.ready} / ${summary.total}</strong><small>Employee payment profiles</small></div><div><span>Ready amount</span><strong>${formatCurrency(summary.readyAmount)}</strong><small>Approved net salaries</small></div><div class="${summary.blocked || blockers.length ? 'is-alert' : ''}"><span>Blocked</span><strong>${summary.blocked + blockers.length}</strong><small>${blockers.length ? 'Company setup required' : summary.blocked ? 'Employee setup required' : 'No blockers'}</small></div></div>
+    const request=paymentReadinessRequest('wps');
+    if(state.wpsReadinessServer.key!==request.key&&state.wpsReadinessServer.pendingKey!==request.key)queueMicrotask(()=>loadPaymentReadiness('wps'));
+    const context = paymentContextForPeriod(); const rows = wpsValidationRows(); const summary = wpsSummary(); const readiness = context.wpsReadiness || {};
+    const blockers = readiness.companyBlockers || []; const meta=state.wpsReadinessContext?.period===paymentPeriodKey()?state.wpsReadinessContext.meta||{}:state.wpsReadinessServer.meta||{};
+    return `<div class="wps-summary-strip"><div><span>Payroll status</span><strong>${escapeHtml(context.payrollStatusLabel || 'Not calculated')}</strong><small>Approved payroll required</small></div><div><span>WPS ready</span><strong>${summary.ready.toLocaleString()} / ${summary.total.toLocaleString()}</strong><small>Exact server readiness totals</small></div><div><span>Ready amount</span><strong>${formatCurrency(summary.readyAmount)}</strong><small>Approved net salaries</small></div><div class="${summary.blocked || blockers.length ? 'is-alert' : ''}"><span>Blocked</span><strong>${(summary.blocked + blockers.length).toLocaleString()}</strong><small>${blockers.length ? 'Company setup required' : summary.blocked ? 'Employee setup required' : 'No blockers'}</small></div></div>
       ${blockers.length ? `<section class="source-note">${icon('info')}<span><strong>WPS company setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>` : ''}
-      <section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>WPS validation register</h2><p>Server validation against the approved payroll snapshot, WPS component mapping and employee payment profiles.</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-wps-prepare ${!wpsWorkflowGate().canPrepare ? 'disabled' : ''}>Prepare WPS Batch</button></div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="wpsSearch" type="search" value="${escapeHtml(state.wpsSearch)}" placeholder="Search employee, bank, account or ID…"></div>${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).length>1?`<select class="select" id="wpsTemplateSelect">${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.wpsTemplateId?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>`:''}<div class="segmented compact-segmented">${['All','Ready','Blocked'].map(status=>`<button type="button" class="${state.wpsStatusFilter===status?'is-active':''}" data-wps-status="${status}">${status}</button>`).join('')}</div><button class="btn btn--ghost" data-wps-reset>Reset</button></div><div class="table-wrap"><table class="data-table wps-table"><thead><tr><th>Employee</th><th>Bank / Account</th><th>National ID / Iqama</th><th class="num">Basic</th><th class="num">Housing</th><th class="num">Other Earnings</th><th class="num">Deductions</th><th class="num">Net Salary</th><th>Validation</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position || '—')}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank || 'Not configured')}</strong><span>${escapeHtml(row.account || '—')}</span></div></td><td><span class="mono-cell">${escapeHtml(row.nationalId || '—')}</span></td><td class="num">${formatCurrency(row.basicSalary)}</td><td class="num">${formatCurrency(row.housingAllowance)}</td><td class="num">${formatCurrency(row.otherEarnings)}</td><td class="num">${formatCurrency(row.deductions)}</td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.wpsStatus)}${row.wpsBlockers.length?`<small class="validation-issue-count">${row.wpsBlockers.length} issue${row.wpsBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-wps-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join('') : `<tr><td colspan="10"><div class="table-empty"><strong>No WPS rows match this view.</strong><span>Complete payroll and employee payment setup or reset filters.</span></div></td></tr>`}</tbody></table></div></section>`;
+      ${state.wpsReadinessServer.error?`<div class="ui-v2-payroll-inline-alert"><strong>WPS readiness could not be refreshed.</strong><span>${escapeHtml(state.wpsReadinessServer.error)}</span></div>`:''}
+      <section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>WPS validation register</h2><p>Server-paged validation against the approved payroll snapshot, WPS mapping and employee payment profiles.</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-wps-prepare ${!wpsWorkflowGate().canPrepare ? 'disabled' : ''}>Prepare WPS Batch</button></div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="wpsSearch" type="search" value="${escapeHtml(state.wpsSearch)}" placeholder="Search employee, bank or ID…"></div>${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).length>1?`<select class="select" id="wpsTemplateSelect">${bankTemplatesAll('wps').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.wpsTemplateId?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>`:''}<div class="segmented compact-segmented">${['All','Ready','Blocked'].map(status=>`<button type="button" class="${state.wpsStatusFilter===status?'is-active':''}" data-wps-status="${status}">${status}</button>`).join('')}</div><button class="btn btn--ghost" data-wps-reset>Reset</button></div><div class="table-wrap"><table class="data-table wps-table"><thead><tr><th>Employee</th><th>Bank / Account</th><th>National ID / Iqama</th><th class="num">Basic</th><th class="num">Housing</th><th class="num">Other Earnings</th><th class="num">Deductions</th><th class="num">Net Salary</th><th>Validation</th><th></th></tr></thead><tbody>${rows.length ? rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position || '—')}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank || 'Not configured')}</strong><span>${escapeHtml(row.account || '—')}</span></div></td><td><span class="mono-cell">${escapeHtml(row.nationalId || '—')}</span></td><td class="num">${formatCurrency(row.basicSalary)}</td><td class="num">${formatCurrency(row.housingAllowance)}</td><td class="num">${formatCurrency(row.otherEarnings)}</td><td class="num">${formatCurrency(row.deductions)}</td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.wpsStatus)}${row.wpsBlockers.length?`<small class="validation-issue-count">${row.wpsBlockers.length} issue${row.wpsBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-wps-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join('') : `<tr><td colspan="10"><div class="table-empty"><strong>${state.wpsReadinessServer.loading?'Loading WPS readiness…':'No WPS rows match this view.'}</strong><span>Search and status filters are applied by the server.</span></div></td></tr>`}</tbody></table></div>${paymentPager(meta,'wps')}</section>`;
   }
 
   function wpsBatchesTemplate() {
@@ -5299,8 +5845,11 @@
   }
 
   function bankExportRegisterTemplate() {
-    const context = paymentContextForPeriod(); const readiness = context.bankReadiness || {}; const rows = bankPaymentRows(); const allRows = bankPaymentRows({all:true}); const ready = allRows.filter(row=>row.bankStatus==='Ready'); const blockers = readiness.companyBlockers || []; const template=activePaymentTemplate('bank_csv');
-    return `<div class="bank-export-subhead"><div><span class="eyebrow">Bank salary file</span><h2>Salary Transfer Register</h2><p>Validate payment profiles and generate only the configured bank layout from an approved payroll snapshot.</p></div><div class="bank-template-picker"><label>Export template</label><select class="select" id="bankTemplateSelect" ${!bankTemplatesAll('bank_csv').some(item=>item.active && !item.archived)?'disabled':''}>${bankTemplatesAll('bank_csv').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.bankTemplateId?'selected':''}>${escapeHtml(item.name)}${item.active?'':' · inactive'}</option>`).join('') || '<option>No bank template configured</option>'}</select></div></div>${blockers.length?`<section class="source-note">${icon('info')}<span><strong>Payment setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>`:''}<section class="data-panel"><div class="panel__head panel__head--padded"><div><h2>Bank-payment validation</h2><p>${template?`Using ${escapeHtml(template.name)}.`:'Create an export template before preparing a payment batch.'}</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-bank-batch-prepare ${!(context.payrollStatus==='approved' && readiness.ready && template)?'disabled':''}>Prepare Payment Batch</button></div></div><div class="table-toolbar bank-transfer-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="bankExportSearch" type="search" value="${escapeHtml(state.bankExportSearch)}" placeholder="Search employee, branch, bank or account"></div><select class="select" id="bankExportBranch"><option value="All branches">All branches</option>${state.branches.filter(item=>item.status==='Active').map(item=>`<option value="${escapeHtml(item.id)}" ${state.bankExportBranch===item.id?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select><div class="segmented segmented--compact">${['All','Ready','Blocked'].map(status=>`<button data-bank-export-status="${status}" class="${state.bankExportStatus===status?'is-active':''}">${status}</button>`).join('')}</div></div><div class="table-scroll"><table class="data-table bank-payment-register"><thead><tr><th>Employee</th><th>Branch / Department</th><th>Bank / Account</th><th class="num">Net Salary</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position||'—')}</span></button></td><td>${escapeHtml(row.branch||'—')}<small class="table-secondary">${escapeHtml(row.department||'—')}</small></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'Not configured')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.bankStatus)}${row.bankBlockers.length?`<small class="validation-issue-count">${row.bankBlockers.length} issue${row.bankBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-bank-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="6"><div class="table-empty"><strong>No salary rows match this view.</strong><span>Reset filters or complete employee payment profiles.</span></div></td></tr>`}</tbody></table></div><div class="table-meta"><span><strong>${ready.length}</strong> ready · ${allRows.length-ready.length} blocked</span><span>Batch creation is all-or-nothing for the approved payroll.</span></div></section>`;
+    const request=paymentReadinessRequest('bank_csv');
+    if(state.bankReadinessServer.key!==request.key&&state.bankReadinessServer.pendingKey!==request.key)queueMicrotask(()=>loadPaymentReadiness('bank_csv'));
+    const context = paymentContextForPeriod(); const readiness = context.bankReadiness || {}; const rows = bankPaymentRows(); const blockers = readiness.companyBlockers || []; const template=activePaymentTemplate('bank_csv');
+    const ready=Number(readiness.readyCount||0), blocked=Number(readiness.blockedCount||0), total=Number(readiness.employeeCount||0); const meta=state.bankReadinessContext?.period===paymentPeriodKey()?state.bankReadinessContext.meta||{}:state.bankReadinessServer.meta||{};
+    return `<div class="bank-export-subhead"><div><span class="eyebrow">Bank salary file</span><h2>Salary Transfer Register</h2><p>Validate payment profiles and generate only the configured bank layout from an approved payroll snapshot.</p></div><div class="bank-template-picker"><label>Export template</label><select class="select" id="bankTemplateSelect" ${!bankTemplatesAll('bank_csv').some(item=>item.active && !item.archived)?'disabled':''}>${bankTemplatesAll('bank_csv').filter(item=>item.active && !item.archived).map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.bankTemplateId?'selected':''}>${escapeHtml(item.name)}${item.active?'':' · inactive'}</option>`).join('') || '<option>No bank template configured</option>'}</select></div></div>${blockers.length?`<section class="source-note">${icon('info')}<span><strong>Payment setup</strong>${escapeHtml(blockers.join(' · '))}</span></section>`:''}${state.bankReadinessServer.error?`<div class="ui-v2-payroll-inline-alert"><strong>Bank readiness could not be refreshed.</strong><span>${escapeHtml(state.bankReadinessServer.error)}</span></div>`:''}<section class="data-panel"><div class="panel__head panel__head--padded"><div><h2>Bank-payment validation</h2><p>${template?`Using ${escapeHtml(template.name)}. ${ready.toLocaleString()} ready · ${blocked.toLocaleString()} blocked of ${total.toLocaleString()} payable employees.`:'Create an export template before preparing a payment batch.'}</p></div><div class="payment-head-actions">${paymentSetupAction()}<button class="btn btn--primary" data-bank-batch-prepare ${!(context.payrollStatus==='approved' && readiness.ready && template)?'disabled':''}>Prepare Payment Batch</button></div></div><div class="table-toolbar bank-transfer-toolbar"><div class="table-toolbar__search">${icon('search')}<input id="bankExportSearch" type="search" value="${escapeHtml(state.bankExportSearch)}" placeholder="Search employee, branch or bank"></div><select class="select" id="bankExportBranch"><option value="All branches">All branches</option>${state.branches.filter(item=>item.status==='Active').map(item=>`<option value="${escapeHtml(item.id)}" ${state.bankExportBranch===item.id?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select><div class="segmented segmented--compact">${['All','Ready','Blocked'].map(status=>`<button data-bank-export-status="${status}" class="${state.bankExportStatus===status?'is-active':''}">${status}</button>`).join('')}</div></div><div class="table-scroll"><table class="data-table bank-payment-register"><thead><tr><th>Employee</th><th>Branch / Department</th><th>Bank / Account</th><th class="num">Net Salary</th><th>Status</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)} · ${escapeHtml(row.position||'—')}</span></button></td><td>${escapeHtml(row.branch||'—')}<small class="table-secondary">${escapeHtml(row.department||'—')}</small></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'Not configured')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(row.totalSalary)}</strong></td><td>${wpsStatusBadge(row.bankStatus)}${row.bankBlockers.length?`<small class="validation-issue-count">${row.bankBlockers.length} issue${row.bankBlockers.length===1?'':'s'}</small>`:''}</td><td><button class="icon-btn icon-btn--sm" data-bank-inspect="${escapeHtml(row.employeeId)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="6"><div class="table-empty"><strong>${state.bankReadinessServer.loading?'Loading bank readiness…':'No salary rows match this view.'}</strong><span>Search, branch and status filters are applied by the server.</span></div></td></tr>`}</tbody></table></div>${paymentPager(meta,'bank')}<div class="table-meta"><span><strong>${ready.toLocaleString()}</strong> ready · ${blocked.toLocaleString()} blocked</span><span>Batch creation remains all-or-nothing for the approved payroll.</span></div></section>`;
   }
 
   function bankTemplatesTemplate() {
@@ -5321,11 +5870,11 @@
 
   function bankReconciliationTemplate() {
     const batches=[...bankBatchesForPeriod()].filter(batch=>!['Cancelled'].includes(batch.status)); const latest=batches[0]||null; const summary=paymentBatchSummary(latest); const actions=new Set(latest?.allowedActions||[]);
-    return `${latest?`<div class="payment-summary-strip"><div><span>Tracking batch</span><strong>${escapeHtml(latest.reference)}</strong><small>${escapeHtml(latest.status)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${latest.rows.length} employees</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Needs action</span><strong>${summary.failedCount+summary.reversedCount}</strong><small>Failed / reversed</small></div></div>`:''}<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank result reconciliation</h2><p>Import bank-return results. Paid/failed/reversed states are recorded against the existing payment attempt; failed rows can be retried without creating another payroll.</p></div>${latest?`<div class="payment-head-actions">${bankBatchStatusBadge(latest.status)}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Result CSV<input id="bankResultFile" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(latest.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(latest.id)}">Reopen Payroll</button>`:''}</div>`:''}</div>${latest?paymentRowsTable(latest):`<div class="table-empty table-empty--card"><strong>No bank batch available for reconciliation.</strong><span>Prepare and start a payment batch first.</span></div>`}</section><section class="source-note">${icon('info')}<span><strong>Result import fields</strong>Employee ID and Status are required. Paid rows require a transaction reference; Failed/Reversed rows require a reason. Raw result files are not retained after reconciliation—only their SHA-256 and import metadata are stored.</span></section>`;
+    return `${latest?`<div class="payment-summary-strip"><div><span>Tracking batch</span><strong>${escapeHtml(latest.reference)}</strong><small>${escapeHtml(latest.status)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${summary.count.toLocaleString()} employees</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Needs action</span><strong>${summary.failedCount+summary.reversedCount}</strong><small>Failed / reversed</small></div></div>`:''}<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank result reconciliation</h2><p>Import bank-return results. Paid/failed/reversed states are recorded against the existing payment attempt; failed rows can be retried without creating another payroll.</p></div>${latest?`<div class="payment-head-actions">${bankBatchStatusBadge(latest.status)}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Result CSV<input id="bankResultFile" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(latest.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(latest.id)}">Reopen Payroll</button>`:''}</div>`:''}</div>${latest?paymentRowsTable(latest):`<div class="table-empty table-empty--card"><strong>No bank batch available for reconciliation.</strong><span>Prepare and start a payment batch first.</span></div>`}</section><section class="source-note">${icon('info')}<span><strong>Result import fields</strong>Employee ID and Status are required. Paid rows require a transaction reference; Failed/Reversed rows require a reason. Raw result files are not retained after reconciliation—only their SHA-256 and import metadata are stored.</span></section>`;
   }
 
   function bankExportTemplate() {
-    const key=paymentPeriodKey(); if(!state.paymentLoadedPeriods.has(key)){loadSalaryPayments(state.period);return `<section class="page"><div class="table-empty table-empty--card"><strong>Loading salary payments…</strong><span>Fetching payment profiles, templates and batch history.</span></div></section>`;}
+    const key=paymentPeriodKey(); if(!state.paymentLoadedPeriods.has(key)){loadSalaryPayments(state.period);return `<section class="page"><div class="table-empty table-empty--card"><strong>Loading salary payments…</strong><span>Fetching payment settings, templates and compact batch headers.</span></div></section>`;}
     if(state.bankExportTab==='wps') return `<section class="page bank-export-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Internal Company · Salary Payments</span><h1>Bank & WPS Export</h1><p>Bank salary files and WPS are separate configured channels over the same approved payroll snapshot.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="payments">Salary Payments</button><button class="btn btn--primary" data-route-link="wps">Open WPS</button></div></div><div class="bank-export-tabs"><button data-bank-export-tab="bank"><span>Bank Payment</span><small>Templates · batches · reconciliation</small></button><button class="is-active" data-bank-export-tab="wps"><span>WPS Export</span><small>WPS validation & batches</small></button></div>${wpsValidationTemplate()}</section>`;
     let content=bankExportRegisterTemplate(); if(state.bankExportView==='templates')content=bankTemplatesTemplate(); else if(state.bankExportView==='batches')content=bankBatchesTemplate(); else if(state.bankExportView==='reconciliation')content=bankReconciliationTemplate();
     return `<section class="page bank-export-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Internal Company · Salary Payments · ${escapeHtml(state.period)}</span><h1>Bank Payment & WPS</h1><p>Prepare salary files, preserve payment snapshots and reconcile outcomes without altering approved payroll.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="payments">Salary Payments</button>${paymentSetupAction()}</div></div><div class="bank-export-tabs"><button class="is-active" data-bank-export-tab="bank"><span>Bank Payment</span><small>Configured salary-transfer workflow</small></button><button data-bank-export-tab="wps"><span>WPS Export</span><small>WPS validation & batches</small></button></div><div class="bank-workflow-tabs"><button class="${state.bankExportView==='register'?'is-active':''}" data-bank-export-view="register"><span>Validation Register</span></button><button class="${state.bankExportView==='templates'?'is-active':''}" data-bank-export-view="templates"><span>Export Templates</span></button><button class="${state.bankExportView==='batches'?'is-active':''}" data-bank-export-view="batches"><span>Payment Batches</span></button><button class="${state.bankExportView==='reconciliation'?'is-active':''}" data-bank-export-view="reconciliation"><span>Reconciliation</span></button></div>${content}</section>`;
@@ -5345,7 +5894,13 @@
   function openEmployeePaymentProfileDrawer(employeeId) {
     const employee = state.employees.find(item => item.id === employeeId);
     if (!employee) return;
-    const profile = paymentContextForPeriod().profiles?.[employeeId] || null;
+    const contextProfiles = paymentContextForPeriod().profiles || {};
+    const hasCached = Object.prototype.hasOwnProperty.call(state.paymentProfileCache, employeeId) || Object.prototype.hasOwnProperty.call(contextProfiles, employeeId);
+    if (!hasCached) {
+      loadEmployeePaymentProfile(employeeId).then(() => openEmployeePaymentProfileDrawer(employeeId)).catch(error => showToast('Payment profile unavailable', error.message));
+      return;
+    }
+    const profile = Object.prototype.hasOwnProperty.call(state.paymentProfileCache, employeeId) ? state.paymentProfileCache[employeeId] : (contextProfiles[employeeId] || null);
     state.drawerType='employee-payment-profile'; state.drawerContext={employeeId}; drawerSave.hidden=false; drawerSave.disabled=false; drawerSave.textContent=profile?'Save Payment Profile':'Create Payment Profile'; drawerTitle.textContent=`${employee.name} · Salary Payment`;
     const destinationType = profile?.destinationType === 'salary_card' ? 'Salary card' : 'Bank account / IBAN';
     drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Payment destination</strong><span>Encrypted at rest</span></div><div class="form-grid">${namedSelectFieldValue('Destination type','payment-profile-destination',['Bank account / IBAN','Salary card'],destinationType)}${namedField('Account holder name','payment-profile-holder',profile?.accountHolderName||employee.name||'')}${namedField('Bank / issuer name','payment-profile-bank-name',profile?.bankName||'')}${namedField('Bank code','payment-profile-bank-code',profile?.bankCode||'')}<div class="form-field"><label>IBAN</label><input class="input mono-cell" name="payment-profile-iban" autocomplete="off" value="" placeholder="${escapeHtml(profile?.ibanMasked ? `Leave blank to keep ${profile.ibanMasked}` : 'Enter full IBAN')}"><span class="field-hint">The full value is never sent back to the browser after it is saved.</span></div><div class="form-field"><label>Salary card number</label><input class="input mono-cell" name="payment-profile-card" autocomplete="off" value="" placeholder="${escapeHtml(profile?.salaryCardMasked ? `Leave blank to keep ${profile.salaryCardMasked}` : 'Enter salary card number')}"></div>${namedSelectFieldValue('WPS enabled','payment-profile-wps',['Yes','No'],profile?.wpsEnabled?'Yes':'No')}${namedSelectFieldValue('Profile status','payment-profile-active',['Active','Inactive'],profile?.active===false?'Inactive':'Active')}${namedSelectFieldValue('Mark verified','payment-profile-verified',['No','Yes'],'No')}</div></section><section class="source-note">${icon('info')}<span><strong>Historical payment protection</strong>Updating this profile affects only future payment batches. Existing batches keep their encrypted destination snapshot.</span></section>${profile?`<section class="payroll-detail-actions"><button type="button" class="btn btn--ghost" data-config-lifecycle="payment-profile|${escapeHtml(employeeId)}|delete">Delete unused payment profile</button></section>`:''}`;
@@ -5361,7 +5916,7 @@
   }
 
   function openBankRowDrawer(employeeId) {
-    const row=bankPaymentRows({all:true}).find(item=>item.employeeId===employeeId); if(!row)return; const profile=paymentContextForPeriod().profiles?.[employeeId];
+    const row=bankPaymentRows({all:true}).find(item=>item.employeeId===employeeId); if(!row)return; const profile=state.paymentProfileCache[employeeId] ?? paymentContextForPeriod().profiles?.[employeeId];
     state.drawerType='bank-row'; state.drawerContext=employeeId; drawerSave.hidden=true; drawerTitle.textContent=`${row.name} · Payment Profile`;
     drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Salary payment destination</strong>${wpsStatusBadge(row.bankStatus)}</div><div class="detail-grid"><div><span>Bank / issuer</span><strong>${escapeHtml(row.bank||'Not configured')}</strong></div><div><span>Destination</span><strong class="mono-cell">${escapeHtml(row.account||'—')}</strong></div><div><span>Type</span><strong>${escapeHtml(profile?.destinationLabel||'—')}</strong></div><div><span>Verified</span><strong>${profile?.verifiedAt?'Yes':'No'}</strong></div></div></section>${row.bankBlockers.length?`<section class="form-section"><div class="validation-list">${row.bankBlockers.map(text=>`<div class="validation-list__item is-danger"><span>!</span><p>${escapeHtml(text)}</p></div>`).join('')}</div></section>`:''}<section class="payroll-detail-actions"><button class="btn btn--secondary" data-payment-profile-edit="${escapeHtml(employeeId)}">Edit Payment Profile</button></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
@@ -5380,19 +5935,25 @@
   }
 
   function paymentBatchSummary(batch) {
-    const rows=Array.isArray(batch?.rows)?batch.rows:[]; const out={total:0,paid:0,failed:0,reversed:0,paidCount:0,failedCount:0,reversedCount:0,processingCount:0,pendingCount:0};
-    rows.forEach(row=>{out.total+=Number(row.amount||0); if(row.status==='Paid'){out.paid+=Number(row.amount||0);out.paidCount++;}else if(row.status==='Failed')out.failedCount++;else if(row.status==='Reversed')out.reversedCount++;else if(row.status==='Processing')out.processingCount++;else out.pendingCount++;}); out.remaining=Math.max(0,out.total-out.paid); return out;
+    const exact=state.paymentBatchContext?.batch?.id===batch?.id ? (state.paymentBatchContext.summary||{}) : {};
+    const total=Number(exact.amount ?? batch?.total ?? 0), paid=Number(exact.paidAmount ?? batch?.paidAmount ?? 0);
+    const out={total,paid,failed:0,reversed:0,paidCount:Number(exact.paidCount||0),failedCount:Number(exact.failedCount||0),reversedCount:Number(exact.reversedCount||0),processingCount:Number(exact.processingCount||0),pendingCount:Number(exact.pendingCount||0),cancelledCount:Number(exact.cancelledCount||0),count:Number(exact.count??batch?.employeeCount??0)};
+    out.remaining=Math.max(0,total-paid); return out;
   }
 
   function paymentRowsTable(batch) {
-    const q=state.paymentSearch.trim().toLowerCase(); const rows=(batch?.rows||[]).filter(row=>{const statusMatch=state.paymentStatusFilter==='All'||row.status===state.paymentStatusFilter;return statusMatch&&(!q||`${row.employeeCode} ${row.name} ${row.bank} ${row.reference||''}`.toLowerCase().includes(q));});
-    return `<div class="table-wrap"><table class="data-table payment-table"><thead><tr><th>Employee</th><th>Bank / Destination</th><th class="num">Amount</th><th>Status</th><th>Transaction Reference</th><th>Attempts</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'—')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(Number(row.amount||0))}</strong></td><td>${wpsBatchStatusBadge(row.status)}</td><td><span class="mono-cell">${escapeHtml(row.reference||'—')}</span>${row.failureReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.failureReason)}</small>`:''}</td><td>${Number(row.attempts||0)}</td><td><div class="table-row-actions">${row.canRetry?`<button class="btn btn--ghost btn--sm" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-payment-row="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">${icon('chevron')}</button></div></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No payment rows match this filter.</strong><span>Reset filters to see the batch.</span></div></td></tr>`}</tbody></table></div>`;
+    const rows=(batch?.rows||[]); const meta=state.paymentBatchContext?.batch?.id===batch?.id ? state.paymentBatchContext.meta||{} : state.paymentBatchServer.meta||{};
+    return `<div class="table-wrap"><table class="data-table payment-table"><thead><tr><th>Employee</th><th>Bank / Destination</th><th class="num">Amount</th><th>Status</th><th>Transaction Reference</th><th>Attempts</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>`<tr><td><button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.employeeId)}"><strong>${escapeHtml(row.name)}</strong><span>EMP ${escapeHtml(row.employeeCode)}</span></button></td><td><div class="bank-cell"><strong>${escapeHtml(row.bank||'—')}</strong><span>${escapeHtml(row.account||'—')}</span></div></td><td class="num table-money"><strong>${formatCurrency(Number(row.amount||0))}</strong></td><td>${wpsBatchStatusBadge(row.status)}</td><td><span class="mono-cell">${escapeHtml(row.reference||'—')}</span>${row.failureReason?`<small class="table-secondary table-secondary--attention">${escapeHtml(row.failureReason)}</small>`:''}</td><td>${Number(row.attempts||0)}</td><td><div class="table-row-actions">${row.canRetry?`<button class="btn btn--ghost btn--sm" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry</button>`:''}<button class="icon-btn icon-btn--sm" data-payment-row="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">${icon('chevron')}</button></div></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>${state.paymentBatchServer.loading?'Loading payment rows…':'No payment rows match this filter.'}</strong><span>Search and status filters are applied by the server.</span></div></td></tr>`}</tbody></table></div>${paymentPager(meta,'payment')}`;
   }
 
   function paymentsInternalTemplate() {
-    const key=paymentPeriodKey(); if(!state.paymentLoadedPeriods.has(key)){loadSalaryPayments(state.period);return `<div class="table-empty table-empty--card"><strong>Loading salary payments…</strong><span>Fetching payment batches and reconciliation state.</span></div>`;}
-    const batches=[...paymentBatchesForPeriod()].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))); if(!state.selectedInternalPaymentBatchId||!batches.some(item=>item.id===state.selectedInternalPaymentBatchId))state.selectedInternalPaymentBatchId=batches[0]?.id||null; const batch=batches.find(item=>item.id===state.selectedInternalPaymentBatchId)||batches[0]||null; const summary=paymentBatchSummary(batch); const actions=new Set(batch?.allowedActions||[]);
-    return `${batch?`<div class="payment-summary-strip"><div><span>Payment batch</span><strong>${escapeHtml(batch.reference)}</strong><small>${escapeHtml(batch.channel)} · ${escapeHtml(batch.templateName)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${batch.rows.length} employee payments</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Remaining</span><strong>${formatCurrency(summary.remaining)}</strong><small>${summary.failedCount||summary.reversedCount?`${summary.failedCount} failed · ${summary.reversedCount} reversed`:`${summary.pendingCount+summary.processingCount} pending / processing`}</small></div></div>`:`<div class="payment-empty-hero"><div class="payment-empty-hero__icon">${icon('wallet')}</div><div><span class="eyebrow">Internal salary payments</span><h2>No payment batch for ${escapeHtml(state.period)}</h2><p>Prepare a controlled Bank or WPS batch from the approved payroll.</p></div><button class="btn btn--primary" data-route-link="bank-export">Open Bank / WPS</button></div>`}${batch?`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary payment register</h2><p>Bank-return outcomes and retry attempts are server controlled.</p></div><div class="payment-head-actions">${batches.length>1?`<select class="select payment-batch-select" id="internalPaymentBatchSelect">${batches.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===batch.id?'selected':''}>${escapeHtml(item.reference)} · ${escapeHtml(item.channel)}</option>`).join('')}</select>`:''}${wpsBatchStatusBadge(batch.status)}${actions.has('start')?`<button class="btn btn--primary" data-payment-start data-payment-batch="${escapeHtml(batch.id)}">Start Processing</button>`:''}${actions.has('cancel')?`<button class="btn btn--danger" data-payment-cancel-batch="${escapeHtml(batch.id)}">Cancel Batch</button>`:''}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Results<input class="payment-result-file" data-result-batch="${escapeHtml(batch.id)}" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(batch.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(batch.id)}">Reopen Payroll</button>`:''}</div></div><div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search employee, bank or reference…"></div><select class="select" id="paymentStatusFilter"><option>All</option>${['Pending','Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div>${paymentRowsTable(batch)}</section>`:''}`;
+    const key=paymentPeriodKey(); if(!state.paymentLoadedPeriods.has(key)){loadSalaryPayments(state.period);return `<div class="table-empty table-empty--card"><strong>Loading salary payments…</strong><span>Fetching compact payment batch headers and configuration.</span></div>`;}
+    const batches=[...paymentBatchesForPeriod()].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+    if(!state.selectedInternalPaymentBatchId||!batches.some(item=>item.id===state.selectedInternalPaymentBatchId))state.selectedInternalPaymentBatchId=batches[0]?.id||null;
+    const batch=batches.find(item=>item.id===state.selectedInternalPaymentBatchId)||batches[0]||null;
+    if(batch){const request=paymentBatchRowsRequest(batch.id);if(state.paymentBatchServer.key!==request.key&&state.paymentBatchServer.pendingKey!==request.key)queueMicrotask(()=>loadPaymentBatchRows(batch.id));}
+    const activeBatch=batch?state.paymentBatches.find(item=>item.id===batch.id)||batch:null; const summary=paymentBatchSummary(activeBatch); const actions=new Set(activeBatch?.allowedActions||[]);
+    return `${activeBatch?`<div class="payment-summary-strip"><div><span>Payment batch</span><strong>${escapeHtml(activeBatch.reference)}</strong><small>${escapeHtml(activeBatch.channel)} · ${escapeHtml(activeBatch.templateName)}</small></div><div><span>Total</span><strong>${formatCurrency(summary.total)}</strong><small>${summary.count.toLocaleString()} employee payments</small></div><div><span>Paid</span><strong>${formatCurrency(summary.paid)}</strong><small>${summary.paidCount.toLocaleString()} completed</small></div><div class="${summary.failedCount||summary.reversedCount?'is-alert':''}"><span>Remaining</span><strong>${formatCurrency(summary.remaining)}</strong><small>${summary.failedCount||summary.reversedCount?`${summary.failedCount} failed · ${summary.reversedCount} reversed`:`${summary.pendingCount+summary.processingCount} pending / processing`}</small></div></div>`:`<div class="payment-empty-hero"><div class="payment-empty-hero__icon">${icon('wallet')}</div><div><span class="eyebrow">Internal salary payments</span><h2>No payment batch for ${escapeHtml(state.period)}</h2><p>Prepare a controlled Bank or WPS batch from the approved payroll.</p></div><button class="btn btn--primary" data-route-link="bank-export">Open Bank / WPS</button></div>`}${activeBatch?`<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Salary payment register</h2><p>Only one server-selected payment page is held in the browser; reconciliation totals remain exact.</p></div><div class="payment-head-actions">${batches.length>1?`<select class="select payment-batch-select" id="internalPaymentBatchSelect">${batches.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===activeBatch.id?'selected':''}>${escapeHtml(item.reference)} · ${escapeHtml(item.channel)}</option>`).join('')}</select>`:''}${wpsBatchStatusBadge(activeBatch.status)}${actions.has('start')?`<button class="btn btn--primary" data-payment-start data-payment-batch="${escapeHtml(activeBatch.id)}">Start Processing</button>`:''}${actions.has('cancel')?`<button class="btn btn--danger" data-payment-cancel-batch="${escapeHtml(activeBatch.id)}">Cancel Batch</button>`:''}${actions.has('import_results')?`<label class="btn btn--secondary bank-result-import">Import Results<input class="payment-result-file" data-result-batch="${escapeHtml(activeBatch.id)}" type="file" accept=".csv,.txt,text/csv,text/plain"></label>`:''}${actions.has('close')?`<button class="btn btn--secondary" data-payment-close-payroll data-payment-batch="${escapeHtml(activeBatch.id)}">Close Payroll</button>`:''}${actions.has('reopen')?`<button class="btn btn--secondary" data-payment-reopen-batch="${escapeHtml(activeBatch.id)}">Reopen Payroll</button>`:''}</div></div>${state.paymentBatchServer.error?`<div class="ui-v2-payroll-inline-alert"><strong>Payment register could not be refreshed.</strong><span>${escapeHtml(state.paymentBatchServer.error)}</span></div>`:''}<div class="toolbar toolbar--table"><div class="search-field">${icon('search')}<input id="paymentSearch" type="search" value="${escapeHtml(state.paymentSearch)}" placeholder="Search employee, bank or reference…"></div><select class="select" id="paymentStatusFilter"><option>All</option>${['Pending','Processing','Paid','Failed','Reversed','Cancelled'].map(x=>`<option ${state.paymentStatusFilter===x?'selected':''}>${x}</option>`).join('')}</select><button class="btn btn--ghost" data-payment-reset>Reset</button></div>${paymentRowsTable(activeBatch)}</section>`:''}`;
   }
 
   function supplierPaymentRecords() {
@@ -5541,7 +6102,7 @@
   function openWpsRowDrawer(employeeId) {
     const row = wpsAllRows().find(item => item.employeeId === employeeId);
     if (!row) return;
-    const profile = paymentContextForPeriod().profiles?.[employeeId] || null;
+    const profile = state.paymentProfileCache[employeeId] ?? paymentContextForPeriod().profiles?.[employeeId] ?? null;
     state.drawerType = 'wps-inspect'; state.drawerContext = employeeId; drawerSave.hidden = true; drawerTitle.textContent = `${row.name} · WPS readiness`;
     drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Current payment profile</strong>${wpsStatusBadge(row.wpsStatus)}</div><div class="detail-grid"><div><span>Bank / issuer</span><strong>${escapeHtml(row.bank || 'Not configured')}</strong></div><div><span>Destination</span><strong class="mono-cell">${escapeHtml(row.account || '—')}</strong></div><div><span>Destination type</span><strong>${escapeHtml(profile?.destinationLabel || '—')}</strong></div><div><span>National ID / Iqama</span><strong>${escapeHtml(row.nationalId || '—')}</strong></div><div><span>WPS enabled</span><strong>${profile?.wpsEnabled ? 'Yes' : 'No'}</strong></div><div><span>Verified</span><strong>${profile?.verifiedAt ? 'Yes' : 'No'}</strong></div></div></section><section class="form-section"><div class="form-section__head"><strong>Validation</strong><span>${row.wpsBlockers.length} blocker${row.wpsBlockers.length===1?'':'s'}</span></div><div class="validation-list">${row.wpsBlockers.length ? row.wpsBlockers.map(text => `<div class="validation-list__item is-danger"><span>!</span><p>${escapeHtml(text)}</p></div>`).join('') : '<div class="validation-list__item is-ok"><span>✓</span><p>All required WPS fields are valid for the current payroll and selected WPS template.</p></div>'}</div></section><section class="payroll-detail-actions"><button class="btn btn--secondary" data-payment-profile-edit="${escapeHtml(employeeId)}">Edit Payment Profile</button><button class="btn btn--secondary" data-wps-open-profile>Open Employee Profile</button></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
@@ -5581,7 +6142,7 @@
     state.drawerType='payment-row'; state.drawerContext={ batchId:batch.id, rowId }; drawerSave.hidden=true; drawerTitle.textContent=`${row.name} · Payment`;
     drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Payment snapshot</strong>${wpsBatchStatusBadge(row.status)}</div><div class="detail-grid"><div><span>Batch</span><strong>${escapeHtml(batch.reference)}</strong></div><div><span>Amount</span><strong>${formatCurrency(Number(row.amount||0))}</strong></div><div><span>Bank / issuer</span><strong>${escapeHtml(row.bank||'—')}</strong></div><div><span>Destination</span><strong class="mono-cell">${escapeHtml(row.account||'—')}</strong></div><div><span>Transaction reference</span><strong class="mono-cell">${escapeHtml(row.reference||'—')}</strong></div><div><span>Attempts</span><strong>${Number(row.attempts||0)}</strong></div></div></section>${row.failureReason?`<section class="payroll-detail-alert payroll-detail-alert--danger"><strong>Bank result</strong><span>${escapeHtml(row.failureReason)}</span></section>`:''}<section class="payroll-detail-actions">${row.canRetry?`<button class="btn btn--primary" data-payment-retry="${escapeHtml(row.id)}" data-payment-batch="${escapeHtml(batch.id)}">Retry Payment</button>`:''}</section><section class="source-note">${icon('info')}<span><strong>Controlled reconciliation</strong>Payment results are changed only by an imported bank/WPS result file. Failed or reversed rows create a new retry attempt against this same approved payroll line.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
-    drawerBody.querySelector('[data-payment-retry]')?.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(row.id)}/retry/`,{method:'POST',body:{}});applyPaymentPayload(payload);closeDrawer();renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}});
+    drawerBody.querySelector('[data-payment-retry]')?.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(row.id)}/retry/`,{method:'POST',body:{}});await refreshPaymentRowMutation(payload.batch?.id||batch.id);closeDrawer();renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}});
   }
 
   function supplierPaymentScopeUpdate(select) {
@@ -6626,18 +7187,89 @@
     return 'Deducts from payable';
   }
 
+  function internalAdjustmentRequest(period = state.period) {
+    const params = new URLSearchParams({
+      period:periodKeyFromLabel(period), view:state.adjustmentView || 'register', page:String(state.adjustmentPage || 1),
+      page_size:String(state.adjustmentPageSize || 50), search:state.adjustmentSearch || '',
+      type:state.adjustmentType || 'All', status:state.adjustmentStatus || 'All'
+    });
+    return { url:`/api/internal/adjustments/?${params.toString()}`, key:`${period}|${params.toString()}` };
+  }
+
+  function cancelInternalAdjustmentRequest() {
+    try { state.adjustmentServer?.controller?.abort(); } catch { /* settled */ }
+    if (state.adjustmentServer) {
+      state.adjustmentServer.controller=null; state.adjustmentServer.pendingKey=''; state.adjustmentServer.loading=false;
+    }
+  }
+
+  async function loadInternalAdjustmentPage(period = state.period, { force=false, render=true } = {}) {
+    const request=internalAdjustmentRequest(period);
+    if(!force && state.adjustmentServer.key===request.key && state.adjustmentContext)return state.adjustmentContext;
+    cancelInternalAdjustmentRequest();
+    const controller=new AbortController();
+    const requestId=Number(state.adjustmentServer.requestId||0)+1;
+    state.adjustmentServer.controller=controller;state.adjustmentServer.requestId=requestId;state.adjustmentServer.pendingKey=request.key;state.adjustmentServer.loading=true;state.adjustmentServer.error='';
+    try {
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(requestId!==state.adjustmentServer.requestId||controller.signal.aborted)return null;
+      state.adjustmentContext=payload;
+      state.adjustmentServer.key=request.key;state.adjustmentServer.meta={...(payload.meta||{})};
+      state.adjustmentPage=Number(payload.meta?.page||state.adjustmentPage||1);
+      const directoryRows=(payload.results||[]).map(row=>({id:row.personId,employeeId:String(row.personCode||'').replace(/^EMP\s+/,'')||'',name:row.personName||''}));
+      if(directoryRows.length)directoryEntityMerge('employees',directoryRows);
+      if(render&&state.workspace==='internal'&&state.period===period&&currentRoute()==='adjustments')renderRoute();
+      return payload;
+    } catch(error) {
+      if(error?.name==='AbortError')return null;
+      state.adjustmentServer.error=error.message||'Adjustments could not be loaded.';
+      if(render&&currentRoute()==='adjustments')renderRoute();
+      return null;
+    } finally {
+      if(requestId===state.adjustmentServer.requestId){state.adjustmentServer.loading=false;state.adjustmentServer.pendingKey='';state.adjustmentServer.controller=null;}
+    }
+  }
+
+  async function refreshInternalAdjustmentAuthority(period = state.period, employeeId = '') {
+    invalidateEmployeeProfile(employeeId || null);
+    // An adjustment mutation can change a Draft payroll preview for the same period.
+    // Evict only that period's payroll authority so a later Payroll Runs visit cannot
+    // reuse a pre-mutation preview while keeping the compact adjustment mutation response.
+    cancelPayrollRunRequest();
+    supersedePayrollAuthority('internal-payroll', period);
+    state.payrollLoadedPeriods.delete(period);
+    delete state.payrollContexts[period];
+    if (state.payrollServer) { state.payrollServer.key=''; state.payrollServer.pendingKey=''; }
+    if(currentRoute()==='adjustments'&&state.workspace==='internal') {
+      await loadInternalAdjustmentPage(period,{force:true,render:false});
+      renderRoute();
+      return;
+    }
+    if(employeeId&&currentEmployeeId()===employeeId){
+      await loadEmployeeProfileContext(employeeId,period,{force:true,render:false});
+      renderRoute();
+    }
+  }
+
   function adjustmentCustomRows() {
     const rows = [];
-    Object.entries(state.internalAdjustments || {}).forEach(([employeeId, items]) => {
-      const employee = state.employees.find(item => item.id === employeeId);
-      if (!employee) return;
-      (items || []).forEach(item => rows.push({
-        ...item, type:adjustmentNormalizeType(item.type), workforce:'Internal Employee', workforceKey:'Internal', personId:employee.id,
-        personName:employee.name, personCode:`EMP ${employee.employeeId}`, supplierId:null, supplier:'—',
-        projectId:null, project:'Employee-level',
-        source:item.source || 'Company database', immutable:!!item.immutable
+    if (state.workspace === 'internal' && state.adjustmentContext?.surface === 'adjustments_page') {
+      (state.adjustmentContext.results || []).forEach(item => rows.push({
+        ...item, type:adjustmentNormalizeType(item.type), workforce:'Internal Employee', workforceKey:'Internal',
+        personId:item.personId || item.employeeId, personName:item.personName || 'Employee', personCode:item.personCode || '',
+        supplierId:null, supplier:'—', projectId:null, project:'Employee-level', source:item.source || 'Company database', immutable:!!item.immutable
       }));
-    });
+    } else {
+      Object.entries(state.internalAdjustments || {}).forEach(([employeeId, items]) => {
+        const employee = state.employees.find(item => item.id === employeeId);
+        if (!employee) return;
+        (items || []).forEach(item => rows.push({
+          ...item, type:adjustmentNormalizeType(item.type), workforce:'Internal Employee', workforceKey:'Internal', personId:employee.id,
+          personName:employee.name, personCode:`EMP ${employee.employeeId}`, supplierId:null, supplier:'—',
+          projectId:null, project:'Employee-level', source:item.source || 'Company database', immutable:!!item.immutable
+        }));
+      });
+    }
     Object.entries(state.rentalAdjustments || {}).forEach(([workerId, items]) => {
       const worker = rentalWorkerById(workerId);
       if (!worker) return;
@@ -6661,6 +7293,9 @@
   }
 
   function adjustmentFilteredRows() {
+    if (state.workspace === 'internal' && state.adjustmentContext?.surface === 'adjustments_page') {
+      return allAdjustmentRows().filter(row=>row.workforceKey==='Internal');
+    }
     const q = state.adjustmentSearch.trim().toLowerCase();
     return allAdjustmentRows().filter(row => {
       if (state.workspace === 'rental' && row.workforceKey !== 'Rental') return false;
@@ -6676,6 +7311,10 @@
   }
 
   function adjustmentPeriodSummary(rows = allAdjustmentRows()) {
+    if (state.workspace === 'internal' && state.adjustmentContext?.summary) {
+      const value=state.adjustmentContext.summary;
+      return {count:Number(value.count||0),earnings:Number(value.earnings||0),deductions:Number(value.deductions||0),advanceIssues:Number(value.advanceIssues||0),pending:Number(value.pending||0)};
+    }
     const periodRows = rows.filter(row => row.period === state.period);
     return periodRows.reduce((out,row) => {
       const amount = Number(row.amount || 0);
@@ -6690,6 +7329,9 @@
   }
 
   function adjustmentAdvanceBalances() {
+    if (state.workspace === 'internal' && state.adjustmentContext?.surface === 'adjustments_page') {
+      return (state.adjustmentContext.balances || []).map(row=>({...row,issued:Number(row.issued||0),recovered:Number(row.recovered||0),balance:Number(row.balance||0),pending:Number(row.pending||0)}));
+    }
     const groups = new Map();
     const customRows = adjustmentCustomRows().filter(row => state.workspace === 'rental' ? row.workforceKey === 'Rental' : row.workforceKey === 'Internal');
     customRows.forEach(row => {
@@ -6715,60 +7357,73 @@
         <div><span>Awaiting approval</span><strong>${summary.pending}</strong><small>Excluded from settlement calculation</small></div>
       </div>`;
     }
-    const openBalance = balances.reduce((sum,row)=>sum+Number(row.balance||0),0);
+    const balanceSummary=state.adjustmentContext?.balanceSummary || {};
+    const openBalance = state.workspace==='internal' ? Number(balanceSummary.outstanding||0) : balances.reduce((sum,row)=>sum+Number(row.balance||0),0);
+    const activeBalanceCount = state.workspace==='internal' ? Number(balanceSummary.activeCount||0) : balances.filter(row=>row.balance>0).length;
     return `<div class="adjustment-summary-strip">
       <div><span>Transactions · ${escapeHtml(state.period)}</span><strong>${summary.count}</strong><small>Internal employee ledger</small></div>
       <div><span>Approved earnings</span><strong>${formatCurrency(summary.earnings)}</strong><small>Add to period payable</small></div>
       <div><span>Approved deductions</span><strong>${formatCurrency(summary.deductions)}</strong><small>Recoveries, fines & deductions</small></div>
-      <button data-adjustment-view="balances"><span>Open advance balance</span><strong>${formatCurrency(openBalance)}</strong><small>${balances.filter(row=>row.balance>0).length} active balance${balances.filter(row=>row.balance>0).length===1?'':'s'}</small></button>
+      <button data-adjustment-view="balances"><span>Open advance balance</span><strong>${formatCurrency(openBalance)}</strong><small>${activeBalanceCount} active balance${activeBalanceCount===1?'':'s'}</small></button>
       <div><span>Awaiting approval</span><strong>${summary.pending}</strong><small>Excluded from payroll</small></div>
     </div>`;
   }
+  function adjustmentPaginationTemplate() {
+    if (state.workspace !== 'internal') return '';
+    const meta=state.adjustmentContext?.meta || {};
+    const count=Number(meta.count||0), page=Number(meta.page||state.adjustmentPage||1), pageSize=Number(meta.pageSize||state.adjustmentPageSize||50), totalPages=Math.max(1,Number(meta.totalPages||1));
+    const start=Number(meta.rangeStart||0), end=Number(meta.rangeEnd||0);
+    return `<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${start.toLocaleString()}</strong>–<strong>${end.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-adjustment-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-adjustment-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="adjustmentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div>`;
+  }
+
   function adjustmentRegisterTemplate() {
     const rows = adjustmentFilteredRows();
     const workspaceRows = allAdjustmentRows().filter(row=>state.workspace==='rental'?row.workforceKey==='Rental':row.workforceKey==='Internal');
-    const types = [...new Set(workspaceRows.map(row=>adjustmentNormalizeType(row.type)))].sort();
-    const statuses = [...new Set(workspaceRows.map(row=>row.status).filter(Boolean))].sort();
+    const serverFilters=state.workspace==='internal' ? (state.adjustmentContext?.filters||{}) : null;
+    const types = serverFilters ? (serverFilters.types||[]).map(item=>item.label) : [...new Set(workspaceRows.map(row=>adjustmentNormalizeType(row.type)))].sort();
+    const statuses = serverFilters ? (serverFilters.statuses||[]).map(item=>item.label) : [...new Set(workspaceRows.map(row=>row.status).filter(Boolean))].sort();
+    const matchingCount=state.workspace==='internal' ? Number(state.adjustmentContext?.meta?.count||0) : rows.length;
     return `<section class="panel panel--flush adjustment-ledger-panel">
       <div class="adjustment-filterbar">
-        <div class="search-field adjustment-search">${icon('search')}<input id="adjustmentSearch" type="search" value="${escapeHtml(state.adjustmentSearch)}" placeholder="Search person, type, project, supplier, reference…"></div>
-        
+        <div class="search-field adjustment-search">${icon('search')}<input id="adjustmentSearch" type="search" value="${escapeHtml(state.adjustmentSearch)}" placeholder="Search person, type, reference or reason…"></div>
         <select class="select" id="adjustmentType"><option>All</option>${types.map(type=>`<option ${state.adjustmentType===type?'selected':''}>${escapeHtml(type)}</option>`).join('')}</select>
         <select class="select" id="adjustmentStatus"><option>All</option>${statuses.map(status=>`<option ${state.adjustmentStatus===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select>
         ${state.workspace==='rental'?`<select class="select" id="adjustmentProject"><option>All projects</option>${state.projects.filter(project=>!project.legacyInternal).map(project=>`<option value="${escapeHtml(project.id)}" ${state.adjustmentProject===project.id?'selected':''}>${escapeHtml(project.name)}</option>`).join('')}</select><select class="select" id="adjustmentSupplier"><option>All suppliers</option>${state.suppliers.filter(s=>s.status==='Active').map(supplier=>`<option value="${escapeHtml(supplier.id)}" ${state.adjustmentSupplier===supplier.id?'selected':''}>${escapeHtml(supplier.name)}</option>`).join('')}</select>`:''}
         <button class="btn btn--ghost" data-adjustment-reset>Reset</button>
       </div>
-      <div class="table-meta"><span><strong>${rows.length}</strong> matching transaction${rows.length===1?'':'s'}</span><span>Draft/Review items are visible but do not change payroll or rental settlement.</span></div>
+      <div class="table-meta"><span><strong>${matchingCount}</strong> matching transaction${matchingCount===1?'':'s'}</span><span>Draft/Review items are visible but do not change payroll or rental settlement.</span></div>
       <div class="table-scroll"><table class="data-table adjustment-ledger-table"><thead><tr><th>Date / Period</th><th>Person</th><th>Transaction</th><th>Project / Supplier</th><th>Amount</th><th>${state.workspace==='rental'?'Settlement effect':'Payroll effect'}</th><th>Status</th><th>Source</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>{
         const kind=adjustmentKind(row.type), amount=Number(row.amount||0);
         const entityButton=row.workforceKey==='Internal'?`<button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)} · Internal</span></button>`:`<button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)} · Rental</span></button>`;
         const action=!row.immutable?(row.status==='Draft'?`<button class="btn btn--ghost btn--sm" data-adjustment-action="submit" data-adjustment-id="${escapeHtml(row.id)}">Submit</button>`:row.status==='Review'?`<button class="btn btn--secondary btn--sm" data-adjustment-action="approve" data-adjustment-id="${escapeHtml(row.id)}">Approve</button>`:`<button class="icon-btn icon-btn--sm" data-adjustment-detail="${escapeHtml(row.id)}">${icon('more')}</button>`):`<button class="icon-btn icon-btn--sm" data-adjustment-detail="${escapeHtml(row.id)}">${icon('more')}</button>`;
         return `<tr><td><div class="table-primary">${escapeHtml(row.date||'—')}</div><div class="table-secondary">${escapeHtml(row.period||'—')}</div></td><td>${entityButton}</td><td><div class="adjustment-type-cell"><strong>${escapeHtml(adjustmentNormalizeType(row.type))}</strong><span>${escapeHtml(row.reason||'No reason recorded')}</span></div></td><td><div class="table-primary">${row.projectId?`<button class="entity-link" data-open-project="${escapeHtml(row.projectId)}">${escapeHtml(row.project)}</button>`:escapeHtml(row.project||'Employee-level')}</div>${row.workforceKey==='Rental'?`<div class="table-secondary">${row.supplierId?`<button class="entity-link entity-link--inline" data-open-supplier="${escapeHtml(row.supplierId)}">${escapeHtml(row.supplier)}</button>`:escapeHtml(row.supplier||'—')}</div>`:''}</td><td class="table-money"><strong>${formatCurrency(amount)}</strong></td><td><span class="adjustment-impact adjustment-impact--${kind}">${kind==='earning'?'+':kind==='deduction'?'−':'↔'} ${escapeHtml(adjustmentImpactText(row))}</span></td><td>${statusBadge(row.status||'Draft')}</td><td><span class="source-mini">Database</span></td><td class="table-actions">${action}</td></tr>`;
       }).join(''):`<tr><td colspan="9"><div class="table-empty"><strong>No matching transactions.</strong><span>Change the filters or record an advance/adjustment from the controlled transaction drawer.</span></div></td></tr>`}</tbody></table></div>
+      ${adjustmentPaginationTemplate()}
     </section>`;
   }
 
   function adjustmentBalancesTemplate() {
     const balances=adjustmentAdvanceBalances();
+    const count=state.workspace==='internal' ? Number(state.adjustmentContext?.meta?.count||0) : balances.length;
     return `<div class="adjustment-balance-layout">
       <section class="panel panel--flush"><div class="section-headline"><div><h2>Advance balances</h2><p>Approved Salary Advance issues build the balance; approved Advance Recovery transactions reduce it without deleting prior history.</p></div><button class="btn btn--primary btn--sm" data-quick-add="advance">${icon('plus')} New Advance / Recovery</button></div>
-      <div class="table-scroll"><table class="data-table adjustment-balance-table"><thead><tr><th>Person</th><th>Workforce</th><th>Issued</th><th>Recovered</th><th>Outstanding</th><th>Recovery plan</th><th>Last activity</th><th></th></tr></thead><tbody>${balances.length?balances.map(row=>`<tr><td>${row.workforceKey==='Internal'?`<button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)}</span></button>`:`<button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)}</span></button>`}</td><td>${escapeHtml(row.workforce)}</td><td class="table-money">${formatCurrency(row.issued)}</td><td class="table-money">${formatCurrency(row.recovered)}</td><td class="table-money"><strong>${formatCurrency(row.balance)}</strong>${row.pending?`<small class="balance-pending">${formatCurrency(row.pending)} pending</small>`:''}</td><td>${row.plans.length?`<div class="table-primary">${escapeHtml(row.plans[0].plan)}</div><div class="table-secondary">${row.plans[0].installment?`${formatCurrency(row.plans[0].installment)} / period`:''}${row.plans[0].start?` · from ${escapeHtml(row.plans[0].start)}`:''}</div>`:'<span class="table-secondary">Manual recovery</span>'}</td><td>${row.lastDate?escapeHtml(rentalDisplayDate(row.lastDate)):'—'}</td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-quick-add="advance" data-adjustment-person-context="${escapeHtml(row.personId)}" data-adjustment-workforce-context="${escapeHtml(row.workforce)}" data-adjustment-type-context="Advance Recovery">Recover</button></td></tr>`).join(''):`<tr><td colspan="8"><div class="table-empty"><strong>No approved advance balances yet.</strong><span>Create a Salary Advance, approve it, then record recoveries as separate transactions.</span></div></td></tr>`}</tbody></table></div></section>
+      ${state.workspace==='internal'?`<div class="adjustment-filterbar"><div class="search-field adjustment-search">${icon('search')}<input id="adjustmentSearch" type="search" value="${escapeHtml(state.adjustmentSearch)}" placeholder="Search employee name or ID…"></div><button class="btn btn--ghost" data-adjustment-reset>Reset</button></div><div class="table-meta"><span><strong>${count}</strong> open advance balance${count===1?'':'s'}</span><span>Balances are aggregated from Approved transactions in the company database.</span></div>`:''}
+      <div class="table-scroll"><table class="data-table adjustment-balance-table"><thead><tr><th>Person</th><th>Workforce</th><th>Issued</th><th>Recovered</th><th>Outstanding</th><th>Recovery plan</th><th>Last activity</th><th></th></tr></thead><tbody>${balances.length?balances.map(row=>`<tr><td>${row.workforceKey==='Internal'?`<button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)}</span></button>`:`<button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)}</span></button>`}</td><td>${escapeHtml(row.workforce)}</td><td class="table-money">${formatCurrency(row.issued)}</td><td class="table-money">${formatCurrency(row.recovered)}</td><td class="table-money"><strong>${formatCurrency(row.balance)}</strong>${row.pending?`<small class="balance-pending">${formatCurrency(row.pending)} pending</small>`:''}</td><td>${row.plans.length?`<div class="table-primary">${escapeHtml(row.plans[0].plan)}</div><div class="table-secondary">${row.plans[0].installment?`${formatCurrency(row.plans[0].installment)} / period`:''}${row.plans[0].start?` · from ${escapeHtml(row.plans[0].start)}`:''}</div>`:'<span class="table-secondary">Manual recovery</span>'}</td><td>${row.lastDate?escapeHtml(rentalDisplayDate(row.lastDate)):'—'}</td><td class="table-actions"><button class="btn btn--ghost btn--sm" data-quick-add="advance" data-adjustment-person-context="${escapeHtml(row.personId)}" data-adjustment-workforce-context="${escapeHtml(row.workforce)}" data-adjustment-type-context="Advance Recovery">Recover</button></td></tr>`).join(''):`<tr><td colspan="8"><div class="table-empty"><strong>No approved advance balances yet.</strong><span>Create a Salary Advance, approve it, then record recoveries as separate transactions.</span></div></td></tr>`}</tbody></table></div>
+      ${adjustmentPaginationTemplate()}</section>
       <aside class="adjustment-balance-side"><section class="detail-card"><div class="detail-card__head"><h3>Balance rule</h3><span class="status status--success"><span></span>Audit safe</span></div><div class="rental-rule-list"><div><strong>Salary Advance</strong><span>Creates an outstanding balance; it does not rewrite salary or worker rate.</span></div><div><strong>Advance Recovery</strong><span>Deducts from approved payroll/settlement and reduces the open balance.</span></div><div><strong>Never overwrite</strong><span>Corrections use reversal/new transactions so the history stays traceable.</span></div></div></section></aside>
     </div>`;
   }
 
   function adjustmentsTemplate() {
-    if (state.workspace === 'internal' && !state.internalMasterComplete) {
-      if (!state.internalMasterLoading) hydrateCompleteMaster('employees');
-      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading employee directory…</strong><span>The complete employee master is fetched only when the adjustment person selector needs it.</span></div></section>`;
+    if (state.workspace === 'internal') {
+      const request=internalAdjustmentRequest(state.period);
+      if(state.adjustmentServer.key!==request.key&&state.adjustmentServer.pendingKey!==request.key)queueMicrotask(()=>loadInternalAdjustmentPage(state.period));
+      const contextReady=state.adjustmentContext?.surface==='adjustments_page'&&state.adjustmentContext?.period===periodKeyFromLabel(state.period)&&state.adjustmentContext?.view===state.adjustmentView;
+      if(!contextReady)return `<section class="page adjustments-page ui-v2-prs-internal-page ui-v2-prs-internal-execution-page"><div class="table-empty table-empty--card"><strong>Loading adjustments…</strong><span>Fetching a bounded server page and exact period totals.</span></div></section>`;
     }
     if (state.workspace === 'rental' && !state.rentalMasterComplete) {
       if (!state.rentalMasterLoading) hydrateCompleteMaster('workers');
-      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental worker directory…</strong><span>The complete worker master is fetched only when the adjustment person selector needs it.</span></div></section>`;
-    }
-    if (state.workspace === 'internal' && !state.payrollLoadedPeriods.has(state.period)) {
-      loadInternalPayrollPeriod(state.period);
-      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading adjustments…</strong><span>Fetching the period ledger from the server.</span></div></section>`;
+      return `<section class="page adjustments-page"><div class="table-empty table-empty--card"><strong>Loading rental worker directory…</strong><span>The complete worker master is fetched only for rental transaction ownership.</span></div></section>`;
     }
     if (state.workspace === 'rental' && !state.rentalSettlementLoadedPeriods.has(state.period)) {
       loadRentalSettlementContext(state.period);
@@ -6777,11 +7432,14 @@
     if (state.workspace === 'rental' && state.adjustmentView === 'balances') state.adjustmentView='register';
     const rows=allAdjustmentRows().filter(row=>state.workspace==='rental'?row.workforceKey==='Rental':row.workforceKey==='Internal');
     const summary=adjustmentPeriodSummary(rows), balances=adjustmentAdvanceBalances();
+    const activeBalanceCount=state.workspace==='internal'?Number(state.adjustmentContext?.balanceSummary?.activeCount||0):balances.filter(row=>row.balance>0).length;
+    const totalTransactionCount=state.workspace==='internal'?Number(state.adjustmentContext?.summary?.count||0):rows.length;
     const content=state.workspace==='rental' ? adjustmentRegisterTemplate() : (state.adjustmentView==='balances'?adjustmentBalancesTemplate():adjustmentRegisterTemplate());
     return `<section class="page adjustments-page ${state.workspace==='internal'?'ui-v2-prs-internal-page ui-v2-prs-internal-execution-page':''}">
       <div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Controlled Transactions</span><h1>${state.workspace==='rental'?'Worker Adjustments':'Advances & Adjustments'}</h1><p>${state.workspace==='rental'?'Project-attributed rental-worker advances, fines, bonuses, reimbursements and other settlement adjustments.':'Company-employee advances, recoveries, fines, bonuses, reimbursements and other payroll adjustments.'}</p><span class="period-note">Working period: <strong>${escapeHtml(state.period)}</strong></span></div><div class="page-head__actions">${state.workspace==='rental'?'<button class="btn btn--secondary" data-route-link="rental-settlements">Supplier Settlements</button>':'<button class="btn btn--secondary" data-route-link="payroll-runs">Internal Payroll</button>'}<button class="btn btn--primary" data-quick-add="advance">${icon('plus')} New Transaction</button></div></div>
       ${adjustmentSummaryStrip(summary,balances)}
-      ${state.workspace==='rental'?'':`<div class="adjustment-tabs"><button class="${state.adjustmentView==='register'?'is-active':''}" data-adjustment-view="register"><span>Transaction Register</span><small>${rows.length} total records</small></button><button class="${state.adjustmentView==='balances'?'is-active':''}" data-adjustment-view="balances"><span>Advance Balances</span><small>${balances.filter(row=>row.balance>0).length} open</small></button></div>`}
+      ${state.workspace==='rental'?'':`<div class="adjustment-tabs"><button class="${state.adjustmentView==='register'?'is-active':''}" data-adjustment-view="register"><span>Transaction Register</span><small>${totalTransactionCount} total records</small></button><button class="${state.adjustmentView==='balances'?'is-active':''}" data-adjustment-view="balances"><span>Advance Balances</span><small>${activeBalanceCount} open</small></button></div>`}
+      ${state.adjustmentServer.error&&state.workspace==='internal'?`<div class="ui-v2-payroll-inline-alert"><strong>Adjustment page could not be refreshed.</strong><span>${escapeHtml(state.adjustmentServer.error)}</span></div>`:''}
       ${content}
       <div class="source-note adjustment-source-note">${icon('info')}<span><strong>Calculation boundary:</strong> ${state.workspace==='rental'?'Only Approved database adjustments are snapshotted into the matching supplier/project settlement. Worker Advance is a direct settlement deduction; it is not an internal employee salary-advance balance.':'Internal transactions are company-scoped database records. Draft and Review items remain excluded from payroll until approved.'}</span></div>
     </section>`;
@@ -6791,6 +7449,8 @@
   }
 
   function adjustmentFindMutable(id) {
+    const serverItem=(state.adjustmentContext?.results||[]).find(row=>row.id===id);
+    if(serverItem) return {item:serverItem,kind:'internal',personId:serverItem.personId||serverItem.employeeId};
     for (const [employeeId,items] of Object.entries(state.internalAdjustments||{})) {
       const item=(items||[]).find(row=>row.id===id); if(item) return {item,kind:'internal',personId:employeeId};
     }
@@ -6812,13 +7472,40 @@
     const personSelect=drawerBody.querySelector('[name="adjustment-person"]');
     if(!workforceSelect||!personSelect)return;
     const preferred=state.drawerContext?.personId || '';
-    const fill=()=>{
-      const isRental=workforceSelect.value==='Rental Worker';
-      const options=isRental?state.rentalWorkers.map(worker=>({value:worker.id,label:`${rentalWorkerCode(worker)} · ${worker.name}`})):state.employees.map(employee=>({value:employee.id,label:`EMP ${employee.employeeId} · ${employee.name}`}));
+    const isRental=workforceSelect.value==='Rental Worker';
+    if(isRental){
+      const options=state.rentalWorkers.map(worker=>({value:worker.id,label:`${rentalWorkerCode(worker)} · ${worker.name}`}));
       personSelect.innerHTML=options.map(item=>`<option value="${escapeHtml(item.value)}" ${item.value===preferred?'selected':''}>${escapeHtml(item.label)}</option>`).join('');
-      if(preferred && options.some(item=>item.value===preferred)) personSelect.value=preferred;
+      if(preferred&&options.some(item=>item.value===preferred))personSelect.value=preferred;
+      return;
+    }
+    const selectedEmployee=state.employees.find(item=>item.id===preferred) || null;
+    const renderOptions=(rows, selected=personSelect.value||preferred)=>{
+      const options=[...(rows||[])];
+      const selectedCached=state.employees.find(item=>item.id===selected);
+      if(selectedCached&&!options.some(item=>item.id===selectedCached.id))options.unshift(selectedCached);
+      personSelect.innerHTML=`<option value="">Search and select an employee</option>${options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId||item.employeeNumber||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
+      if(selected&&options.some(item=>item.id===selected))personSelect.value=selected;
     };
-    fill(); workforceSelect.addEventListener('change',()=>{state.drawerContext={...(state.drawerContext||{}),personId:''};fill();});
+    renderOptions(selectedEmployee?[selectedEmployee]:[],preferred);
+    const input=drawerBody.querySelector('#adjustmentPersonSearch');
+    if(!input)return;
+    let timer=null;
+    input.addEventListener('input',()=>{
+      clearTimeout(timer);
+      timer=setTimeout(async()=>{
+        const query=input.value.trim();
+        if(query.length<2){renderOptions(selectedEmployee?[selectedEmployee]:[],personSelect.value||preferred);return;}
+        try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
+        const controller=new AbortController();state.adjustmentPersonLookupController=controller;
+        try{
+          const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
+          const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
+          if(state.adjustmentPersonLookupController!==controller)return;
+          const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);renderOptions(rows,personSelect.value||preferred);
+        }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
+      },280);
+    });
   }
 
 
@@ -6845,14 +7532,47 @@
 
   function documentTypeLabel(type) { return documentTypeMeta[type]?.label || type || 'Document'; }
   function documentTypeCode(type) { return documentTypeMeta[type]?.code || 'DC'; }
-  function documentAllRecords() { return (state.businessDocuments||[]).filter(item=>item.workspace===state.workspace); }
-
-  async function loadDocumentList({render=true}={}) {
+  function documentPeriodLabel(key) {
+    const [year,month]=String(key||'').split('-').map(Number);
+    if(!year||!month)return String(key||'');
+    return `${months[Math.max(0,Math.min(11,month-1))]} ${year}`;
+  }
+  function documentAllRecords() { return state.documentContext?.documents || []; }
+  function documentRequest() {
+    const params=new URLSearchParams({workspace:state.workspace,page:String(state.documentPage||1),page_size:String(state.documentPageSize||50)});
+    if(state.documentSearch.trim())params.set('q',state.documentSearch.trim());
+    if(state.documentTab!=='all')params.set('type',state.documentTab);
+    if(state.documentPeriodFilter!=='All periods')params.set('period',periodKeyFromLabel(state.documentPeriodFilter));
+    const url=`/api/documents/?${params.toString()}`;
+    return {url,key:url};
+  }
+  function cancelDocumentListRequest() {
+    const server=state.documentServer;if(server.controller){try{server.controller.abort();}catch{}}
+    server.controller=null;server.pendingKey='';server.loading=false;
+  }
+  async function loadDocumentList({render=true,force=false}={}) {
+    const request=documentRequest();const server=state.documentServer;
+    if(!force && server.key===request.key && state.documentContext)return true;
+    if(server.pendingKey===request.key)return false;
+    cancelDocumentListRequest();
+    const controller=new AbortController();const requestId=++server.requestId;
+    server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';
     try {
-      const payload=await appApi(`/api/documents/?workspace=${encodeURIComponent(state.workspace)}`);
-      state.businessDocuments=(state.businessDocuments||[]).filter(item=>item.workspace!==state.workspace).concat(payload.documents||[]);
+      const payload=await appApi(request.url,{signal:controller.signal});
+      if(requestId!==server.requestId)return false;
+      state.documentContext=payload;
+      server.key=request.key;server.meta=payload.meta||{};
+      for(const doc of (payload.documents||[])) replaceStateRecord(state.businessDocuments,doc);
+      if(state.selectedDocumentId && !(payload.documents||[]).some(item=>item.id===state.selectedDocumentId)) state.selectedDocumentId=null;
       if(render && currentRoute()==='documents')renderRoute();
-    } catch(error){showToast('Documents unavailable',error.message);}
+      return true;
+    } catch(error){
+      if(error?.name==='AbortError')return false;
+      server.error=error.message;showToast('Documents unavailable',error.message);
+      if(render&&currentRoute()==='documents')renderRoute();return false;
+    } finally {
+      if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;}
+    }
   }
 
   async function loadDocumentDetail(id,{render=true}={}) {
@@ -6880,41 +7600,46 @@
     return ({branch:'Branch / Office',department:'Department',employee:'Employee',supplier:'Supplier',worker:'Rental Worker',project:'Project'})[kind] || 'Record';
   }
 
+  function recordManagementServer(bucket){return state.recordManagement.servers[bucket];}
+  function recordManagementRequest(bucket){
+    const params=new URLSearchParams({workspace:state.workspace,bucket,page:String(state.recordManagement.page[bucket]||1),page_size:String(state.recordManagement.pageSize[bucket]||50)});
+    const q=state.recordManagement.search[bucket]?.trim();if(q)params.set('q',q);
+    const url=`/api/record-management/?${params.toString()}`;return {url,key:url};
+  }
+  function cancelRecordManagementRequest(bucket){const server=recordManagementServer(bucket);if(server?.controller){try{server.controller.abort();}catch{}}if(server){server.controller=null;server.pendingKey='';server.loading=false;}}
+  async function loadRecordManagementPage(bucket,{render=true,force=false}={}){
+    const request=recordManagementRequest(bucket),server=recordManagementServer(bucket);if(!server)return false;
+    if(!force&&server.key===request.key&&state.recordManagement.contexts[bucket])return true;if(server.pendingKey===request.key)return false;
+    cancelRecordManagementRequest(bucket);const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';
+    try{const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;state.recordManagement.contexts[bucket]=payload;state.recordManagement[bucket]=payload.records||[];state.recordManagement.retentionDays=Number(payload.retentionDays||30);server.key=request.key;server.meta=payload.meta||{};if(render&&currentRoute()===(bucket==='trash'?'trash':'archive'))renderRoute();return true;}
+    catch(error){if(error?.name==='AbortError')return false;server.error=error.message;showToast('Record Management unavailable',error.message);if(render)renderRoute();return false;}
+    finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;}}
+  }
   function recordManagementTemplate(bucket) {
-    const isTrash = bucket === 'trash';
-    const rows = (state.recordManagement?.[bucket] || []).filter(item => item.workspace === state.workspace);
+    const isTrash = bucket === 'trash';const request=recordManagementRequest(bucket),server=recordManagementServer(bucket),context=state.recordManagement.contexts[bucket];
+    if((!context||server.key!==request.key)&&server.pendingKey!==request.key)queueMicrotask(()=>loadRecordManagementPage(bucket));
+    const rows=context?.records||[];const meta=context?.meta||server.meta||{};const count=Number(meta.count||0),page=Number(meta.page||state.recordManagement.page[bucket]||1),pageSize=Number(meta.pageSize||state.recordManagement.pageSize[bucket]||50),totalPages=Math.max(1,Number(meta.totalPages||1));
     const title = isTrash ? 'Delete' : 'Archive';
-    const copy = isTrash
-      ? `Deleted master records remain recoverable for ${state.recordManagement.retentionDays || 30} days. Restore them here before the purge date.`
-      : 'Archived master records remain part of company history and can be restored here without rewriting historical activity.';
-    return `<section class="page records-bin-page ui-v2-payroll-page">
-      <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Records · Lifecycle control</span><h1>${title}</h1><p>${escapeHtml(copy)}</p></div></div>
-      <section class="panel panel--flush">
-        <div class="panel__head panel__head--padded"><div><h2>${title}</h2><p>${isTrash ? 'Deleted records remain separate from Archive. Protected historical references stay preserved even after the 30-day recovery window expires.' : 'Archive is persistent until a user deliberately restores the record.'}</p></div><span class="status-badge">${rows.length} record${rows.length===1?'':'s'}</span></div>
-        ${rows.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Type</th><th>Record</th><th>${isTrash?'Deleted':'Archived'}</th>${isTrash?'<th>Purge after</th>':''}<th>Reason</th><th></th></tr></thead><tbody>${rows.map(row=>`<tr><td>${escapeHtml(recordKindLabel(row.kind))}</td><td><strong>${escapeHtml(row.label)}</strong><small class="table-secondary">${escapeHtml(row.code || '')}${row.detail?` · ${escapeHtml(row.detail)}`:''}</small></td><td>${escapeHtml(payrollTimestamp(isTrash?row.deletedAt:row.archivedAt) || '—')}</td>${isTrash?`<td><strong>${escapeHtml(payrollTimestamp(row.purgeAfter) || '—')}</strong><small class="table-secondary">30-day recovery window</small></td>`:''}<td>${escapeHtml((isTrash?row.deletionReason:row.archiveReason) || '—')}</td><td><button class="btn btn--secondary btn--sm" data-record-bin-restore="${bucket}|${escapeHtml(row.kind)}|${escapeHtml(row.id)}">Restore</button></td></tr>`).join('')}</tbody></table></div>` : `<div class="table-empty table-empty--card"><strong>${isTrash?'No deleted records':'Archive is empty'}</strong><span>${isTrash?'Deleted records that are still inside the 30-day recovery window will appear here.':'Archived records for this workspace will appear here.'}</span></div>`}
-      </section>
-      <section class="source-note">${icon('info')}<span><strong>${isTrash?'30-day delete recovery':'Archive is not deletion'}.</strong>${isTrash?' Deleting a record starts a 30-day recovery window and never erases protected payroll, assignment, inventory, settlement or audit history.':' Archived records are retained until restored and remain resolvable from historical records.'}</span></section>
-    </section>`;
+    const copy = isTrash ? `Deleted master records remain recoverable for ${state.recordManagement.retentionDays || 30} days. Restore them here before the purge date.` : 'Archived master records remain part of company history and can be restored here without rewriting historical activity.';
+    const body=server.error?`<div class="table-empty table-empty--card"><strong>Records unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-record-retry="${bucket}">Retry</button></div>`:rows.length?`<div class="table-scroll"><table class="data-table"><thead><tr><th>Type</th><th>Record</th><th>${isTrash?'Deleted':'Archived'}</th>${isTrash?'<th>Purge after</th>':''}<th>Reason</th><th></th></tr></thead><tbody>${rows.map(row=>`<tr><td>${escapeHtml(recordKindLabel(row.kind))}</td><td><strong>${escapeHtml(row.label)}</strong><small class="table-secondary">${escapeHtml(row.code || '')}${row.detail?` · ${escapeHtml(row.detail)}`:''}</small></td><td>${escapeHtml(payrollTimestamp(isTrash?row.deletedAt:row.archivedAt) || '—')}</td>${isTrash?`<td><strong>${escapeHtml(payrollTimestamp(row.purgeAfter) || '—')}</strong><small class="table-secondary">30-day recovery window</small></td>`:''}<td>${escapeHtml((isTrash?row.deletionReason:row.archiveReason) || '—')}</td><td><button class="btn btn--secondary btn--sm" data-record-bin-restore="${bucket}|${escapeHtml(row.kind)}|${escapeHtml(row.id)}">Restore</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="table-empty table-empty--card"><strong>${server.loading?'Loading records…':isTrash?'No deleted records':'Archive is empty'}</strong><span>${server.loading?'Fetching one bounded page from the company database.':isTrash?'Deleted records that are still inside the 30-day recovery window will appear here.':'Archived records for this workspace will appear here.'}</span></div>`;
+    return `<section class="page records-bin-page ui-v2-payroll-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Records · Lifecycle control</span><h1>${title}</h1><p>${escapeHtml(copy)}</p></div></div><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${title}</h2><p>${isTrash ? 'Deleted records remain separate from Archive. Protected historical references stay preserved even after the 30-day recovery window expires.' : 'Archive is persistent until a user deliberately restores the record.'}</p></div><span class="status-badge">${count.toLocaleString()} record${count===1?'':'s'}</span></div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="recordManagementSearch" type="search" value="${escapeHtml(state.recordManagement.search[bucket]||'')}" placeholder="Search code or name…"></div></div>${body}<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${Number(meta.rangeStart||0).toLocaleString()}</strong>–<strong>${Number(meta.rangeEnd||0).toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-record-page="${bucket}|${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-record-page="${bucket}|${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select data-record-page-size="${bucket}" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></section><section class="source-note">${icon('info')}<span><strong>${isTrash?'30-day delete recovery':'Archive is not deletion'}.</strong>${isTrash?' Deleting a record starts a 30-day recovery window and never erases protected payroll, assignment, inventory, settlement or audit history.':' Archived records are retained until restored and remain resolvable from historical records.'}</span></section></section>`;
   }
 
   function documentsTemplate() {
-    const all=documentAllRecords();
     const allowedTypes=state.workspace==='rental'?['rental_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']:['salary_slip','internal_timesheet','salary_payment_receipt'];
-    if(state.documentTab!=='all'&&!allowedTypes.includes(state.documentTab))state.documentTab='all';
-    const q=state.documentSearch.trim().toLowerCase();
-    const filtered=all.filter(doc=>{
-      if(state.documentTab!=='all'&&doc.type!==state.documentTab)return false;
-      if(state.documentPeriodFilter!=='All periods'&&doc.period!==state.documentPeriodFilter)return false;
-      if(state.documentStatusFilter!=='All statuses'&&doc.status!==state.documentStatusFilter)return false;
-      if(!q)return true;
-      return `${doc.number} ${doc.title} ${doc.entityReference} ${doc.entityName} ${doc.sourceReference} ${doc.externalReference}`.toLowerCase().includes(q);
-    });
-    const periods=[...new Set(all.map(item=>item.period).filter(Boolean))].sort(managementPeriodSort);
-    const statuses=[...new Set(all.map(item=>item.status).filter(Boolean))].sort();
-    const counts=Object.fromEntries(allowedTypes.map(type=>[type,all.filter(item=>item.type===type).length]));
-    let selected=filtered.find(item=>item.id===state.selectedDocumentId)||filtered[0]||null;
+    if(state.documentTab!=='all'&&!allowedTypes.includes(state.documentTab)){state.documentTab='all';state.documentPage=1;}
+    const request=documentRequest();const context=state.documentContext;const server=state.documentServer;
+    if((!context || server.key!==request.key) && server.pendingKey!==request.key)queueMicrotask(()=>loadDocumentList());
+    const all=context?.documents||[];const summary=context?.summary||{};const meta=context?.meta||server.meta||{};
+    const periodKeys=context?.filters?.periods||[];const statuses=context?.filters?.statuses||['Final'];
+    const counts=summary.typeCounts||{};const totalCount=Number(summary.count||0);const matchingCount=Number(meta.count||0);
+    let selected=all.find(item=>item.id===state.selectedDocumentId)||all[0]||null;
     if(selected&&state.selectedDocumentId!==selected.id)state.selectedDocumentId=selected.id;
-    return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1><p>${state.workspace==='rental'?'Final project timesheets, supplier settlements, supplier invoices and supplier-payment receipts.':'Final salary slips, internal timesheets and salary-payment receipts.'}</p></div><div class="page-head__actions"><button class="btn btn--primary" data-document-generate>${icon('plus')} Finalize Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${counts[type]||0}</strong><small>Immutable final records</small></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${all.length}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${counts[type]||0}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periods.map(period=>`<option ${state.documentPeriodFilter===period?'selected':''}>${escapeHtml(period)}</option>`).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${filtered.length} document${filtered.length===1?'':'s'}</strong><span>${state.documentPeriodFilter}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="Finalize document">${icon('plus')}</button></div><div class="document-list">${filtered.length?filtered.map(doc=>`<button class="document-list-item ${doc.id===selected?.id?'is-active':''}" data-document-select="${escapeHtml(doc.id)}"><span class="document-list-item__icon">${escapeHtml(documentTypeCode(doc.type))}</span><span class="document-list-item__body"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.number)} · ${escapeHtml(doc.entityName||doc.entityReference||'Company')}</small><em>${escapeHtml(doc.period||'No period')} · ${escapeHtml(doc.sourceReference||'Controlled source')}</em></span><span class="document-list-item__status">${documentStatusBadge(doc.status)}</span></button>`).join(''):'<div class="table-empty table-empty--card"><strong>No finalized documents match these filters.</strong><span>Finalize an eligible controlled source record for this workspace.</span></div>'}</div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document preview'}</strong><span>${selected?`${escapeHtml(documentTypeLabel(selected.type))} · ${escapeHtml(selected.period||'')}`:'Select a document from the list'}</span></div><div class="document-preview-toolbar__actions"><button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${documentSnapshotSummary(selected)}</div>${selected?`<div class="document-info-strip"><div><span>Document</span><strong>${escapeHtml(selected.number)}</strong></div><div><span>Source</span><strong>${escapeHtml(selected.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(selected.status)}</strong></div><div><span>Integrity</span><strong>${selected.integrityOk?'Verified':'Failed'}</strong></div></div>`:''}</section></div></section>`;
+    const page=Number(meta.page||state.documentPage||1),pageSize=Number(meta.pageSize||state.documentPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
+    const startRow=Number(meta.rangeStart||0),endRow=Number(meta.rangeEnd||0);
+    const loading=server.loading && server.pendingKey===request.key;
+    const listHtml=server.error?`<div class="table-empty table-empty--card"><strong>Documents unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-document-retry>Retry</button></div>`:all.length?all.map(doc=>`<button class="document-list-item ${doc.id===selected?.id?'is-active':''}" data-document-select="${escapeHtml(doc.id)}"><span class="document-list-item__icon">${escapeHtml(documentTypeCode(doc.type))}</span><span class="document-list-item__body"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.number)} · ${escapeHtml(doc.entityName||doc.entityReference||'Company')}</small><em>${escapeHtml(doc.period||'No period')} · ${escapeHtml(doc.sourceReference||'Controlled source')}</em></span><span class="document-list-item__status">${documentStatusBadge(doc.status)}</span></button>`).join(''):`<div class="table-empty table-empty--card"><strong>${loading?'Loading finalized documents…':'No finalized documents match these filters.'}</strong><span>${loading?'Reading one bounded page from the company database.':'Finalize an eligible controlled source record or change the filters.'}</span></div>`;
+    return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1><p>${state.workspace==='rental'?'Final project timesheets, supplier settlements, supplier invoices and supplier-payment receipts.':'Final salary slips, internal timesheets and salary-payment receipts.'}</p></div><div class="page-head__actions"><button class="btn btn--primary" data-document-generate>${icon('plus')} Finalize Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong><small>Immutable final records</small></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="Finalize document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document preview'}</strong><span>${selected?`${escapeHtml(documentTypeLabel(selected.type))} · ${escapeHtml(selected.period||'')}`:'Select a document from the list'}</span></div><div class="document-preview-toolbar__actions"><button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${documentSnapshotSummary(selected)}</div>${selected?`<div class="document-info-strip"><div><span>Document</span><strong>${escapeHtml(selected.number)}</strong></div><div><span>Source</span><strong>${escapeHtml(selected.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(selected.status)}</strong></div><div><span>Integrity</span><strong>${selected.integrityOk?'Verified':'Failed'}</strong></div></div>`:''}</section></div></section>`;
   }
 
   async function openDocumentGenerateDrawer() {
@@ -6944,7 +7669,7 @@
       body.invoice_number=invoiceNumber;body.issue_date=issueDate;body.subtotal=subtotal.toFixed(2);body.vat_amount=vat.toFixed(2);body.total=(subtotal+vat).toFixed(2);
     }
     drawerSave.disabled=true;
-    try{const payload=await appApi('/api/documents/',{method:'POST',body});const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';closeDrawer();if(currentRoute()!=='documents')navigate('documents');else renderRoute();showToast('Document finalized',`${doc.number} is stored as an immutable final snapshot.`);return true;}
+    try{const payload=await appApi('/api/documents/',{method:'POST',body});const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';state.documentPage=1;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';closeDrawer();if(currentRoute()!=='documents')navigate('documents');else renderRoute();showToast('Document finalized',`${doc.number} is stored as an immutable final snapshot.`);return true;}
     catch(error){drawerSave.disabled=false;showToast('Document could not be finalized',error.message);return false;}
   }
 
@@ -6971,26 +7696,32 @@
   ];
 
   function reportAllowedTypes(){return state.workspace==='management'?['workforce-cost']:state.workspace==='rental'?['rental-project-cost','supplier-cost','overtime','advances','transfers','payments']:['internal-payroll','overtime','advances','payments','wps'];}
-  function reportCacheKey(type=state.reportType,period=state.reportPeriod,workspace=state.workspace){return `${workspace}|${type}|${period}`;}
-
-  async function loadReportContext({render=true,force=false}={}){
-    const key=reportCacheKey();if(state.reportLoadingKey===key)return;if(!force&&state.reportContexts[key])return;
-    state.reportLoadingKey=key;
-    try{const payload=await appApi(`/api/reports/?workspace=${encodeURIComponent(state.workspace)}&type=${encodeURIComponent(state.reportType)}&period=${encodeURIComponent(periodKeyFromLabel(state.reportPeriod))}`);state.reportContexts[key]={report:payload.report,periods:payload.periods||[]};if(render&&currentRoute()==='reports')renderRoute();}
-    catch(error){showToast('Report unavailable',error.message);state.reportContexts[key]={error:error.message,report:null,periods:[]};if(render&&currentRoute()==='reports')renderRoute();}
-    finally{state.reportLoadingKey=null;}
+  function reportRequest(){
+    const params=new URLSearchParams({workspace:state.workspace,type:state.reportType,period:periodKeyFromLabel(state.reportPeriod),page:String(state.reportPage||1),page_size:String(state.reportPageSize||50)});
+    if(state.reportSearch.trim())params.set('q',state.reportSearch.trim());
+    const url=`/api/reports/?${params.toString()}`;return {url,key:url};
   }
-
-  function reportModel(){const key=reportCacheKey();const cached=state.reportContexts[key];if(!cached&&!state.reportLoadingKey)queueMicrotask(()=>loadReportContext());return cached||null;}
-  function reportFilteredRows(report){const q=state.reportSearch.trim().toLowerCase();return (report?.rows||[]).filter(row=>!q||row.map(value=>String(value??'')).join(' ').toLowerCase().includes(q));}
+  function cancelReportRequest(){const server=state.reportServer;if(server.controller){try{server.controller.abort();}catch{}}server.controller=null;server.pendingKey='';server.loading=false;}
+  async function loadReportContext({render=true,force=false}={}){
+    const request=reportRequest(),server=state.reportServer;
+    if(!force&&server.key===request.key&&state.reportContext)return true;if(server.pendingKey===request.key)return false;
+    cancelReportRequest();const controller=new AbortController(),requestId=++server.requestId;server.controller=controller;server.pendingKey=request.key;server.loading=true;server.error='';state.reportLoadingKey=request.key;
+    try{const payload=await appApi(request.url,{signal:controller.signal});if(requestId!==server.requestId)return false;state.reportContext={report:payload.report,periods:payload.periods||[]};server.key=request.key;server.meta=payload.report?.meta||{};if(render&&currentRoute()==='reports')renderRoute();return true;}
+    catch(error){if(error?.name==='AbortError')return false;server.error=error.message;state.reportContext={error:error.message,report:null,periods:[]};showToast('Report unavailable',error.message);if(render&&currentRoute()==='reports')renderRoute();return false;}
+    finally{if(requestId===server.requestId){server.controller=null;server.pendingKey='';server.loading=false;state.reportLoadingKey=null;}}
+  }
+  function reportModel(){const request=reportRequest(),cached=state.reportContext;if((!cached||state.reportServer.key!==request.key)&&state.reportServer.pendingKey!==request.key)queueMicrotask(()=>loadReportContext());return state.reportServer.key===request.key?cached:null;}
+  function reportFilteredRows(report){return report?.rows||[];}
   function reportNumericColumn(column){return /amount|gross|net|cost|salary|deduction|adjustment|hours|paid|base|overtime/i.test(String(column));}
 
   function reportsTemplate() {
-    const allowed=reportAllowedTypes();if(!allowed.includes(state.reportType))state.reportType=allowed[0];
+    const allowed=reportAllowedTypes();if(!allowed.includes(state.reportType)){state.reportType=allowed[0];state.reportPage=1;}
     const catalog=reportCatalog.filter(item=>allowed.includes(item.id));const cached=reportModel();const report=cached?.report;const rows=reportFilteredRows(report);
     const periodOptions=(cached?.periods?.length?cached.periods:[{key:periodKeyFromLabel(state.reportPeriod),label:state.reportPeriod}]);
-    if(!report)return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>Server-generated reporting from controlled payroll, settlement, payment and assignment records.</p></div></div><div class="table-empty table-empty--card"><strong>${cached?.error?'Report could not be loaded':'Loading report…'}</strong><span>${escapeHtml(cached?.error||`Fetching ${state.reportPeriod} from the company database.`)}</span></div></section>`;
-    return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>${state.workspace==='management'?'Compare finalized workforce cost without merging operational ledgers.':state.workspace==='rental'?'Analyze approved supplier manpower, assignments, adjustments and payments.':'Analyze payroll snapshots, employee overtime, adjustments, salary payments and WPS configuration.'}</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-report-print>${icon('document')} Print</button><button class="btn btn--primary" data-report-export>Export CSV</button></div></div><div class="report-layout"><aside class="report-catalog"><div class="report-catalog__head"><strong>Report library</strong><span>${catalog.length} reports</span></div>${catalog.map(item=>`<button class="report-catalog__item ${state.reportType===item.id?'is-active':''}" data-report-type="${item.id}"><span>${item.code}</span><span><strong>${item.title}</strong><small>${item.meta}</small></span>${icon('chevron')}</button>`).join('')}</aside><div class="report-main"><section class="panel panel--flush report-viewer"><div class="report-viewer__head"><div><span class="eyebrow">${escapeHtml(state.reportPeriod)}</span><h2>${escapeHtml(report.title)}</h2><p>${escapeHtml(report.description)}</p></div><span class="report-live-chip"><span></span>Company database</span></div><div class="report-filterbar"><div class="search-field">${icon('search')}<input id="reportSearch" type="search" value="${escapeHtml(state.reportSearch)}" placeholder="Search this report…"></div><select class="select" id="reportPeriod">${periodOptions.map(item=>`<option ${state.reportPeriod===item.label?'selected':''} value="${escapeHtml(item.label)}">${escapeHtml(item.label)}</option>`).join('')}</select><button class="btn btn--ghost" data-report-reset>Reset</button></div><div class="report-kpis">${(report.kpis||[]).map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><div class="table-wrap report-table-wrap"><table class="data-table report-table"><thead><tr>${(report.columns||[]).map(column=>`<th class="${reportNumericColumn(column)?'num':''}">${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map((value,index)=>`<td class="${reportNumericColumn(report.columns[index])?'num':''}">${escapeHtml(value)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${Math.max(1,(report.columns||[]).length)}"><div class="table-empty"><strong>No records for this report.</strong><span>Change the period or search. No estimated rows are generated.</span></div></td></tr>`}</tbody></table></div><div class="report-source-note"><span>${icon('info')}</span><p><strong>Data note.</strong> ${escapeHtml(report.sourceNote||'This report reads controlled company records.')}</p></div></section></div></div></section>`;
+    if(!report)return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>Server-generated reporting from controlled payroll, settlement, payment and assignment records.</p></div></div><div class="table-empty table-empty--card"><strong>${state.reportServer.error?'Report could not be loaded':'Loading report…'}</strong><span>${escapeHtml(state.reportServer.error||`Fetching one bounded page for ${state.reportPeriod} from the company database.`)}</span></div></section>`;
+    const meta=report.meta||{};const count=Number(meta.count||0),page=Number(meta.page||state.reportPage||1),pageSize=Number(meta.pageSize||state.reportPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
+    const rangeStart=Number(meta.rangeStart||0),rangeEnd=Number(meta.rangeEnd||0),loading=state.reportServer.loading;
+    return `<section class="page report-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Reporting</span><h1>Reports</h1><p>${state.workspace==='management'?'Compare finalized workforce cost without merging operational ledgers.':state.workspace==='rental'?'Analyze approved supplier manpower, assignments, adjustments and payments.':'Analyze payroll snapshots, employee overtime, adjustments, salary payments and WPS configuration.'}</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-report-print>${icon('document')} Print Page</button><button class="btn btn--primary" data-report-export>Export CSV</button></div></div><div class="report-layout"><aside class="report-catalog"><div class="report-catalog__head"><strong>Report library</strong><span>${catalog.length} reports</span></div>${catalog.map(item=>`<button class="report-catalog__item ${state.reportType===item.id?'is-active':''}" data-report-type="${item.id}"><span>${item.code}</span><span><strong>${item.title}</strong><small>${item.meta}</small></span>${icon('chevron')}</button>`).join('')}</aside><div class="report-main"><section class="panel panel--flush report-viewer"><div class="report-viewer__head"><div><span class="eyebrow">${escapeHtml(state.reportPeriod)}</span><h2>${escapeHtml(report.title)}</h2><p>${escapeHtml(report.description)}</p></div><span class="report-live-chip"><span></span>${loading?'Refreshing…':'Company database'}</span></div><div class="report-filterbar"><div class="search-field">${icon('search')}<input id="reportSearch" type="search" value="${escapeHtml(state.reportSearch)}" placeholder="Search this report…"></div><select class="select" id="reportPeriod">${periodOptions.map(item=>`<option ${state.reportPeriod===item.label?'selected':''} value="${escapeHtml(item.label)}">${escapeHtml(item.label)}</option>`).join('')}</select><button class="btn btn--ghost" data-report-reset>Reset</button></div><div class="report-kpis">${(report.kpis||[]).map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><div class="table-wrap report-table-wrap"><table class="data-table report-table"><thead><tr>${(report.columns||[]).map(column=>`<th class="${reportNumericColumn(column)?'num':''}">${escapeHtml(column)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map((value,index)=>`<td class="${reportNumericColumn(report.columns[index])?'num':''}">${escapeHtml(value)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${Math.max(1,(report.columns||[]).length)}"><div class="table-empty"><strong>No records for this report.</strong><span>Change the period or search. No estimated rows are generated.</span></div></td></tr>`}</tbody></table></div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${rangeStart.toLocaleString()}</strong>–<strong>${rangeEnd.toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-report-page="${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-report-page="${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="reportPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div><div class="report-source-note"><span>${icon('info')}</span><p><strong>Data note.</strong> ${escapeHtml(report.sourceNote||'This report reads controlled company records.')} Interactive rows are database-paginated; CSV export remains the explicit full-result path.</p></div></section></div></div></section>`;
   }
 
   function exportCurrentReport() {
@@ -7153,7 +7884,13 @@
     if (!endpoint) throw new Error('Unsupported record type.');
     const action = bucket === 'trash' ? 'restore_trash' : 'restore_archive';
     await appApi(endpoint, { method:'POST', body:{ action, reason:`${bucket === 'trash' ? 'Restored deleted record' : 'Restored from Archive'}` } });
-    reloadIntoRoute(bucket);
+    cancelRecordManagementRequest(bucket);
+    const server=recordManagementServer(bucket);if(server)server.key='';
+    state.recordManagement.contexts[bucket]=null;
+    invalidateServerDirectories();
+    await loadRecordManagementPage(bucket,{render:false,force:true});
+    renderRoute();
+    showToast('Record restored', bucket === 'trash' ? 'The record was restored from Delete.' : 'The record was restored from Archive.');
   }
 
   function applyTimesheetFullscreenState() {
@@ -7224,20 +7961,24 @@
     } else if (route === 'suppliers') pageRoot.innerHTML = suppliersTemplate();
     else if (route === 'branches' && branchId) {
       const branch = state.branches.find(item => item.id === branchId);
-      if(!state.internalMasterComplete){if(!state.internalMasterLoading)hydrateCompleteMaster('employees');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading branch workforce…</strong><span>The complete employee master is fetched only for branch profile detail.</span></div></section>`;}
-      else pageRoot.innerHTML = branchProfileTemplate(branch);
+      const context = organizationEmployeeContext('branch', branchId);
+      const contextKey = organizationEmployeeContextKey('branch', branchId);
+      if (!context && !state.organizationEmployeeLoading.has(contextKey)) loadOrganizationEmployeeContext('branch', branchId, { render:true });
+      pageRoot.innerHTML = branchProfileTemplate(branch, context);
       title = branch?.name || 'Branch / Office';
     } else if (route === 'branches') pageRoot.innerHTML = branchesTemplate();
     else if (route === 'departments' && departmentId) {
       const department = state.departments.find(item => item.id === departmentId);
-      if(!state.internalMasterComplete){if(!state.internalMasterLoading)hydrateCompleteMaster('employees');pageRoot.innerHTML=`<section class="page"><div class="table-empty table-empty--card"><strong>Loading department workforce…</strong><span>The complete employee master is fetched only for department profile detail.</span></div></section>`;}
-      else pageRoot.innerHTML = departmentProfileTemplate(department);
+      const context = organizationEmployeeContext('department', departmentId);
+      const contextKey = organizationEmployeeContextKey('department', departmentId);
+      if (!context && !state.organizationEmployeeLoading.has(contextKey)) loadOrganizationEmployeeContext('department', departmentId, { render:true });
+      pageRoot.innerHTML = departmentProfileTemplate(department, context);
       title = department?.name || 'Department';
     } else if (route === 'departments') pageRoot.innerHTML = departmentsTemplate();
     else if (route === 'internal-employees' && employeeId) {
       const employee = state.employees.find(item => item.id === employeeId);
       const profileKey = employeeProfileContextKey(employeeId, state.period);
-      if (!state.employeeProfileContexts[profileKey] && !state.employeeProfileLoading.has(profileKey)) {
+      if ((!employee || !state.employeeProfileContexts[profileKey]) && !state.employeeProfileLoading.has(profileKey)) {
         loadEmployeeProfileContext(employeeId, state.period, { render:true });
       }
       pageRoot.innerHTML = employee ? employeeRecordPreviewTemplate(employee) : `<section class="page"><div class="table-empty table-empty--card"><strong>Loading employee profile…</strong><span>Fetching this employee directly from the Payroll backend.</span></div></section>`;
@@ -7341,6 +8082,10 @@
       try { await restoreRecordFromBin(bucket, kind, id); }
       catch (error) { btn.disabled = false; showToast('Restore not completed', error.message); }
     }));
+    const recordManagementSearch=document.getElementById('recordManagementSearch'); if(recordManagementSearch){const bucket=currentRoute()==='trash'?'trash':'archive';bindPayrollSearch(recordManagementSearch,value=>{state.recordManagement.search[bucket]=value;state.recordManagement.page[bucket]=1;},{delay:320,beforeRender:()=>cancelRecordManagementRequest(bucket)});}
+    document.querySelectorAll('[data-record-page]').forEach(btn=>btn.addEventListener('click',()=>{const [bucket,pageRaw]=String(btn.dataset.recordPage||'').split('|');const page=Number(pageRaw||1);if(!bucket||page===state.recordManagement.page[bucket])return;cancelRecordManagementRequest(bucket);state.recordManagement.page[bucket]=page;renderRoute();}));
+    document.querySelectorAll('[data-record-page-size]').forEach(select=>select.addEventListener('change',()=>{const bucket=select.dataset.recordPageSize;cancelRecordManagementRequest(bucket);state.recordManagement.pageSize[bucket]=Number(select.value||50);state.recordManagement.page[bucket]=1;renderRoute();}));
+    document.querySelectorAll('[data-record-retry]').forEach(btn=>btn.addEventListener('click',()=>loadRecordManagementPage(btn.dataset.recordRetry,{force:true})));
     document.querySelectorAll('[data-workspace-jump]').forEach(btn => btn.addEventListener('click', () => switchWorkspace(btn.dataset.workspaceJump)));
     document.querySelectorAll('[data-management-open]').forEach(btn => btn.addEventListener('click', () => {
       const [workspace, route] = String(btn.dataset.managementOpen || '').split('|');
@@ -7365,9 +8110,15 @@
       }
       afterSwitch();
     }));
-    document.querySelectorAll('[data-management-approval-filter]').forEach(btn => btn.addEventListener('click', () => { state.managementApprovalFilter=btn.dataset.managementApprovalFilter; renderRoute(); }));
-    const managementAuditSearch=document.getElementById('managementAuditSearch'); bindPayrollSearch(managementAuditSearch,value=>{state.managementAuditSearch=value;});
-    const managementAuditType=document.getElementById('managementAuditType'); if(managementAuditType) managementAuditType.addEventListener('change',()=>{state.managementAuditType=managementAuditType.value;renderRoute();});
+    document.querySelectorAll('[data-management-approval-filter]').forEach(btn => btn.addEventListener('click', () => { cancelManagementApprovalRequest();state.managementApprovalFilter=btn.dataset.managementApprovalFilter;state.managementApprovalPage=1;renderRoute(); }));
+    document.querySelectorAll('[data-management-approval-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.managementApprovalPage||1);if(page===state.managementApprovalPage)return;cancelManagementApprovalRequest();state.managementApprovalPage=page;renderRoute();}));
+    const managementApprovalPageSize=document.getElementById('managementApprovalPageSize');if(managementApprovalPageSize)managementApprovalPageSize.addEventListener('change',()=>{cancelManagementApprovalRequest();state.managementApprovalPageSize=Number(managementApprovalPageSize.value||50);state.managementApprovalPage=1;localStorage.setItem('payroll-ui-management-approval-page-size',String(state.managementApprovalPageSize));renderRoute();});
+    document.querySelectorAll('[data-management-approval-retry]').forEach(btn=>btn.addEventListener('click',()=>loadManagementApprovals({force:true})));
+    const managementAuditSearch=document.getElementById('managementAuditSearch'); bindPayrollSearch(managementAuditSearch,value=>{state.managementAuditSearch=value;state.managementAuditPage=1;},{delay:320,beforeRender:()=>cancelManagementAuditRequest()});
+    const managementAuditType=document.getElementById('managementAuditType'); if(managementAuditType) managementAuditType.addEventListener('change',()=>{cancelManagementAuditRequest();state.managementAuditType=managementAuditType.value;state.managementAuditPage=1;renderRoute();});
+    document.querySelectorAll('[data-management-audit-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.managementAuditPage||1);if(page===state.managementAuditPage)return;cancelManagementAuditRequest();state.managementAuditPage=page;renderRoute();}));
+    const managementAuditPageSize=document.getElementById('managementAuditPageSize');if(managementAuditPageSize)managementAuditPageSize.addEventListener('change',()=>{cancelManagementAuditRequest();state.managementAuditPageSize=Number(managementAuditPageSize.value||50);state.managementAuditPage=1;localStorage.setItem('payroll-ui-management-audit-page-size',String(state.managementAuditPageSize));renderRoute();});
+    document.querySelectorAll('[data-management-audit-retry]').forEach(btn=>btn.addEventListener('click',()=>loadManagementAudit({force:true})));
     document.querySelectorAll('[data-select-branch]').forEach(btn => btn.addEventListener('click', () => { state.branchSelectedId=btn.dataset.selectBranch; renderRoute(); }));
     document.querySelectorAll('[data-select-department]').forEach(btn => btn.addEventListener('click', () => { state.departmentSelectedId=btn.dataset.selectDepartment; renderRoute(); }));
     document.querySelectorAll('[data-branch-employees-filter]').forEach(btn => btn.addEventListener('click', () => { const branch=state.branches.find(item=>item.id===btn.dataset.branchEmployeesFilter); state.employeeBranch=branch?.name||'All branches'; state.employeeDepartment='All departments'; state.employeeSearch=''; navigate('internal-employees'); }));
@@ -7398,24 +8149,28 @@
     document.querySelectorAll('[data-filter-employee-department]').forEach(btn=>btn.addEventListener('click',()=>{state.employeeSearch='';state.employeeDepartment=btn.dataset.filterEmployeeDepartment;state.employeeBranch='All branches';navigate('internal-employees');}));
     document.querySelectorAll('[data-bank-export-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportTab=btn.dataset.bankExportTab;localStorage.setItem('payroll-ui-bank-export-tab',state.bankExportTab);renderRoute();}));
     document.querySelectorAll('[data-bank-export-view]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportView=btn.dataset.bankExportView;localStorage.setItem('payroll-ui-bank-export-view',state.bankExportView);renderRoute();}));
-    document.querySelectorAll('[data-bank-export-status]').forEach(btn=>btn.addEventListener('click',()=>{state.bankExportStatus=btn.dataset.bankExportStatus;renderRoute();}));
-    const bankExportSearch=document.getElementById('bankExportSearch'); bindPayrollSearch(bankExportSearch,value=>{state.bankExportSearch=value;});
-    const bankExportBranch=document.getElementById('bankExportBranch'); if(bankExportBranch) bankExportBranch.addEventListener('change',()=>{state.bankExportBranch=bankExportBranch.value;renderRoute();});
-    const bankTemplateSelect=document.getElementById('bankTemplateSelect'); if(bankTemplateSelect) bankTemplateSelect.addEventListener('change',async()=>{state.bankTemplateId=bankTemplateSelect.value;localStorage.setItem('payroll-ui-bank-template-id',state.bankTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
+    document.querySelectorAll('[data-bank-export-status]').forEach(btn=>btn.addEventListener('click',()=>{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=1;state.bankExportStatus=btn.dataset.bankExportStatus;renderRoute();}));
+    const bankExportSearch=document.getElementById('bankExportSearch'); bindPayrollSearch(bankExportSearch,value=>{state.bankExportSearch=value;},{delay:320,beforeRender:()=>{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=1;}});
+    const bankExportBranch=document.getElementById('bankExportBranch'); if(bankExportBranch) bankExportBranch.addEventListener('change',()=>{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=1;state.bankExportBranch=bankExportBranch.value;renderRoute();});
+    const bankTemplateSelect=document.getElementById('bankTemplateSelect'); if(bankTemplateSelect) bankTemplateSelect.addEventListener('change',async()=>{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=1;state.bankTemplateId=bankTemplateSelect.value;localStorage.setItem('payroll-ui-bank-template-id',state.bankTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
+    document.querySelectorAll('[data-bank-readiness-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.bankReadinessPage||1);if(page===state.bankReadinessPage)return;cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=page;renderRoute();}));
+    const bankReadinessPageSize=document.getElementById('bankReadinessPageSize'); if(bankReadinessPageSize) bankReadinessPageSize.addEventListener('change',()=>{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPageSize=Number(bankReadinessPageSize.value||50);state.bankReadinessPage=1;localStorage.setItem('payroll-ui-bank-readiness-page-size',String(state.bankReadinessPageSize));renderRoute();});
     document.querySelectorAll('[data-bank-batch-prepare]').forEach(btn=>btn.addEventListener('click',()=>preparePaymentChannel('bank_csv')));
     document.querySelectorAll('[data-bank-batch-open]').forEach(btn=>btn.addEventListener('click',()=>openBankBatchDrawer(btn.dataset.bankBatchOpen)));
     document.querySelectorAll('[data-bank-inspect]').forEach(btn=>btn.addEventListener('click',()=>openBankRowDrawer(btn.dataset.bankInspect)));
     document.querySelectorAll('[data-bank-template-pick]').forEach(btn=>btn.addEventListener('click',async()=>{const picked=bankTemplatesAll().find(item=>item.id===btn.dataset.bankTemplatePick);if(!picked)return;state.exportTemplateDetailId=picked.id;if(picked.channel==='wps'){state.wpsTemplateId=picked.id;localStorage.setItem('payroll-ui-wps-template-id',picked.id);}else{state.bankTemplateId=picked.id;localStorage.setItem('payroll-ui-bank-template-id',picked.id);}await loadSalaryPayments(state.period,{force:true});renderRoute();}));
-    document.querySelectorAll('[data-bank-template-use]').forEach(btn=>btn.addEventListener('click',()=>{const template=bankTemplatesAll().find(item=>item.id===state.exportTemplateDetailId);if(!template)return;if(template.channel==='wps'){state.wpsTemplateId=template.id;localStorage.setItem('payroll-ui-wps-template-id',template.id);state.bankExportTab='wps';}else{state.bankTemplateId=template.id;localStorage.setItem('payroll-ui-bank-template-id',template.id);state.bankExportTab='bank';state.bankExportView='register';localStorage.setItem('payroll-ui-bank-export-view','register');}renderRoute();showToast('Export template selected',`${template.name} is now selected for ${template.channel==='wps'?'WPS':'bank'} validation and future batches.`);}));
+    document.querySelectorAll('[data-bank-template-use]').forEach(btn=>btn.addEventListener('click',()=>{const template=bankTemplatesAll().find(item=>item.id===state.exportTemplateDetailId);if(!template)return;if(template.channel==='wps'){cancelPaymentReadinessRequest('wps');state.wpsPage=1;state.wpsTemplateId=template.id;localStorage.setItem('payroll-ui-wps-template-id',template.id);state.bankExportTab='wps';}else{cancelPaymentReadinessRequest('bank_csv');state.bankReadinessPage=1;state.bankTemplateId=template.id;localStorage.setItem('payroll-ui-bank-template-id',template.id);state.bankExportTab='bank';state.bankExportView='register';localStorage.setItem('payroll-ui-bank-export-view','register');}renderRoute();showToast('Export template selected',`${template.name} is now selected for ${template.channel==='wps'?'WPS':'bank'} validation and future batches.`);}));
     document.querySelectorAll('[data-bank-template-new]').forEach(btn=>btn.addEventListener('click',()=>openBankTemplateDrawer()));
     document.querySelectorAll('[data-bank-template-edit]').forEach(btn=>btn.addEventListener('click',()=>openBankTemplateDrawer(state.exportTemplateDetailId||state.bankTemplateId)));
     document.querySelectorAll('[data-bank-template-preview]').forEach(btn=>btn.addEventListener('click',()=>{const template=bankTemplatesAll().find(item=>item.id===state.exportTemplateDetailId)||bankTemplateById();if(template)showToast('Export headers',(template.headers||template.columns.map(key=>bankColumnCatalog[key]||key)).join(' · '));}));
     const bankResultFile=document.getElementById('bankResultFile'); if(bankResultFile) bankResultFile.addEventListener('change',async()=>{const file=bankResultFile.files?.[0];if(!file)return;const batch=[...paymentBatchesForPeriod()].filter(item=>item.channelValue==='bank_csv').sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))[0];if(!batch){showToast('No bank batch','Prepare and start a bank salary-payment batch first.');return;}await importPaymentResults(batch.id,file);});
-    document.querySelectorAll('[data-report-type]').forEach(btn=>btn.addEventListener('click',()=>{state.reportType=btn.dataset.reportType;state.reportSearch='';localStorage.setItem('payroll-ui-report-type',state.reportType);renderRoute();}));
-    document.querySelectorAll('[data-open-report]').forEach(btn=>btn.addEventListener('click',()=>{state.reportType=btn.dataset.openReport||'workforce-cost';state.reportPeriod=btn.dataset.reportPeriod||state.period;state.reportSearch='';localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);if(currentRoute()==='reports')renderRoute();else navigate('reports');}));
-    const reportSearch=document.getElementById('reportSearch'); bindPayrollSearch(reportSearch,value=>{state.reportSearch=value;});
-    const reportPeriod=document.getElementById('reportPeriod'); if(reportPeriod) reportPeriod.addEventListener('change',()=>{state.reportPeriod=reportPeriod.value;localStorage.setItem('payroll-ui-report-period',state.reportPeriod);renderRoute();});
-    document.querySelectorAll('[data-report-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.reportSearch='';renderRoute();}));
+    document.querySelectorAll('[data-report-type]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportType=btn.dataset.reportType;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);renderRoute();}));
+    document.querySelectorAll('[data-open-report]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportType=btn.dataset.openReport||'workforce-cost';state.reportPeriod=btn.dataset.reportPeriod||state.period;state.reportSearch='';state.reportPage=1;localStorage.setItem('payroll-ui-report-type',state.reportType);localStorage.setItem('payroll-ui-report-period',state.reportPeriod);if(currentRoute()==='reports')renderRoute();else navigate('reports');}));
+    const reportSearch=document.getElementById('reportSearch'); bindPayrollSearch(reportSearch,value=>{state.reportSearch=value;state.reportPage=1;},{delay:320,beforeRender:()=>cancelReportRequest()});
+    const reportPeriod=document.getElementById('reportPeriod'); if(reportPeriod) reportPeriod.addEventListener('change',()=>{cancelReportRequest();state.reportPeriod=reportPeriod.value;state.reportPage=1;localStorage.setItem('payroll-ui-report-period',state.reportPeriod);renderRoute();});
+    document.querySelectorAll('[data-report-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.reportPage||1);if(page===state.reportPage)return;cancelReportRequest();state.reportPage=page;renderRoute();}));
+    const reportPageSize=document.getElementById('reportPageSize'); if(reportPageSize) reportPageSize.addEventListener('change',()=>{cancelReportRequest();state.reportPageSize=Number(reportPageSize.value||50);state.reportPage=1;localStorage.setItem('payroll-ui-report-page-size',String(state.reportPageSize));renderRoute();});
+    document.querySelectorAll('[data-report-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelReportRequest();state.reportSearch='';state.reportPage=1;renderRoute();}));
     document.querySelectorAll('[data-report-export]').forEach(btn=>btn.addEventListener('click',exportCurrentReport));
     document.querySelectorAll('[data-report-print]').forEach(btn=>btn.addEventListener('click',printCurrentReport));
     document.querySelectorAll('[data-settings-tab]').forEach(btn=>btn.addEventListener('click',()=>{state.settingsTab=btn.dataset.settingsTab;localStorage.setItem('payroll-ui-settings-tab',state.settingsTab);renderRoute();}));
@@ -7423,23 +8178,28 @@
     document.querySelectorAll('[data-brand-upload]').forEach(btn=>btn.addEventListener('click',()=>document.querySelector(`[data-brand-file="${btn.dataset.brandUpload}"]`)?.click()));
     document.querySelectorAll('[data-brand-file]').forEach(input=>input.addEventListener('change',()=>uploadBrandAsset(input.dataset.brandFile,input.files?.[0]||null)));
     document.querySelectorAll('[data-brand-clear]').forEach(btn=>btn.addEventListener('click',()=>clearBrandAsset(btn.dataset.brandClear)));
-    document.querySelectorAll('[data-document-tab]').forEach(btn => btn.addEventListener('click', () => { state.documentTab=btn.dataset.documentTab; localStorage.setItem('payroll-ui-document-tab',state.documentTab); renderRoute(); }));
-    const documentSearch=document.getElementById('documentSearch'); bindPayrollSearch(documentSearch,value=>{state.documentSearch=value;});
-    const documentPeriod=document.getElementById('documentPeriodFilter'); if(documentPeriod) documentPeriod.addEventListener('change',()=>{state.documentPeriodFilter=documentPeriod.value;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();});
-    const documentStatus=document.getElementById('documentStatusFilter'); if(documentStatus) documentStatus.addEventListener('change',()=>{state.documentStatusFilter=documentStatus.value;renderRoute();});
-    document.querySelectorAll('[data-document-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.documentSearch='';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();}));
+    document.querySelectorAll('[data-document-tab]').forEach(btn => btn.addEventListener('click', () => { cancelDocumentListRequest();state.documentTab=btn.dataset.documentTab;state.documentPage=1;localStorage.setItem('payroll-ui-document-tab',state.documentTab);renderRoute(); }));
+    const documentSearch=document.getElementById('documentSearch'); bindPayrollSearch(documentSearch,value=>{state.documentSearch=value;state.documentPage=1;},{delay:320,beforeRender:()=>cancelDocumentListRequest()});
+    const documentPeriod=document.getElementById('documentPeriodFilter'); if(documentPeriod) documentPeriod.addEventListener('change',()=>{cancelDocumentListRequest();state.documentPeriodFilter=documentPeriod.value;state.documentPage=1;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();});
+    const documentStatus=document.getElementById('documentStatusFilter'); if(documentStatus) documentStatus.addEventListener('change',()=>{cancelDocumentListRequest();state.documentStatusFilter=documentStatus.value;state.documentPage=1;renderRoute();});
+    document.querySelectorAll('[data-document-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.documentPage||1);if(page===state.documentPage)return;cancelDocumentListRequest();state.documentPage=page;renderRoute();}));
+    const documentPageSize=document.getElementById('documentPageSize'); if(documentPageSize) documentPageSize.addEventListener('change',()=>{cancelDocumentListRequest();state.documentPageSize=Number(documentPageSize.value||50);state.documentPage=1;localStorage.setItem('payroll-ui-document-page-size',String(state.documentPageSize));renderRoute();});
+    document.querySelectorAll('[data-document-retry]').forEach(btn=>btn.addEventListener('click',()=>loadDocumentList({force:true})));
+    document.querySelectorAll('[data-document-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelDocumentListRequest();state.documentSearch='';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';state.documentPage=1;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();}));
     document.querySelectorAll('[data-document-select]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedDocumentId=btn.dataset.documentSelect;localStorage.setItem('payroll-ui-selected-document',state.selectedDocumentId);renderRoute();}));
     document.querySelectorAll('[data-document-generate]').forEach(btn=>btn.addEventListener('click',()=>openDocumentGenerateDrawer()));
     document.querySelectorAll('[data-document-print]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===state.selectedDocumentId);printDocumentRecord(doc);}));
-    document.querySelectorAll('[data-adjustment-view]').forEach(btn => btn.addEventListener('click', () => { state.adjustmentView=btn.dataset.adjustmentView; renderRoute(); }));
+    document.querySelectorAll('[data-adjustment-view]').forEach(btn => btn.addEventListener('click', () => { cancelInternalAdjustmentRequest(); state.adjustmentView=btn.dataset.adjustmentView; state.adjustmentPage=1; renderRoute(); }));
     const adjustmentSearch=document.getElementById('adjustmentSearch');
-    bindPayrollSearch(adjustmentSearch,value=>{state.adjustmentSearch=value;});
+    bindPayrollSearch(adjustmentSearch,value=>{state.adjustmentSearch=value;state.adjustmentPage=1;},{delay:320,beforeRender:()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();}});
     const adjustmentWorkforce=document.getElementById('adjustmentWorkforce'); if(adjustmentWorkforce) adjustmentWorkforce.addEventListener('change',()=>{state.adjustmentWorkforce=adjustmentWorkforce.value;renderRoute();});
-    const adjustmentType=document.getElementById('adjustmentType'); if(adjustmentType) adjustmentType.addEventListener('change',()=>{state.adjustmentType=adjustmentType.value;renderRoute();});
-    const adjustmentStatus=document.getElementById('adjustmentStatus'); if(adjustmentStatus) adjustmentStatus.addEventListener('change',()=>{state.adjustmentStatus=adjustmentStatus.value;renderRoute();});
+    const adjustmentType=document.getElementById('adjustmentType'); if(adjustmentType) adjustmentType.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentType=adjustmentType.value;state.adjustmentPage=1;renderRoute();});
+    const adjustmentStatus=document.getElementById('adjustmentStatus'); if(adjustmentStatus) adjustmentStatus.addEventListener('change',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentStatus=adjustmentStatus.value;state.adjustmentPage=1;renderRoute();});
     const adjustmentProject=document.getElementById('adjustmentProject'); if(adjustmentProject) adjustmentProject.addEventListener('change',()=>{state.adjustmentProject=adjustmentProject.value;renderRoute();});
     const adjustmentSupplier=document.getElementById('adjustmentSupplier'); if(adjustmentSupplier) adjustmentSupplier.addEventListener('change',()=>{state.adjustmentSupplier=adjustmentSupplier.value;renderRoute();});
-    document.querySelectorAll('[data-adjustment-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.adjustmentSearch='';state.adjustmentWorkforce='All';state.adjustmentType='All';state.adjustmentStatus='All';state.adjustmentProject='All projects';state.adjustmentSupplier='All suppliers';renderRoute();}));
+    document.querySelectorAll('[data-adjustment-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.adjustmentPage);if(Number.isFinite(page)&&page>0){cancelInternalAdjustmentRequest();state.adjustmentPage=page;renderRoute();}}));
+    const adjustmentPageSize=document.getElementById('adjustmentPageSize'); if(adjustmentPageSize) adjustmentPageSize.addEventListener('change',()=>{cancelInternalAdjustmentRequest();state.adjustmentPageSize=Number(adjustmentPageSize.value)||50;state.adjustmentPage=1;localStorage.setItem('payroll-ui-adjustment-page-size',String(state.adjustmentPageSize));renderRoute();});
+    document.querySelectorAll('[data-adjustment-reset]').forEach(btn=>btn.addEventListener('click',()=>{if(state.workspace==='internal')cancelInternalAdjustmentRequest();state.adjustmentSearch='';state.adjustmentWorkforce='All';state.adjustmentType='All';state.adjustmentStatus='All';state.adjustmentProject='All projects';state.adjustmentSupplier='All suppliers';state.adjustmentPage=1;renderRoute();}));
     document.querySelectorAll('[data-adjustment-detail]').forEach(btn=>btn.addEventListener('click',()=>openAdjustmentDetailDrawer(btn.dataset.adjustmentDetail)));
     document.querySelectorAll('[data-adjustment-action]').forEach(btn=>btn.addEventListener('click',async()=>{
       const found=adjustmentFindMutable(btn.dataset.adjustmentId); if(!found){showToast('Read-only transaction','This transaction cannot be changed from the current workflow state.');return;}
@@ -7448,8 +8208,7 @@
         btn.disabled = true;
         try {
           const payload = await appApi(`/api/internal/adjustments/${encodeURIComponent(found.item.id)}/workflow/`, { method:'POST', body:{ action } });
-          applyPayrollPayload(payload);
-          renderRoute();
+          await refreshInternalAdjustmentAuthority(state.period, found.personId || found.item.personId || found.item.employeeId || '');
           showToast(action==='approve'?'Transaction approved':'Transaction submitted', action==='approve' ? `${adjustmentNormalizeType(found.item.type)} is now eligible for payroll calculation.` : 'The transaction is awaiting approval and remains excluded from payroll.');
         } catch (error) {
           showToast('Transaction workflow failed', error.message);
@@ -7610,24 +8369,28 @@
     }));
 
     const payrollSearch = document.getElementById('payrollSearch');
-    bindPayrollSearch(payrollSearch,value=>{state.payrollSearch=value;});
+    bindPayrollSearch(payrollSearch,value=>{state.payrollSearch=value;state.payrollPage=1;},{delay:320,beforeRender:()=>cancelPayrollRunRequest()});
     const payrollBranchFilter = document.getElementById('payrollBranchFilter');
-    if (payrollBranchFilter) payrollBranchFilter.addEventListener('change', () => { state.payrollBranch = payrollBranchFilter.value; renderRoute(); });
+    if (payrollBranchFilter) payrollBranchFilter.addEventListener('change', () => { cancelPayrollRunRequest(); state.payrollBranch = payrollBranchFilter.value; state.payrollPage=1; renderRoute(); });
     const payrollDepartmentFilter = document.getElementById('payrollDepartmentFilter');
-    if (payrollDepartmentFilter) payrollDepartmentFilter.addEventListener('change', () => { state.payrollDepartment = payrollDepartmentFilter.value; renderRoute(); });
+    if (payrollDepartmentFilter) payrollDepartmentFilter.addEventListener('change', () => { cancelPayrollRunRequest(); state.payrollDepartment = payrollDepartmentFilter.value; state.payrollPage=1; renderRoute(); });
     const payrollReadinessFilter = document.getElementById('payrollReadinessFilter');
-    if (payrollReadinessFilter) payrollReadinessFilter.addEventListener('change', () => { state.payrollReadiness = payrollReadinessFilter.value; renderRoute(); });
-    document.querySelectorAll('[data-payroll-reset-filter]').forEach(btn => btn.addEventListener('click', () => { state.payrollSearch=''; state.payrollBranch='All branches'; state.payrollDepartment='All departments'; state.payrollReadiness='All'; renderRoute(); }));
+    if (payrollReadinessFilter) payrollReadinessFilter.addEventListener('change', () => { cancelPayrollRunRequest(); state.payrollReadiness = payrollReadinessFilter.value; state.payrollPage=1; renderRoute(); });
+    document.querySelectorAll('[data-payroll-reset-filter]').forEach(btn => btn.addEventListener('click', () => { cancelPayrollRunRequest(); state.payrollSearch=''; state.payrollBranch='All branches'; state.payrollDepartment='All departments'; state.payrollReadiness='All'; state.payrollPage=1; renderRoute(); }));
+    document.querySelectorAll('[data-payroll-page]').forEach(btn => btn.addEventListener('click', () => { const page=Number(btn.dataset.payrollPage); if(Number.isFinite(page)&&page>0){cancelPayrollRunRequest();state.payrollPage=page;renderRoute();} }));
+    const payrollPageSize=document.getElementById('payrollPageSize');
+    if(payrollPageSize) payrollPageSize.addEventListener('change',()=>{cancelPayrollRunRequest();state.payrollPageSize=Number(payrollPageSize.value)||50;state.payrollPage=1;localStorage.setItem('payroll-ui-run-page-size',String(state.payrollPageSize));renderRoute();});
     document.querySelectorAll('[data-payroll-policy]').forEach(btn => btn.addEventListener('click', openPayrollPolicyDrawer));
     document.querySelectorAll('[data-payroll-row]').forEach(btn => btn.addEventListener('click', () => openPayrollDetailDrawer(btn.dataset.payrollRow)));
     document.querySelectorAll('[data-payroll-calculate]').forEach(btn => btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
         const payload = await requestPayrollCalculation();
-        const totals = payrollTotals(payload.rows || []);
+        const employeeCount=Number(payload.summary?.employeeCount ?? payload.run?.totals?.employeeCount ?? (payload.rows||[]).length);
+        const net=Number(payload.summary?.net ?? payload.run?.totals?.net ?? payrollTotals(payload.rows||[]).net);
         state.payrollView = 'register';
         renderRoute();
-        showToast('Payroll calculated', `${(payload.rows || []).length} employee${(payload.rows || []).length === 1 ? '' : 's'} · ${formatCurrency(totals.net)} net payable.`);
+        showToast('Payroll calculated', `${employeeCount.toLocaleString()} employee${employeeCount === 1 ? '' : 's'} · ${formatCurrency(net)} net payable.`);
       } catch (error) {
         showToast('Payroll calculation blocked', error.message);
         btn.disabled = false;
@@ -7670,6 +8433,8 @@
       state.period = previous;
       localStorage.setItem('payroll-ui-period', previous);
       periodLabel.textContent = previous;
+      cancelPayrollRunRequest();
+      state.payrollPage = 1;
       state.payrollView = 'register';
       document.querySelectorAll('[data-period]').forEach(x => x.classList.toggle('is-selected', x.dataset.period === previous));
       renderRoute();
@@ -7677,8 +8442,7 @@
     }));
     document.querySelectorAll('[data-review-return]').forEach(btn => btn.addEventListener('click', () => openPayrollReviewDecisionDrawer('return')));
     document.querySelectorAll('[data-review-approve]').forEach(btn => btn.addEventListener('click', () => {
-      const issues = payrollReviewIssues(payrollRowsForDisplay()).issues;
-      const critical = payrollReviewCounts(issues).Critical;
+      const critical = Number(payrollContextForPeriod().reviewSummary?.Critical ?? payrollReviewCounts(payrollReviewIssues(payrollRowsForDisplay()).issues).Critical);
       if (critical) { showToast('Approval blocked', `${critical} critical review issue${critical === 1 ? '' : 's'} must be resolved first.`); return; }
       if (payrollRunStatus() !== 'Review') { showToast('Submit for review first', 'Final approval is available only while the payroll run is in Review.'); return; }
       openPayrollReviewDecisionDrawer('approve');
@@ -8083,7 +8847,13 @@
     document.querySelectorAll('[data-salary-structure-new]').forEach(btn => btn.addEventListener('click', () => openSalaryStructureDrawer()));
     document.querySelectorAll('[data-salary-structure-edit]').forEach(btn => btn.addEventListener('click', () => openSalaryStructureDrawer(btn.dataset.salaryStructureEdit)));
     const salaryStructureSearch = document.getElementById('salaryStructureSearch');
-    bindPayrollSearch(salaryStructureSearch,value=>{state.salaryStructureSearch=value;});
+    bindPayrollSearch(salaryStructureSearch,value=>{state.salaryStructureSearch=value;state.salaryStructureDirectory.page=1;},{delay:320,beforeRender:()=>cancelSalaryStructureRequest()});
+    const salaryStructureSetupFilter=document.getElementById('salaryStructureSetupFilter');
+    if(salaryStructureSetupFilter)salaryStructureSetupFilter.addEventListener('change',()=>{state.salaryStructureSetup=salaryStructureSetupFilter.value;state.salaryStructureDirectory.page=1;invalidateSalaryStructureDirectory();renderRoute();});
+    document.querySelectorAll('[data-salary-structure-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.salaryStructurePage||1);if(page<1)return;state.salaryStructureDirectory.page=page;invalidateSalaryStructureDirectory();renderRoute();}));
+    const salaryStructurePageSize=document.getElementById('salaryStructurePageSize');
+    if(salaryStructurePageSize)salaryStructurePageSize.addEventListener('change',()=>{state.salaryStructureDirectory.pageSize=Number(salaryStructurePageSize.value||50);state.salaryStructureDirectory.page=1;invalidateSalaryStructureDirectory();renderRoute();});
+    document.querySelectorAll('[data-salary-structure-retry]').forEach(btn=>btn.addEventListener('click',()=>{invalidateSalaryStructureDirectory();loadSalaryStructureDirectory({force:true});}));
     document.querySelectorAll('[data-overtime-policy-add]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer()));
     document.querySelectorAll('[data-overtime-policy-edit]').forEach(btn => btn.addEventListener('click', () => openOvertimePolicyDrawer(btn.dataset.overtimePolicyEdit)));
     const overtimePolicyStatus=document.getElementById('overtimePolicyStatus'); if(overtimePolicyStatus)overtimePolicyStatus.addEventListener('change',()=>{state.overtimePolicyStatus=overtimePolicyStatus.value;renderRoute();});
@@ -8206,30 +8976,34 @@
     document.querySelectorAll('[data-project-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.projectSearch='';state.projectStatus='All';state.projectClient='All clients';state.projectManager='All managers';state.projectSupplier='All suppliers';renderRoute();}));
 
     document.querySelectorAll('[data-wps-tab]').forEach(btn => btn.addEventListener('click', () => { state.wpsTab = btn.dataset.wpsTab; renderRoute(); }));
-    document.querySelectorAll('[data-wps-status]').forEach(btn => btn.addEventListener('click', () => { state.wpsStatusFilter = btn.dataset.wpsStatus; renderRoute(); }));
+    document.querySelectorAll('[data-wps-status]').forEach(btn => btn.addEventListener('click', () => { cancelPaymentReadinessRequest('wps'); state.wpsPage=1; state.wpsStatusFilter = btn.dataset.wpsStatus; renderRoute(); }));
     const wpsSearch = document.getElementById('wpsSearch');
-    bindPayrollSearch(wpsSearch,value=>{state.wpsSearch=value;});
+    bindPayrollSearch(wpsSearch,value=>{state.wpsSearch=value;},{delay:320,beforeRender:()=>{cancelPaymentReadinessRequest('wps');state.wpsPage=1;}});
     const wpsTemplateSelect=document.getElementById('wpsTemplateSelect');
-    if(wpsTemplateSelect) wpsTemplateSelect.addEventListener('change',async()=>{state.wpsTemplateId=wpsTemplateSelect.value;localStorage.setItem('payroll-ui-wps-template-id',state.wpsTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
-    document.querySelectorAll('[data-wps-reset]').forEach(btn => btn.addEventListener('click', () => { state.wpsSearch=''; state.wpsStatusFilter='All'; renderRoute(); }));
-    document.querySelectorAll('[data-wps-validate]').forEach(btn => btn.addEventListener('click', async () => { await loadSalaryPayments(state.period,{force:true}); const summary=wpsSummary(); showToast('WPS validation refreshed', `${summary.ready} ready · ${summary.blocked} blocked · ${formatCurrency(summary.readyAmount)} ready amount.`); }));
+    if(wpsTemplateSelect) wpsTemplateSelect.addEventListener('change',async()=>{cancelPaymentReadinessRequest('wps');state.wpsPage=1;state.wpsTemplateId=wpsTemplateSelect.value;localStorage.setItem('payroll-ui-wps-template-id',state.wpsTemplateId);await loadSalaryPayments(state.period,{force:true});renderRoute();});
+    document.querySelectorAll('[data-wps-reset]').forEach(btn => btn.addEventListener('click', () => { cancelPaymentReadinessRequest('wps'); state.wpsPage=1; state.wpsSearch=''; state.wpsStatusFilter='All'; renderRoute(); }));
+    document.querySelectorAll('[data-wps-validate]').forEach(btn => btn.addEventListener('click', async () => { await loadPaymentReadiness('wps',state.period,{force:true,render:false}); const summary=wpsSummary(); renderRoute(); showToast('WPS validation refreshed', `${summary.ready} ready · ${summary.blocked} blocked · ${formatCurrency(summary.readyAmount)} ready amount.`); }));
+    document.querySelectorAll('[data-wps-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.wpsPage||1);if(page===state.wpsPage)return;cancelPaymentReadinessRequest('wps');state.wpsPage=page;renderRoute();}));
+    const wpsPageSize=document.getElementById('wpsPageSize'); if(wpsPageSize) wpsPageSize.addEventListener('change',()=>{cancelPaymentReadinessRequest('wps');state.wpsPageSize=Number(wpsPageSize.value||50);state.wpsPage=1;localStorage.setItem('payroll-ui-wps-page-size',String(state.wpsPageSize));renderRoute();});
     document.querySelectorAll('[data-wps-prepare]').forEach(btn => btn.addEventListener('click', prepareWpsBatch));
     document.querySelectorAll('[data-wps-inspect]').forEach(btn => btn.addEventListener('click', () => openWpsRowDrawer(btn.dataset.wpsInspect)));
     document.querySelectorAll('[data-wps-batch-open]').forEach(btn => btn.addEventListener('click', () => openWpsBatchDrawer(btn.dataset.wpsBatchOpen)));
 
-    document.querySelectorAll('[data-payment-tab]').forEach(btn => btn.addEventListener('click', () => { state.paymentTab = btn.dataset.paymentTab; state.paymentSearch=''; state.paymentStatusFilter='All'; renderRoute(); }));
+    document.querySelectorAll('[data-payment-tab]').forEach(btn => btn.addEventListener('click', () => { cancelPaymentBatchRowsRequest(); state.paymentPage=1; state.paymentTab = btn.dataset.paymentTab; state.paymentSearch=''; state.paymentStatusFilter='All'; renderRoute(); }));
     const paymentSearch = document.getElementById('paymentSearch');
-    bindPayrollSearch(paymentSearch,value=>{state.paymentSearch=value;});
+    bindPayrollSearch(paymentSearch,value=>{state.paymentSearch=value;},{delay:320,beforeRender:()=>{cancelPaymentBatchRowsRequest();state.paymentPage=1;}});
     const paymentStatusFilter=document.getElementById('paymentStatusFilter');
-    if(paymentStatusFilter) paymentStatusFilter.addEventListener('change',()=>{state.paymentStatusFilter=paymentStatusFilter.value;renderRoute();});
+    if(paymentStatusFilter) paymentStatusFilter.addEventListener('change',()=>{cancelPaymentBatchRowsRequest();state.paymentPage=1;state.paymentStatusFilter=paymentStatusFilter.value;renderRoute();});
     const internalPaymentBatchSelect=document.getElementById('internalPaymentBatchSelect');
-    if(internalPaymentBatchSelect) internalPaymentBatchSelect.addEventListener('change',()=>{state.selectedInternalPaymentBatchId=internalPaymentBatchSelect.value;localStorage.setItem('payroll-ui-selected-internal-payment-batch',state.selectedInternalPaymentBatchId);state.paymentStatusFilter='All';state.paymentSearch='';renderRoute();});
+    if(internalPaymentBatchSelect) internalPaymentBatchSelect.addEventListener('change',()=>{cancelPaymentBatchRowsRequest();state.paymentPage=1;state.paymentBatchContext=null;state.selectedInternalPaymentBatchId=internalPaymentBatchSelect.value;localStorage.setItem('payroll-ui-selected-internal-payment-batch',state.selectedInternalPaymentBatchId);state.paymentStatusFilter='All';state.paymentSearch='';renderRoute();});
     const paymentSupplierFilter=document.getElementById('paymentSupplierFilter');
     if(paymentSupplierFilter) paymentSupplierFilter.addEventListener('change',()=>{state.paymentSupplierFilter=paymentSupplierFilter.value;renderRoute();});
     const paymentMethodFilter=document.getElementById('paymentMethodFilter');
     if(paymentMethodFilter) paymentMethodFilter.addEventListener('change',()=>{state.paymentMethodFilter=paymentMethodFilter.value;renderRoute();});
     document.querySelectorAll('[data-payment-payable]').forEach(btn=>btn.addEventListener('click',()=>{state.paymentPayableFilter=btn.dataset.paymentPayable;renderRoute();}));
-    document.querySelectorAll('[data-payment-reset]').forEach(btn=>btn.addEventListener('click',()=>{state.paymentSearch='';state.paymentStatusFilter='All';state.paymentMethodFilter='All methods';renderRoute();}));
+    document.querySelectorAll('[data-payment-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelPaymentBatchRowsRequest();state.paymentPage=1;state.paymentSearch='';state.paymentStatusFilter='All';state.paymentMethodFilter='All methods';renderRoute();}));
+    document.querySelectorAll('[data-payment-page]').forEach(btn=>btn.addEventListener('click',()=>{const page=Number(btn.dataset.paymentPage||1);if(page===state.paymentPage)return;cancelPaymentBatchRowsRequest();state.paymentPage=page;renderRoute();}));
+    const paymentPageSize=document.getElementById('paymentPageSize'); if(paymentPageSize) paymentPageSize.addEventListener('change',()=>{cancelPaymentBatchRowsRequest();state.paymentPageSize=Number(paymentPageSize.value||50);state.paymentPage=1;localStorage.setItem('payroll-ui-payment-page-size',String(state.paymentPageSize));renderRoute();});
     document.querySelectorAll('[data-payment-start]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentBatch||latestPaymentBatch()?.id,'start')));
     document.querySelectorAll('[data-payment-row]').forEach(btn=>btn.addEventListener('click',()=>openPaymentRowDrawer(btn.dataset.paymentRow, btn.dataset.paymentBatch || null)));
     document.querySelectorAll('[data-payment-profile-edit]').forEach(btn=>btn.addEventListener('click',()=>openEmployeePaymentProfileDrawer(btn.dataset.paymentProfileEdit)));
@@ -8240,7 +9014,7 @@
     document.querySelectorAll('[data-payment-close-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentCloseBatch,'close')));
     document.querySelectorAll('[data-payment-reopen-batch]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentReopenBatch||btn.dataset.paymentBatch,'reopen')));
     document.querySelectorAll('.payment-result-file').forEach(input=>input.addEventListener('change',async()=>{const file=input.files?.[0];if(file)await importPaymentResults(input.dataset.resultBatch,file);}));
-    document.querySelectorAll('[data-payment-retry]').forEach(btn=>btn.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(btn.dataset.paymentRetry)}/retry/`,{method:'POST',body:{}});applyPaymentPayload(payload);renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}}));
+    document.querySelectorAll('[data-payment-retry]').forEach(btn=>btn.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(btn.dataset.paymentRetry)}/retry/`,{method:'POST',body:{}});await refreshPaymentRowMutation(payload.batch?.id||btn.dataset.paymentBatch);renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}}));
     document.querySelectorAll('[data-payment-close-payroll]').forEach(btn=>btn.addEventListener('click',()=>runPaymentBatchWorkflow(btn.dataset.paymentBatch||latestPaymentBatch()?.id,'close')));
     document.querySelectorAll('[data-supplier-payment-new]').forEach(btn=>btn.addEventListener('click',()=>openSupplierPaymentDrawer()));
     document.querySelectorAll('[data-pay-supplier-settlement]').forEach(btn=>btn.addEventListener('click',()=>openSupplierPaymentDrawer(btn.dataset.paySupplierSettlement)));
@@ -8713,6 +9487,7 @@
         const types = isRental ? ['Worker Advance','Fine / Penalty','Bonus','Reimbursement','Other Earning','Other Deduction'] : ['Salary Advance','Advance Recovery','Fine','Bonus','Reimbursement','Other Earning','Other Deduction'];
         const ownerFields = [
           namedSelectFieldValue('Workforce type','adjustment-workforce',[workforce],workforce),
+          ...(isRental ? [] : [`<div class="form-field form-field--wide"><label for="adjustmentPersonSearch">Find employee</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentPersonSearch" type="search" placeholder="Search employee name or ID" autocomplete="off"></div><span class="field-hint">Server search returns at most 25 matching employees.</span></div>`]),
           `<div class="form-field form-field--wide"><label for="adjustment-person">Person</label><select class="select" id="adjustment-person" name="adjustment-person"></select><span class="field-hint">Managed employee/worker master only.</span></div>`,
           namedSelectOptions(isRental?'Project':'Project','adjustment-project',projectOptions,context.projectId || projectOptions[0]?.value || ''),
           namedSelectFieldValue('Transaction type','adjustment-type',types,context.type || (isRental?'Worker Advance':'Salary Advance'))
@@ -8778,11 +9553,12 @@
         const salary = employee ? employeeProfileData(employee).salary : null;
         const currentAmounts = Object.fromEntries((salary?.components || []).map(component => [component.id, Number(component.amount) || 0]));
         const recurring = state.salaryComponents.filter(component => component.status === 'Active' && component.recurrence === 'Recurring');
-        const employeeOptions = state.employees.map(item => ({ value: item.id, label: `${item.employeeId} · ${item.name}` }));
+        const employeeOptions = [...new Map(state.employees.map(item => [item.id,{ value:item.id,label:`${item.employeeId} · ${item.name}` }])).values()];
         const policyOptions = [{ value: '', label: 'No overtime policy' }, ...state.overtimePolicies.filter(item => item.status === 'Active').map(item => ({ value: item.id, label: item.name }))];
         const currentPolicy = salary?.otPolicyId || '';
         return `
           <section class="form-section"><div class="form-section__head"><strong>Structure assignment</strong><span>Salary changes require an effective date. Historical payroll keeps the structure that was valid in that period.</span></div><div class="form-grid">
+            <div class="form-field form-field--full"><label>Find employee</label><div class="table-toolbar__search">${icon('search')}<input id="salaryStructureEmployeeSearch" type="search" placeholder="Search employee name, ID or position" autocomplete="off"></div><span class="field-hint">Search runs against the server and returns at most 25 employee matches.</span></div>
             ${namedSelectOptions('Employee', 'salary-structure-employee', employeeOptions, employeeId)}
             ${namedField('Effective from', 'salary-structure-effective', '', 'date')}
             ${namedSelectOptions('Overtime policy', 'salary-structure-ot-policy', policyOptions, currentPolicy)}
@@ -9012,11 +9788,54 @@
     drawerSave.textContent = componentId ? 'Save changes' : 'Create component';
   }
 
+  function bindSalaryStructureEmployeeLookup() {
+    const input=document.getElementById('salaryStructureEmployeeSearch');
+    const select=drawerBody.querySelector('[name="salary-structure-employee"]');
+    if(!input||!select)return;
+    let timer=null;
+    const run=()=>{
+      clearTimeout(timer);
+      timer=setTimeout(async()=>{
+        const query=input.value.trim();
+        if(query.length<2)return;
+        try{state.salaryStructureEmployeeLookupController?.abort();}catch{/* settled */}
+        const controller=new AbortController();state.salaryStructureEmployeeLookupController=controller;
+        try{
+          const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
+          const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
+          if(state.salaryStructureEmployeeLookupController!==controller)return;
+          const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);
+          const selected=select.value;
+          const options=[...rows];
+          const selectedEmployee=state.employees.find(item=>item.id===selected);
+          if(selectedEmployee&&!options.some(item=>item.id===selectedEmployee.id))options.unshift(selectedEmployee);
+          select.innerHTML=options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId)} · ${escapeHtml(item.name)}</option>`).join('');
+        }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.salaryStructureEmployeeLookupController===controller)state.salaryStructureEmployeeLookupController=null;}
+      },280);
+    };
+    input.addEventListener('input',run);
+    select.addEventListener('change',()=>{const employeeId=select.value;if(employeeId)openSalaryStructureDrawer(employeeId);});
+  }
+
   function openSalaryStructureDrawer(employeeId = null) {
     openQuickDrawer('salary-structure', employeeId);
     const employee = state.employees.find(item => item.id === employeeId);
     drawerTitle.textContent = employee ? `${employee.name} · Salary structure` : 'Assign salary structure';
     drawerSave.textContent = employeeProfileData(employee || {}).salary ? 'Create effective change' : 'Save structure';
+    bindSalaryStructureEmployeeLookup();
+    if(!state.salarySetupLoaded&&!state.salarySetupLoading){
+      loadSalarySetup().then(ok=>{if(ok&&state.drawerType==='salary-structure'&&state.drawerContext===employeeId)openSalaryStructureDrawer(employeeId);});
+    }
+    if(employeeId&&!state.salaryStructureHistoryLoaded.has(employeeId)){
+      loadSalaryStructureHistory(employeeId).then(history=>{
+        if(!history||state.drawerType!=='salary-structure'||state.drawerContext!==employeeId)return;
+        openQuickDrawer('salary-structure',employeeId);
+        const fresh=state.employees.find(item=>item.id===employeeId);
+        drawerTitle.textContent=fresh?`${fresh.name} · Salary structure`:'Employee salary structure';
+        drawerSave.textContent=employeeProfileData(fresh||{}).salary?'Create effective change':'Save structure';
+        bindSalaryStructureEmployeeLookup();
+      });
+    }
   }
 
   function openOvertimePolicyDrawer(policyId = null) {
@@ -9052,7 +9871,7 @@
     if(kind==='component'){record=state.salaryComponents.find(item=>item.id===id);label='salary component';token=record?.code||'';}
     else if(kind==='overtime'){record=state.overtimePolicies.find(item=>item.id===id);label='overtime policy';token=record?.code||'';}
     else if(kind==='template'){record=bankTemplatesAll().find(item=>item.id===id);label='bank / WPS export template';token=record?.code||'';}
-    else if(kind==='payment-profile'){const employee=state.employees.find(item=>item.id===id);const profile=paymentContextForPeriod().profiles?.[id];if(!employee||!profile)return;record={name:employee.name};label='employee payment profile';token=employee.employeeId||'';}
+    else if(kind==='payment-profile'){const employee=state.employees.find(item=>item.id===id);const profile=state.paymentProfileCache[id] ?? paymentContextForPeriod().profiles?.[id];if(!employee||!profile)return;record={name:employee.name};label='employee payment profile';token=employee.employeeId||'';}
     if(!record)return;
     state.drawerType='configuration-lifecycle'; state.drawerContext={kind,id,action,token}; drawerSave.hidden=false; drawerSave.disabled=false; drawerSave.classList.toggle('is-lifecycle-danger', action==='delete');
     if(action==='archive'){
@@ -9330,6 +10149,10 @@
   }
 
   function closeDrawer() {
+    try{state.salaryStructureEmployeeLookupController?.abort();}catch{/* settled */}
+    state.salaryStructureEmployeeLookupController=null;
+    try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
+    state.adjustmentPersonLookupController=null;
     drawer.classList.remove('is-open');
     drawerScrim.classList.remove('is-open');
     drawer.setAttribute('aria-hidden', 'true');
@@ -9455,6 +10278,8 @@
       drawerSave.disabled=true;
       try {
         await appApi(`/api/internal/salary-payments/profiles/${encodeURIComponent(employeeId)}/`,{method:'PATCH',body:payload});
+        delete state.paymentProfileCache[employeeId];
+        invalidateEmployeeScaleContexts();
         await loadSalaryPayments(state.period,{force:true});
         closeDrawer();renderRoute();showToast('Payment profile saved','Future salary payment batches will use the updated encrypted destination.');
       } catch(error){drawerSave.disabled=false;showToast('Payment profile could not be saved',error.message);}
@@ -9520,10 +10345,9 @@
               recovery_start:recoveryStart || null
             }
           });
-          applyPayrollPayload(payload, period);
           closeDrawer();
-          if (currentRoute()==='adjustments') renderRoute();
-          else if (currentRoute()==='internal-employees') { state.employeeTab='adjustments'; renderRoute(); }
+          if (currentRoute()==='internal-employees') state.employeeTab='adjustments';
+          await refreshInternalAdjustmentAuthority(state.period, personId);
           showToast('Transaction saved', `${type} · ${formatCurrency(amount)} · Draft. Submit and approval are separate audited actions.`);
         } catch (error) {
           showToast('Transaction could not be saved', error.message);
@@ -9881,9 +10705,12 @@
           }
         });
         state.salaryStructureHistory[employeeId] = payload.history || [payload.structure];
+        state.salaryStructureHistoryLoaded.add(employeeId);
         if (payload.current) state.salaryStructures[employeeId] = payload.current;
         else delete state.salaryStructures[employeeId];
         invalidateEmployeeProfile(employeeId);
+        invalidateEmployeeScaleContexts();
+        invalidateSalaryStructureDirectory();
         employee.basicSalary = salaryBasicForEmployee(employee);
         closeDrawer();
         showToast('Salary structure saved', `${employee.name} has a salary structure effective from ${effective}.`);
@@ -10023,7 +10850,7 @@
           if(kind==='component')state.salaryComponents=state.salaryComponents.filter(item=>item.id!==id);
           else if(kind==='overtime')state.overtimePolicies=state.overtimePolicies.filter(item=>item.id!==id);
           else if(kind==='template'){state.bankTemplates=state.bankTemplates.filter(item=>item.id!==id);await loadSalaryPayments(state.period,{force:true});}
-          else if(kind==='payment-profile')await loadSalaryPayments(state.period,{force:true});
+          else if(kind==='payment-profile'){delete state.paymentProfileCache[id];invalidateEmployeeScaleContexts();await loadSalaryPayments(state.period,{force:true});}
           closeDrawer();renderRoute();showToast('Unused configuration deleted','The record was permanently deleted because it had no protected history.');
         }else{
           const payload=await appApi(lifecycleEndpoint,{method:'POST',body:{action,reason}});

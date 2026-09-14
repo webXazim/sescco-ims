@@ -5,6 +5,8 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
+from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
+
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import (
@@ -14,9 +16,12 @@ from apps.internal_payroll.api_utils import (
 )
 from apps.internal_payroll.models import OvertimePolicy, SalaryComponent, SalaryComponentCategory
 from apps.internal_payroll.selectors import (
+    current_salary_structures_for_company,
+    employees_for_company,
     overtime_policies_for_company,
     salary_components_for_company,
     salary_structures_for_company,
+    serialize_employee,
     serialize_overtime_policy,
     serialize_salary_component,
     serialize_salary_structure,
@@ -215,11 +220,85 @@ def overtime_policy_lifecycle_api(request: HttpRequest, policy_id) -> JsonRespon
 def salary_structures_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
-            rows = salary_structures_for_company(
-                company=request.company,
-                employee_id=request.GET.get("employee") or None,
+            employee_id = request.GET.get("employee") or None
+            if employee_id:
+                rows = list(salary_structures_for_company(company=request.company, employee_id=employee_id))
+                history = [serialize_salary_structure(item) for item in rows]
+                as_of = timezone.localdate()
+                current = next(
+                    (
+                        serialized
+                        for item, serialized in zip(rows, history)
+                        if item.effective_from <= as_of
+                        and (item.effective_to is None or item.effective_to >= as_of)
+                        and (item.employee.employment_end_date is None or item.employee.employment_end_date >= as_of)
+                    ),
+                    None,
+                )
+                return JsonResponse({"ok": True, "results": history, "history": history, "current": current})
+
+            # 1.0.72: Employee Structures is an employee-first directory. Paginate the
+            # employee population before loading salary lines so 2,000 employees do not
+            # serialize every current/historical structure just to open Salary Setup.
+            allowed_sorts = {
+                "employee": "employee_number",
+                "name": "full_name",
+                "joining": "joining_date",
+                "status": "status",
+            }
+            controls = parse_list_controls(
+                request, allowed_sorts=allowed_sorts, default_sort="employee", max_page_size=100
             )
-            return JsonResponse({"ok": True, "results": [serialize_salary_structure(item) for item in rows]})
+            if controls.page is None or controls.page_size is None:
+                # The list endpoint is intentionally bounded even when an older caller
+                # omits pagination controls. Employee-specific history remains available
+                # through ?employee=<uuid>.
+                from apps.core.query_controls import ListControls
+                controls = ListControls(sort=controls.sort, direction=controls.direction, page=1, page_size=50)
+
+            employees = employees_for_company(
+                company=request.company,
+                query=request.GET.get("q", ""),
+                archived=False,
+            )
+            current_structures = current_salary_structures_for_company(company=request.company)
+            setup = str(request.GET.get("setup", "all")).strip().lower().replace(" ", "_")
+            if setup in {"configured", "ready"}:
+                employees = employees.filter(pk__in=current_structures.values("employee_id"))
+            elif setup in {"needs_setup", "missing"}:
+                employees = employees.exclude(pk__in=current_structures.values("employee_id"))
+            elif setup not in {"", "all"}:
+                raise ValidationError({"setup": "Setup filter must be configured, needs_setup, or all."})
+
+            employees = apply_ordering(employees, controls=controls, allowed_sorts=allowed_sorts)
+            employee_results, meta = serialize_list(employees, controls=controls, serializer=serialize_employee)
+            page_ids = [row["id"] for row in employee_results]
+            structures = current_salary_structures_for_company(company=request.company).filter(employee_id__in=page_ids)
+            current_by_employee = {}
+            for structure in structures:
+                key = str(structure.employee_id)
+                if key not in current_by_employee:
+                    current_by_employee[key] = serialize_salary_structure(structure)
+
+            results = [
+                {"employee": employee, "structure": current_by_employee.get(str(employee["id"]))}
+                for employee in employee_results
+            ]
+            coverage_employees = employees_for_company(company=request.company, archived=False)
+            employee_count = coverage_employees.count()
+            configured_count = (
+                current_salary_structures_for_company(company=request.company)
+                .filter(employee_id__in=coverage_employees.values("pk"))
+                .values("employee_id")
+                .distinct()
+                .count()
+            )
+            meta["coverage"] = {
+                "employeeCount": int(employee_count),
+                "configuredCount": int(configured_count),
+                "needsSetupCount": max(0, int(employee_count) - int(configured_count)),
+            }
+            return JsonResponse({"ok": True, "results": results, "meta": meta})
 
         body = json_body(request)
         raw_components = body.get("components", [])

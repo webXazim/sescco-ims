@@ -41,6 +41,13 @@ python3 "${PROJECT_ROOT}/scripts/verify-payroll-timesheet-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-bootstrap-search.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-query-hardening.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-browser-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-employee-residual-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-salary-setup-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-run-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-adjustment-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-payment-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-shared-surfaces-scale.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-final-browser-certification.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-production-e2e.py"
 
 run_manage() {

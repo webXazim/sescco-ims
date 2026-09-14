@@ -49,3 +49,13 @@ class ManagementAccessBoundaryTests(TestCase):
             {"workspace": "internal", "type": "internal-payroll", "period": "2026-08"},
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_paginated_management_audit_api_keeps_company_boundary(self):
+        response = self.client.get(reverse("platform_api:management-audit-api"), {"page": 1, "page_size": 25})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["surface"], "management_audit_page")
+        self.assertEqual(payload["meta"]["pageSize"], 25)
+        actions = {row["action"] for row in payload["audit"]}
+        self.assertIn("test.visible", actions)
+        self.assertNotIn("test.hidden", actions)

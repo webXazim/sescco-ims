@@ -106,3 +106,31 @@ class BusinessDocumentIntegrityTests(TestCase):
             BusinessDocument.objects.filter(pk=self.document.pk).update(title="Changed")
         with self.assertRaises(NotSupportedError):
             BusinessDocument.objects.filter(pk=self.document.pk).delete()
+    def test_document_directory_is_server_paginated_and_bootstrap_deferred(self):
+        from apps.documents.selectors import document_context, document_page_context
+
+        for index in range(1, 76):
+            snapshot = {
+                "kind": DocumentType.SALARY_SLIP,
+                "issuer": {"name": "Document Company"},
+                "employee": {"number": f"E-{index:03d}", "name": f"Employee {index:03d}"},
+                "net": "100.00",
+            }
+            BusinessDocument.objects.create(
+                company=self.company, workspace=DocumentWorkspace.INTERNAL, document_type=DocumentType.SALARY_SLIP,
+                document_number=f"SLIP-{index + 10:07d}", title=f"Salary Slip · Employee {index:03d}",
+                entity_reference=f"E-{index:03d}", entity_name=f"Employee {index:03d}",
+                source_model="internal_payroll.payrollrunline", source_id=uuid.uuid4(), source_reference="PAYROLL-2026-08",
+                snapshot=snapshot, source_fingerprint="c" * 64, snapshot_fingerprint=snapshot_hash(snapshot),
+                finalized_at=timezone.now(), finalized_by=self.user,
+            )
+        bootstrap = document_context(company=self.company, membership=self.membership)
+        self.assertTrue(bootstrap["deferred"])
+        self.assertEqual(bootstrap["documents"], [])
+        page = document_page_context(company=self.company, membership=self.membership, workspace="internal", page=2, page_size=25)
+        self.assertEqual(page["surface"], "documents_page")
+        self.assertEqual(page["meta"]["pageSize"], 25)
+        self.assertEqual(len(page["documents"]), 25)
+        self.assertEqual(page["meta"]["count"], 76)
+        self.assertEqual(page["summary"]["typeCounts"][DocumentType.SALARY_SLIP], 76)
+

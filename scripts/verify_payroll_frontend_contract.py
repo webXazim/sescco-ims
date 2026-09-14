@@ -319,7 +319,8 @@ for marker in (
 for marker in (
     '"employees": "active_employee_count"',
     '"paymentProfile"] = profile',
-    'result["wps"] = readiness.get("status", "Needs setup")',
+    'result["wps"] = readiness_by_employee[employee_id]',
+    'result["salaryConfigured"] = employee_id in salary_configured_ids',
 ):
     if marker not in internal_api:
         raise SystemExit(f"Internal server-directory contract missing: {marker}")
@@ -427,7 +428,7 @@ for marker in (
     "workflow.canSubmitReview",
     "workflow.canReturnForChanges",
     "workflow.canApprove",
-    "const actions=new Set(batch?.allowedActions||[]);",
+    "const actions=new Set(activeBatch?.allowedActions||[]);",
     "data-payment-cancel-batch",
     "data-payment-reopen-batch",
     "actions.has('import_results')",

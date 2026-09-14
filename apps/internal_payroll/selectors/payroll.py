@@ -5,7 +5,9 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db.models import Prefetch
+from django.core.paginator import Paginator
+from django.db.models import Count, DecimalField, F, Max, Prefetch, Q, Sum
+from django.db.models.functions import Coalesce
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
@@ -15,6 +17,7 @@ from apps.internal_payroll.models import (
     InternalPayrollPolicy,
     PayrollAdjustment,
     PayrollAdjustmentStatus,
+    PayrollAdjustmentType,
     PayrollProrationMethod,
     PayrollRun,
     PayrollRunLine,
@@ -61,9 +64,17 @@ def _adjustment_effect_label(adjustment: PayrollAdjustment) -> str:
 
 
 def serialize_payroll_adjustment(adjustment: PayrollAdjustment) -> dict[str, object]:
+    employee = getattr(adjustment, "employee", None)
+    employee_number = getattr(employee, "employee_number", "") if employee is not None else ""
+    employee_name = getattr(employee, "full_name", "") if employee is not None else ""
     return {
         "id": str(adjustment.pk),
         "employeeId": str(adjustment.employee_id),
+        "personId": str(adjustment.employee_id),
+        "personName": employee_name,
+        "personCode": f"EMP {employee_number}" if employee_number else "",
+        "workforce": "Internal Employee",
+        "workforceKey": "Internal",
         "date": adjustment.transaction_date.isoformat(),
         "period": _period_label(adjustment.period_start),
         "periodKey": f"{adjustment.period_start:%Y-%m}",
@@ -83,6 +94,10 @@ def serialize_payroll_adjustment(adjustment: PayrollAdjustment) -> dict[str, obj
         "approvedBy": _user_label(adjustment.approved_by),
         "impact": _adjustment_effect_label(adjustment),
         "immutable": adjustment.status == PayrollAdjustmentStatus.APPROVED,
+        "projectId": None,
+        "project": "Employee-level",
+        "supplierId": None,
+        "supplier": "—",
         "source": "Company database",
     }
 
@@ -102,6 +117,232 @@ def payroll_adjustments_by_employee(*, company: Company, period_start: date) -> 
     for item in payroll_adjustments_for_period(company=company, period_start=period_start):
         rows.setdefault(str(item.employee_id), []).append(serialize_payroll_adjustment(item))
     return rows
+
+
+ADJUSTMENT_PAGE_SIZES = {25, 50, 100}
+
+
+def _adjustment_page_size(value: object) -> int:
+    try:
+        page_size = int(value)
+    except (TypeError, ValueError):
+        page_size = 50
+    if page_size not in ADJUSTMENT_PAGE_SIZES:
+        raise ValidationError({"page_size": "Adjustment page size must be 25, 50, or 100."})
+    return page_size
+
+
+def _adjustment_page_number(value: object) -> int:
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        page = 1
+    if page < 1:
+        raise ValidationError({"page": "Adjustment page must be at least 1."})
+    return page
+
+
+def _choice_value(raw: str, choices, field: str) -> str | None:
+    value = str(raw or "").strip()
+    if not value or value.lower() == "all":
+        return None
+    normalized = value.lower().replace(" ", "_").replace("/", "_")
+    for choice_value, choice_label in choices:
+        if value == choice_value or value.lower() == str(choice_label).lower() or normalized == choice_value:
+            return choice_value
+    raise ValidationError({field: f"Unknown {field} filter."})
+
+
+def _adjustment_period_summary(*, company: Company, period_start: date) -> dict[str, object]:
+    start, _end = month_bounds(period_start)
+    rows = PayrollAdjustment.objects.for_company(company).filter(period_start=start)
+    approved = rows.filter(status=PayrollAdjustmentStatus.APPROVED)
+    earnings = approved.filter(
+        adjustment_type__in=[
+            PayrollAdjustmentType.BONUS, PayrollAdjustmentType.REIMBURSEMENT, PayrollAdjustmentType.OTHER_EARNING
+        ]
+    ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    deductions = approved.filter(
+        adjustment_type__in=[
+            PayrollAdjustmentType.ADVANCE_RECOVERY, PayrollAdjustmentType.FINE, PayrollAdjustmentType.OTHER_DEDUCTION
+        ]
+    ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    advance_issues = approved.filter(adjustment_type=PayrollAdjustmentType.SALARY_ADVANCE).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    return {
+        "count": rows.count(),
+        "earnings": str(earnings),
+        "deductions": str(deductions),
+        "advanceIssues": str(advance_issues),
+        "pending": rows.exclude(status=PayrollAdjustmentStatus.APPROVED).count(),
+    }
+
+
+def _advance_balance_queryset(*, company: Company, query: str = ""):
+    money = DecimalField(max_digits=18, decimal_places=2)
+    rows = (
+        PayrollAdjustment.objects.for_company(company)
+        .filter(
+            status=PayrollAdjustmentStatus.APPROVED,
+            adjustment_type__in=[PayrollAdjustmentType.SALARY_ADVANCE, PayrollAdjustmentType.ADVANCE_RECOVERY],
+        )
+        .values("employee_id", "employee__employee_number", "employee__full_name")
+        .annotate(
+            issued=Coalesce(
+                Sum("amount", filter=Q(adjustment_type=PayrollAdjustmentType.SALARY_ADVANCE)),
+                Decimal("0"), output_field=money,
+            ),
+            recovered=Coalesce(
+                Sum("amount", filter=Q(adjustment_type=PayrollAdjustmentType.ADVANCE_RECOVERY)),
+                Decimal("0"), output_field=money,
+            ),
+            last_date=Max("transaction_date"),
+        )
+        .annotate(balance=F("issued") - F("recovered"))
+        .filter(balance__gt=0)
+    )
+    query = query.strip()
+    if query:
+        rows = rows.filter(
+            Q(employee__full_name__icontains=query)
+            | Q(employee__employee_number__icontains=query)
+        )
+    return rows.order_by("-balance", "employee__full_name", "employee_id")
+
+
+def _advance_balance_summary(*, company: Company) -> dict[str, object]:
+    rows = PayrollAdjustment.objects.for_company(company).filter(
+        status=PayrollAdjustmentStatus.APPROVED,
+        adjustment_type__in=[PayrollAdjustmentType.SALARY_ADVANCE, PayrollAdjustmentType.ADVANCE_RECOVERY],
+    )
+    issued = rows.filter(adjustment_type=PayrollAdjustmentType.SALARY_ADVANCE).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    recovered = rows.filter(adjustment_type=PayrollAdjustmentType.ADVANCE_RECOVERY).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    return {
+        "outstanding": str(max(Decimal("0"), issued - recovered)),
+        "activeCount": _advance_balance_queryset(company=company).count(),
+    }
+
+
+def payroll_adjustment_page_context(
+    *, company: Company, period_start: date, page: object = 1, page_size: object = 50,
+    search: str = "", adjustment_type: str = "All", status: str = "All", view: str = "register",
+) -> dict[str, object]:
+    start, _end = month_bounds(period_start)
+    page_number = _adjustment_page_number(page)
+    size = _adjustment_page_size(page_size)
+    normalized_view = str(view or "register").strip().lower()
+    if normalized_view not in {"register", "balances"}:
+        raise ValidationError({"view": "Adjustment view must be register or balances."})
+    summary = _adjustment_period_summary(company=company, period_start=start)
+    balance_summary = _advance_balance_summary(company=company)
+
+    if normalized_view == "balances":
+        queryset = _advance_balance_queryset(company=company, query=search)
+        paginator = Paginator(queryset, size)
+        page_obj = paginator.get_page(page_number)
+        raw_rows = list(page_obj.object_list)
+        employee_ids = [row["employee_id"] for row in raw_rows]
+        pending = {
+            str(row["employee_id"]): row["total"] or Decimal("0")
+            for row in (
+                PayrollAdjustment.objects.for_company(company)
+                .filter(
+                    employee_id__in=employee_ids,
+                    adjustment_type__in=[PayrollAdjustmentType.SALARY_ADVANCE, PayrollAdjustmentType.ADVANCE_RECOVERY],
+                )
+                .exclude(status=PayrollAdjustmentStatus.APPROVED)
+                .values("employee_id")
+                .annotate(total=Sum("amount"))
+            )
+        }
+        latest_plans: dict[str, PayrollAdjustment] = {}
+        if employee_ids:
+            for item in (
+                PayrollAdjustment.objects.for_company(company)
+                .filter(
+                    employee_id__in=employee_ids,
+                    status=PayrollAdjustmentStatus.APPROVED,
+                    adjustment_type=PayrollAdjustmentType.SALARY_ADVANCE,
+                )
+                .order_by("employee_id", "-transaction_date", "-created_at")
+                .distinct("employee_id")
+            ):
+                latest_plans[str(item.employee_id)] = item
+        results = []
+        for row in raw_rows:
+            employee_id = str(row["employee_id"])
+            plan = latest_plans.get(employee_id)
+            results.append({
+                "key": f"Internal:{employee_id}",
+                "workforce": "Internal Employee",
+                "workforceKey": "Internal",
+                "personId": employee_id,
+                "personName": row["employee__full_name"],
+                "personCode": f"EMP {row['employee__employee_number']}",
+                "issued": str(row["issued"]),
+                "recovered": str(row["recovered"]),
+                "balance": str(row["balance"]),
+                "pending": str(pending.get(employee_id, Decimal("0"))),
+                "lastDate": row["last_date"].isoformat() if row["last_date"] else "",
+                "plans": ([{
+                    "plan": plan.recovery_plan or "Manual recovery",
+                    "installment": str(plan.installment_amount or ""),
+                    "start": plan.recovery_start.isoformat() if plan.recovery_start else "",
+                }] if plan else []),
+            })
+        return {
+            "surface": "adjustments_page", "period": f"{start:%Y-%m}", "view": "balances",
+            "results": [], "balances": results, "summary": summary, "balanceSummary": balance_summary,
+            "meta": {
+                "count": paginator.count, "page": page_obj.number, "pageSize": size,
+                "totalPages": paginator.num_pages,
+                "rangeStart": (page_obj.start_index() if paginator.count else 0),
+                "rangeEnd": (page_obj.end_index() if paginator.count else 0),
+            },
+            "filters": {
+                "types": [{"value": value, "label": label} for value, label in PayrollAdjustmentType.choices],
+                "statuses": [{"value": value, "label": label} for value, label in PayrollAdjustmentStatus.choices],
+            },
+        }
+
+    type_value = _choice_value(adjustment_type, PayrollAdjustmentType.choices, "type")
+    status_value = _choice_value(status, PayrollAdjustmentStatus.choices, "status")
+    queryset = (
+        PayrollAdjustment.objects.for_company(company)
+        .filter(period_start=start)
+        .select_related("employee", "submitted_by", "approved_by")
+    )
+    query = search.strip()
+    if query:
+        normalized_query = query.lower().replace(" ", "_")
+        queryset = queryset.filter(
+            Q(employee__full_name__icontains=query)
+            | Q(employee__employee_number__icontains=query)
+            | Q(reason__icontains=query)
+            | Q(reference__icontains=query)
+            | Q(adjustment_type__icontains=normalized_query)
+        )
+    if type_value:
+        queryset = queryset.filter(adjustment_type=type_value)
+    if status_value:
+        queryset = queryset.filter(status=status_value)
+    queryset = queryset.order_by("-transaction_date", "-created_at", "-pk")
+    paginator = Paginator(queryset, size)
+    page_obj = paginator.get_page(page_number)
+    return {
+        "surface": "adjustments_page", "period": f"{start:%Y-%m}", "view": "register",
+        "results": [serialize_payroll_adjustment(item) for item in page_obj.object_list],
+        "balances": [], "summary": summary, "balanceSummary": balance_summary,
+        "meta": {
+            "count": paginator.count, "page": page_obj.number, "pageSize": size,
+            "totalPages": paginator.num_pages,
+            "rangeStart": (page_obj.start_index() if paginator.count else 0),
+            "rangeEnd": (page_obj.end_index() if paginator.count else 0),
+        },
+        "filters": {
+            "types": [{"value": value, "label": label} for value, label in PayrollAdjustmentType.choices],
+            "statuses": [{"value": value, "label": label} for value, label in PayrollAdjustmentStatus.choices],
+        },
+    }
 
 
 def _run_queryset(company: Company):
@@ -268,6 +509,361 @@ def _previous_period(start: date) -> date:
     if start.month == 1:
         return date(start.year - 1, 12, 1)
     return date(start.year, start.month - 1, 1)
+
+
+
+
+PAYROLL_RUN_PAGE_SIZES = {25, 50, 100}
+
+
+def _page_int(value: object, default: int = 1) -> int:
+    try:
+        parsed = int(str(value or default))
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, parsed)
+
+
+def _payroll_page_size(value: object) -> int:
+    parsed = _page_int(value, 50)
+    return parsed if parsed in PAYROLL_RUN_PAGE_SIZES else 50
+
+
+def _run_header_for_period(*, company: Company, period_start: date) -> PayrollRun | None:
+    start, _end = month_bounds(period_start)
+    return (
+        PayrollRun.objects.for_company(company)
+        .select_related("attendance_period", "calculated_by", "submitted_by", "approved_by")
+        .filter(period_start=start)
+        .first()
+    )
+
+
+def _snapshot_lines_queryset(*, company: Company, run: PayrollRun):
+    return PayrollRunLine.objects.for_company(company).filter(run=run).select_related("employee").order_by("employee_number", "employee_name")
+
+
+def _page_snapshot_lines(queryset, *, company: Company, offset: int, page_size: int) -> list[PayrollRunLine]:
+    components = PayrollRunLineComponent.objects.for_company(company).order_by("component_category", "component_code", "effective_from")
+    adjustments = PayrollRunLineAdjustment.objects.for_company(company).order_by("transaction_date", "created_at")
+    return list(
+        queryset[offset : offset + page_size].prefetch_related(
+            Prefetch("components", queryset=components, to_attr="payroll_components"),
+            Prefetch("adjustments", queryset=adjustments, to_attr="payroll_adjustments"),
+        )
+    )
+
+
+def _row_total_summary(rows: list[dict[str, object]]) -> dict[str, object]:
+    totals = {
+        "employeeCount": len(rows),
+        "basic": Decimal("0"), "allowances": Decimal("0"), "overtime": Decimal("0"),
+        "otherEarnings": Decimal("0"), "gross": Decimal("0"), "advanceRecovery": Decimal("0"),
+        "otherDeductions": Decimal("0"), "deductions": Decimal("0"), "net": Decimal("0"),
+        "ready": 0, "blocked": 0, "warning": 0,
+    }
+    for row in rows:
+        totals["basic"] += Decimal(str(row.get("basic") or 0))
+        totals["allowances"] += Decimal(str(row.get("allowances") or 0))
+        totals["overtime"] += Decimal(str(row.get("overtime") or 0))
+        totals["otherEarnings"] += Decimal(str(row.get("otherEarnings") or 0))
+        totals["gross"] += Decimal(str(row.get("gross") or 0))
+        totals["advanceRecovery"] += Decimal(str(row.get("advances") or 0))
+        totals["otherDeductions"] += Decimal(str(row.get("deductions") or 0))
+        totals["deductions"] += Decimal(str(row.get("advances") or 0)) + Decimal(str(row.get("deductions") or 0))
+        totals["net"] += Decimal(str(row.get("net") or 0))
+        if row.get("blockers"):
+            totals["blocked"] += 1
+        else:
+            totals["ready"] += 1
+        if row.get("warnings"):
+            totals["warning"] += 1
+    return {key: str(value) if isinstance(value, Decimal) else value for key, value in totals.items()}
+
+
+def _run_total_summary(run: PayrollRun) -> dict[str, object]:
+    return {
+        "employeeCount": run.employee_count,
+        "basic": str(run.total_basic), "allowances": str(run.total_allowances), "overtime": str(run.total_overtime),
+        "otherEarnings": str(run.total_other_earnings), "gross": str(run.total_gross),
+        "advanceRecovery": str(run.total_advance_recovery), "otherDeductions": str(run.total_other_deductions),
+        "deductions": str(run.total_deductions), "net": str(run.total_net),
+        "ready": run.employee_count, "blocked": 0, "warning": 0,
+    }
+
+
+def _filter_preview_rows(rows: list[dict[str, object]], *, search: str, branch: str, department: str, readiness: str) -> list[dict[str, object]]:
+    needle = search.casefold().strip()
+    result: list[dict[str, object]] = []
+    for row in rows:
+        if branch and branch != "All branches" and str(row.get("branch") or "") != branch:
+            continue
+        if department and department != "All departments" and str(row.get("department") or "") != department:
+            continue
+        blocked = bool(row.get("blockers"))
+        if readiness == "Blocked" and not blocked:
+            continue
+        if readiness == "Ready" and blocked:
+            continue
+        if needle:
+            haystack = " ".join(str(row.get(key) or "") for key in ("employeeCode", "name", "position", "department", "branch")).casefold()
+            if needle not in haystack:
+                continue
+        result.append(row)
+    return result
+
+
+def _snapshot_filter(queryset, *, search: str, branch: str, department: str, readiness: str):
+    if search.strip():
+        needle = search.strip()
+        queryset = queryset.filter(
+            Q(employee_number__icontains=needle)
+            | Q(employee_name__icontains=needle)
+            | Q(position__icontains=needle)
+            | Q(department_name__icontains=needle)
+            | Q(branch_name__icontains=needle)
+        )
+    if branch and branch != "All branches":
+        queryset = queryset.filter(branch_name=branch)
+    if department and department != "All departments":
+        queryset = queryset.filter(department_name=department)
+    # Persisted payroll snapshots are created only after all source blockers are clear.
+    if readiness == "Blocked":
+        queryset = queryset.none()
+    return queryset
+
+
+def _comparison_rows(*, company: Company, previous_run: PayrollRun | None, employee_ids: list[str]) -> list[dict[str, object]]:
+    if previous_run is None or not employee_ids:
+        return []
+    return [
+        {
+            "employeeId": str(item["employee_id"]),
+            "employeeCode": item["employee_number"],
+            "name": item["employee_name"],
+            "net": str(item["net"]),
+        }
+        for item in PayrollRunLine.objects.for_company(company)
+        .filter(run=previous_run, employee_id__in=employee_ids)
+        .values("employee_id", "employee_number", "employee_name", "net")
+    ]
+
+
+def _review_summary(*, rows: list[dict[str, object]], previous_net_by_employee: dict[str, Decimal], source_errors: list[str], attendance_locked: bool, previous_available: bool) -> dict[str, int]:
+    critical = len(source_errors) + (0 if attendance_locked else 1)
+    warning = 0
+    for row in rows:
+        critical += len(row.get("blockers") or [])
+        warning += len(row.get("warnings") or [])
+        basic = Decimal(str(row.get("basic") or 0))
+        overtime = Decimal(str(row.get("overtime") or 0))
+        overtime_hours = Decimal(str(row.get("otHours") or 0))
+        if overtime_hours >= 40 or (basic > 0 and overtime / basic >= Decimal("0.2")):
+            warning += 1
+        previous = previous_net_by_employee.get(str(row.get("employeeId")))
+        current = Decimal(str(row.get("net") or 0))
+        if previous not in (None, Decimal("0")):
+            delta_pct = abs((current - previous) / previous * Decimal("100"))
+            if delta_pct >= 25:
+                critical += 1
+            elif delta_pct >= 10:
+                warning += 1
+    info = 0 if previous_available else 1
+    return {"Critical": critical, "Warning": warning, "Info": info, "All": critical + warning + info}
+
+
+def payroll_run_page_context(
+    *,
+    company: Company,
+    period_start: date,
+    membership=None,
+    page: object = 1,
+    page_size: object = 50,
+    search: str = "",
+    branch: str = "All branches",
+    department: str = "All departments",
+    readiness: str = "All",
+) -> dict[str, object]:
+    """Bounded Payroll Runs surface.
+
+    Saved runs page directly from immutable PayrollRunLine rows. Draft remains an
+    authoritative server preflight, but only the requested page crosses the API boundary.
+    """
+    start, _end = month_bounds(period_start)
+    page_number = _page_int(page)
+    size = _payroll_page_size(page_size)
+    run = _run_header_for_period(company=company, period_start=start)
+    policy = payroll_policy_for_company(company=company)
+    source_errors: list[str] = []
+
+    if run is not None and run.status != PayrollRunStatus.DRAFT:
+        if run.status in {PayrollRunStatus.CALCULATED, PayrollRunStatus.REVIEW}:
+            try:
+                verify_payroll_run_integrity(
+                    company=company,
+                    period_start=start,
+                    verify_source=True,
+                    require_locked_attendance=run.status == PayrollRunStatus.REVIEW,
+                )
+            except ValidationError as exc:
+                if hasattr(exc, "message_dict"):
+                    source_errors = [str(message) for messages in exc.message_dict.values() for message in messages]
+                else:
+                    source_errors = [str(message) for message in exc.messages]
+        base_queryset = _snapshot_lines_queryset(company=company, run=run)
+        branches = list(base_queryset.exclude(branch_name="").values_list("branch_name", flat=True).distinct().order_by("branch_name"))
+        departments = list(base_queryset.exclude(department_name="").values_list("department_name", flat=True).distinct().order_by("department_name"))
+        filtered_queryset = _snapshot_filter(base_queryset, search=search, branch=branch, department=department, readiness=readiness)
+        count = filtered_queryset.count()
+        total_pages = max(1, (count + size - 1) // size)
+        page_number = min(page_number, total_pages)
+        offset = (page_number - 1) * size
+        rows = [_serialize_snapshot_line(item) for item in _page_snapshot_lines(filtered_queryset, company=company, offset=offset, page_size=size)]
+        summary = _run_total_summary(run)
+        # Warnings are not financial blockers; count employees with non-approved period adjustments exactly.
+        pending_warning_count = (
+            PayrollAdjustment.objects.for_company(company)
+            .filter(period_start=start)
+            .exclude(status=PayrollAdjustmentStatus.APPROVED)
+            .values("employee_id")
+            .distinct()
+            .count()
+        )
+        summary["warning"] = pending_warning_count
+        all_review_rows = [
+            {
+                "employeeId": str(item["employee_id"]), "basic": str(item["basic"]), "overtime": str(item["overtime_amount"]),
+                "otHours": str(item["overtime_hours"]), "net": str(item["net"]), "blockers": [], "warnings": [],
+            }
+            for item in base_queryset.values("employee_id", "basic", "overtime_amount", "overtime_hours", "net")
+        ]
+    else:
+        try:
+            preview = preview_payroll_run(company=company, period_start=start)
+            all_review_rows = list(preview["rows"])
+            source_errors = list(preview["blockers"])
+        except ValidationError as exc:
+            all_review_rows = []
+            if hasattr(exc, "message_dict"):
+                source_errors = [str(message) for messages in exc.message_dict.values() for message in messages]
+            else:
+                source_errors = [str(message) for message in exc.messages]
+        branches = sorted({str(row.get("branch") or "") for row in all_review_rows if row.get("branch")})
+        departments = sorted({str(row.get("department") or "") for row in all_review_rows if row.get("department")})
+        summary = _row_total_summary(all_review_rows)
+        filtered = _filter_preview_rows(all_review_rows, search=search, branch=branch, department=department, readiness=readiness)
+        count = len(filtered)
+        total_pages = max(1, (count + size - 1) // size)
+        page_number = min(page_number, total_pages)
+        offset = (page_number - 1) * size
+        rows = filtered[offset : offset + size]
+
+    if run is None or run.status == PayrollRunStatus.DRAFT:
+        pending_warning_count = (
+            PayrollAdjustment.objects.for_company(company)
+            .filter(period_start=start)
+            .exclude(status=PayrollAdjustmentStatus.APPROVED)
+            .values("employee_id")
+            .distinct()
+            .count()
+        )
+        summary["warning"] = pending_warning_count
+
+    # Add only visible employees' pending adjustments; 1.0.74 will cut over the full adjustments workspace.
+    visible_employee_ids = [str(row.get("employeeId")) for row in rows if row.get("employeeId")]
+    adjustments_by_employee: dict[str, list[dict[str, object]]] = {}
+    if visible_employee_ids:
+        page_adjustments = list(
+            PayrollAdjustment.objects.for_company(company)
+            .filter(period_start=start, employee_id__in=visible_employee_ids)
+            .select_related("employee", "submitted_by", "approved_by")
+            .order_by("-transaction_date", "-created_at")
+        )
+        for item in page_adjustments:
+            adjustments_by_employee.setdefault(str(item.employee_id), []).append(serialize_payroll_adjustment(item))
+        for row in rows:
+            pending = [item for item in adjustments_by_employee.get(str(row.get("employeeId")), []) if item.get("statusValue") != PayrollAdjustmentStatus.APPROVED]
+            row["pendingAdjustments"] = pending
+            if pending:
+                row.setdefault("warnings", []).append(f"{len(pending)} adjustment(s) are not approved and are excluded from payroll.")
+
+    previous_start = _previous_period(start)
+    previous_run = _run_header_for_period(company=company, period_start=previous_start)
+    previous_rows = _comparison_rows(company=company, previous_run=previous_run, employee_ids=visible_employee_ids)
+    previous_net_by_employee = {
+        str(item["employee_id"]): Decimal(str(item["net"]))
+        for item in PayrollRunLine.objects.for_company(company)
+        .filter(run=previous_run)
+        .values("employee_id", "net")
+    } if previous_run else {}
+
+    attendance_status = None
+    if run and run.attendance_period:
+        attendance_status = run.attendance_period.get_status_display()
+    else:
+        from apps.internal_payroll.selectors.attendance import attendance_period_for_company
+        attendance = attendance_period_for_company(company=company, period_start=start)
+        attendance_status = attendance.get_status_display() if attendance else "Not created"
+    attendance_calculable = attendance_status in {AttendancePeriodStatus.APPROVED.label, AttendancePeriodStatus.LOCKED.label}
+    attendance_locked = attendance_status == AttendancePeriodStatus.LOCKED.label
+    run_status = run.status if run else PayrollRunStatus.DRAFT
+    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL))
+    can_approve = bool(membership and membership_can_workspace(membership, Workspace.INTERNAL) and membership_has_capability(membership, Capability.APPROVE))
+    source_clear = not source_errors and int(summary.get("blocked") or 0) == 0
+    allowed_actions: list[str] = []
+    if can_edit and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
+        allowed_actions.append("calculate")
+    if can_edit and run_status == PayrollRunStatus.CALCULATED:
+        allowed_actions.append("reset")
+        if attendance_locked and source_clear:
+            allowed_actions.append("submit_review")
+    if can_approve and run_status == PayrollRunStatus.REVIEW:
+        allowed_actions.append("return_for_changes")
+        if attendance_locked and source_clear:
+            allowed_actions.append("approve")
+    next_action = next((item for item in ("calculate", "submit_review", "approve") if item in allowed_actions), None)
+
+    review_summary = _review_summary(
+        rows=all_review_rows,
+        previous_net_by_employee=previous_net_by_employee,
+        source_errors=source_errors,
+        attendance_locked=attendance_locked,
+        previous_available=previous_run is not None and previous_run.employee_count > 0,
+    )
+    if pending_warning_count:
+        review_summary["Warning"] += pending_warning_count
+        review_summary["All"] += pending_warning_count
+    return {
+        "surface": "payroll_run_page",
+        "run": _run_payload(run, period_start=start, membership=membership),
+        "rows": rows,
+        "summary": summary,
+        "meta": {
+            "page": page_number, "pageSize": size, "count": count, "totalPages": total_pages,
+            "rangeStart": 0 if count == 0 else offset + 1, "rangeEnd": min(offset + size, count),
+        },
+        "filters": {"branches": branches, "departments": departments},
+        "sourceErrors": source_errors,
+        "policy": serialize_payroll_policy(policy),
+        "adjustments": [],
+        "adjustmentsByEmployee": adjustments_by_employee,
+        "reviewSummary": review_summary,
+        "reviewHistory": _audit_history(run),
+        "attendanceStatus": attendance_status,
+        "attendanceLocked": attendance_locked,
+        "workflow": {
+            "statusValue": run_status, "allowedActions": allowed_actions, "nextAction": next_action,
+            "canCalculate": "calculate" in allowed_actions, "canReset": "reset" in allowed_actions,
+            "canSubmitReview": "submit_review" in allowed_actions, "canReturnForChanges": "return_for_changes" in allowed_actions,
+            "canApprove": "approve" in allowed_actions, "sourceClear": source_clear,
+            "attendanceCalculable": attendance_calculable, "attendanceLocked": attendance_locked,
+        },
+        "previous": {
+            "period": f"{previous_start:%Y-%m}", "label": _period_label(previous_start),
+            "run": _run_payload(previous_run, period_start=previous_start, membership=membership) if previous_run else None,
+            "rows": previous_rows,
+        },
+    }
 
 
 def payroll_period_context(*, company: Company, period_start: date, membership=None) -> dict[str, object]:

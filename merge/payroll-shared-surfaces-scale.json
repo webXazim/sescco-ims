@@ -1,0 +1,64 @@
+{
+  "release": "1.0.77",
+  "purpose": "Bound the remaining Payroll Documents, Reports, Record Management and Management governance surfaces without changing payroll formulas, lifecycle semantics or schema.",
+  "documents": {
+    "bootstrap": "deferred",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "search_authority": "server",
+    "summary_authority": "server-exact",
+    "detail_snapshot": "lazy-per-document"
+  },
+  "reports": {
+    "interactive_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "interactive_authority": "server",
+    "search_authority": "server",
+    "csv_export": "explicit-full-result"
+  },
+  "record_management": {
+    "bootstrap": "deferred",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "search_authority": "server",
+    "buckets": [
+      "archive",
+      "trash"
+    ]
+  },
+  "management": {
+    "bootstrap": "compact-summary",
+    "approval_preview_max": 5,
+    "approval_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "audit_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "audit_search_authority": "server"
+  },
+  "browser": {
+    "stale_request_abort": true,
+    "page_size_preferences": [
+      "payroll-ui-document-page-size",
+      "payroll-ui-report-page-size",
+      "payroll-ui-management-approval-page-size",
+      "payroll-ui-management-audit-page-size"
+    ]
+  },
+  "schema_change": false,
+  "payroll_formula_change": false
+}

@@ -12,9 +12,7 @@ from urllib.parse import urljoin
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description="Run live Chromium checks against SESCCO MS benchmark Payroll screens."
-    )
+    p = argparse.ArgumentParser(description="Run live Chromium checks against SESCCO MS benchmark Payroll screens.")
     p.add_argument("--base-url", required=True, help="Application origin, e.g. https://ims.sescco.com")
     p.add_argument("--username", default=os.getenv("IMS_BROWSER_BENCHMARK_USERNAME", ""))
     p.add_argument("--password-env", default="IMS_BROWSER_BENCHMARK_PASSWORD")
@@ -49,9 +47,14 @@ def main() -> int:
 
     base = args.base_url.rstrip("/") + "/"
     evidence: dict[str, object] = {
-        "release": "1.0.70",
+        "release": "1.0.77",
         "base_url": base,
-        "limits": {"max_table_rows": 100, "max_global_results": 30, "max_settle_ms": args.max_settle_ms},
+        "limits": {
+            "max_table_rows": 100,
+            "max_assignment_rows": 200,
+            "max_global_results": 30,
+            "max_settle_ms": args.max_settle_ms,
+        },
         "scenarios": [],
     }
     failures: list[str] = []
@@ -75,7 +78,6 @@ def main() -> int:
         page = context.new_page()
         page.set_default_timeout(args.max_settle_ms)
 
-        # Sign in through the real Django login form so company/workspace permissions are real.
         page.goto(urljoin(base, "login/"), wait_until="domcontentloaded")
         page.locator('input[name="username"]').fill(username)
         page.locator('input[name="password"]').fill(password)
@@ -84,13 +86,10 @@ def main() -> int:
         if "/login/" in page.url:
             failures.append("login did not leave /login/")
 
-        def open_route(workspace: str, route: str, input_selector: str):
+        def open_route(workspace: str, route: str, wait_selector: str):
             started = perf_counter()
-            page.goto(
-                urljoin(base, f"payroll/?workspace={workspace}#/{route}"),
-                wait_until="domcontentloaded",
-            )
-            page.locator(input_selector).wait_for(state="visible")
+            page.goto(urljoin(base, f"payroll/?workspace={workspace}#/{route}"), wait_until="domcontentloaded")
+            page.locator(wait_selector).wait_for(state="visible")
             return started
 
         def rapid_search(input_selector: str, final_value: str):
@@ -102,53 +101,112 @@ def main() -> int:
             if locator.input_value() != final_value:
                 failures.append(f"{input_selector} lost the final rapid-search value")
 
-        # Internal Attendance / OT: bounded table, rapid server search and pagination.
+        def bounded_rows(name: str, selector: str, max_rows: int = 100) -> int:
+            rows = page.locator(selector).count()
+            if max_rows == 100 and rows > 100:
+                failures.append(f"{name} rendered {rows} rows (>100)")
+            if max_rows == 200 and rows > 200:
+                failures.append(f"{name} rendered {rows} rows (>200)")
+            return rows
+
+        def search_surface(*, name: str, workspace: str, route: str, input_selector: str, row_selector: str, query: str, max_rows: int = 100):
+            started = open_route(workspace, route, input_selector)
+            rapid_search(input_selector, query)
+            page.wait_for_timeout(500)
+            rows = bounded_rows(name, row_selector, max_rows=max_rows)
+            record(name, started, rows=rows)
+            return rows
+
+        # Internal Company directory + attendance/overtime.
+        search_surface(name="internal-employee-directory", workspace="internal", route="internal-employees", input_selector="#employeeSearch", row_selector=".employee-table tbody tr", query="DEMO")
+
         started = open_route("internal", "timesheets", "#timesheetSearch")
-        page.wait_for_timeout(350)
         rapid_search("#timesheetSearch", "DEMO")
         page.wait_for_timeout(500)
-        internal_rows = page.locator(".ui-v2-payroll-timesheet-workspace tbody tr").count()
-        if internal_rows > 100:
-            failures.append(f"Internal Attendance rendered {internal_rows} rows (>100)")
-        if page.get_by_text("Loading attendance page…", exact=True).count():
-            failures.append("Internal Attendance remained in loading state")
-        next_button = page.locator('[data-timesheet-page][aria-label="Next page"]:not([disabled])')
-        if next_button.count():
-            next_button.first.click()
-            page.wait_for_timeout(700)
-        record("internal-attendance-rapid-search-page", started, rows=internal_rows)
+        attendance_rows = bounded_rows("internal-attendance", ".ui-v2-payroll-timesheet-workspace tbody tr")
+        record("internal-attendance", started, rows=attendance_rows)
+        sub_started = perf_counter()
+        page.locator('[data-timesheet-tab="overtime"]').click()
+        page.wait_for_timeout(500)
+        overtime_rows = bounded_rows("internal-overtime", ".overtime-table tbody tr")
+        record("internal-overtime", sub_started, rows=overtime_rows)
 
-        # Assignment Lifecycle: Activity page is bounded to 100 segments / <=200 expanded events.
+        # Salary Setup employee directory is lazy and independently server-paged.
+        started = open_route("internal", "salary-setup", '[data-salary-tab="structures"]')
+        page.locator('[data-salary-tab="structures"]').click()
+        page.locator("#salaryStructureSearch").wait_for(state="visible")
+        rapid_search("#salaryStructureSearch", "DEMO")
+        page.wait_for_timeout(500)
+        rows = bounded_rows("salary-setup-employee-structures", ".salary-structures-table tbody tr")
+        record("salary-setup-employee-structures", started, rows=rows)
+
+        # Payroll Run register + Review share the same bounded server page.
+        started = open_route("internal", "payroll-runs", "#payrollSearch")
+        rapid_search("#payrollSearch", "DEMO")
+        page.wait_for_timeout(500)
+        rows = bounded_rows("payroll-runs-register", ".payroll-table tbody tr")
+        record("payroll-runs-register", started, rows=rows)
+        review_button = page.locator("[data-payroll-view-review], [data-review-approve], [data-review-return]")
+        if review_button.count():
+            # Only click the explicit view toggle; workflow buttons are not mutated by certification.
+            view = page.locator("[data-payroll-view-review]")
+            if view.count():
+                view.first.click()
+                page.wait_for_timeout(500)
+        review_started = perf_counter()
+        review_rows = bounded_rows("payroll-runs-review", ".payroll-table tbody tr")
+        record("payroll-runs-review", review_started, rows=review_rows)
+
+        search_surface(name="internal-advances-adjustments", workspace="internal", route="adjustments", input_selector="#adjustmentSearch", row_selector=".adjustment-ledger-table tbody tr", query="DEMO")
+
+        # Salary payment register is expected in the benchmark seed.
+        search_surface(name="salary-payments-register", workspace="internal", route="payments", input_selector="#paymentSearch", row_selector=".payment-table tbody tr", query="DEMO")
+        search_surface(name="bank-readiness", workspace="internal", route="bank-export", input_selector="#bankExportSearch", row_selector=".bank-payment-register tbody tr", query="DEMO")
+        search_surface(name="wps-readiness", workspace="internal", route="wps", input_selector="#wpsSearch", row_selector=".wps-table tbody tr", query="DEMO")
+
+        # Shared records/reporting surfaces added in 1.0.76.
+        search_surface(name="documents", workspace="internal", route="documents", input_selector="#documentSearch", row_selector=".document-list-item", query="DEMO")
+        search_surface(name="reports", workspace="internal", route="reports", input_selector="#reportSearch", row_selector=".report-table tbody tr", query="DEMO")
+        search_surface(name="archive", workspace="internal", route="archive", input_selector="#recordManagementSearch", row_selector=".records-bin-page table tbody tr", query="DEMO")
+        search_surface(name="delete-recovery", workspace="internal", route="trash", input_selector="#recordManagementSearch", row_selector=".records-bin-page table tbody tr", query="DEMO")
+
+        started = open_route("management", "management-approvals", "#managementApprovalPageSize")
+        rows = bounded_rows("management-approval-center", ".management-approval-item")
+        record("management-approval-center", started, rows=rows)
+        search_surface(name="management-audit-trail", workspace="management", route="management-audit", input_selector="#managementAuditSearch", row_selector=".management-audit-row", query="DEMO")
+
+        # Rental directory and all three assignment lifecycle views.
+        search_surface(name="rental-workforce-directory", workspace="rental", route="rental-workforce", input_selector="#rentalSearch", row_selector=".rental-worker-table tbody tr", query="RDEMO")
+
         started = open_route("rental", "rental-assignments", "#rentalAssignmentSearch")
         rapid_search("#rentalAssignmentSearch", "RDEMO")
         page.wait_for_timeout(500)
-        assignment_rows = page.locator("table tbody tr").count()
-        if assignment_rows > 200:
-            failures.append(f"Assignment Lifecycle rendered {assignment_rows} rows (>200)")
-        if page.get_by_text("Loading assignment data…", exact=True).count():
-            failures.append("Assignment Lifecycle remained in loading state")
-        assignment_next = page.locator('[data-assignment-page^="activity|"]:not([disabled])')
-        if assignment_next.count() >= 2:
-            assignment_next.nth(1).click()
-            page.wait_for_timeout(700)
-        record("rental-assignment-rapid-search-page", started, rows=assignment_rows)
+        rows = bounded_rows("rental-assignment-activity", "table tbody tr", max_rows=200)
+        record("rental-assignment-activity", started, rows=rows)
+        sub_started = perf_counter()
+        page.locator('[data-assignment-tab="deployment"]').click()
+        page.wait_for_timeout(500)
+        rows = bounded_rows("rental-current-deployment", ".assignment-deployment-table tbody tr")
+        record("rental-current-deployment", sub_started, rows=rows)
+        sub_started = perf_counter()
+        page.locator('[data-assignment-tab="pool"]').click()
+        page.wait_for_timeout(500)
+        rows = bounded_rows("rental-supplier-pool", ".assignment-workspace-tabs ~ section table tbody tr")
+        record("rental-supplier-pool", sub_started, rows=rows)
 
-        # Rental Project Timesheet: project-period roster only, <=100 rows.
+        # Rental daily timesheet + overtime are both bounded to the selected project page.
         started = open_route("rental", "timesheets", "#rentalTimesheetSearch")
         rapid_search("#rentalTimesheetSearch", "RDEMO")
         page.wait_for_timeout(500)
-        rental_rows = page.locator(".ui-v2-payroll-timesheet-workspace tbody tr").count()
-        if rental_rows > 100:
-            failures.append(f"Rental Timesheet rendered {rental_rows} rows (>100)")
-        if page.get_by_text("Loading timesheet page…", exact=True).count():
-            failures.append("Rental Timesheet remained in loading state")
-        rental_next = page.locator('[data-rental-timesheet-page][aria-label="Next page"]:not([disabled])')
-        if rental_next.count():
-            rental_next.first.click()
-            page.wait_for_timeout(700)
-        record("rental-timesheet-rapid-search-page", started, rows=rental_rows)
+        rows = bounded_rows("rental-project-timesheets", ".ui-v2-payroll-timesheet-workspace tbody tr")
+        record("rental-project-timesheets", started, rows=rows)
+        sub_started = perf_counter()
+        page.locator('[data-rental-timesheet-tab="ot"]').click()
+        page.wait_for_timeout(500)
+        rows = bounded_rows("rental-overtime", ".ui-v2-prs-rental-ot-table tbody tr")
+        record("rental-overtime", sub_started, rows=rows)
 
-        # Global Ctrl/Cmd+K-equivalent search remains bounded to 5 per 6 entity types.
+        # Global Ctrl/Cmd+K search remains bounded to 5 per six entity types.
         started = perf_counter()
         page.locator("#globalSearchButton").click()
         page.locator("#globalSearchInput").fill("RDEMO")

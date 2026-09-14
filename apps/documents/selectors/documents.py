@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from django.db.models import Q
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
 
 from apps.accounts.permissions import membership_can_workspace
 from apps.accounts.roles import Workspace
@@ -9,7 +10,25 @@ from ..models import BusinessDocument, DocumentWorkspace
 from ..services import verify_document_snapshot
 
 
-def documents_for_company(*, company, membership, workspace: str = "", query: str = "", period_start=None, document_type: str = ""):
+DOCUMENT_PAGE_SIZES = {25, 50, 100}
+
+
+def _page_number(value: object) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _page_size(value: object) -> int:
+    try:
+        size = int(value or 50)
+    except (TypeError, ValueError):
+        size = 50
+    return size if size in DOCUMENT_PAGE_SIZES else 50
+
+
+def documents_for_company(*, company, membership, workspace: str = "", query: str = "", period_start=None, document_type: str = "", entity_reference: str = ""):
     qs = BusinessDocument.objects.for_company(company).select_related("finalized_by")
     allowed = []
     if membership_can_workspace(membership, Workspace.INTERNAL):
@@ -23,6 +42,8 @@ def documents_for_company(*, company, membership, workspace: str = "", query: st
         qs = qs.filter(period_start=period_start)
     if document_type:
         qs = qs.filter(document_type=document_type)
+    if entity_reference:
+        qs = qs.filter(entity_reference__iexact=entity_reference.strip())
     q = query.strip()
     if q:
         qs = qs.filter(
@@ -62,6 +83,52 @@ def serialize_document(document: BusinessDocument, *, include_snapshot: bool = F
     return data
 
 
+def document_page_context(
+    *, company, membership, workspace: str, query: str = "", period_start=None,
+    document_type: str = "", entity_reference: str = "", page: object = 1, page_size: object = 50,
+) -> dict[str, object]:
+    """Return one bounded document page plus exact workspace-wide counts/filter metadata."""
+    base = documents_for_company(company=company, membership=membership, workspace=workspace)
+    filtered = documents_for_company(
+        company=company,
+        membership=membership,
+        workspace=workspace,
+        query=query,
+        period_start=period_start,
+        document_type=document_type,
+        entity_reference=entity_reference,
+    )
+    size = _page_size(page_size)
+    paginator = Paginator(filtered, size)
+    page_obj = paginator.get_page(_page_number(page))
+    type_counts = {
+        row["document_type"]: row["count"]
+        for row in base.values("document_type").annotate(count=Count("id")).order_by()
+    }
+    periods = [
+        value.strftime("%Y-%m")
+        for value in base.exclude(period_start__isnull=True)
+        .values_list("period_start", flat=True)
+        .distinct()
+        .order_by("-period_start")
+    ]
+    return {
+        "surface": "documents_page",
+        "documents": [serialize_document(item) for item in page_obj.object_list],
+        "summary": {"count": base.count(), "typeCounts": type_counts},
+        "filters": {"periods": periods, "statuses": ["Final"]},
+        "meta": {
+            "count": paginator.count,
+            "page": page_obj.number,
+            "pageSize": size,
+            "totalPages": paginator.num_pages,
+            "rangeStart": page_obj.start_index() if paginator.count else 0,
+            "rangeEnd": page_obj.end_index() if paginator.count else 0,
+        },
+    }
+
+
 def document_context(*, company, membership, workspace: str = "") -> dict[str, object]:
-    rows = documents_for_company(company=company, membership=membership, workspace=workspace)[:250]
-    return {"documents": [serialize_document(item) for item in rows]}
+    # Upgrade 1.0.76: document lists are deferred to the paginated API. Keeping the
+    # shell empty prevents Payroll bootstrap cost from growing with document history.
+    return {"documents": [], "deferred": True}

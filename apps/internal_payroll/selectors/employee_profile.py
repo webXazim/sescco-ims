@@ -264,6 +264,18 @@ def _employee_activity(*, company: Company, employee: InternalEmployee, limit: i
     return result
 
 
+def _period_adjustments(*, company: Company, employee: InternalEmployee, period_start: date) -> list[dict[str, object]]:
+    from apps.internal_payroll.selectors.payroll import serialize_payroll_adjustment
+
+    rows = (
+        PayrollAdjustment.objects.for_company(company)
+        .filter(employee=employee, period_start=period_start)
+        .select_related("employee", "submitted_by", "approved_by")
+        .order_by("-transaction_date", "-created_at")
+    )
+    return [serialize_payroll_adjustment(item) for item in rows]
+
+
 def employee_profile_context(*, company: Company, employee: InternalEmployee, period_start: date) -> dict[str, object]:
     if employee.company_id != company.pk:
         raise ValueError("Employee does not belong to the active company.")
@@ -286,6 +298,7 @@ def employee_profile_context(*, company: Company, employee: InternalEmployee, pe
             for item in organization_history
         ],
         "attendance": _attendance_profile(company=company, employee=employee, period_start=period_start),
+        "adjustments": _period_adjustments(company=company, employee=employee, period_start=period_start),
         "payrollHistory": _payroll_history(company=company, employee=employee),
         "activity": _employee_activity(company=company, employee=employee),
     }

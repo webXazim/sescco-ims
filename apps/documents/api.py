@@ -13,7 +13,7 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.api_permissions import api_company_required
 
 from .models import BusinessDocument, DocumentType
-from .selectors import documents_for_company, serialize_document
+from .selectors import document_page_context, documents_for_company, serialize_document
 from .services import finalize_business_document
 
 
@@ -61,15 +61,18 @@ def _period(value: str):
 def documents_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
-            rows = documents_for_company(
+            payload = document_page_context(
                 company=request.company,
                 membership=request.company_membership,
                 workspace=request.GET.get("workspace", "").strip(),
                 query=request.GET.get("q", ""),
                 period_start=_period(request.GET.get("period", "")),
                 document_type=request.GET.get("type", "").strip(),
-            )[:500]
-            return JsonResponse({"ok": True, "documents": [serialize_document(item) for item in rows]})
+                entity_reference=request.GET.get("entity_reference", "").strip(),
+                page=request.GET.get("page", 1),
+                page_size=request.GET.get("page_size", 50),
+            )
+            return JsonResponse({"ok": True, **payload})
         body = _body(request)
         invoice = None
         if str(body.get("document_type") or "") == DocumentType.SUPPLIER_INVOICE:

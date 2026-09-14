@@ -100,6 +100,8 @@ python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py
 python3 scripts/verify-payroll-output-e2e.py
 python3 scripts/verify-payroll-browser-scale.py
+python3 scripts/verify-payroll-employee-residual-scale.py
+python3 scripts/verify-payroll-salary-setup-scale.py
 python3 scripts/verify-payroll-production-e2e.py
 
 printf 'Payroll frontend integration verified.\n'

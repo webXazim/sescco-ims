@@ -64,48 +64,121 @@ def _project_impact(row) -> str:
     ).count() if hasattr(row, "rental_assignments") else 0
     return f"{stock} stock balances · {assignments} current rental assignments follow this lifecycle"
 
-def record_management_context(*, company, include_internal: bool, include_rental: bool) -> dict[str, object]:
-    archive: list[dict[str, object]] = []
-    trash: list[dict[str, object]] = []
-    cascade_internal_employee_ids = active_cascade_child_ids(company=company, child_type="internal_payroll.InternalEmployee")
-    cascade_rental_worker_ids = active_cascade_child_ids(company=company, child_type="rental_manpower.RentalWorker")
+RECORD_PAGE_SIZES = {25, 50, 100}
 
-    if include_internal:
-        for row in Branch.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name"):
-            archive.append(_archive_entry(workspace="internal", kind="branch", row=row, code=row.code, label=row.name, detail=f"{row.get_kind_display()} · {_organization_impact(row)}"))
-        for row in Department.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name"):
-            archive.append(_archive_entry(workspace="internal", kind="department", row=row, code=row.code, label=row.name, detail=f"Department · {_organization_impact(row)}"))
-        for row in InternalEmployee.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("full_name"):
-            archive.append(_archive_entry(workspace="internal", kind="employee", row=row, code=row.employee_number, label=row.full_name, detail=row.get_status_display()))
 
-        for row in active_trash(Branch.objects.for_company(company)).order_by("name"):
-            trash.append(_trash_entry(workspace="internal", kind="branch", row=row, code=row.code, label=row.name, detail=f"{row.get_kind_display()} · {_organization_impact(row)}"))
-        for row in active_trash(Department.objects.for_company(company)).order_by("name"):
-            trash.append(_trash_entry(workspace="internal", kind="department", row=row, code=row.code, label=row.name, detail=f"Department · {_organization_impact(row)}"))
-        for row in active_trash(InternalEmployee.objects.for_company(company)).order_by("full_name"):
-            if str(row.pk) in cascade_internal_employee_ids:
-                continue
-            trash.append(_trash_entry(workspace="internal", kind="employee", row=row, code=row.employee_number, label=row.full_name, detail=row.get_status_display()))
+def _record_page_size(value: object) -> int:
+    try:
+        size = int(value or 50)
+    except (TypeError, ValueError):
+        size = 50
+    return size if size in RECORD_PAGE_SIZES else 50
 
-    if include_rental:
-        for row in ManpowerSupplier.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name"):
-            archive.append(_archive_entry(workspace="rental", kind="supplier", row=row, code=row.code, label=row.name, detail=f"Manpower supplier · {_supplier_impact(row)}"))
-        for row in RentalWorker.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("full_name"):
-            archive.append(_archive_entry(workspace="rental", kind="worker", row=row, code=row.worker_number, label=row.full_name, detail=row.supplier.name))
-        for row in Project.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("code"):
-            archive.append(_archive_entry(workspace="rental", kind="project", row=row, code=row.code, label=row.name, detail=f"{row.location or row.client_name or 'Project'} · {_project_impact(row)}"))
 
-        for row in active_trash(ManpowerSupplier.objects.for_company(company)).order_by("name"):
-            trash.append(_trash_entry(workspace="rental", kind="supplier", row=row, code=row.code, label=row.name, detail=f"Manpower supplier · {_supplier_impact(row)}"))
-        for row in active_trash(RentalWorker.objects.for_company(company)).select_related("supplier").order_by("full_name"):
-            if str(row.pk) in cascade_rental_worker_ids:
-                continue
-            trash.append(_trash_entry(workspace="rental", kind="worker", row=row, code=row.worker_number, label=row.full_name, detail=row.supplier.name))
-        for row in active_trash(Project.objects.for_company(company)).order_by("code"):
-            trash.append(_trash_entry(workspace="rental", kind="project", row=row, code=row.code, label=row.name, detail=f"{row.location or row.client_name or 'Project'} · {_project_impact(row)}"))
+def _record_page_number(value: object) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
 
+
+def _record_groups(*, company, workspace: str, bucket: str, query: str):
+    groups = []
+    q = str(query or "").strip()
+    if workspace == "internal":
+        if bucket == "archive":
+            branch_qs = Branch.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name")
+            dept_qs = Department.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name")
+            emp_qs = InternalEmployee.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("full_name")
+        else:
+            cascade_ids = active_cascade_child_ids(company=company, child_type="internal_payroll.InternalEmployee")
+            branch_qs = active_trash(Branch.objects.for_company(company)).order_by("name")
+            dept_qs = active_trash(Department.objects.for_company(company)).order_by("name")
+            emp_qs = active_trash(InternalEmployee.objects.for_company(company)).exclude(pk__in=cascade_ids).order_by("full_name")
+        if q:
+            branch_qs = branch_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+            dept_qs = dept_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+            emp_qs = emp_qs.filter(Q(employee_number__icontains=q) | Q(full_name__icontains=q))
+        groups.extend([
+            ("branch", branch_qs), ("department", dept_qs), ("employee", emp_qs),
+        ])
+    elif workspace == "rental":
+        if bucket == "archive":
+            supplier_qs = ManpowerSupplier.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("name")
+            worker_qs = RentalWorker.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).select_related("supplier").order_by("full_name")
+            project_qs = Project.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).order_by("code")
+        else:
+            cascade_ids = active_cascade_child_ids(company=company, child_type="rental_manpower.RentalWorker")
+            supplier_qs = active_trash(ManpowerSupplier.objects.for_company(company)).order_by("name")
+            worker_qs = active_trash(RentalWorker.objects.for_company(company)).exclude(pk__in=cascade_ids).select_related("supplier").order_by("full_name")
+            project_qs = active_trash(Project.objects.for_company(company)).order_by("code")
+        if q:
+            supplier_qs = supplier_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
+            worker_qs = worker_qs.filter(Q(worker_number__icontains=q) | Q(full_name__icontains=q) | Q(supplier__name__icontains=q))
+            project_qs = project_qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(location__icontains=q) | Q(client_name__icontains=q))
+        groups.extend([
+            ("supplier", supplier_qs), ("worker", worker_qs), ("project", project_qs),
+        ])
+    else:
+        raise ValueError("Workspace must be internal or rental.")
+    return groups
+
+
+def _record_entry(*, workspace: str, bucket: str, kind: str, row):
+    is_trash = bucket == "trash"
+    entry = _trash_entry if is_trash else _archive_entry
+    if kind == "branch":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.code, label=row.name, detail=f"{row.get_kind_display()} · {_organization_impact(row)}")
+    if kind == "department":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.code, label=row.name, detail=f"Department · {_organization_impact(row)}")
+    if kind == "employee":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.employee_number, label=row.full_name, detail=row.get_status_display())
+    if kind == "supplier":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.code, label=row.name, detail=f"Manpower supplier · {_supplier_impact(row)}")
+    if kind == "worker":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.worker_number, label=row.full_name, detail=row.supplier.name)
+    if kind == "project":
+        return entry(workspace=workspace, kind=kind, row=row, code=row.code, label=row.name, detail=f"{row.location or row.client_name or 'Project'} · {_project_impact(row)}")
+    raise ValueError("Unknown record-management kind.")
+
+
+def record_management_page_context(*, company, workspace: str, bucket: str, page: object = 1, page_size: object = 50, query: str = "") -> dict[str, object]:
+    bucket = str(bucket or "archive").strip().lower()
+    if bucket not in {"archive", "trash"}:
+        raise ValueError("Record bucket must be archive or trash.")
+    groups = _record_groups(company=company, workspace=workspace, bucket=bucket, query=query)
+    counts = [(kind, qs, qs.count()) for kind, qs in groups]
+    count = sum(item[2] for item in counts)
+    size = _record_page_size(page_size)
+    total_pages = max(1, (count + size - 1) // size)
+    page_number = min(_record_page_number(page), total_pages)
+    offset = (page_number - 1) * size
+    remaining = size
+    rows = []
+    cursor = offset
+    for kind, qs, group_count in counts:
+        if remaining <= 0:
+            break
+        if cursor >= group_count:
+            cursor -= group_count
+            continue
+        take = min(remaining, group_count - cursor)
+        for row in qs[cursor:cursor + take]:
+            rows.append(_record_entry(workspace=workspace, bucket=bucket, kind=kind, row=row))
+        remaining -= take
+        cursor = 0
     return {
-        "archive": archive,
-        "trash": trash,
+        "surface": "record_management_page",
+        "bucket": bucket,
+        "records": rows,
         "retentionDays": TRASH_RETENTION_DAYS,
+        "meta": {
+            "count": count, "page": page_number, "pageSize": size, "totalPages": total_pages,
+            "rangeStart": offset + 1 if count else 0, "rangeEnd": min(count, offset + size),
+        },
     }
+
+
+def record_management_context(*, company, include_internal: bool, include_rental: bool) -> dict[str, object]:
+    # Upgrade 1.0.76: Archive/Delete registers are loaded only when those pages are opened.
+    return {"archive": [], "trash": [], "retentionDays": TRASH_RETENTION_DAYS, "deferred": True}

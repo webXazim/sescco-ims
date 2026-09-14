@@ -7,10 +7,20 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_workspace_required
-from apps.accounts.roles import Workspace
+from apps.accounts.permissions import membership_has_capability
+from apps.accounts.roles import Capability, Workspace
 from apps.internal_payroll.api_utils import handle_api_error, json_body
-from apps.internal_payroll.models import BankExportTemplate
-from apps.internal_payroll.selectors.payment import salary_payment_context, serialize_export_template, serialize_payment_profile, serialize_payment_settings
+from apps.internal_payroll.models import BankExportTemplate, EmployeePaymentProfile, SalaryPaymentBatch
+from apps.internal_payroll.selectors.payment import (
+    salary_payment_batch_rows_context,
+    salary_payment_readiness_page_context,
+    salary_payment_shell_context,
+    serialize_export_template,
+    serialize_payment_batch,
+    serialize_payment_profile,
+    serialize_payment_row,
+    serialize_payment_settings,
+)
 from apps.internal_payroll.services.payment import (
     archive_bank_export_template,
     cancel_salary_payment_batch,
@@ -59,7 +69,7 @@ def salary_payments_api(request: HttpRequest) -> JsonResponse:
         period_start = _request_period(request)
         return JsonResponse({
             "ok": True,
-            **salary_payment_context(
+            **salary_payment_shell_context(
                 company=request.company,
                 period_start=period_start,
                 membership=request.company_membership,
@@ -71,10 +81,63 @@ def salary_payments_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 
-@require_http_methods(["PATCH", "DELETE"])
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def salary_payment_readiness_api(request: HttpRequest) -> JsonResponse:
+    try:
+        period_start = _request_period(request)
+        channel = str(request.GET.get("channel") or "").strip()
+        return JsonResponse({
+            "ok": True,
+            **salary_payment_readiness_page_context(
+                company=request.company,
+                period_start=period_start,
+                channel=channel,
+                membership=request.company_membership,
+                template_id=request.GET.get("template_id") or None,
+                page=request.GET.get("page", 1),
+                page_size=request.GET.get("page_size", 50),
+                search=str(request.GET.get("search") or ""),
+                status=str(request.GET.get("status") or "All"),
+                branch=str(request.GET.get("branch") or ""),
+            ),
+        })
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def salary_payment_batch_rows_api(request: HttpRequest, batch_id) -> JsonResponse:
+    try:
+        return JsonResponse({
+            "ok": True,
+            **salary_payment_batch_rows_context(
+                company=request.company,
+                batch_id=batch_id,
+                membership=request.company_membership,
+                page=request.GET.get("page", 1),
+                page_size=request.GET.get("page_size", 50),
+                search=str(request.GET.get("search") or ""),
+                status=str(request.GET.get("status") or "All"),
+            ),
+        })
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["GET", "PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
 def employee_payment_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
+        if request.method == "GET":
+            profile = (
+                EmployeePaymentProfile.objects.for_company(request.company)
+                .select_related("employee", "verified_by")
+                .filter(employee_id=employee_id)
+                .first()
+            )
+            return JsonResponse({"ok": True, "employeeId": str(employee_id), "profile": serialize_payment_profile(profile) if profile else None})
         body = json_body(request)
         if request.method == "DELETE":
             deleted_id = delete_unused_employee_payment_profile(
@@ -214,7 +277,7 @@ def prepare_salary_payment_batch_api(request: HttpRequest) -> JsonResponse:
             note=str(body.get("note") or ""),
             request=request,
         )
-        return JsonResponse({"ok": True, "batchId": str(batch.pk), **salary_payment_context(company=request.company, period_start=period_start, membership=request.company_membership)}, status=201)
+        return JsonResponse({"ok": True, "period": f"{period_start:%Y-%m}", "batchId": str(batch.pk), "batch": serialize_payment_batch(batch, membership=request.company_membership, include_rows=False)}, status=201)
     except Exception as exc:
         return handle_api_error(exc)
 
@@ -256,7 +319,7 @@ def salary_payment_batch_workflow_api(request: HttpRequest, batch_id) -> JsonRes
             batch = reopen_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, reason=str(body.get("reason") or ""), request=request)
         else:
             raise ValidationError({"action": "Unsupported salary payment batch action."})
-        return JsonResponse({"ok": True, **salary_payment_context(company=request.company, period_start=batch.run.period_start, membership=request.company_membership)})
+        return JsonResponse({"ok": True, "period": f"{batch.run.period_start:%Y-%m}", "batch": serialize_payment_batch(batch, membership=request.company_membership, include_rows=False)})
     except Exception as exc:
         return handle_api_error(exc)
 
@@ -285,7 +348,8 @@ def salary_payment_results_api(request: HttpRequest, batch_id) -> JsonResponse:
                 "errorCount": result.error_count,
             },
             "errors": errors,
-            **salary_payment_context(company=request.company, period_start=batch.run.period_start, membership=request.company_membership),
+            "period": f"{batch.run.period_start:%Y-%m}",
+            "batch": serialize_payment_batch(batch, membership=request.company_membership, include_rows=False),
         })
     except Exception as exc:
         return handle_api_error(exc)
@@ -297,6 +361,12 @@ def salary_payment_row_retry_api(request: HttpRequest, row_id) -> JsonResponse:
     try:
         _body = json_body(request)
         row = retry_salary_payment_row(actor_membership=request.company_membership, row_id=row_id, request=request)
-        return JsonResponse({"ok": True, **salary_payment_context(company=request.company, period_start=row.batch.run.period_start, membership=request.company_membership)})
+        batch = SalaryPaymentBatch.objects.for_company(request.company).select_related("run", "export_template").get(pk=row.batch_id)
+        return JsonResponse({
+            "ok": True,
+            "period": f"{batch.run.period_start:%Y-%m}",
+            "row": serialize_payment_row(row, can_pay=membership_has_capability(request.company_membership, Capability.PAY)),
+            "batch": serialize_payment_batch(batch, membership=request.company_membership, include_rows=False),
+        })
     except Exception as exc:
         return handle_api_error(exc)

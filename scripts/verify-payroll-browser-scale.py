@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.70":
-    fail(f"VERSION must be 1.0.70, found {version!r}")
+if version != "1.0.77":
+    fail(f"VERSION must be 1.0.77, found {version!r}")
 
 contract = json.loads(text("merge/payroll-browser-scale.json"))
 if contract.get("release") != version:
@@ -138,10 +138,18 @@ for needle in (
     '"internal", "timesheets", "#timesheetSearch"',
     '"rental", "rental-assignments", "#rentalAssignmentSearch"',
     '"rental", "timesheets", "#rentalTimesheetSearch"',
+    '"internal", "salary-setup"',
+    '"internal", "payroll-runs"',
+    'route="adjustments"',
+    'route="payments"',
+    'route="bank-export"',
+    'route="wps"',
+    'route="documents"',
+    'route="reports"',
+    'route="management-audit"',
     'result_count > 30',
-    'internal_rows > 100',
-    'rental_rows > 100',
-    'assignment_rows > 200',
+    'rows > 100',
+    'rows > 200',
 ):
     if needle not in browser_runner:
         fail(f"live browser certification lost scenario/bound: {needle}")

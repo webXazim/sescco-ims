@@ -1,3 +1,78 @@
+# 1.0.77 — Full 2K/5K Payroll browser certification & final production freeze
+
+- Expands the final browser-scale contract across all 23 high-cardinality Payroll surfaces completed through 1.0.71–1.0.76, covering Internal directories/timesheets, Salary Setup, Payroll Runs/Review, Advances & Adjustments, Salary Payments, Bank/WPS, Documents, Reports, Archive/Delete, Management Approval/Audit, Rental workforce/timesheets/assignments, and global search.
+- Extends `payroll_browser_scale_report` with server-side query/payload/row-budget measurements for the newly bounded Internal and shared Payroll selectors while retaining the 2,000 Internal employee / 5,000 Rental worker benchmark-volume requirement.
+- Expands the live Chromium certification runner to exercise rapid search, filter, page, and workspace/tab changes across the final high-cardinality matrix instead of certifying only the original directory/timesheet/assignment surfaces.
+- Freezes 25/50/100-row page sizes, a 100-row rendered business-table maximum, a 200-row expanded assignment-activity maximum, a 30-result global-search maximum, a 2.5 MB context payload ceiling, and stale-request authority requirements.
+- Adds `merge/payroll-final-browser-certification.json`, `scripts/verify-payroll-final-browser-certification.py`, and curated runtime evidence so the expanded benchmark is required by release tasks, production freeze, and the release-candidate contract.
+- Introduces no schema migration, Payroll formula change, or lifecycle semantic change; this is a certification/freeze release bound to the exact 1.0.76 predecessor SHA-256 `0fc4417270e8b8555456b173c5611266b74d169b45819a595299f0e2a085f5be`.
+
+# 1.0.76 — Remaining Payroll data/render hardening
+
+- Defers the finalized Business Documents register from Payroll bootstrap and loads it through bounded 25/50/100-row server pages with server-side search, workspace/period/type filters, and exact type/count summaries. Immutable snapshot detail is loaded only when a document is opened.
+- Moves interactive Payroll Reports to bounded 25/50/100-row server pages with server-side search while preserving the explicit CSV export path as the full-result authority.
+- Defers Archive/Delete registers from the shell and loads only the requested Internal/Rental workspace + archive/trash bucket through bounded server pages.
+- Replaces the live Management bootstrap with a compact summary and a five-item approval attention preview; Approval Center and Audit Trail now use separate 25/50/100-row server endpoints.
+- Adds server-side Audit search/type filtering with company-boundary and VIEW_AUDIT enforcement, plus cancellation authority so stale searches/pages cannot overwrite newer results.
+- Registers Documents, Reports, Approval Center and Audit Trail page-size settings as UI-only browser preferences and removes their dependence on full browser arrays.
+- Adds `merge/payroll-shared-surfaces-scale.json`, `scripts/verify-payroll-shared-surfaces-scale.py`, and curated regression evidence covering all remaining bounded shared Payroll surfaces. No schema migration, Payroll formula change or lifecycle semantic change is introduced.
+
+# 1.0.75 — Salary Payments + Bank/WPS scale cutover
+
+- Replaces the Internal Salary Payments opening payload with a compact shell: company settings, export templates and batch headers only; employee payment profiles, readiness rows and batch rows are no longer hydrated company-wide.
+- Adds 25/50/100-row server pagination for Bank CSV and WPS readiness registers with server-side employee/bank search, readiness filtering and exact server-authoritative ready/blocked/amount totals.
+- Scans readiness in bounded 250-employee server chunks and serializes payment-profile detail only for the visible page.
+- Adds lazy per-employee payment-profile loading so direct profile editing no longer depends on a complete payment-profile map in browser memory.
+- Adds 25/50/100-row server pagination for salary-payment batch reconciliation rows with server-side employee/bank/reference search, status filtering and PostgreSQL exact status/amount summaries.
+- Changes salary-payment prepare/workflow/import/retry mutations to compact batch/row deltas; page/shell authority is refreshed explicitly instead of returning the full payment context.
+- Removes the remaining Employee Directory WPS filter dependency on `salary_payment_context`; WPS classification now calls readiness authority directly without loading all payment batches or profiles into a response context.
+- Adds stale-request abort authority and UI-only page-size preferences for Bank readiness, WPS readiness and payment reconciliation. No schema migration or Payroll formula change is introduced.
+
+# 1.0.74 — Advances & Adjustments scale cutover
+
+- Removes Internal Advances & Adjustments from the legacy full Payroll-period context and complete Internal Employee master hydration.
+- Adds bounded 25/50/100-row server pagination for the Internal transaction register with server-side employee/ID/reason/reference search and type/status filtering.
+- Keeps period transaction count, Approved earnings, Approved deductions and pending-review count exact and server-authoritative regardless of the visible/search-filtered page.
+- Moves Salary Advance outstanding balances to PostgreSQL aggregation and paginates open employee balances at 25/50/100 rows; recovery-plan and pending-transaction detail is fetched only for the visible balance page.
+- Replaces the adjustment drawer's all-employee selector with a server-backed employee search capped at 25 matches.
+- Changes Internal adjustment create/update/workflow responses to a single adjustment delta instead of returning the entire Payroll run, previous run, and period adjustment context.
+- Moves employee-profile adjustment history to the selected employee + selected period profile response, so profile correctness no longer depends on a browser-wide adjustment cache.
+- Adds cancellation/request authority for rapid adjustment search/filter/page changes plus a dedicated scale regression contract. No schema migration or Payroll formula change is introduced.
+
+# 1.0.73 — Payroll Run scale cutover
+
+- Moves Internal Payroll Register and Review tables to bounded 25/50/100-row server pages with server-side employee search, Branch / Office, Department and readiness filtering.
+- Stops saved payroll runs from prefetching every `PayrollRunLine`, salary component, adjustment and previous-period line just to open one page; detail prefetch now happens only after the visible page is sliced.
+- Keeps exact period-level employee, gross, deduction and net totals server-authoritative and independent of the visible/search-filtered page.
+- Limits previous-period variance payloads to the employees on the visible current page while retaining global previous/current run totals for the comparison cards.
+- Adds global review exception counts so approval remains protected by all critical exceptions even though the employee review register is paginated.
+- Adds cancellation authority for rapid Payroll Run search/filter/page changes and keeps the browser bounded to the requested page instead of growing a complete run cache.
+- Keeps the legacy full Payroll period context isolated for Advances & Adjustments until the dedicated 1.0.74 cutover; bounded Payroll Run payloads do not mark that legacy context as loaded.
+- Adds `merge/payroll-run-scale.json`, `scripts/verify-payroll-run-scale.py`, and Django regression coverage for saved-run pagination/search. No schema migration or Payroll formula change is introduced.
+
+# 1.0.72 — Salary Setup scale cutover
+
+- Replaces Salary Setup's complete Internal Employee master hydration with an employee-first server directory that paginates at 25/50/100 rows (50 by default).
+- Stops `/api/internal/salary/structures/` from serializing every employee's complete effective-dated history when the workspace opens; only the visible page receives current structure lines.
+- Adds server-side employee/ID/position search and Configured / Needs setup filtering for Employee Structures, with cancellation authority so stale searches cannot overwrite newer results.
+- Adds exact server-authoritative salary coverage totals (`employeeCount`, `configuredCount`, `needsSetupCount`) independent of the visible page/search result.
+- Moves effective-dated salary history to lazy per-employee loading through `?employee=<uuid>` and reuses that path for employee profile salary views and effective-change drawers.
+- Replaces Assign Structure's browser-cache employee selector dependency with a server-backed employee search capped at 25 matches.
+- Adds `merge/payroll-salary-setup-scale.json`, `scripts/verify-payroll-salary-setup-scale.py`, and Django regression coverage proving bounded structure pages and employee-scoped history.
+- Preserves all 1.0.71 Internal Employee residual-scale guarantees and the 1.0.70 2,000 Internal / 5,000 Rental benchmark boundary. No schema migration or Payroll formula change is introduced.
+
+# 1.0.71 — Internal Employee residual performance cutover
+
+- Removes the hidden all-company salary-payment/WPS context build from ordinary paged Internal Employee directory requests. Employee rows are paginated first and only the visible page receives salary/payment readiness enrichment.
+- Adds a server-authoritative Internal Employee summary endpoint for exact workforce, active, salary-configured, WPS-profile, attendance-entry, branch and department counts without hydrating the complete employee master in the browser.
+- Caps the normal browser-side Internal Employee directory cache at 250 records while preserving the 25/50/100 visible page-size contract and direct-profile deep links.
+- Replaces Branch / Office and Department profile full-master hydration with a bounded 50-row workforce preview plus exact server aggregates and server-derived organization distributions.
+- Keeps explicit WPS Ready / Needs Setup filtering authoritative over the complete filtered population; that exceptional full-context path is intentionally isolated for the dedicated Salary Payments + Bank/WPS cutover planned in 1.0.75.
+- Adds focused regression coverage and `merge/payroll-employee-residual-scale.json` / `scripts/verify-payroll-employee-residual-scale.py` to prevent ordinary employee pagination or organization profiles from regressing to full-master work.
+- Extends the curated Payroll production-E2E contract to 13 high-risk scenarios / 79 critical methods, including direct proof that an ordinary employee page never invokes the full salary-payment context and that scoped summaries return exact counts.
+- Adds abort authority for employee summary and organization-profile requests after mutations, and prefetches Payroll snapshot components/adjustments so visible-page WPS readiness does not create per-row query fan-out.
+- Preserves the 1.0.70 2,000 Internal / 5,000 Rental browser-scale guarantees. No schema migration or Payroll formula change is introduced.
+
 # 1.0.70 — 5K/2K browser benchmark certification & production freeze
 
 - Freezes the large-data runtime work introduced in 1.0.65–1.0.69: cancellation-aware directory search, Assignment Lifecycle server pagination, bounded Attendance/Timesheet pages, thin Payroll bootstrap, server-backed global search and PostgreSQL query/index hardening.

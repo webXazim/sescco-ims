@@ -1,0 +1,51 @@
+{
+  "release": "1.0.77",
+  "purpose": "Remove residual all-employee work from the Internal Employee directory and organization profiles while preserving the 1.0.70 2K/5K browser-scale freeze.",
+  "employee_directory": {
+    "endpoint": "/api/internal/employees/",
+    "summary_endpoint": "/api/internal/employees/summary/",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "default_page_size": 50,
+    "browser_cache_limit": 250,
+    "ordinary_payment_scope": "visible-page-only",
+    "ordinary_salary_scope": "visible-page-only",
+    "full_payment_context_allowed_only_for_explicit_wps_filter": false
+  },
+  "organization_profiles": {
+    "branch_preview_rows": 50,
+    "department_preview_rows": 50,
+    "exact_totals_source": "server-summary",
+    "complete_employee_master_required": false
+  },
+  "server_summary": [
+    "employeeCount",
+    "activeEmployeeCount",
+    "archivedEmployeeCount",
+    "salaryConfiguredCount",
+    "wpsConfiguredCount",
+    "attendanceEnteredCount",
+    "departmentDistribution",
+    "branchDistribution"
+  ],
+  "guarantees": [
+    "paginate-before-page-financial-enrichment",
+    "no-full-payment-context-for-ordinary-directory-page",
+    "page-scoped-basic-salary-enrichment",
+    "page-scoped-payment-readiness-enrichment",
+    "bounded-browser-employee-cache",
+    "branch-profile-bounded-workforce-preview",
+    "department-profile-bounded-workforce-preview",
+    "direct-profile-refetch-after-cache-eviction",
+    "server-authoritative-workforce-summary",
+    "no-schema-change",
+    "no-payroll-formula-change",
+    "abort-stale-employee-summary-after-mutation",
+    "abort-stale-organization-profile-after-mutation",
+    "prefetch-wps-snapshot-components-for-bounded-readiness"
+  ],
+  "temporary_exception": "Closed in 1.0.75: explicit WPS Ready / Needs Setup filtering now uses payment-readiness authority without salary_payment_context."
+}

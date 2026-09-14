@@ -62,13 +62,14 @@ for workspace, report_types in contract["reports"]["types"].items():
         if f'"{report_type}"' not in seed and f"'{report_type}'" not in seed:
             fail(f"DEMO coverage missing for report: {report_type}")
 for marker in (
-    "appApi(`/api/reports/?workspace=",
+    "function reportRequest()",
+    "`/api/reports/?${params.toString()}`",
     "function exportCurrentReport()",
     "params.set('q',query)",
     "function printCurrentReport()",
     'query = request.GET.get("q", "").strip().casefold()',
 ):
-    target = js if marker.startswith(("appApi", "function", "params")) else text("apps/core/management_api.py")
+    target = js if marker.startswith(("appApi", "function", "params", "`/api/")) else text("apps/core/management_api.py")
     if marker not in target:
         fail(f"report output marker missing: {marker}")
 if methods("apps/core/management_api.py", "reports_api") != {"GET"}:

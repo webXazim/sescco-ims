@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.70":
-    fail("certification contract release must be 1.0.70")
+if contract.get("release") != "1.0.77":
+    fail("certification contract release must be 1.0.77")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -51,6 +51,8 @@ required_labels = {
     "apps.rental_manpower.tests",
     "apps.documents.tests.test_documents",
     "apps.documents.tests.test_merge_access",
+    "apps.core.tests.test_management_reporting",
+    "apps.core.tests.test_merge_management_access",
 }
 if not required_labels.issubset(set(labels)):
     missing = sorted(required_labels - set(labels))
@@ -67,6 +69,12 @@ required_verifiers = {
     "scripts/verify-payroll-performance.py",
     "scripts/verify-payroll-query-hardening.py",
     "scripts/verify-payroll-browser-scale.py",
+    "scripts/verify-payroll-employee-residual-scale.py",
+    "scripts/verify-payroll-salary-setup-scale.py",
+    "scripts/verify-payroll-run-scale.py",
+    "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-payment-scale.py",
+    "scripts/verify-payroll-shared-surfaces-scale.py",
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
@@ -92,6 +100,12 @@ required_scenarios = {
     "tenant-and-cross-module-boundaries",
     "seed-scale-and-performance-regression",
     "browser-scale-runtime-regression",
+    "internal-employee-residual-scale-regression",
+    "salary-setup-scale-regression",
+    "payroll-run-scale-regression",
+    "payroll-adjustment-scale-regression",
+    "salary-payment-scale-regression",
+    "shared-payroll-surfaces-scale-regression",
 }
 scenario_ids = {row.get("id") for row in scenarios}
 if not required_scenarios.issubset(scenario_ids):

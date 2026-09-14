@@ -4,6 +4,8 @@ from datetime import date
 
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
+from django.db.models import Count, Prefetch, Q
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_workspace_required
@@ -16,7 +18,22 @@ from apps.internal_payroll.api_utils import (
     parse_date as _date,
     parse_optional_date as _optional_date,
 )
-from apps.internal_payroll.models import Branch, Department, EmploymentStatus, InternalEmployee
+from apps.internal_payroll.models import (
+    AttendanceEntry,
+    AttendancePeriod,
+    BankExportChannel,
+    BankExportTemplate,
+    Branch,
+    Department,
+    EmployeeOrganizationAssignment,
+    EmployeePaymentProfile,
+    EmploymentStatus,
+    InternalEmployee,
+    PayrollRun,
+    SalaryStructure,
+    SalaryStructureLine,
+    WPSMapping,
+)
 from apps.internal_payroll.selectors import (
     branches_for_company,
     departments_for_company,
@@ -25,8 +42,10 @@ from apps.internal_payroll.selectors import (
     serialize_branch,
     serialize_department,
     serialize_employee,
+    current_salary_structures_for_company,
 )
 from apps.internal_payroll.selectors.organization import serialize_assignment, serialize_employee_lifecycle
+from apps.internal_payroll.selectors.payment import serialize_payment_profile
 from apps.internal_payroll.services import (
     change_employee_organization,
     change_employee_lifecycle,
@@ -49,6 +68,8 @@ from apps.internal_payroll.services import (
     update_department,
     update_employee,
 )
+from apps.internal_payroll.services.payment import payment_readiness
+
 
 
 def _employee_profile_period(value: str) -> date:
@@ -83,6 +104,160 @@ def _employee_archived_query(value: str) -> bool | None:
     if normalized == "all":
         return None
     raise ValidationError({"archived": "Archived filter must be current, archived, or all."})
+
+
+def _employee_basic_salary_map(*, company, employee_ids) -> tuple[dict[str, str], set[str]]:
+    employee_ids = [str(item) for item in employee_ids if item]
+    if not employee_ids:
+        return {}, set()
+    as_of = timezone.localdate()
+    basic_lines = SalaryStructureLine.objects.for_company(company).filter(
+        wps_mapping=WPSMapping.BASIC_SALARY
+    ).order_by("component_code")
+    structures = (
+        SalaryStructure.objects.for_company(company)
+        .filter(employee_id__in=employee_ids, effective_from__lte=as_of)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=as_of))
+        .prefetch_related(
+            Prefetch("lines", queryset=basic_lines, to_attr="directory_basic_lines")
+        )
+        .order_by("employee_id", "-effective_from", "-created_at")
+    )
+    amounts: dict[str, str] = {}
+    configured: set[str] = set()
+    for structure in structures:
+        employee_id = str(structure.employee_id)
+        if employee_id in configured:
+            continue
+        configured.add(employee_id)
+        line = next(iter(getattr(structure, "directory_basic_lines", [])), None)
+        if line is not None:
+            amounts[employee_id] = str(line.amount)
+    return amounts, configured
+
+
+def _employee_page_financial_context(*, company, employee_ids, period_value: str) -> tuple[dict[str, object], dict[str, str]]:
+    employee_ids = [str(item) for item in employee_ids if item]
+    if not employee_ids:
+        return {}, {}
+    profiles = {
+        str(profile.employee_id): profile
+        for profile in EmployeePaymentProfile.objects.for_company(company)
+        .filter(employee_id__in=employee_ids)
+        .select_related("employee", "verified_by")
+    }
+    statuses: dict[str, str] = {}
+    if period_value:
+        period_start = _employee_profile_period(period_value)
+        run = PayrollRun.objects.for_company(company).filter(period_start=period_start).first()
+        if run is not None:
+            template = (
+                BankExportTemplate.objects.for_company(company)
+                .filter(channel=BankExportChannel.WPS, is_active=True, archived_at__isnull=True)
+                .order_by("name")
+                .first()
+            )
+            readiness = payment_readiness(
+                company=company,
+                run=run,
+                channel=BankExportChannel.WPS,
+                template=template,
+                employee_ids=employee_ids,
+            )
+            for item in readiness.get("rows", []):
+                statuses[str(item["line"].employee_id)] = "Ready" if not item.get("blockers") else "Blocked"
+    for employee_id, profile in profiles.items():
+        if employee_id in statuses:
+            continue
+        statuses[employee_id] = "Pending" if profile.is_active and profile.wps_enabled else "Not configured"
+    return profiles, statuses
+
+
+def _employee_scope_summary(*, company, branch_id=None, department_id=None, period_value: str = "") -> dict[str, object]:
+    current = employees_for_company(
+        company=company, branch_id=branch_id, department_id=department_id, archived=False
+    )
+    ids = current.values("pk")
+    aggregate = current.aggregate(
+        employee_count=Count("pk"),
+        active_employee_count=Count("pk", filter=Q(status=EmploymentStatus.ACTIVE)),
+    )
+    salary_configured = (
+        current_salary_structures_for_company(company=company)
+        .filter(employee_id__in=ids)
+        .values("employee_id")
+        .distinct()
+        .count()
+    )
+    wps_configured = (
+        EmployeePaymentProfile.objects.for_company(company)
+        .filter(employee_id__in=ids, is_active=True, wps_enabled=True)
+        .count()
+    )
+    assignments = (
+        EmployeeOrganizationAssignment.objects.for_company(company)
+        .filter(employee_id__in=ids, effective_to__isnull=True)
+        .filter(branch__deleted_at__isnull=True, branch__archived_at__isnull=True)
+        .filter(department__deleted_at__isnull=True, department__archived_at__isnull=True)
+    )
+    department_distribution = list(
+        assignments.values("department_id", "department__name")
+        .annotate(count=Count("employee_id", distinct=True))
+        .order_by("department__name")
+    )
+    branch_distribution = list(
+        assignments.values("branch_id", "branch__name")
+        .annotate(count=Count("employee_id", distinct=True))
+        .order_by("branch__name")
+    )
+    attendance_entered = 0
+    if period_value:
+        period_start = _employee_profile_period(period_value)
+        period = AttendancePeriod.objects.for_company(company).filter(period_start=period_start).first()
+        if period is not None:
+            attendance_entered = (
+                AttendanceEntry.objects.for_company(company)
+                .filter(period=period, employee_id__in=ids)
+                .values("employee_id")
+                .distinct()
+                .count()
+            )
+    return {
+        "employeeCount": int(aggregate.get("employee_count") or 0),
+        "activeEmployeeCount": int(aggregate.get("active_employee_count") or 0),
+        "salaryConfiguredCount": int(salary_configured),
+        "wpsConfiguredCount": int(wps_configured),
+        "attendanceEnteredCount": int(attendance_entered),
+        "departmentDistribution": [
+            {"id": str(item["department_id"]), "name": item["department__name"], "count": int(item["count"])}
+            for item in department_distribution
+        ],
+        "branchDistribution": [
+            {"id": str(item["branch_id"]), "name": item["branch__name"], "count": int(item["count"])}
+            for item in branch_distribution
+        ],
+    }
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def employee_summary_api(request: HttpRequest) -> JsonResponse:
+    try:
+        branch_id = request.GET.get("branch") or None
+        department_id = request.GET.get("department") or None
+        summary = _employee_scope_summary(
+            company=request.company,
+            branch_id=branch_id,
+            department_id=department_id,
+            period_value=str(request.GET.get("period", "")).strip(),
+        )
+        if branch_id is None and department_id is None:
+            summary["archivedEmployeeCount"] = employees_for_company(
+                company=request.company, archived=True
+            ).count()
+        return JsonResponse({"ok": True, "summary": summary})
+    except Exception as exc:
+        return _handle_error(exc)
 
 
 def _organization_master_filter(value: str) -> tuple[bool | None, bool | None]:
@@ -279,18 +454,38 @@ def employees_api(request: HttpRequest) -> JsonResponse:
             )
             wps_filter = str(request.GET.get("wps", "")).strip().lower().replace(" ", "_")
             period_value = str(request.GET.get("period", "")).strip()
-            payment_context = None
-            if period_value or (wps_filter and wps_filter != "all"):
-                from apps.internal_payroll.selectors.payment import salary_payment_context
-                period_start = _employee_profile_period(period_value)
-                payment_context = salary_payment_context(company=request.company, period_start=period_start)
+            wps_readiness_by_employee = None
+            # WPS filtering is the one directory filter that must classify the matching
+            # payroll population before employee pagination. Upgrade 1.0.75 keeps that
+            # classification explicit, but no longer constructs the full salary-payment
+            # shell (all profiles + all batches + all batch rows) merely to filter employees.
             if wps_filter and wps_filter != "all":
                 if wps_filter not in {"ready", "needs_setup"}:
                     raise ValidationError({"wps": "WPS filter must be ready, needs_setup, or all."})
+                if not period_value:
+                    raise ValidationError({"period": "A payroll period is required for WPS filtering."})
+                period_start = _employee_profile_period(period_value)
+                run = PayrollRun.objects.for_company(request.company).filter(period_start=period_start).first()
+                readiness_rows = []
+                if run is not None:
+                    template = (
+                        BankExportTemplate.objects.for_company(request.company)
+                        .filter(channel=BankExportChannel.WPS, is_active=True, archived_at__isnull=True)
+                        .order_by("name")
+                        .first()
+                    )
+                    readiness = payment_readiness(
+                        company=request.company, run=run, channel=BankExportChannel.WPS, template=template
+                    )
+                    readiness_rows = list(readiness.get("rows", []))
                 ready_ids = {
-                    str(item.get("employeeId"))
-                    for item in (payment_context or {}).get("wpsReadiness", {}).get("employees", [])
-                    if item.get("status") == "Ready"
+                    str(item["line"].employee_id)
+                    for item in readiness_rows
+                    if not item.get("blockers")
+                }
+                wps_readiness_by_employee = {
+                    str(item["line"].employee_id): ("Ready" if not item.get("blockers") else "Blocked")
+                    for item in readiness_rows
                 }
                 if wps_filter == "ready":
                     rows = rows.filter(pk__in=ready_ids)
@@ -298,30 +493,45 @@ def employees_api(request: HttpRequest) -> JsonResponse:
                     rows = rows.exclude(pk__in=ready_ids)
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
 
-            profiles = (payment_context or {}).get("profiles", {})
-            readiness_by_employee = {
-                str(item.get("employeeId")): item
-                for item in (payment_context or {}).get("wpsReadiness", {}).get("employees", [])
-            }
+            results, meta = serialize_list(rows, controls=controls, serializer=serialize_employee)
+            page_ids = [row.get("id") for row in results if row.get("id")]
+            basic_salary_by_employee, salary_configured_ids = _employee_basic_salary_map(
+                company=request.company, employee_ids=page_ids
+            )
 
-            def serialize_directory_employee(employee):
-                result = serialize_employee(employee)
-                employee_id = str(employee.pk)
+            profile_models, page_readiness = _employee_page_financial_context(
+                company=request.company, employee_ids=page_ids, period_value=period_value
+            )
+            profiles = {
+                employee_id: serialize_payment_profile(profile)
+                for employee_id, profile in profile_models.items()
+            }
+            readiness_by_employee = {
+                employee_id: (wps_readiness_by_employee or {}).get(employee_id, status)
+                for employee_id, status in page_readiness.items()
+            }
+            if wps_readiness_by_employee is not None:
+                for employee_id in page_ids:
+                    readiness_by_employee.setdefault(
+                        employee_id, wps_readiness_by_employee.get(employee_id, "Needs setup")
+                    )
+
+            for result in results:
+                employee_id = str(result.get("id"))
                 profile = profiles.get(employee_id)
-                readiness = readiness_by_employee.get(employee_id)
                 result["paymentProfile"] = profile
                 result["bank"] = profile.get("bankName", "") if profile else ""
                 result["account"] = profile.get("destinationMasked", "") if profile else ""
                 result["paymentMethod"] = profile.get("destinationLabel", "") if profile else "Not set"
-                if readiness:
-                    result["wps"] = readiness.get("status", "Needs setup")
+                if employee_id in readiness_by_employee:
+                    result["wps"] = readiness_by_employee[employee_id]
                 elif profile:
                     result["wps"] = "Pending" if profile.get("active") and profile.get("wpsEnabled") else "Not configured"
                 else:
                     result["wps"] = "Needs setup"
-                return result
+                result["basicSalary"] = basic_salary_by_employee.get(employee_id)
+                result["salaryConfigured"] = employee_id in salary_configured_ids
 
-            results, meta = serialize_list(rows, controls=controls, serializer=serialize_directory_employee)
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
         employee = create_employee(

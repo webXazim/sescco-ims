@@ -1,0 +1,40 @@
+{
+  "release": "1.0.77",
+  "purpose": "Bound Internal Advances & Adjustments at 2K employee scale without full employee-master or full payroll-period hydration.",
+  "adjustment_register": {
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "default_page_size": 50,
+    "search_authority": "server",
+    "filter_authority": "server",
+    "summary_authority": "server-exact-period",
+    "employee_lookup_max_results": 25
+  },
+  "advance_balances": {
+    "aggregation_authority": "postgresql",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "detail_scope": "visible-page-only",
+    "global_summary": [
+      "outstanding",
+      "activeCount"
+    ]
+  },
+  "mutation_contract": {
+    "response": "single-adjustment-delta",
+    "forbidden_full_context": [
+      "rows",
+      "adjustmentsByEmployee",
+      "previous"
+    ]
+  },
+  "profile_contract": {
+    "employee_adjustments": "selected-employee-selected-period-only"
+  }
+}

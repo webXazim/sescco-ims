@@ -1,5 +1,5 @@
 {
-  "release": "1.0.70",
+  "release": "1.0.77",
   "purpose": "Keep the initial Payroll shell bounded at the 2,000/5,000 benchmark scale and move Ctrl/Cmd+K entity search to server-paged directory APIs.",
   "bootstrap": {
     "internal_employee_limit": 50,

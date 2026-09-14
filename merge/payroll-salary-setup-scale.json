@@ -1,0 +1,55 @@
+{
+  "release": "1.0.77",
+  "purpose": "Remove complete employee-master and all-history hydration from Salary Setup while preserving effective-dated salary semantics.",
+  "salary_structure_directory": {
+    "endpoint": "/api/internal/salary/structures/",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "default_page_size": 50,
+    "search_scope": "server",
+    "setup_filters": [
+      "configured",
+      "needs_setup"
+    ],
+    "employee_first_pagination": true,
+    "current_structure_scope": "visible-page-only",
+    "complete_employee_master_required": false,
+    "complete_structure_history_required": false
+  },
+  "employee_history": {
+    "endpoint": "/api/internal/salary/structures/?employee=<uuid>",
+    "loading": "lazy-per-employee",
+    "returns": [
+      "current",
+      "history"
+    ]
+  },
+  "coverage": {
+    "source": "server-aggregate",
+    "fields": [
+      "employeeCount",
+      "configuredCount",
+      "needsSetupCount"
+    ]
+  },
+  "assignment_lookup": {
+    "endpoint": "/api/internal/employees/",
+    "search": "server",
+    "max_results": 25
+  },
+  "guarantees": [
+    "paginate-employees-before-current-structure-lines",
+    "no-hydrateCompleteMaster-employees-on-salary-setup",
+    "no-all-company-salary-history-on-salary-setup-open",
+    "server-authoritative-coverage",
+    "server-backed-assignment-employee-search",
+    "lazy-per-employee-history",
+    "bounded-current-structure-browser-cache",
+    "stale-structure-page-request-abort",
+    "no-schema-change",
+    "no-payroll-formula-change"
+  ]
+}

@@ -10,6 +10,7 @@ from typing import Any
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Prefetch
 from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest
 from django.utils import timezone
@@ -273,16 +274,20 @@ def update_bank_export_template(
 
 
 def _wps_breakdown(line: PayrollRunLine) -> tuple[dict[str, Decimal], list[str]]:
-    components = list(
-        PayrollRunLineComponent.objects.for_company(line.company)
-        .filter(run_line=line)
-        .order_by("component_code", "effective_from")
-    )
-    adjustments = list(
-        PayrollRunLineAdjustment.objects.for_company(line.company)
-        .filter(run_line=line)
-        .order_by("transaction_date", "id")
-    )
+    components = getattr(line, "payment_components", None)
+    if components is None:
+        components = list(
+            PayrollRunLineComponent.objects.for_company(line.company)
+            .filter(run_line=line)
+            .order_by("component_code", "effective_from")
+        )
+    adjustments = getattr(line, "payment_adjustments", None)
+    if adjustments is None:
+        adjustments = list(
+            PayrollRunLineAdjustment.objects.for_company(line.company)
+            .filter(run_line=line)
+            .order_by("transaction_date", "id")
+        )
     basic = Decimal("0")
     housing = Decimal("0")
     other = Decimal("0")
@@ -380,7 +385,14 @@ def delete_unused_employee_payment_profile(*, actor_membership: CompanyMembershi
 
 
 
-def payment_readiness(*, company, run: PayrollRun, channel: str, template: BankExportTemplate | None = None) -> dict[str, object]:
+def payment_readiness(
+    *,
+    company,
+    run: PayrollRun,
+    channel: str,
+    template: BankExportTemplate | None = None,
+    employee_ids=None,
+) -> dict[str, object]:
     if channel not in BankExportChannel.values:
         raise ValidationError({"channel": "Unsupported salary payment channel."})
     if template is not None:
@@ -406,12 +418,21 @@ def payment_readiness(*, company, run: PayrollRun, channel: str, template: BankE
         if export_key in required_company_fields and (not company_settings or not getattr(company_settings, field_name)):
             company_blockers.append(message)
 
-    lines = list(
+    component_rows = PayrollRunLineComponent.objects.for_company(company).order_by("component_code", "effective_from")
+    adjustment_rows = PayrollRunLineAdjustment.objects.for_company(company).order_by("transaction_date", "id")
+    lines_qs = (
         PayrollRunLine.objects.for_company(company)
         .filter(run=run)
         .select_related("employee")
+        .prefetch_related(
+            Prefetch("components", queryset=component_rows, to_attr="payment_components"),
+            Prefetch("adjustments", queryset=adjustment_rows, to_attr="payment_adjustments"),
+        )
         .order_by("employee_number")
     )
+    if employee_ids is not None:
+        lines_qs = lines_qs.filter(employee_id__in=list(employee_ids))
+    lines = list(lines_qs)
     profiles = {str(row.employee_id): row for row in EmployeePaymentProfile.objects.for_company(company).filter(employee_id__in=[line.employee_id for line in lines])}
     active_claims = set(
         SalaryPaymentRow.objects.for_company(company)

@@ -7,7 +7,7 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.internal_payroll.models import PayrollAdjustment, PayrollAdjustmentStatus, PayrollRunStatus
+from apps.internal_payroll.models import PayrollAdjustment, PayrollAdjustmentStatus, PayrollAdjustmentType, PayrollRunStatus
 from apps.internal_payroll.services import (
     assign_employee_salary_structure,
     create_branch,
@@ -109,6 +109,66 @@ class PayrollApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         adjustment = PayrollAdjustment.objects.get(pk=response.json()["adjustmentId"])
         self.assertEqual(adjustment.status, PayrollAdjustmentStatus.DRAFT)
+
+    def test_adjustment_register_is_server_paginated_with_exact_period_summary(self):
+        for index in range(60):
+            PayrollAdjustment.objects.create(
+                company=self.company, employee=self.employee, transaction_date=date(2026, 8, (index % 28) + 1),
+                period_start=self.period_start, adjustment_type=PayrollAdjustmentType.BONUS, amount="10.00",
+                reason=f"Scale adjustment {index}", reference=f"SCALE-{index:03d}",
+                status=PayrollAdjustmentStatus.APPROVED if index < 40 else PayrollAdjustmentStatus.DRAFT,
+            )
+        response = self.client.get(
+            reverse("internal_payroll:payroll-adjustments-api"),
+            {"period": "2026-08", "page": 1, "page_size": 25, "search": "Scale adjustment", "view": "register"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["surface"], "adjustments_page")
+        self.assertEqual(len(payload["results"]), 25)
+        self.assertEqual(payload["meta"]["count"], 60)
+        self.assertEqual(payload["meta"]["totalPages"], 3)
+        self.assertEqual(payload["summary"]["count"], 60)
+        self.assertEqual(payload["summary"]["pending"], 20)
+        self.assertEqual(float(payload["summary"]["earnings"]), 400.0)
+
+    def test_advance_balance_view_aggregates_in_database_and_pages_people(self):
+        PayrollAdjustment.objects.create(
+            company=self.company, employee=self.employee, transaction_date=date(2026, 7, 1),
+            period_start=date(2026, 7, 1), adjustment_type=PayrollAdjustmentType.SALARY_ADVANCE, amount="1000.00",
+            reason="Approved advance", reference="ADV-001", status=PayrollAdjustmentStatus.APPROVED,
+        )
+        PayrollAdjustment.objects.create(
+            company=self.company, employee=self.employee, transaction_date=date(2026, 8, 10),
+            period_start=self.period_start, adjustment_type=PayrollAdjustmentType.ADVANCE_RECOVERY, amount="250.00",
+            reason="Approved recovery", reference="REC-001", status=PayrollAdjustmentStatus.APPROVED,
+        )
+        response = self.client.get(
+            reverse("internal_payroll:payroll-adjustments-api"),
+            {"period": "2026-08", "page": 1, "page_size": 25, "view": "balances"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["meta"]["count"], 1)
+        self.assertEqual(payload["balanceSummary"]["activeCount"], 1)
+        self.assertEqual(float(payload["balanceSummary"]["outstanding"]), 750.0)
+        self.assertEqual(float(payload["balances"][0]["balance"]), 750.0)
+
+    def test_adjustment_mutation_response_is_delta_not_full_payroll_context(self):
+        response = self.client.post(
+            reverse("internal_payroll:payroll-adjustments-api"),
+            data=json.dumps({
+                "period": "2026-08", "employee_id": str(self.employee.pk), "transaction_date": "2026-08-20",
+                "adjustment_type": "bonus", "amount": "75", "reason": "Delta response test",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertIn("adjustment", payload)
+        self.assertNotIn("rows", payload)
+        self.assertNotIn("adjustmentsByEmployee", payload)
+        self.assertEqual(payload["adjustment"]["personName"], self.employee.full_name)
 
     def test_approval_confirmation_requires_json_boolean_true(self):
         transition_attendance_period(actor_membership=self.reviewer, period_start=self.period_start, action="lock")

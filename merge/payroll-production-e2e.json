@@ -1,5 +1,5 @@
 {
-  "release": "1.0.70",
+  "release": "1.0.77",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -17,7 +17,10 @@
     "apps.internal_payroll.tests",
     "apps.rental_manpower.tests",
     "apps.documents.tests.test_documents",
-    "apps.documents.tests.test_merge_access"
+    "apps.documents.tests.test_merge_access",
+    "apps.core.tests.test_management_reporting",
+    "apps.core.tests.test_merge_management_access",
+    "apps.core.tests.test_payroll_final_browser_certification"
   ],
   "static_verifiers": [
     "scripts/verify_payroll_frontend_contract.py",
@@ -27,6 +30,13 @@
     "scripts/verify-payroll-query-hardening.py",
     "scripts/verify-payroll-action-parity.py",
     "scripts/verify-payroll-browser-scale.py",
+    "scripts/verify-payroll-employee-residual-scale.py",
+    "scripts/verify-payroll-salary-setup-scale.py",
+    "scripts/verify-payroll-run-scale.py",
+    "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-payment-scale.py",
+    "scripts/verify-payroll-shared-surfaces-scale.py",
+    "scripts/verify-payroll-final-browser-certification.py",
     "scripts/verify-payroll-data-authority.py",
     "scripts/verify-payroll-output-e2e.py",
     "scripts/verify-full-demo-seed.py",
@@ -219,6 +229,74 @@
       "evidence": {
         "apps/core/tests/test_payroll_browser_scale.py": [
           "test_5k_2k_browser_scale_contract_is_frozen"
+        ]
+      }
+    },
+    {
+      "id": "internal-employee-residual-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_employee_scale_api.py": [
+          "test_employee_page_does_not_build_full_salary_payment_context",
+          "test_employee_summary_returns_exact_scope_counts_without_full_master_payload"
+        ]
+      }
+    },
+    {
+      "id": "salary-setup-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_salary_api.py": [
+          "test_salary_structure_directory_is_bounded_and_history_is_employee_scoped"
+        ]
+      }
+    },
+    {
+      "id": "payroll-run-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_payroll.py": [
+          "test_payroll_run_page_context_pages_saved_snapshot_before_detail_prefetch"
+        ]
+      }
+    },
+    {
+      "id": "payroll-adjustment-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_payroll_api.py": [
+          "test_adjustment_register_is_server_paginated_with_exact_period_summary",
+          "test_advance_balance_view_aggregates_in_database_and_pages_people",
+          "test_adjustment_mutation_response_is_delta_not_full_payroll_context"
+        ]
+      }
+    },
+    {
+      "id": "salary-payment-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_payment.py": [
+          "test_salary_payment_shell_defers_profiles_readiness_and_batch_rows",
+          "test_salary_payment_readiness_is_server_paginated_and_serializes_page_profiles_only",
+          "test_salary_payment_batch_rows_are_server_paginated_with_exact_summary"
+        ]
+      }
+    },
+    {
+      "id": "shared-payroll-surfaces-scale-regression",
+      "evidence": {
+        "apps/documents/tests/test_documents.py": [
+          "test_document_directory_is_server_paginated_and_bootstrap_deferred"
+        ],
+        "apps/core/tests/test_management_reporting.py": [
+          "test_interactive_report_contract_is_server_paginated",
+          "test_management_shell_and_shared_record_registers_are_deferred_and_paginated"
+        ],
+        "apps/core/tests/test_merge_management_access.py": [
+          "test_paginated_management_audit_api_keeps_company_boundary"
+        ]
+      }
+    },
+    {
+      "id": "final-payroll-browser-certification",
+      "evidence": {
+        "apps/core/tests/test_payroll_final_browser_certification.py": [
+          "test_final_payroll_browser_certification_contract_is_frozen"
         ]
       }
     }

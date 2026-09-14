@@ -9,6 +9,7 @@ from apps.accounts.roles import AccessRole
 from apps.core.models import AuditEvent, Company
 from apps.internal_payroll.models import PayrollRun, PayrollRunLine, PayrollRunStatus
 from apps.internal_payroll.selectors import payroll_period_context
+from apps.internal_payroll.selectors.payroll import payroll_run_page_context
 from apps.internal_payroll.services import (
     assign_employee_salary_structure,
     calculate_payroll_run,
@@ -283,6 +284,39 @@ class PayrollServiceTests(TestCase):
         self.assertFalse(PayrollRun.objects.filter(company=self.company, period_start=self.period_start).exists())
         self.assertFalse(PayrollRunLine.objects.filter(company=self.company).exists())
 
+
+    def test_payroll_run_page_context_pages_saved_snapshot_before_detail_prefetch(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        run = calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        for index in range(2, 32):
+            employee = create_employee(
+                actor_membership=self.officer, employee_number=f"{index:04d}", full_name=f"Scale Employee {index:02d}",
+                joining_date=date(2020, 1, 1), branch_id=self.branch.pk, department_id=self.department.pk, position="Operator",
+            )
+            PayrollRunLine.objects.create(
+                company=self.company, run=run, employee=employee, employee_number=employee.employee_number,
+                employee_name=employee.full_name, branch_id_snapshot=self.branch.pk, branch_code=self.branch.code,
+                branch_name=self.branch.name, department_id_snapshot=self.department.pk, department_code=self.department.code,
+                department_name=self.department.name, position="Operator",
+            )
+        PayrollRun.objects.filter(pk=run.pk).update(status=PayrollRunStatus.APPROVED, employee_count=31)
+
+        page = payroll_run_page_context(
+            company=self.company, period_start=self.period_start, membership=self.officer, page=2, page_size=25
+        )
+        self.assertEqual(page["surface"], "payroll_run_page")
+        self.assertEqual(page["meta"]["count"], 31)
+        self.assertEqual(page["meta"]["page"], 2)
+        self.assertEqual(page["meta"]["pageSize"], 25)
+        self.assertEqual(len(page["rows"]), 6)
+        self.assertEqual(page["summary"]["employeeCount"], 31)
+
+        searched = payroll_run_page_context(
+            company=self.company, period_start=self.period_start, membership=self.officer, search="Scale Employee 29", page_size=50
+        )
+        self.assertEqual(searched["meta"]["count"], 1)
+        self.assertEqual(searched["rows"][0]["name"], "Scale Employee 29")
 
     def test_internal_payroll_workflow_is_server_authoritative_and_revisioned(self):
         self._complete_attendance()

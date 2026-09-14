@@ -1,0 +1,66 @@
+{
+  "release": "1.0.77",
+  "purpose": "Move Internal Payroll Run register and review rows to bounded server pages while preserving exact period totals, workflow authority and previous-period variance semantics.",
+  "payroll_run_directory": {
+    "endpoint": "/api/internal/payroll/?surface=run",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "default_page_size": 50,
+    "search_scope": "server",
+    "filters": [
+      "branch",
+      "department",
+      "readiness"
+    ],
+    "saved_snapshot_source": "PayrollRunLine",
+    "saved_snapshot_prefetch_scope": "visible-page-only",
+    "previous_period_scope": "visible-current-page-employees-only",
+    "browser_row_scope": "visible-page-only"
+  },
+  "summary": {
+    "source": "server-authoritative",
+    "fields": [
+      "employeeCount",
+      "basic",
+      "allowances",
+      "overtime",
+      "gross",
+      "deductions",
+      "net",
+      "ready",
+      "blocked",
+      "warning"
+    ],
+    "independent_of_visible_page": true
+  },
+  "review": {
+    "global_exception_counts": true,
+    "approval_uses_global_critical_count": true,
+    "visible_register_is_paginated": true
+  },
+  "request_authority": {
+    "search_debounce_ms": 320,
+    "abort_stale_requests": true,
+    "page_filter_change_resets_page": true
+  },
+  "legacy_boundary": {
+    "adjustments_workspace_full_context_retained_until": "1.0.74",
+    "bounded_payroll_run_payload_does_not_mark_legacy_period_context_loaded": true
+  },
+  "guarantees": [
+    "saved-run-pages-before-components-and-adjustments-prefetch",
+    "no-complete-current-run-row-payload-on-payroll-runs-open",
+    "no-complete-previous-run-row-payload-on-payroll-runs-open",
+    "server-search-filter-pagination",
+    "exact-period-financial-summary",
+    "global-review-critical-count",
+    "stale-run-page-request-abort",
+    "25-50-100-row-browser-bound",
+    "adjustments-legacy-context-isolation",
+    "no-schema-change",
+    "no-payroll-formula-change"
+  ]
+}

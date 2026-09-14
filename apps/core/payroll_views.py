@@ -16,7 +16,7 @@ from apps.accounts.permissions import (
     membership_has_capability,
 )
 from apps.accounts.roles import Capability, Workspace
-from apps.core.management import management_context
+from apps.core.management import management_summary_context
 from apps.core.selectors.settings import company_settings
 from apps.core.selectors.record_management import record_management_context
 from apps.documents.selectors import document_context
@@ -200,7 +200,7 @@ def payroll_app(request):
         membership=membership,
     )
     management_bootstrap = (
-        management_context(company=request.company, period_start=current_month)
+        management_summary_context(company=request.company, period_start=current_month)
         if can_management
         else {
             "period": f"{current_month:%Y-%m}",

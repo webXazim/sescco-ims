@@ -18,6 +18,11 @@ from apps.internal_payroll.models import (
     SalaryPaymentRowStatus,
 )
 from apps.internal_payroll.selectors import salary_payment_context
+from apps.internal_payroll.selectors.payment import (
+    salary_payment_batch_rows_context,
+    salary_payment_readiness_page_context,
+    salary_payment_shell_context,
+)
 from apps.internal_payroll.services import (
     archive_bank_export_template,
     assign_employee_salary_structure,
@@ -534,3 +539,68 @@ class SalaryPaymentServiceTests(TestCase):
         result = payment_readiness(company=self.company, run=run, channel=BankExportChannel.WPS, template=template)
         self.assertTrue(result["ready"])
         self.assertEqual(result["blocked_count"], 0)
+
+    def test_salary_payment_shell_defers_profiles_readiness_and_batch_rows(self):
+        self._payment_profile()
+        template = self._bank_template()
+        batch = prepare_salary_payment_batch(
+            actor_membership=self.finance,
+            period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV,
+            template_id=template.pk,
+        )
+        context = salary_payment_shell_context(
+            company=self.company, period_start=self.period_start, membership=self.finance
+        )
+        self.assertEqual(context["surface"], "salary_payment_shell")
+        self.assertTrue(context["profilesDeferred"])
+        self.assertEqual(context["profiles"], {})
+        self.assertTrue(context["bankReadiness"]["deferred"])
+        serialized = next(item for item in context["batches"] if item["id"] == str(batch.pk))
+        self.assertTrue(serialized["rowsDeferred"])
+        self.assertEqual(serialized["rows"], [])
+
+    def test_salary_payment_readiness_is_server_paginated_and_serializes_page_profiles_only(self):
+        self._payment_profile()
+        template = self._bank_template()
+        context = salary_payment_readiness_page_context(
+            company=self.company,
+            period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV,
+            membership=self.finance,
+            template_id=template.pk,
+            page=1,
+            page_size=25,
+            status="All",
+        )
+        self.assertEqual(context["surface"], "salary_payment_readiness_page")
+        self.assertEqual(context["meta"]["pageSize"], 25)
+        self.assertEqual(context["readiness"]["employeeCount"], 1)
+        self.assertEqual(len(context["readiness"]["employees"]), 1)
+        self.assertIsNotNone(context["readiness"]["employees"][0]["profile"])
+
+    def test_salary_payment_batch_rows_are_server_paginated_with_exact_summary(self):
+        self._payment_profile()
+        template = self._bank_template()
+        batch = prepare_salary_payment_batch(
+            actor_membership=self.finance,
+            period_start=self.period_start,
+            channel=BankExportChannel.BANK_CSV,
+            template_id=template.pk,
+        )
+        context = salary_payment_batch_rows_context(
+            company=self.company,
+            batch_id=batch.pk,
+            membership=self.finance,
+            page=1,
+            page_size=25,
+            search="Payment",
+            status="All",
+        )
+        self.assertEqual(context["surface"], "salary_payment_batch_rows_page")
+        self.assertEqual(context["meta"]["pageSize"], 25)
+        self.assertEqual(context["summary"]["count"], 1)
+        self.assertEqual(len(context["rows"]), 1)
+        self.assertTrue(context["batch"]["rowsDeferred"])
+        self.assertEqual(context["batch"]["rows"], [])
+

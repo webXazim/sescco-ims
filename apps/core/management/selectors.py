@@ -182,6 +182,128 @@ def _audit_rows(company, *, limit=300):
     return rows
 
 
+
+MANAGEMENT_PAGE_SIZES = {25, 50, 100}
+
+
+def _management_page_size(value) -> int:
+    try:
+        size = int(value or 50)
+    except (TypeError, ValueError):
+        size = 50
+    return size if size in MANAGEMENT_PAGE_SIZES else 50
+
+
+def _management_page_number(value) -> int:
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _management_page_meta(*, count: int, page: object, page_size: object) -> tuple[int, int, int, dict[str, int]]:
+    size = _management_page_size(page_size)
+    total_pages = max(1, (count + size - 1) // size)
+    number = min(_management_page_number(page), total_pages)
+    offset = (number - 1) * size
+    return number, size, offset, {
+        "count": count, "page": number, "pageSize": size, "totalPages": total_pages,
+        "rangeStart": offset + 1 if count else 0, "rangeEnd": min(count, offset + size),
+    }
+
+
+def _approval_summary(items: list[dict[str, object]]) -> dict[str, object]:
+    type_counts: dict[str, int] = {}
+    for item in items:
+        key = str(item.get("type") or "Other")
+        type_counts[key] = type_counts.get(key, 0) + 1
+    return {
+        "count": len(items),
+        "critical": sum(1 for item in items if item.get("severity") == "Critical"),
+        "review": sum(1 for item in items if item.get("severity") == "Review"),
+        "internal": sum(1 for item in items if item.get("workspace") == "internal"),
+        "rental": sum(1 for item in items if item.get("workspace") == "rental"),
+        "typeCounts": type_counts,
+    }
+
+
+def management_summary_context(*, company, period_start):
+    """Lightweight Management shell: exact finance/headcount plus a five-item attention preview."""
+    today = timezone.localdate()
+    internal = _internal_summary(company, period_start)
+    rental = _rental_summary(company, period_start)
+    internal_net = Decimal(internal["net"])
+    rental_net = Decimal(rental["net"])
+    comparable = bool(internal["finalized"] and rental["finalized"])
+    internal_headcount = InternalEmployee.objects.for_company(company).filter(status__in=[EmploymentStatus.ACTIVE, EmploymentStatus.ON_LEAVE]).count()
+    rental_headcount = WorkerAssignment.objects.for_company(company).filter(
+        cancelled_at__isnull=True, effective_from__lte=today,
+    ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today)).values("worker_id").distinct().count()
+    approvals = _approval_items(company)
+    return {
+        "period": period_start.strftime("%Y-%m"),
+        "periodLabel": period_start.strftime("%B %Y"),
+        "availablePeriods": [{"key": item.strftime("%Y-%m"), "label": item.strftime("%B %Y")} for item in management_periods(company)],
+        "internal": internal, "rental": rental,
+        "combined": _money(internal_net + rental_net) if comparable else None, "comparable": comparable,
+        "headcount": {"internal": internal_headcount, "rental": rental_headcount, "total": internal_headcount + rental_headcount},
+        "payments": {"internal": _internal_payment(company, period_start), "rental": _rental_payment(company, period_start)},
+        "approvals": approvals[:5], "approvalSummary": _approval_summary(approvals),
+        "audit": [], "deferredRecords": True,
+    }
+
+
+def management_approval_page_context(*, company, filter_value: str = "All", page: object = 1, page_size: object = 50) -> dict[str, object]:
+    items = _approval_items(company)
+    value = str(filter_value or "All").strip()
+    if value in {"Critical", "Review"}:
+        filtered = [item for item in items if item.get("severity") == value]
+    elif value != "All":
+        filtered = [item for item in items if item.get("type") == value]
+    else:
+        filtered = items
+    number, size, offset, meta = _management_page_meta(count=len(filtered), page=page, page_size=page_size)
+    summary = _approval_summary(items)
+    types = ["All", "Critical", "Review", *sorted(summary["typeCounts"].keys())]
+    return {
+        "surface": "management_approvals_page", "approvals": filtered[offset:offset + size],
+        "summary": summary, "filters": {"types": types}, "meta": meta,
+    }
+
+
+def management_audit_page_context(*, company, query: str = "", type_filter: str = "", page: object = 1, page_size: object = 50) -> dict[str, object]:
+    base = AuditEvent.objects.filter(company=company)
+    qs = base
+    kind = str(type_filter or "").strip()
+    if kind and kind != "All activity":
+        qs = qs.filter(object_type=kind)
+    q = str(query or "").strip()
+    if q:
+        qs = qs.filter(
+            Q(area__icontains=q) | Q(object_type__icontains=q) | Q(object_id__icontains=q)
+            | Q(object_label__icontains=q) | Q(action__icontains=q) | Q(actor_display_name__icontains=q)
+            | Q(actor_username__icontains=q) | Q(actor_role__icontains=q)
+        )
+    qs = qs.order_by("-created_at")
+    count = qs.count()
+    number, size, offset, meta = _management_page_meta(count=count, page=page, page_size=page_size)
+    rows = []
+    for item in qs[offset:offset + size]:
+        workspace = "rental" if item.area == "rental" else "internal" if item.area == "internal" else "management"
+        metadata = item.metadata if isinstance(item.metadata, dict) else {}
+        rows.append({
+            "id": str(item.id), "workspace": workspace, "area": item.area, "type": item.object_type,
+            "period": str(metadata.get("period") or metadata.get("period_start") or ""), "date": item.created_at.isoformat(),
+            "actor": item.actor_display_name or item.actor_username or "System", "role": item.actor_role,
+            "action": item.action, "detail": item.object_label or str(metadata.get("detail") or ""),
+            "objectId": item.object_id, "requestId": str(item.request_id) if item.request_id else "",
+        })
+    types = list(base.exclude(object_type="").values_list("object_type", flat=True).distinct().order_by("object_type"))
+    return {
+        "surface": "management_audit_page", "audit": rows, "filters": {"types": ["All activity", *types]},
+        "meta": meta,
+    }
+
 def management_periods(company):
     periods = set(PayrollRun.objects.for_company(company).values_list("period_start", flat=True))
     periods.update(SupplierSettlement.objects.for_company(company).values_list("period_start", flat=True))

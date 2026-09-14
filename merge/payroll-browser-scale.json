@@ -1,5 +1,5 @@
 {
-  "release": "1.0.70",
+  "release": "1.0.77",
   "purpose": "Freeze the 2,000 Internal / 5,000 Rental browser-scale contract so large Payroll screens remain bounded from PostgreSQL through API payload, browser state and rendered DOM.",
   "benchmark_volume": {
     "internal_employees": 2000,
@@ -7,21 +7,52 @@
     "history_months": 12
   },
   "browser_limits": {
-    "directory_page_sizes": [25, 50, 100],
-    "timesheet_page_sizes": [25, 50, 100],
-    "assignment_page_sizes": [25, 50, 100],
+    "directory_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "timesheet_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "assignment_page_sizes": [
+      25,
+      50,
+      100
+    ],
     "bootstrap_internal_employees": 50,
     "bootstrap_rental_workers": 50,
     "global_search_results_per_entity": 5,
     "search_debounce_ms": 320,
     "max_assignment_activity_events_per_100_segments": 200,
-    "max_context_payload_bytes": 2500000
+    "max_context_payload_bytes": 2500000,
+    "high_cardinality_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "max_rendered_business_rows": 100
   },
   "certified_surfaces": [
     "internal-employee-directory",
-    "rental-workforce-directory",
     "internal-attendance",
     "internal-overtime",
+    "salary-setup-employee-structures",
+    "payroll-runs-register",
+    "payroll-runs-review",
+    "internal-advances-adjustments",
+    "salary-payments-register",
+    "bank-readiness",
+    "wps-readiness",
+    "documents",
+    "reports",
+    "archive",
+    "delete-recovery",
+    "management-approval-center",
+    "management-audit-trail",
+    "rental-workforce-directory",
     "rental-project-timesheets",
     "rental-overtime",
     "rental-assignment-activity",
@@ -41,7 +72,16 @@
     "bounded-bootstrap",
     "small-mutation-deltas",
     "server-side-search-filter-pagination",
-    "postgresql-indexed-high-cardinality-search"
+    "postgresql-indexed-high-cardinality-search",
+    "abort-obsolete-salary-setup-search",
+    "abort-obsolete-payroll-run-search",
+    "abort-obsolete-adjustment-search",
+    "abort-obsolete-payment-search",
+    "abort-obsolete-bank-wps-search",
+    "abort-obsolete-documents-search",
+    "abort-obsolete-reports-search",
+    "abort-obsolete-management-search",
+    "deferred-high-cardinality-bootstrap"
   ],
   "runtime_report": "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
   "live_browser_runner": "python scripts/certify-payroll-browser-scale.py --base-url https://ims.sescco.com --username <user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD",
