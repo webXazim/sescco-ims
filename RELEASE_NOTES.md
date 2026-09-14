@@ -1,3 +1,15 @@
+# 1.0.83 — Adjustment searchable-dropdown UX & scale hardening
+
+- Replaces the separate Find worker / Person and Find project / Project controls in the Rental Worker Adjustment drawer with one clean searchable dropdown per field. Search lives inside the opened dropdown instead of consuming permanent drawer space.
+- Keeps Person search server-backed and two-character gated. Results are requested in 10-row dropdown pages and the API remains hard-capped at 25 rows per request; no worker master is hydrated into the browser.
+- Adds Previous/Next controls inside the dropdown only when another lookup page exists. The lookup uses page-size-plus-one detection rather than an expensive exact-count query.
+- Keeps Project disabled until a worker is selected, then exposes only active projects from that worker's effective assignment on the transaction date. Exact selected-project revalidation is supported when the effective date changes.
+- Preserves stale-request cancellation independently for Person and Project searches, closes the dropdown on selection/outside click/Escape, and keeps required-field validation on the custom controls.
+- Applies the same compact searchable Person selector pattern to Internal Company adjustments for visual consistency while preserving the existing bounded Internal employee API.
+- Adds a Django regression for paged worker lookup and strengthens the selector-scale release gate so external duplicate search fields or unbounded selector APIs cannot return.
+- No schema migration, Payroll formula change, settlement calculation change, or relaxation of server-side worker/project/date authority.
+- Binds this release to the exact 1.0.82 predecessor archive SHA-256 `24dcbdb2c440449b4b7f1352f3da955e468e3c908cade129d320f4994d473bc3`.
+
 # 1.0.82 — Payroll document production hardening & SESCCO supplier headpad
 
 - Uses the approved SESCCO A4 company headpad supplied in `Electronic PAD - PDF` as a versioned, hash-verified packaged letterhead for every newly finalized Supplier Invoice. The full-page artwork is rendered at 2480×3508 and snapshotted by SHA-256 so historical invoices cannot silently switch branding.

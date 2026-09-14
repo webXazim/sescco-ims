@@ -19,8 +19,8 @@ def text(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 version = text("VERSION").strip()
-if version != "1.0.82":
-    fail(f"VERSION must be 1.0.82, found {version!r}")
+if version != "1.0.83":
+    fail(f"VERSION must be 1.0.83, found {version!r}")
 contract = json.loads(text("merge/payroll-adjustment-scale.json"))
 if contract.get("release") != version:
     fail("adjustment scale contract does not match VERSION")
@@ -98,8 +98,8 @@ for needle in (
     "async function loadInternalAdjustmentPage(period = state.period",
     "data-adjustment-page=",
     'id="adjustmentPageSize"',
-    "adjustmentPersonSearch",
-    "page_size:'25'",
+    "adjustmentLookupComboboxField",
+    "page_size:String(pageSize)",
     "await refreshInternalAdjustmentAuthority",
 ):
     if needle not in js:
@@ -123,4 +123,4 @@ for name in (
     if name not in tests:
         fail(f"Django regression missing: {name}")
 
-print("Verified SESCCO MS 1.0.82 Advances & Adjustments scale cutover: bounded register/balances, server lookup/totals and delta mutations.")
+print("Verified SESCCO MS 1.0.83 Advances & Adjustments scale cutover: bounded register/balances, server lookup/totals and delta mutations.")

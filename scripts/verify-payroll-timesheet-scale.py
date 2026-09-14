@@ -19,8 +19,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.82":
-    fail(f"VERSION must be 1.0.82, found {version!r}")
+if version != "1.0.83":
+    fail(f"VERSION must be 1.0.83, found {version!r}")
 
 contract = json.loads(text("merge/payroll-timesheet-scale.json"))
 if contract.get("release") != version:

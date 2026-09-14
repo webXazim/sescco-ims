@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.82":
-    fail(f"VERSION must be 1.0.82, found {version!r}")
+if version != "1.0.83":
+    fail(f"VERSION must be 1.0.83, found {version!r}")
 contract = json.loads(text("merge/payroll-salary-setup-scale.json"))
 if contract.get("release") != version:
     fail("salary-setup scale contract does not match VERSION")
@@ -105,4 +105,4 @@ if "state.employees.filter" in structures_body:
 if "test_salary_structure_directory_is_bounded_and_history_is_employee_scoped" not in tests:
     fail("Django regression for bounded Salary Structure directory is missing")
 
-print("Verified SESCCO MS 1.0.82 Salary Setup scale cutover: employee-first pagination, server search/coverage and lazy per-employee salary history.")
+print("Verified SESCCO MS 1.0.83 Salary Setup scale cutover: employee-first pagination, server search/coverage and lazy per-employee salary history.")

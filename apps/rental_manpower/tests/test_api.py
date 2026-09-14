@@ -516,6 +516,56 @@ class RentalAdjustmentLookupApiTests(TestCase):
         self.assertTrue(response.json()["requiresWorker"])
 
 
+    def test_worker_lookup_supports_bounded_in_dropdown_pagination(self):
+        from apps.rental_manpower.services import assign_worker
+
+        for index in range(1, 12):
+            worker = create_worker(
+                actor_membership=self.membership,
+                supplier_id=self.supplier.pk,
+                worker_number=f"LOOK-{index + 1:03d}",
+                full_name=f"Lookup Worker {index + 1:02d}",
+                status="Active",
+            )
+            assign_worker(
+                actor_membership=self.membership,
+                worker_id=worker.pk,
+                project_id=self.project.reference,
+                trade="Mason",
+                rate_type="hourly",
+                rate="12.50",
+                effective_date=date(2026, 9, 1),
+                reason="Lookup pagination assignment",
+            )
+
+        url = reverse("rental_manpower:adjustment-lookup-api")
+        first = self.client.get(url, {
+            "mode": "workers", "transaction_date": "2026-09-14", "q": "Lookup",
+            "page": 1, "page_size": 5,
+        })
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(len(first.json()["results"]), 5)
+        self.assertEqual(first.json()["meta"]["page"], 1)
+        self.assertEqual(first.json()["meta"]["pageSize"], 5)
+        self.assertTrue(first.json()["meta"]["hasNext"])
+        self.assertFalse(first.json()["meta"]["hasPrevious"])
+
+        second = self.client.get(url, {
+            "mode": "workers", "transaction_date": "2026-09-14", "q": "Lookup",
+            "page": 2, "page_size": 5,
+        })
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(second.json()["results"]), 5)
+        self.assertTrue(second.json()["meta"]["hasPrevious"])
+
+        third = self.client.get(url, {
+            "mode": "workers", "transaction_date": "2026-09-14", "q": "Lookup",
+            "page": 3, "page_size": 5,
+        })
+        self.assertEqual(third.status_code, 200)
+        self.assertEqual(len(third.json()["results"]), 2)
+        self.assertFalse(third.json()["meta"]["hasNext"])
+
     def test_adjustment_register_is_server_paginated_with_exact_summary(self):
         from apps.rental_manpower.services import create_rental_adjustment
 

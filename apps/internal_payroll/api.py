@@ -452,6 +452,9 @@ def employees_api(request: HttpRequest) -> JsonResponse:
                 department_id=request.GET.get("department") or None,
                 archived=_employee_archived_query(request.GET.get("archived", "")),
             )
+            employee_id = str(request.GET.get("employee_id", "")).strip()
+            if employee_id:
+                rows = rows.filter(pk=employee_id)
             wps_filter = str(request.GET.get("wps", "")).strip().lower().replace(" ", "_")
             period_value = str(request.GET.get("period", "")).strip()
             wps_readiness_by_employee = None

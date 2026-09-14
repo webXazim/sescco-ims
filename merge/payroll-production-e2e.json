@@ -1,5 +1,5 @@
 {
-  "release": "1.0.82",
+  "release": "1.0.83",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -320,7 +320,8 @@
         "apps/rental_manpower/tests/test_api.py": [
           "test_worker_lookup_is_search_gated_and_assignment_aware",
           "test_project_lookup_is_restricted_to_effective_worker_assignment",
-          "test_project_lookup_requires_worker_and_never_lists_global_project_master"
+          "test_project_lookup_requires_worker_and_never_lists_global_project_master",
+          "test_worker_lookup_supports_bounded_in_dropdown_pagination"
         ]
       }
     },

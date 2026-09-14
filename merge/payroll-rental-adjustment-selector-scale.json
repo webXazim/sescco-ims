@@ -1,12 +1,15 @@
 {
-  "release": "1.0.82",
+  "release": "1.0.83",
   "surface": "rental-adjustment-drawer",
   "worker_lookup": {
     "server_backed": true,
     "minimum_query_chars": 2,
     "max_results": 25,
     "assignment_date_aware": true,
-    "full_master_hydration": false
+    "full_master_hydration": false,
+    "dropdown_page_size": 10,
+    "paginated_inside_dropdown": true,
+    "exact_count_query": false
   },
   "project_lookup": {
     "server_backed": true,
@@ -14,13 +17,19 @@
     "max_results": 25,
     "effective_assignment_only": true,
     "active_project_only": true,
-    "full_master_hydration": false
+    "full_master_hydration": false,
+    "dropdown_page_size": 10,
+    "paginated_inside_dropdown": true,
+    "exact_selected_project_revalidation": true
   },
   "browser_safety": {
     "abort_stale_worker_requests": true,
     "abort_stale_project_requests": true,
     "revalidate_on_date_change": true,
-    "save_does_not_require_directory_cache": true
+    "save_does_not_require_directory_cache": true,
+    "search_input_inside_dropdown": true,
+    "separate_find_fields": false,
+    "close_on_selection": true
   },
   "server_authority": "create_rental_adjustment transactionally revalidates company, lifecycle, active project and effective worker/project assignment"
 }

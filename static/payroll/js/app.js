@@ -7544,138 +7544,224 @@
   }
   function setupAdjustmentDrawer() {
     const workforceSelect=drawerBody.querySelector('[name="adjustment-workforce"]');
-    const personSelect=drawerBody.querySelector('[name="adjustment-person"]');
-    if(!workforceSelect||!personSelect)return;
+    const personBox=drawerBody.querySelector('[data-adjustment-combobox="person"]');
+    const personInput=drawerBody.querySelector('[name="adjustment-person"]');
+    if(!workforceSelect||!personBox||!personInput)return;
+
+    try{state.adjustmentLookupUiController?.abort();}catch{/* settled */}
+    const uiController=new AbortController();state.adjustmentLookupUiController=uiController;
+    const uiSignal=uiController.signal;
     const preferred=state.drawerContext?.personId || '';
     const isRental=workforceSelect.value==='Rental Worker';
-    const personSearch=drawerBody.querySelector('#adjustmentPersonSearch');
-
-    if(!isRental){
-      const selectedEmployee=state.employees.find(item=>item.id===preferred) || null;
-      const renderOptions=(rows, selected=personSelect.value||preferred)=>{
-        const options=[...(rows||[])];
-        const selectedCached=state.employees.find(item=>item.id===selected);
-        if(selectedCached&&!options.some(item=>item.id===selectedCached.id))options.unshift(selectedCached);
-        personSelect.innerHTML=`<option value="">Search and select an employee</option>${options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId||item.employeeNumber||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
-        if(selected&&options.some(item=>item.id===selected))personSelect.value=selected;
-      };
-      renderOptions(selectedEmployee?[selectedEmployee]:[],preferred);
-      if(!personSearch)return;
-      let timer=null;
-      personSearch.addEventListener('input',()=>{
-        clearTimeout(timer);
-        timer=setTimeout(async()=>{
-          const query=personSearch.value.trim();
-          if(query.length<2){renderOptions(selectedEmployee?[selectedEmployee]:[],personSelect.value||preferred);return;}
-          try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
-          const controller=new AbortController();state.adjustmentPersonLookupController=controller;
-          try{
-            const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
-            const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
-            if(state.adjustmentPersonLookupController!==controller)return;
-            const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);renderOptions(rows,personSelect.value||preferred);
-          }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
-        },280);
-      });
-      return;
-    }
-
-    const projectSelect=drawerBody.querySelector('[name="adjustment-project"]');
-    const projectSearch=drawerBody.querySelector('#adjustmentProjectSearch');
-    const projectHint=drawerBody.querySelector('#adjustmentProjectHint');
-    const dateInput=drawerBody.querySelector('[name="adjustment-date"]');
-    if(!projectSelect||!personSearch||!projectSearch||!dateInput)return;
     const preferredProject=state.drawerContext?.projectId || '';
-    let personTimer=null, projectTimer=null;
-    let personRows=[];
-    let projectRows=[];
-    const transactionDate=()=>dateInput.value || rentalTodayIso();
+    const dateInput=drawerBody.querySelector('[name="adjustment-date"]');
+    const projectBox=isRental?drawerBody.querySelector('[data-adjustment-combobox="project"]'):null;
+    const projectInput=isRental?drawerBody.querySelector('[name="adjustment-project"]'):null;
+    const projectHint=isRental?drawerBody.querySelector('#adjustmentProjectHint'):null;
+    const pageSize=10;
+    const rowsByKind={person:new Map(),project:new Map()};
+    const pageByKind={person:1,project:1};
+    const metaByKind={person:{hasNext:false,hasPrevious:false},project:{hasNext:false,hasPrevious:false}};
+    const timers={person:null,project:null};
 
-    const renderWorkerOptions=(rows, selected=personSelect.value||preferred)=>{
-      personRows=[...(rows||[])];
-      const cached=state.rentalWorkers.find(item=>item.id===selected);
-      if(cached&&!personRows.some(item=>item.id===cached.id))personRows.unshift({id:cached.id,code:rentalWorkerCode(cached),name:cached.name,supplier:cached.supplier||''});
-      personSelect.innerHTML=`<option value="">Search and select a worker</option>${personRows.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.code||'')} · ${escapeHtml(item.name||'')}${item.supplier?` · ${escapeHtml(item.supplier)}`:''}</option>`).join('')}`;
-      if(selected&&personRows.some(item=>item.id===selected))personSelect.value=selected;
+    const parts=(kind)=>{
+      const box=drawerBody.querySelector(`[data-adjustment-combobox="${kind}"]`);
+      if(!box)return null;
+      return {
+        box,
+        hidden:box.querySelector('input[type="hidden"][name]'),
+        trigger:box.querySelector('[data-adjustment-combobox-trigger]'),
+        value:box.querySelector('[data-adjustment-combobox-value]'),
+        menu:box.querySelector('[data-adjustment-combobox-menu]'),
+        search:box.querySelector('[data-adjustment-combobox-search]'),
+        results:box.querySelector('[data-adjustment-combobox-results]'),
+        pager:box.querySelector('[data-adjustment-combobox-pager]'),
+        pageLabel:box.querySelector('[data-adjustment-combobox-page]'),
+        prev:box.querySelector('[data-adjustment-combobox-prev]'),
+        next:box.querySelector('[data-adjustment-combobox-next]'),
+      };
     };
-    const renderProjectOptions=(rows, selected=projectSelect.value||preferredProject)=>{
-      projectRows=[...(rows||[])];
-      const hasWorker=Boolean(personSelect.value);
-      projectSelect.innerHTML=`<option value="">${hasWorker?'Select an eligible project':'Select a worker first'}</option>${projectRows.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.code||'')} · ${escapeHtml(item.name||'')}</option>`).join('')}`;
-      projectSelect.disabled=!hasWorker||projectRows.length===0;
-      projectSearch.disabled=!hasWorker;
-      if(selected&&projectRows.some(item=>item.id===selected))projectSelect.value=selected;
-      else if(projectRows.length===1)projectSelect.value=projectRows[0].id;
-      if(projectHint){
-        const chosen=projectRows.find(item=>item.id===projectSelect.value);
-        projectHint.textContent=!hasWorker?'Select a worker first. Projects are restricted to that worker\'s effective assignment on the transaction date.':chosen?`${chosen.supplier||'Managed supplier'} · ${chosen.trade||'Assigned trade'} · effective ${transactionDate()}`:projectRows.length?'Select the project effective for this transaction date.':'No eligible active project assignment exists on this date.';
+    const person=parts('person');
+    const project=isRental?parts('project'):null;
+    if(!person||!dateInput)return;
+
+    const transactionDate=()=>dateInput.value || rentalTodayIso();
+    const emptyLabel=(kind)=>kind==='person'?`Select ${isRental?'worker':'employee'}`:'Select eligible project';
+    const rowLabel=(kind,row)=>{
+      if(kind==='project')return `${row.code||''}${row.code?' · ':''}${row.name||''}`;
+      const code=row.code||row.employeeId||row.employeeNumber||'';
+      return `${code}${code?' · ':''}${row.name||''}`;
+    };
+    const rowMeta=(kind,row)=>{
+      if(kind==='project')return [row.supplier,row.trade,row.location].filter(Boolean).join(' · ');
+      return isRental?[row.supplier].filter(Boolean).join(' · '):[row.position,row.department].filter(Boolean).join(' · ');
+    };
+    const setDisabled=(kind,disabled)=>{
+      const p=parts(kind);if(!p)return;
+      p.box.classList.toggle('is-disabled',disabled);
+      p.trigger.disabled=disabled;p.search.disabled=disabled;
+      if(disabled){p.menu.hidden=true;p.trigger.setAttribute('aria-expanded','false');}
+    };
+    const clearInvalid=(kind)=>{
+      const p=parts(kind);if(!p)return;
+      p.box.closest('.form-field')?.classList.remove('is-invalid');
+      p.trigger.removeAttribute('aria-invalid');
+      p.box.closest('.form-field')?.querySelectorAll('.field-required-message[data-client-required="true"]').forEach(node=>node.remove());
+    };
+    const setSelected=(kind,row,{close=true}={})=>{
+      const p=parts(kind);if(!p)return;
+      p.hidden.value=row?.id||'';
+      p.value.textContent=row?rowLabel(kind,row):emptyLabel(kind);
+      p.trigger.classList.toggle('has-value',Boolean(row));
+      p.trigger.title=row?rowLabel(kind,row):'';
+      if(row)rowsByKind[kind].set(row.id,row);
+      clearInvalid(kind);
+      p.results.querySelectorAll('[data-adjustment-lookup-option]').forEach(btn=>btn.classList.toggle('is-selected',btn.dataset.adjustmentLookupOption===p.hidden.value));
+      if(close){p.menu.hidden=true;p.trigger.setAttribute('aria-expanded','false');}
+    };
+    const resetProject=()=>{
+      if(!project)return;
+      rowsByKind.project.clear();pageByKind.project=1;metaByKind.project={hasNext:false,hasPrevious:false};
+      setSelected('project',null);
+      project.search.value='';
+      project.results.innerHTML='<div class="adjustment-combobox__empty">Select a worker first.</div>';
+      project.pager.hidden=true;
+      setDisabled('project',!personInput.value);
+      if(projectHint)projectHint.textContent=personInput.value?'Only assignment-valid active projects for the effective date are available.':'Select a worker first. Only assignment-valid active projects for the effective date are available.';
+    };
+    const renderResults=(kind,rows,meta,{message='No matching results.'}={})=>{
+      const p=parts(kind);if(!p)return;
+      rowsByKind[kind]=new Map((rows||[]).map(row=>[row.id,row]));
+      const selected=p.hidden.value;
+      if(rows?.length){
+        p.results.innerHTML=rows.map(row=>`<button type="button" class="adjustment-combobox__option${row.id===selected?' is-selected':''}" role="option" aria-selected="${row.id===selected?'true':'false'}" data-adjustment-lookup-option="${escapeHtml(row.id)}"><span><strong>${escapeHtml(rowLabel(kind,row))}</strong>${rowMeta(kind,row)?`<small>${escapeHtml(rowMeta(kind,row))}</small>`:''}</span>${row.id===selected?icon('check'):''}</button>`).join('');
+      } else p.results.innerHTML=`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;
+      metaByKind[kind]=meta||{};
+      const current=Number(meta?.page||pageByKind[kind]||1);pageByKind[kind]=current;
+      const hasPrevious=Boolean(meta?.hasPrevious ?? (current>1));
+      const hasNext=Boolean(meta?.hasNext ?? (meta?.totalPages&&current<Number(meta.totalPages)));
+      p.pager.hidden=!(hasPrevious||hasNext);
+      p.pageLabel.textContent=`Page ${current}`;
+      p.prev.disabled=!hasPrevious;p.next.disabled=!hasNext;
+      p.results.querySelectorAll('[data-adjustment-lookup-option]').forEach(btn=>btn.addEventListener('click',()=>{
+        const row=rowsByKind[kind].get(btn.dataset.adjustmentLookupOption);if(!row)return;
+        setSelected(kind,row);
+        if(kind==='person'&&isRental){resetProject();setDisabled('project',false);lookupProjects({page:1,autoSelectSingle:true});}
+      },{signal:uiSignal}));
+    };
+    const closeMenus=(except='')=>{
+      ['person','project'].forEach(kind=>{if(kind===except)return;const p=parts(kind);if(p){p.menu.hidden=true;p.trigger.setAttribute('aria-expanded','false');}});
+    };
+    const openMenu=(kind)=>{
+      const p=parts(kind);if(!p||p.trigger.disabled)return;
+      const opening=p.menu.hidden;
+      closeMenus(kind);p.menu.hidden=!opening;p.trigger.setAttribute('aria-expanded',opening?'true':'false');
+      if(opening){
+        queueMicrotask(()=>p.search.focus({preventScroll:true}));
+        if(kind==='project'&&personInput.value&&rowsByKind.project.size===0)lookupProjects({page:1,autoSelectSingle:false});
       }
     };
 
-    const lookupWorkers=async({query='',selectedId=''}={})=>{
-      if(!selectedId&&query.trim().length<2){renderWorkerOptions([],personSelect.value||preferred);return [];}
+    const lookupPeople=async({query='',selectedId='',page=1}={})=>{
+      const trimmed=query.trim();
+      if(!selectedId&&trimmed.length<2){
+        pageByKind.person=1;renderResults('person',[],{page:1,hasNext:false,hasPrevious:false},{message:'Type at least 2 characters to search.'});return [];
+      }
       try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
       const controller=new AbortController();state.adjustmentPersonLookupController=controller;
       try{
-        const params=new URLSearchParams({mode:'workers',transaction_date:transactionDate()});
-        if(query.trim())params.set('q',query.trim());
-        if(selectedId)params.set('worker_id',selectedId);
-        const payload=await appApi(`/api/rental/adjustments/lookup/?${params.toString()}`,{signal:controller.signal});
+        let payload;
+        if(isRental){
+          const params=new URLSearchParams({mode:'workers',transaction_date:transactionDate(),page:String(page),page_size:String(pageSize)});
+          if(trimmed)params.set('q',trimmed);if(selectedId)params.set('worker_id',selectedId);
+          payload=await appApi(`/api/rental/adjustments/lookup/?${params.toString()}`,{signal:controller.signal});
+        } else {
+          const params=new URLSearchParams({q:trimmed,archived:'current',page:String(page),page_size:String(pageSize),sort:'employee',direction:'asc'});
+          if(selectedId)params.set('employee_id',selectedId);
+          payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
+          directoryEntityMerge('employees',[...(payload.results||[])]);
+        }
         if(state.adjustmentPersonLookupController!==controller)return [];
         const rows=[...(payload.results||[])];
-        renderWorkerOptions(rows,selectedId||personSelect.value||preferred);
+        const meta=isRental?(payload.meta||{}):{...(payload.meta||{}),hasPrevious:Number(payload.meta?.page||page)>1,hasNext:Number(payload.meta?.page||page)<Number(payload.meta?.totalPages||1)};
+        renderResults('person',rows,meta,{message:'No matching managed person was found.'});
+        if(selectedId){const row=rows.find(item=>item.id===selectedId);if(row)setSelected('person',row,{close:true});}
         return rows;
-      }catch(error){if(error?.name!=='AbortError')showToast('Worker search unavailable',error.message);return [];}finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
+      }catch(error){
+        if(error?.name!=='AbortError'){renderResults('person',[],{page:1,hasNext:false,hasPrevious:false},{message:'Search unavailable. Try again.'});showToast(`${isRental?'Worker':'Employee'} search unavailable`,error.message);}
+        return [];
+      }finally{if(state.adjustmentPersonLookupController===controller)state.adjustmentPersonLookupController=null;}
     };
 
-    const lookupProjects=async({query='',selectedId=''}={})=>{
-      const workerId=personSelect.value;
-      if(!workerId){renderProjectOptions([], '');return [];}
+    const lookupProjects=async({query='',selectedId='',page=1,autoSelectSingle=false}={})=>{
+      if(!project)return [];
+      const workerId=personInput.value;
+      if(!workerId){resetProject();return []}
       try{state.adjustmentProjectLookupController?.abort();}catch{/* settled */}
       const controller=new AbortController();state.adjustmentProjectLookupController=controller;
       try{
-        const params=new URLSearchParams({mode:'projects',worker_id:workerId,transaction_date:transactionDate()});
-        if(query.trim())params.set('q',query.trim());
+        const params=new URLSearchParams({mode:'projects',worker_id:workerId,transaction_date:transactionDate(),page:String(page),page_size:String(pageSize)});
+        if(query.trim())params.set('q',query.trim());if(selectedId)params.set('project_id',selectedId);
         const payload=await appApi(`/api/rental/adjustments/lookup/?${params.toString()}`,{signal:controller.signal});
         if(state.adjustmentProjectLookupController!==controller)return [];
-        const rows=[...(payload.results||[])];renderProjectOptions(rows,selectedId||projectSelect.value||preferredProject);return rows;
-      }catch(error){if(error?.name!=='AbortError')showToast('Project lookup unavailable',error.message);return [];}finally{if(state.adjustmentProjectLookupController===controller)state.adjustmentProjectLookupController=null;}
+        const rows=[...(payload.results||[])];renderResults('project',rows,payload.meta||{}, {message:'No eligible active project assignment exists on this date.'});
+        if(selectedId){const row=rows.find(item=>item.id===selectedId);if(row)setSelected('project',row,{close:true});}
+        else if(autoSelectSingle&&rows.length===1&&!payload.meta?.hasNext)setSelected('project',rows[0],{close:true});
+        if(projectHint){const chosen=rowsByKind.project.get(projectInput.value);projectHint.textContent=chosen?`${chosen.supplier||'Managed supplier'} · ${chosen.trade||'Assigned trade'} · effective ${transactionDate()}`:'Only assignment-valid active projects for the effective date are available.';}
+        return rows;
+      }catch(error){
+        if(error?.name!=='AbortError'){renderResults('project',[],{page:1,hasNext:false,hasPrevious:false},{message:'Project lookup unavailable. Try again.'});showToast('Project lookup unavailable',error.message);}
+        return [];
+      }finally{if(state.adjustmentProjectLookupController===controller)state.adjustmentProjectLookupController=null;}
     };
 
-    renderWorkerOptions([],preferred);
-    renderProjectOptions([],preferredProject);
-    personSearch.addEventListener('input',()=>{
-      clearTimeout(personTimer);
-      personTimer=setTimeout(()=>lookupWorkers({query:personSearch.value}),260);
-    });
-    personSelect.addEventListener('change',()=>{
-      projectSearch.value='';
-      renderProjectOptions([], '');
-      if(personSelect.value)lookupProjects({selectedId:preferredProject});
-    });
-    projectSearch.addEventListener('input',()=>{
-      clearTimeout(projectTimer);
-      projectTimer=setTimeout(()=>lookupProjects({query:projectSearch.value}),260);
-    });
+    person.trigger.addEventListener('click',()=>openMenu('person'),{signal:uiSignal});
+    person.search.addEventListener('input',()=>{
+      clearTimeout(timers.person);pageByKind.person=1;
+      timers.person=setTimeout(()=>lookupPeople({query:person.search.value,page:1}),260);
+    },{signal:uiSignal});
+    person.prev.addEventListener('click',()=>lookupPeople({query:person.search.value,page:Math.max(1,pageByKind.person-1)}),{signal:uiSignal});
+    person.next.addEventListener('click',()=>lookupPeople({query:person.search.value,page:pageByKind.person+1}),{signal:uiSignal});
+
+    if(project){
+      project.trigger.addEventListener('click',()=>openMenu('project'),{signal:uiSignal});
+      project.search.addEventListener('input',()=>{
+        clearTimeout(timers.project);pageByKind.project=1;
+        timers.project=setTimeout(()=>lookupProjects({query:project.search.value,page:1}),260);
+      },{signal:uiSignal});
+      project.prev.addEventListener('click',()=>lookupProjects({query:project.search.value,page:Math.max(1,pageByKind.project-1)}),{signal:uiSignal});
+      project.next.addEventListener('click',()=>lookupProjects({query:project.search.value,page:pageByKind.project+1}),{signal:uiSignal});
+    }
+
+    document.addEventListener('pointerdown',event=>{
+      if(!drawerBody.isConnected){uiController.abort();return;}
+      const target=event.target;
+      if(!person.box.contains(target)&&(!project||!project.box.contains(target)))closeMenus();
+    },{signal:uiSignal});
+    drawerBody.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenus();},{signal:uiSignal});
+
     dateInput.addEventListener('change',async()=>{
-      const selected=personSelect.value;
-      projectSearch.value='';
-      renderProjectOptions([], '');
+      const selected=personInput.value;
+      const selectedProject=projectInput?.value || preferredProject || '';
+      if(project){project.search.value='';resetProject();}
       if(!selected)return;
-      const rows=await lookupWorkers({selectedId:selected});
+      const rows=await lookupPeople({selectedId:selected,page:1});
       if(!rows.some(item=>item.id===selected)){
-        personSelect.value='';
-        renderProjectOptions([], '');
-        showToast('Worker assignment changed','The selected worker has no eligible project assignment on the new transaction date. Search again.');
+        setSelected('person',null);resetProject();
+        showToast('Assignment changed','The selected worker has no eligible project assignment on the new transaction date. Search again.');
         return;
       }
-      await lookupProjects();
-    });
+      if(project){setDisabled('project',false);await lookupProjects({selectedId:selectedProject,page:1,autoSelectSingle:true});}
+    },{signal:uiSignal});
+
     if(preferred){
       queueMicrotask(async()=>{
-        const rows=await lookupWorkers({selectedId:preferred});
-        if(rows.some(item=>item.id===preferred))await lookupProjects({selectedId:preferredProject});
+        const rows=await lookupPeople({selectedId:preferred,page:1});
+        if(rows.some(item=>item.id===preferred)&&project){setDisabled('project',false);await lookupProjects({selectedId:preferredProject,page:1,autoSelectSingle:true});}
       });
+    } else {
+      renderResults('person',[],{page:1,hasNext:false,hasPrevious:false},{message:'Type at least 2 characters to search.'});
+      if(project)resetProject();
     }
   }
 
@@ -9730,9 +9816,17 @@
         const types = isRental ? ['Worker Advance','Fine / Penalty','Bonus','Reimbursement','Other Earning','Other Deduction'] : ['Salary Advance','Advance Recovery','Fine','Bonus','Reimbursement','Other Earning','Other Deduction'];
         const ownerFields = [
           namedSelectFieldValue('Workforce type','adjustment-workforce',[workforce],workforce),
-          `<div class="form-field form-field--wide"><label for="adjustmentPersonSearch">Find ${isRental?'worker':'employee'}</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentPersonSearch" type="search" placeholder="Search ${isRental?'worker name, ID or supplier':'employee name or ID'}" autocomplete="off"></div><span class="field-hint">Server search returns at most 25 ${isRental?'workers with an effective assignment on the transaction date':'matching employees'}.</span></div>`,
-          `<div class="form-field form-field--wide"><label for="adjustment-person">Person</label><select class="select" id="adjustment-person" name="adjustment-person"><option value="">Search and select ${isRental?'a worker':'an employee'}</option></select><span class="field-hint">Managed ${isRental?'worker':'employee'} master only. Search results are never loaded as a full directory.</span></div>`,
-          ...(isRental ? [`<div class="form-field form-field--wide"><label for="adjustmentProjectSearch">Find project</label><div class="table-toolbar__search">${icon('search')}<input id="adjustmentProjectSearch" type="search" placeholder="Search eligible project" autocomplete="off" disabled></div><span class="field-hint" id="adjustmentProjectHint">Select a worker first. Projects are restricted to that worker's effective assignment on the transaction date.</span></div>`,`<div class="form-field form-field--wide"><label for="adjustment-project">Project</label><select class="select" id="adjustment-project" name="adjustment-project" disabled><option value="">Select a worker first</option></select><span class="field-hint">Only assignment-valid active projects are selectable.</span></div>`] : [namedSelectOptions('Project','adjustment-project',[{value:'',label:'Internal employee-level'}],'')]),
+          adjustmentLookupComboboxField({
+            label:'Person', name:'adjustment-person', kind:'person', required:true,
+            placeholder:isRental?'Search worker name, ID or supplier':'Search employee name or ID',
+            emptyLabel:`Select ${isRental?'worker':'employee'}`,
+            hint:`Search is inside this dropdown. Results are server-backed, paged in small batches, and never load the full ${isRental?'worker':'employee'} directory.`
+          }),
+          ...(isRental ? [adjustmentLookupComboboxField({
+            label:'Project', name:'adjustment-project', kind:'project', required:true, disabled:true,
+            placeholder:'Search eligible project', emptyLabel:'Select a worker first',
+            hint:"Select a worker first. Only assignment-valid active projects for the effective date are available."
+          })] : [namedSelectOptions('Project','adjustment-project',[{value:'',label:'Internal employee-level'}],'')]),
           namedSelectFieldValue('Transaction type','adjustment-type',types,context.type || (isRental?'Worker Advance':'Salary Advance'))
         ];
         const amountFields = [
@@ -9974,8 +10068,24 @@
 
   function validatePayrollRequiredFields() {
     applyPayrollRequiredFields(drawerBody, state.drawerType);
-    const valid = window.PlatformFormValidation?.validateRequired?.(drawerBody);
+    let valid = window.PlatformFormValidation?.validateRequired?.(drawerBody);
+    let firstLookup = null;
+    drawerBody?.querySelectorAll?.('.adjustment-combobox[data-required="true"]').forEach(box => {
+      const hidden=box.querySelector('input[type="hidden"][name]');
+      const trigger=box.querySelector('[data-adjustment-combobox-trigger]');
+      const field=box.closest('.form-field');
+      const missing=!String(hidden?.value||'').trim();
+      field?.classList.toggle('is-invalid',missing);
+      if(missing){
+        valid=false;trigger?.setAttribute('aria-invalid','true');
+        if(field&&!field.querySelector('.field-required-message[data-client-required="true"]'))field.insertAdjacentHTML('beforeend','<span class="field-required-message" data-client-required="true">Required</span>');
+        if(!firstLookup)firstLookup=trigger;
+      }else{
+        trigger?.removeAttribute('aria-invalid');field?.querySelectorAll('.field-required-message[data-client-required="true"]').forEach(node=>node.remove());
+      }
+    });
     if (valid === false) {
+      firstLookup?.focus?.({preventScroll:true});firstLookup?.scrollIntoView?.({behavior:'smooth',block:'center'});
       showToast('Required fields missing', 'Complete the highlighted fields marked with * before saving.');
       return false;
     }
@@ -9985,6 +10095,13 @@
   function markPayrollFieldInvalid(name, message = 'Required') {
     const control = drawerBody?.querySelector(`[name="${CSS.escape(name)}"]`);
     if (!control) return;
+    const lookup=control.closest?.('.adjustment-combobox');
+    if(lookup){
+      const field=lookup.closest('.form-field');const trigger=lookup.querySelector('[data-adjustment-combobox-trigger]');
+      field?.classList.add('is-invalid');trigger?.setAttribute('aria-invalid','true');
+      if(field&&!field.querySelector('.field-required-message[data-client-required="true"]'))field.insertAdjacentHTML('beforeend',`<span class="field-required-message" data-client-required="true">${escapeHtml(message)}</span>`);
+      trigger?.focus?.({preventScroll:true});trigger?.scrollIntoView?.({behavior:'smooth',block:'center'});return;
+    }
     window.PlatformFormValidation?.markInvalid?.(control, message);
     control.focus?.({ preventScroll:true });
     control.scrollIntoView?.({ behavior:'smooth', block:'center' });
@@ -10000,6 +10117,28 @@
   function namedSelectFieldValue(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option ${String(x) === String(current) ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}</select></div>`; }
   function namedSelectOptions(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option value="${escapeHtml(x.value)}" ${String(x.value) === String(current) ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('')}</select></div>`; }
   function selectWithCreate(label, options, type) { return `<div class="form-field form-field--full"><label>${label}</label><div class="inline-create"><select class="select">${options.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select><button class="btn btn--secondary" type="button" data-inline-create="${type}">+ New</button></div><span class="field-hint">Existing records appear here; creating a new one returns to this form.</span></div>`; }
+  function adjustmentLookupComboboxField({label,name,kind,placeholder,emptyLabel,hint,disabled=false,required=false}) {
+    const prompt=kind==='person'?'Type at least 2 characters to search.':'Select a worker first.';
+    return `<div class="form-field form-field--wide adjustment-lookup-field">
+      <label class="${required?'required':''}">${escapeHtml(label)}</label>
+      <div class="adjustment-combobox${disabled?' is-disabled':''}" data-adjustment-combobox="${escapeHtml(kind)}" data-required="${required?'true':'false'}">
+        <input type="hidden" name="${escapeHtml(name)}" value="">
+        <button class="adjustment-combobox__trigger" type="button" data-adjustment-combobox-trigger aria-haspopup="listbox" aria-expanded="false" ${disabled?'disabled':''}>
+          <span data-adjustment-combobox-value>${escapeHtml(emptyLabel)}</span>${icon('chevron')}
+        </button>
+        <div class="adjustment-combobox__menu" data-adjustment-combobox-menu hidden>
+          <div class="adjustment-combobox__search">${icon('search')}<input type="search" data-adjustment-combobox-search placeholder="${escapeHtml(placeholder)}" autocomplete="off" ${disabled?'disabled':''}></div>
+          <div class="adjustment-combobox__results" data-adjustment-combobox-results role="listbox"><div class="adjustment-combobox__empty">${escapeHtml(prompt)}</div></div>
+          <div class="adjustment-combobox__pager" data-adjustment-combobox-pager hidden>
+            <span data-adjustment-combobox-page>Page 1</span>
+            <div><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-prev disabled>Previous</button><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-next disabled>Next</button></div>
+          </div>
+        </div>
+      </div>
+      <span class="field-hint" ${kind==='project'?'id="adjustmentProjectHint"':''}>${escapeHtml(hint)}</span>
+    </div>`;
+  }
+
   function formSections(sections) { return sections.map(([title, subtitle, fields]) => `<section class="form-section"><div class="form-section__head"><strong>${title}</strong><span>${subtitle}</span></div><div class="form-grid">${fields.join('')}</div></section>`).join(''); }
 
   function lifecycleMenuItem({label, hint='', iconName='info', attrs='', danger=false, disabled=false}) {
@@ -10398,6 +10537,8 @@
     state.adjustmentPersonLookupController=null;
     try{state.adjustmentProjectLookupController?.abort();}catch{/* settled */}
     state.adjustmentProjectLookupController=null;
+    try{state.adjustmentLookupUiController?.abort();}catch{/* settled */}
+    state.adjustmentLookupUiController=null;
     cancelDocumentSourceRequest();
     clearTimeout(documentSourceTimer);documentSourceTimer=null;
     drawer.classList.remove('is-open');
@@ -10569,7 +10710,7 @@
       const recoveryPlan = get('adjustment-recovery-plan') || 'No automatic schedule';
       const installmentAmount = Number(get('adjustment-installment') || 0);
       const recoveryStart = get('adjustment-recovery-start');
-      if (!personId) { showToast('Person required','Select an employee or rental worker from the managed master.'); return; }
+      if (!personId) { markPayrollFieldInvalid('adjustment-person','Select a managed person'); showToast('Person required','Select an employee or rental worker from the managed master.'); return; }
       if (!(amount > 0)) { markPayrollFieldInvalid('adjustment-amount', 'Enter an amount greater than zero'); showToast('Amount required','Enter an amount greater than zero.'); return; }
       if (!date) { showToast('Effective date required','Choose the transaction effective date.'); return; }
       if (workforce === 'Internal Employee') {
@@ -10601,7 +10742,7 @@
         }
         return;
       }
-      if (!projectId) { drawerBody.querySelector('[name="adjustment-project"]')?.focus(); showToast('Project required',"Select the worker's assignment-valid project for the effective date."); return; }
+      if (!projectId) { markPayrollFieldInvalid('adjustment-project','Select an eligible project'); showToast('Project required',"Select the worker's assignment-valid project for the effective date."); return; }
       drawerSave.disabled = true;
       try {
         const payload = await appApi('/api/rental/adjustments/', {

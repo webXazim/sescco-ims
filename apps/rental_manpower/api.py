@@ -966,12 +966,13 @@ def rental_settlements_workflow_api(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.RENTAL)
 def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
-    """Bounded, assignment-aware owner/project lookup for the rental adjustment drawer.
+    """Bounded, assignment-aware combobox lookup for rental adjustments.
 
-    This endpoint deliberately returns compact selector rows rather than serializing the
-    full worker/project masters.  Results are company-scoped, lifecycle-safe, capped at
-    25 rows, and constrained to an assignment effective on ``transaction_date``.  The
-    create service remains the final transactional authority.
+    Worker and project options are intentionally queried in small pages instead of
+    serializing either master directory.  The endpoint avoids an exact COUNT query:
+    every page reads ``page_size + 1`` rows and exposes ``hasNext``.  The create
+    service remains the final transactional authority for company/lifecycle/date
+    validation.
     """
     try:
         mode = str(request.GET.get("mode", "workers")).strip().lower()
@@ -980,16 +981,37 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
         transaction_date = parse_date(request.GET.get("transaction_date"), "transaction_date")
         query = str(request.GET.get("q", "")).strip()
         worker_id = str(request.GET.get("worker_id", "")).strip()
+        project_id = str(request.GET.get("project_id", "")).strip()
+
+        try:
+            page = max(1, int(request.GET.get("page", 1) or 1))
+            page_size = min(25, max(5, int(request.GET.get("page_size", 10) or 10)))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"page": "page and page_size must be integers."}) from exc
+
+        def page_payload(queryset, serializer):
+            start = (page - 1) * page_size
+            window = list(queryset[start : start + page_size + 1])
+            has_next = len(window) > page_size
+            window = window[:page_size]
+            return {
+                "ok": True,
+                "results": [serializer(item) for item in window],
+                "limit": 25,
+                "meta": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "hasNext": has_next,
+                    "hasPrevious": page > 1,
+                },
+            }
 
         if mode == "workers":
             assignments = (
                 WorkerAssignment.objects.for_company(request.company)
                 .filter(worker_id=OuterRef("pk"), cancelled_at__isnull=True, effective_from__lte=transaction_date)
                 .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
-                .filter(
-                    project__status=ProjectStatus.ACTIVE,
-                    project__deleted_at__isnull=True,
-                )
+                .filter(project__status=ProjectStatus.ACTIVE, project__deleted_at__isnull=True)
                 .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
                 .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
             )
@@ -997,16 +1019,25 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
                 RentalWorker.objects.for_company(request.company)
                 .select_related("supplier")
                 .filter(
-                    deleted_at__isnull=True, archived_at__isnull=True,
-                    supplier__deleted_at__isnull=True, supplier__archived_at__isnull=True,
+                    deleted_at__isnull=True,
+                    archived_at__isnull=True,
+                    supplier__deleted_at__isnull=True,
+                    supplier__archived_at__isnull=True,
                 )
                 .annotate(_has_effective_assignment=Exists(assignments))
                 .filter(_has_effective_assignment=True)
             )
             if worker_id:
                 rows = rows.filter(pk=worker_id)
+                page = 1
             elif len(query) < 2:
-                return JsonResponse({"ok": True, "results": [], "limit": 25, "requiresQuery": True})
+                return JsonResponse({
+                    "ok": True,
+                    "results": [],
+                    "limit": 25,
+                    "requiresQuery": True,
+                    "meta": {"page": 1, "pageSize": page_size, "hasNext": False, "hasPrevious": False},
+                })
             if query:
                 rows = rows.filter(
                     Q(worker_number__icontains=query)
@@ -1015,34 +1046,50 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
                     | Q(supplier__code__icontains=query)
                     | Q(supplier__name__icontains=query)
                 )
-            results = [
-                {
+            payload = page_payload(
+                rows.order_by("worker_number", "full_name"),
+                lambda worker: {
                     "id": str(worker.pk),
                     "code": worker.worker_number,
                     "name": worker.full_name,
                     "supplierId": str(worker.supplier_id),
                     "supplierCode": worker.supplier.code,
                     "supplier": worker.supplier.name,
-                }
-                for worker in rows.order_by("worker_number", "full_name")[:25]
-            ]
-            return JsonResponse({"ok": True, "results": results, "limit": 25, "requiresQuery": False})
+                },
+            )
+            payload["requiresQuery"] = False
+            return JsonResponse(payload)
 
         if not worker_id:
-            return JsonResponse({"ok": True, "results": [], "limit": 25, "requiresWorker": True})
+            return JsonResponse({
+                "ok": True,
+                "results": [],
+                "limit": 25,
+                "requiresWorker": True,
+                "meta": {"page": 1, "pageSize": page_size, "hasNext": False, "hasPrevious": False},
+            })
         assignments = (
             WorkerAssignment.objects.for_company(request.company)
             .select_related("project", "worker", "worker__supplier")
             .filter(
-                worker_id=worker_id, cancelled_at__isnull=True, effective_from__lte=transaction_date,
-                worker__deleted_at__isnull=True, worker__archived_at__isnull=True,
-                worker__supplier__deleted_at__isnull=True, worker__supplier__archived_at__isnull=True,
-                project__status=ProjectStatus.ACTIVE, project__deleted_at__isnull=True,
+                worker_id=worker_id,
+                cancelled_at__isnull=True,
+                effective_from__lte=transaction_date,
+                worker__deleted_at__isnull=True,
+                worker__archived_at__isnull=True,
+                worker__supplier__deleted_at__isnull=True,
+                worker__supplier__archived_at__isnull=True,
+                project__status=ProjectStatus.ACTIVE,
+                project__deleted_at__isnull=True,
             )
             .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
             .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
             .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
         )
+        if project_id:
+            project = rental_project_for_company(company=request.company, identifier=project_id)
+            assignments = assignments.filter(project_id=project.pk)
+            page = 1
         if query:
             assignments = assignments.filter(
                 Q(project__code__icontains=query)
@@ -1050,8 +1097,9 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
                 | Q(project__client_name__icontains=query)
                 | Q(project__location__icontains=query)
             )
-        results = [
-            {
+        payload = page_payload(
+            assignments.order_by("project__code", "-effective_from", "-created_at"),
+            lambda item: {
                 "id": project_public_id(item.project),
                 "code": item.project.code,
                 "name": item.project.name,
@@ -1062,10 +1110,10 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
                 "supplierId": str(item.worker.supplier_id),
                 "supplierCode": item.worker.supplier.code,
                 "supplier": item.worker.supplier.name,
-            }
-            for item in assignments.order_by("project__code", "-effective_from", "-created_at")[:25]
-        ]
-        return JsonResponse({"ok": True, "results": results, "limit": 25, "requiresWorker": False})
+            },
+        )
+        payload["requiresWorker"] = False
+        return JsonResponse(payload)
     except Exception as exc:
         return handle_api_error(exc)
 

@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.82":
-    fail(f"VERSION must be 1.0.82, found {version!r}")
+if version != "1.0.83":
+    fail(f"VERSION must be 1.0.83, found {version!r}")
 
 contract = json.loads(text("merge/payroll-employee-residual-scale.json"))
 if contract.get("release") != version:
@@ -106,4 +106,4 @@ for needle in ("const indexById=new Map", "employeeDirectoryCacheLimit", "collec
     if needle not in merge_body:
         fail(f"bounded employee-cache merge lost protection: {needle}")
 
-print("Verified SESCCO MS 1.0.82 Internal Employee residual performance cutover: page-first enrichment, 250-record browser cache, server summaries and bounded organization profiles.")
+print("Verified SESCCO MS 1.0.83 Internal Employee residual performance cutover: page-first enrichment, 250-record browser cache, server summaries and bounded organization profiles.")
