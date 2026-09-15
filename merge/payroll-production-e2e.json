@@ -1,5 +1,5 @@
 {
-  "release": "1.0.83",
+  "release": "1.0.86",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -34,6 +34,8 @@
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-assignment-project-selector-scale.py",
+    "scripts/verify-payroll-drawer-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
@@ -310,6 +312,27 @@
       "evidence": {
         "apps/core/tests/test_management_reporting.py": [
           "test_interactive_wps_report_does_not_decrypt_payment_destinations"
+        ]
+      }
+    },
+    {
+      "id": "rental-assignment-project-selector-scale-regression",
+      "evidence": {
+        "apps/rental_manpower/tests/test_assignment_project_lookup.py": [
+          "test_lookup_requires_search_and_uses_bounded_count_free_pages",
+          "test_lookup_caps_requested_page_size_at_twenty_five"
+        ]
+      }
+    },
+    {
+      "id": "cross-workspace-drawer-selector-scale-regression",
+      "evidence": {
+        "apps/internal_payroll/tests/test_api.py": [
+          "test_drawer_lookup_endpoints_are_bounded_and_count_free",
+          "test_employee_lookup_is_thin_bounded_and_search_gated"
+        ],
+        "apps/rental_manpower/tests/test_api.py": [
+          "test_supplier_drawer_lookup_is_search_gated_and_bounded"
         ]
       }
     },

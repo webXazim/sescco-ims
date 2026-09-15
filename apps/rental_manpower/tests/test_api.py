@@ -619,3 +619,18 @@ class RentalAdjustmentLookupApiTests(TestCase):
         self.assertNotIn("payments", payload)
         self.assertNotIn("timesheetScopes", payload)
         self.assertNotIn("projectWorkflows", payload)
+
+    def test_supplier_drawer_lookup_is_search_gated_and_bounded(self):
+        for index in range(13):
+            create_supplier(actor_membership=self.membership, code=f"LOOK-S-{index:03d}", name=f"Lookup Supplier {index:03d}")
+        short = self.client.get(reverse("rental_manpower:supplier-lookup-api"), {"q": "L", "page_size": 10})
+        self.assertEqual(short.status_code, 200)
+        self.assertEqual(short.json()["results"], [])
+        response = self.client.get(reverse("rental_manpower:supplier-lookup-api"), {"q": "Lookup", "page": 1, "page_size": 10})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 10)
+        self.assertTrue(payload["meta"]["hasNext"])
+        self.assertNotIn("count", payload["meta"])
+        capped = self.client.get(reverse("rental_manpower:supplier-lookup-api"), {"q": "Lookup", "page_size": 500})
+        self.assertEqual(capped.json()["meta"]["pageSize"], 25)

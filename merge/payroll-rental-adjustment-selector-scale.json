@@ -1,5 +1,5 @@
 {
-  "release": "1.0.83",
+  "release": "1.0.86",
   "surface": "rental-adjustment-drawer",
   "worker_lookup": {
     "server_backed": true,
@@ -29,7 +29,11 @@
     "save_does_not_require_directory_cache": true,
     "search_input_inside_dropdown": true,
     "separate_find_fields": false,
-    "close_on_selection": true
+    "close_on_selection": true,
+    "persistent_feature_hints_below_lookup_fields": false,
+    "selected_project_metadata_below_field": false,
+    "lookup_messages_inside_dropdown": true,
+    "aligned_two_column_control_rows": true
   },
   "server_authority": "create_rental_adjustment transactionally revalidates company, lifecycle, active project and effective worker/project assignment"
 }

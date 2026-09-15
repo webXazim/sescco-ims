@@ -6148,23 +6148,23 @@
     drawerBody.querySelector('[data-payment-retry]')?.addEventListener('click',async()=>{try{const payload=await appApi(`/api/internal/salary-payments/rows/${encodeURIComponent(row.id)}/retry/`,{method:'POST',body:{}});await refreshPaymentRowMutation(payload.batch?.id||batch.id);closeDrawer();renderRoute();showToast('Payment retry started','A new controlled payment attempt is now Processing.');}catch(error){showToast('Retry blocked',error.message);}});
   }
 
-  function supplierPaymentScopeUpdate(select) {
-    const payable=supplierPayables(state.period).find(item=>item.settlementId===select?.value);
+  function supplierPaymentScopeUpdate(payable) {
     const box=drawerBody.querySelector('[data-supplier-payment-scope]');
     const amount=drawerBody.querySelector('[name="supplier-payment-amount"]');
-    if(!payable){if(box)box.innerHTML='<span>Select an approved settlement.</span>';return;}
-    if(box)box.innerHTML=`<div><span>Supplier</span><strong>${escapeHtml(payable.supplier)}</strong></div><div><span>Project</span><strong>${escapeHtml(payable.project)}</strong></div><div><span>Settlement</span><strong>${escapeHtml(payable.settlementNumber||'—')}</strong></div><div><span>Net</span><strong>${formatCurrency(payable.amount)}</strong></div><div><span>Paid</span><strong>${formatCurrency(payable.paid)}</strong></div><div><span>Processing</span><strong>${formatCurrency(payable.processing)}</strong></div><div class="is-emphasis"><span>Available</span><strong>${formatCurrency(payable.available)}</strong></div>`;
-    if(amount){amount.max=String(payable.available);if(!amount.value||Number(amount.value)>payable.available)amount.value=payable.available.toFixed(2);}
+    if(!payable){if(box)box.innerHTML='<span>Search and select an approved settlement with an available balance.</span>';if(amount){amount.removeAttribute('max');amount.value='';}return;}
+    const available=Number(payable.available||0),paid=Number(payable.paid||0),processing=Number(payable.processing||0),net=Number(payable.amount||0);
+    if(box)box.innerHTML=`<div><span>Supplier</span><strong>${escapeHtml(payable.supplier||payable.name||'—')}</strong></div><div><span>Project</span><strong>${escapeHtml(payable.project||payable.meta||'—')}</strong></div><div><span>Settlement</span><strong>${escapeHtml(payable.code||'—')}</strong></div><div><span>Net</span><strong>${formatCurrency(net)}</strong></div><div><span>Paid</span><strong>${formatCurrency(paid)}</strong></div><div><span>Processing</span><strong>${formatCurrency(processing)}</strong></div><div class="is-emphasis"><span>Available</span><strong>${formatCurrency(available)}</strong></div>`;
+    if(amount){amount.max=String(available);if(!amount.value||Number(amount.value)>available)amount.value=available.toFixed(2);}
   }
   function openSupplierPaymentDrawer(settlementId=null) {
-    const payables=supplierPayables(state.period).filter(item=>item.canPay&&item.available>.005);
-    if(!payables.length){showToast('No available supplier payable',`There is no approved rental settlement with an unreserved balance in ${state.period}.`);return;}
-    const selected=payables.find(item=>item.settlementId===settlementId)||payables[0];
-    state.drawerType='supplier-payment';state.drawerContext=selected.settlementId;drawerSave.hidden=false;drawerSave.textContent='Record Payment';drawerTitle.textContent='Record supplier payment';
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Settlement allocation</strong><span>Partial payment supported</span></div><div class="form-grid"><label class="form-field form-field--full"><span>Approved settlement</span><select name="supplier-payment-settlement">${payables.map(item=>`<option value="${escapeHtml(item.settlementId)}" ${item.settlementId===selected.settlementId?'selected':''}>${escapeHtml(item.supplier)} · ${escapeHtml(item.project)} · ${escapeHtml(item.settlementNumber||'Settlement')} · ${formatCurrency(item.available)} available</option>`).join('')}</select></label></div><div class="supplier-payment-scope ui-v2-payroll-rental-payment-mini-summary" data-supplier-payment-scope></div></section><section class="form-section"><div class="form-section__head"><strong>Payment details</strong><span>Bank · Cash · Cheque</span></div><div class="form-grid"><label class="form-field"><span>Amount</span><input name="supplier-payment-amount" type="number" min="0.01" step="0.01" value="${selected.available.toFixed(2)}"></label><label class="form-field"><span>Payment date</span><input name="supplier-payment-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>Method</span><select name="supplier-payment-method"><option>Bank</option><option>Cash</option><option>Cheque</option></select></label><label class="form-field"><span>Initial status</span><select name="supplier-payment-status"><option>Processing</option><option>Paid</option></select></label><label class="form-field form-field--full"><span>Transaction / cheque reference</span><input name="supplier-payment-reference" placeholder="Required when Bank/Cheque is immediately marked Paid"></label><label class="form-field form-field--full"><span>Remarks</span><textarea name="supplier-payment-note" placeholder="Optional payment note"></textarea></label></div></section><section class="source-note">${icon('info')}<span><strong>Approved settlement remains immutable.</strong>The payment reserves or consumes only its available balance. Failed/reversed outcomes are retained and retried as separate records.</span></section>`;
-    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
-    const select=drawerBody.querySelector('[name="supplier-payment-settlement"]');supplierPaymentScopeUpdate(select);select?.addEventListener('change',()=>supplierPaymentScopeUpdate(select));
+    const cached=supplierPayables(state.period).find(item=>item.settlementId===settlementId&&item.canPay&&item.available>.005)||null;
+    const initial=cached?{id:cached.settlementId,code:cached.settlementNumber,name:cached.supplier,supplier:cached.supplier,project:cached.project,meta:cached.project,paid:String(cached.paid),processing:String(cached.processing),available:String(cached.available),amount:String(cached.amount)}:null;
+    state.drawerType='supplier-payment';state.drawerContext={settlement:initial};drawerSave.hidden=false;drawerSave.textContent='Record Payment';drawerTitle.textContent='Record supplier payment';
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Settlement allocation</strong><span>Partial payment supported · server-authoritative available balance</span></div><div class="form-grid">${boundedDrawerLookupField({label:'Approved settlement',name:'supplier-payment-settlement',key:'supplier-payment-settlement',required:true,wide:true,placeholder:'Search settlement, supplier or project',emptyLabel:'Search and select a payable settlement',initialId:initial?.id||'',initialLabel:initial?`${initial.code} · ${initial.supplier} · ${initial.project}`:'',prompt:'Open to browse approved settlements with available balance.'})}</div><div class="supplier-payment-scope ui-v2-payroll-rental-payment-mini-summary" data-supplier-payment-scope></div></section><section class="form-section"><div class="form-section__head"><strong>Payment details</strong><span>Bank · Cash · Cheque</span></div><div class="form-grid"><label class="form-field"><span>Amount</span><input name="supplier-payment-amount" type="number" min="0.01" step="0.01" value="${initial?Number(initial.available).toFixed(2):''}"></label><label class="form-field"><span>Payment date</span><input name="supplier-payment-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>Method</span><select name="supplier-payment-method"><option>Bank</option><option>Cash</option><option>Cheque</option></select></label><label class="form-field"><span>Initial status</span><select name="supplier-payment-status"><option>Processing</option><option>Paid</option></select></label><label class="form-field form-field--full"><span>Transaction / cheque reference</span><input name="supplier-payment-reference" placeholder="Required when posting Bank/Cheque as Paid"></label><label class="form-field form-field--full"><span>Note</span><textarea name="supplier-payment-note" placeholder="Optional payment note"></textarea></label></div></section><section class="source-note">${icon('info')}<span><strong>Approved settlement remains immutable.</strong>The lookup excludes fully-paid/unavailable settlements and the backend recalculates paid and in-flight allocations again inside the payment transaction.</span></section>`;
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');applyPayrollRequiredFields(drawerBody,'supplier-payment');supplierPaymentScopeUpdate(initial);
+    setupBoundedDrawerLookup({key:'supplier-payment-settlement',endpoint:'/api/rental/supplier-payments/settlement-lookup/',baseParams:()=>({period:periodKeyFromLabel(state.period)}),allowEmpty:true,minChars:0,label:row=>`${row.code} · ${row.supplier||row.name} · ${row.project||row.meta}`,meta:row=>`${formatCurrency(Number(row.available||0))} available · ${row.status||'Approved'}`,emptyMessage:'No approved settlement has an available balance in this period.',autoLoad:true,onSelect:row=>{state.drawerContext={settlement:row};supplierPaymentScopeUpdate(row);}});
   }
+
   function openSupplierPaymentDetailDrawer(paymentId) {
     const found=supplierPaymentById(paymentId); if(!found) return; const {payment,supplierId}=found;
     const allocation=(payment.allocations||[])[0];
@@ -6187,13 +6187,79 @@
     return state.systemSettings.general.today || companyTodayIso;
   }
 
+  function setupRentalAssignmentProjectLookup({excludeProjectId='' }={}) {
+    const box=drawerBody.querySelector('[data-assignment-project-lookup]');
+    if(!box)return;
+    try{state.assignmentProjectLookupUiController?.abort();}catch{/* settled */}
+    const uiController=new AbortController();state.assignmentProjectLookupUiController=uiController;
+    const signal=uiController.signal;
+    const hidden=box.querySelector('input[type="hidden"][name="rental-action-project"]');
+    const trigger=box.querySelector('[data-adjustment-combobox-trigger]');
+    const value=box.querySelector('[data-adjustment-combobox-value]');
+    const menu=box.querySelector('[data-adjustment-combobox-menu]');
+    const search=box.querySelector('[data-adjustment-combobox-search]');
+    const results=box.querySelector('[data-adjustment-combobox-results]');
+    const pager=box.querySelector('[data-adjustment-combobox-pager]');
+    const pageLabel=box.querySelector('[data-adjustment-combobox-page]');
+    const prev=box.querySelector('[data-adjustment-combobox-prev]');
+    const next=box.querySelector('[data-adjustment-combobox-next]');
+    const dateInput=drawerBody.querySelector('[name="rental-action-date"]');
+    const pageSize=10;
+    let page=1;
+    let timer=null;
+    let rowsById=new Map();
+
+    const closeMenu=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+    const clearInvalid=()=>{
+      const field=box.closest('.form-field');field?.classList.remove('is-invalid');trigger.removeAttribute('aria-invalid');
+      field?.querySelectorAll('.field-required-message[data-client-required="true"]').forEach(node=>node.remove());
+    };
+    const selectRow=(row)=>{
+      hidden.value=row?.id||'';value.textContent=row?`${row.code||''}${row.code?' · ':''}${row.name||''}`:'Search and select a project';
+      trigger.classList.toggle('has-value',Boolean(row));trigger.title=row?`${row.code||''} · ${row.name||''}`:'';
+      clearInvalid();closeMenu();
+    };
+    const render=(rows,meta,message='No matching active projects.')=>{
+      rowsById=new Map((rows||[]).map(row=>[row.id,row]));
+      if(rows?.length){
+        results.innerHTML=rows.map(row=>`<button type="button" class="adjustment-combobox__option${row.id===hidden.value?' is-selected':''}" role="option" aria-selected="${row.id===hidden.value?'true':'false'}" data-assignment-project-option="${escapeHtml(row.id)}"><span><strong>${escapeHtml(`${row.code||''}${row.code?' · ':''}${row.name||''}`)}</strong>${[row.client,row.location].filter(Boolean).length?`<small>${escapeHtml([row.client,row.location].filter(Boolean).join(' · '))}</small>`:''}</span>${row.id===hidden.value?icon('check'):''}</button>`).join('');
+      }else results.innerHTML=`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;
+      page=Number(meta?.page||page||1);const hasPrevious=Boolean(meta?.hasPrevious);const hasNext=Boolean(meta?.hasNext);
+      pager.hidden=!(hasPrevious||hasNext);pageLabel.textContent=`Page ${page}`;prev.disabled=!hasPrevious;next.disabled=!hasNext;
+      results.querySelectorAll('[data-assignment-project-option]').forEach(btn=>btn.addEventListener('click',()=>{const row=rowsById.get(btn.dataset.assignmentProjectOption);if(row)selectRow(row);},{signal}));
+    };
+    const lookup=async({query=search.value,pageNumber=1}={})=>{
+      const q=String(query||'').trim();page=pageNumber;
+      if(q.length<2){render([],{page:1,hasNext:false,hasPrevious:false},'Type at least 2 characters to search.');return;}
+      const effectiveDate=dateInput?.value||rentalTodayIso();
+      try{state.assignmentProjectLookupController?.abort();}catch{/* settled */}
+      const controller=new AbortController();state.assignmentProjectLookupController=controller;
+      results.innerHTML='<div class="adjustment-combobox__empty">Searching projects…</div>';pager.hidden=true;
+      try{
+        const params=new URLSearchParams({q,effective_date:effectiveDate,page:String(pageNumber),page_size:String(pageSize)});
+        if(excludeProjectId)params.set('exclude_project_id',excludeProjectId);
+        const payload=await appApi(`/api/rental/assignments/project-lookup/?${params.toString()}`,{signal:controller.signal});
+        if(state.assignmentProjectLookupController!==controller)return;
+        render(payload.results||[],payload.meta||{},'No active projects match this search and effective date.');
+      }catch(error){
+        if(error?.name!=='AbortError'){render([],{page:1,hasNext:false,hasPrevious:false},'Project search unavailable. Try again.');showToast('Project search unavailable',error.message);}
+      }finally{if(state.assignmentProjectLookupController===controller)state.assignmentProjectLookupController=null;}
+    };
+    const openMenu=()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');queueMicrotask(()=>search.focus());};
+    trigger.addEventListener('click',()=>menu.hidden?openMenu():closeMenu(),{signal});
+    search.addEventListener('input',()=>{clearTimeout(timer);page=1;timer=setTimeout(()=>lookup({query:search.value,pageNumber:1}),260);},{signal});
+    prev.addEventListener('click',()=>lookup({pageNumber:Math.max(1,page-1)}),{signal});
+    next.addEventListener('click',()=>lookup({pageNumber:page+1}),{signal});
+    dateInput?.addEventListener('change',()=>{selectRow(null);search.value='';render([],{page:1,hasNext:false,hasPrevious:false},'Type at least 2 characters to search.');},{signal});
+    document.addEventListener('pointerdown',event=>{if(!drawerBody.isConnected){uiController.abort();return;}if(!box.contains(event.target))closeMenu();},{signal});
+    drawerBody.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();},{signal});
+  }
+
   function openRentalWorkerActionDrawer(workerId, action) {
     const worker = rentalWorkerById(workerId);
     if (!worker) return;
     const snapshot = rentalWorkerCurrentSnapshot(worker);
     const currentProject = snapshot.project;
-    const projectOptions = state.projects.filter(project => project.status === 'Active').map(project => ({ value:project.id, label:`${project.name} · ${project.code}` }));
-    const targetProjectOptions = projectOptions.filter(item => item.value !== currentProject?.id);
     const today = rentalTodayIso();
     state.drawerType = 'rental-assignment-action';
     state.drawerContext = { workerId, action };
@@ -6203,7 +6269,7 @@
     if (action === 'transfer') {
       drawerTitle.textContent = `${worker.name} · Transfer project`;
       drawerSave.textContent = 'Confirm Transfer';
-      drawerBody.innerHTML = `${currentSummary}<section class="form-section"><div class="form-section__head"><strong>New project assignment</strong><span>The current assignment closes the day before this effective date. Worker identity and supplier remain unchanged.</span></div><div class="form-grid">${namedSelectOptions('Transfer to project','rental-action-project',targetProjectOptions,targetProjectOptions[0]?.value || '')}${namedField('Effective date','rental-action-date',today,'date')}${namedField('Trade','rental-action-trade',snapshot.trade || '')}${namedSelectFieldValue('Rate type','rental-action-rate-type',['Hourly','Daily','Monthly'],snapshot.rateType || 'Hourly')}${namedField(`Rate (${currencyCode()})`,'rental-action-rate',snapshot.rateValue == null ? '' : String(snapshot.rateValue),'number')}${namedField('Reason','rental-action-reason','Project manpower transfer')}</div></section><section class="source-note">${icon('info')}<span><strong>Preview:</strong> the old project stays in assignment history and future timesheet/cost rows are attributed to the new project from the effective date.</span></section>`;
+      drawerBody.innerHTML = `${currentSummary}<section class="form-section"><div class="form-section__head"><strong>New project assignment</strong><span>The current assignment closes the day before this effective date. Worker identity and supplier remain unchanged.</span></div><div class="form-grid">${assignmentProjectLookupComboboxField({label:'Transfer to project'})}${namedField('Effective date','rental-action-date',today,'date')}${namedField('Trade','rental-action-trade',snapshot.trade || '')}${namedSelectFieldValue('Rate type','rental-action-rate-type',['Hourly','Daily','Monthly'],snapshot.rateType || 'Hourly')}${namedField(`Rate (${currencyCode()})`,'rental-action-rate',snapshot.rateValue == null ? '' : String(snapshot.rateValue),'number')}${namedField('Reason','rental-action-reason','Project manpower transfer')}</div></section><section class="source-note">${icon('info')}<span><strong>Preview:</strong> the old project stays in assignment history and future timesheet/cost rows are attributed to the new project from the effective date.</span></section>`;
     } else if (action === 'trade') {
       drawerTitle.textContent = `${worker.name} · Change trade`;
       drawerSave.textContent = 'Save Trade Change';
@@ -6219,7 +6285,7 @@
     } else if (action === 'assign') {
       drawerTitle.textContent = `${worker.name} · Assign to project`;
       drawerSave.textContent = 'Create Assignment';
-      drawerBody.innerHTML = `${currentSummary}<section class="form-section"><div class="form-section__head"><strong>Project assignment</strong><span>Select from the managed project master. This creates a new dated assignment without duplicating the worker.</span></div><div class="form-grid">${namedSelectOptions('Project','rental-action-project',projectOptions,projectOptions[0]?.value || '')}${namedField('Start date','rental-action-date',today,'date')}${namedField('Trade','rental-action-trade',snapshot.trade && !['—','Not assigned'].includes(snapshot.trade) ? snapshot.trade : '')}${namedSelectFieldValue('Rate type','rental-action-rate-type',['Hourly','Daily','Monthly'],snapshot.rateType || 'Hourly')}${namedField(`Rate (${currencyCode()})`,'rental-action-rate',snapshot.rateValue == null ? '' : String(snapshot.rateValue),'number')}${namedField('Reason','rental-action-reason','Project assignment')}</div></section>`;
+      drawerBody.innerHTML = `${currentSummary}<section class="form-section"><div class="form-section__head"><strong>Project assignment</strong><span>Select from the managed project master. This creates a new dated assignment without duplicating the worker.</span></div><div class="form-grid">${assignmentProjectLookupComboboxField({label:'Project'})}${namedField('Start date','rental-action-date',today,'date')}${namedField('Trade','rental-action-trade',snapshot.trade && !['—','Not assigned'].includes(snapshot.trade) ? snapshot.trade : '')}${namedSelectFieldValue('Rate type','rental-action-rate-type',['Hourly','Daily','Monthly'],snapshot.rateType || 'Hourly')}${namedField(`Rate (${currencyCode()})`,'rental-action-rate',snapshot.rateValue == null ? '' : String(snapshot.rateValue),'number')}${namedField('Reason','rental-action-reason','Project assignment')}</div></section>`;
     } else if (action === 'cancel') {
       drawerTitle.textContent = `${worker.name} · Cancel scheduled change`;
       drawerSave.textContent = 'Cancel Scheduled Change';
@@ -6231,10 +6297,15 @@
     } else if (action === 'advance') {
       drawerTitle.textContent = `${worker.name} · Record advance`;
       drawerSave.textContent = 'Record Advance';
-      const adjustmentProjectOptions = projectOptions;
-      drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Worker advance</strong><span>Keep advances as separate transactions; do not change the worker's permanent rate.</span></div><div class="form-grid">${namedField('Date','rental-action-date',today,'date')}${namedSelectOptions('Project','rental-action-project',adjustmentProjectOptions,currentProject?.id || adjustmentProjectOptions[0]?.value || '')}${namedField(`Amount (${currencyCode()})`,'rental-action-amount','0','number')}${namedField('Reason','rental-action-reason','Salary / worker advance')}</div></section>`;
+      drawerBody.innerHTML = `<section class="form-section"><div class="form-section__head"><strong>Worker advance</strong><span>Keep advances as separate transactions; the project lookup is restricted to this worker's effective assignment on the transaction date.</span></div><div class="form-grid">${namedField('Date','rental-action-date',today,'date')}${boundedDrawerLookupField({label:'Project',name:'rental-action-project',key:'worker-advance-project',required:true,placeholder:'Search eligible project',emptyLabel:'Search and select the effective project',initialId:currentProject?.id||'',initialLabel:currentProject?`${currentProject.name} · ${currentProject.code}`:'',prompt:'Open to browse the worker’s effective project.'})}${namedField(`Amount (${currencyCode()})`,'rental-action-amount','0','number')}${namedField('Reason','rental-action-reason','Salary / worker advance')}</div></section>`;
     } else return;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+    applyPayrollRequiredFields(drawerBody,'rental-assignment-action');
+    if(action==='transfer'||action==='assign')setupRentalAssignmentProjectLookup({excludeProjectId:action==='transfer'?(currentProject?.id||''):''});
+    if(action==='advance'){
+      const advanceLookup=setupBoundedDrawerLookup({key:'worker-advance-project',endpoint:'/api/rental/adjustments/lookup/',baseParams:()=>({mode:'projects',worker_id:worker.id,transaction_date:drawerBody.querySelector('[name="rental-action-date"]')?.value||today}),allowEmpty:true,minChars:0,label:row=>`${row.code} · ${row.name}`,meta:row=>[row.client,row.location].filter(Boolean).join(' · '),emptyMessage:'No effective active project is available for this worker on this date.',autoLoad:true});
+      drawerBody.querySelector('[name="rental-action-date"]')?.addEventListener('change',()=>{advanceLookup?._lookupClear?.();advanceLookup?._lookup?.({query:'',pageNumber:1});});
+    }
   }
 
   function rentalWorkerById(id) {
@@ -7557,7 +7628,6 @@
     const dateInput=drawerBody.querySelector('[name="adjustment-date"]');
     const projectBox=isRental?drawerBody.querySelector('[data-adjustment-combobox="project"]'):null;
     const projectInput=isRental?drawerBody.querySelector('[name="adjustment-project"]'):null;
-    const projectHint=isRental?drawerBody.querySelector('#adjustmentProjectHint'):null;
     const pageSize=10;
     const rowsByKind={person:new Map(),project:new Map()};
     const pageByKind={person:1,project:1};
@@ -7627,7 +7697,6 @@
       project.results.innerHTML='<div class="adjustment-combobox__empty">Select a worker first.</div>';
       project.pager.hidden=true;
       setDisabled('project',!personInput.value);
-      if(projectHint)projectHint.textContent=personInput.value?'Only assignment-valid active projects for the effective date are available.':'Select a worker first. Only assignment-valid active projects for the effective date are available.';
     };
     const renderResults=(kind,rows,meta,{message='No matching results.'}={})=>{
       const p=parts(kind);if(!p)return;
@@ -7707,7 +7776,6 @@
         const rows=[...(payload.results||[])];renderResults('project',rows,payload.meta||{}, {message:'No eligible active project assignment exists on this date.'});
         if(selectedId){const row=rows.find(item=>item.id===selectedId);if(row)setSelected('project',row,{close:true});}
         else if(autoSelectSingle&&rows.length===1&&!payload.meta?.hasNext)setSelected('project',rows[0],{close:true});
-        if(projectHint){const chosen=rowsByKind.project.get(projectInput.value);projectHint.textContent=chosen?`${chosen.supplier||'Managed supplier'} · ${chosen.trade||'Assigned trade'} · effective ${transactionDate()}`:'Only assignment-valid active projects for the effective date are available.';}
         return rows;
       }catch(error){
         if(error?.name!=='AbortError'){renderResults('project',[],{page:1,hasNext:false,hasPrevious:false},{message:'Project lookup unavailable. Try again.'});showToast('Project lookup unavailable',error.message);}
@@ -7899,45 +7967,38 @@
     return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1><p>${state.workspace==='rental'?'Final project timesheets, supplier settlements, supplier invoices and supplier-payment receipts.':'Final salary slips, internal timesheets and salary-payment receipts.'}</p></div><div class="page-head__actions"><button class="btn btn--primary" data-document-generate>${icon('plus')} Finalize Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong><small>Immutable final records</small></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="Finalize document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document preview'}</strong><span>${selected?`${escapeHtml(documentTypeLabel(selected.type))} · ${escapeHtml(selected.period||'')}`:'Select a document from the list'}</span></div><div class="document-preview-toolbar__actions"><button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${documentSnapshotSummary(selected)}</div>${selected?`<div class="document-info-strip"><div><span>Document</span><strong>${escapeHtml(selected.number)}</strong></div><div><span>Source</span><strong>${escapeHtml(selected.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(selected.status)}</strong></div><div><span>Integrity</span><strong>${selected.integrityOk?'Verified':'Failed'}</strong></div></div>`:''}</section></div></section>`;
   }
 
-  let documentSourceController=null;
-  let documentSourceTimer=null;
   function documentSourceTypesForWorkspace(){return state.workspace==='rental'?['rental_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']:['salary_slip','internal_timesheet','salary_payment_receipt'];}
-  function cancelDocumentSourceRequest(){if(documentSourceController){try{documentSourceController.abort();}catch{}}documentSourceController=null;}
-  async function loadDocumentSourceOptions({force=false}={}){
-    if(state.drawerType!=='document-generate')return false;
-    const typeSelect=drawerBody.querySelector('[name="document-type"]'),search=drawerBody.querySelector('[name="document-source-search"]'),sourceSelect=drawerBody.querySelector('[name="document-source"]'),hint=drawerBody.querySelector('[data-document-source-hint]');
-    if(!typeSelect||!sourceSelect)return false;
-    const type=typeSelect.value,q=(search?.value||'').trim();
-    const requiresSearch=['salary_slip','salary_payment_receipt'].includes(type);
-    if(requiresSearch&&q.length<2){cancelDocumentSourceRequest();state.drawerContext={...(state.drawerContext||{}),sources:[]};sourceSelect.innerHTML='<option value="">Type at least 2 characters to search</option>';sourceSelect.disabled=true;drawerSave.disabled=true;if(hint)hint.textContent='Search is server-backed and returns at most 25 eligible records.';return false;}
-    cancelDocumentSourceRequest();documentSourceController=new AbortController();
-    sourceSelect.disabled=true;sourceSelect.innerHTML='<option value="">Searching eligible records…</option>';drawerSave.disabled=true;if(hint)hint.textContent='Searching controlled source records…';
-    const params=new URLSearchParams({workspace:state.workspace,period:periodKeyFromLabel(state.period),type,limit:'25'});if(q)params.set('q',q);
-    try{
-      const payload=await appApi(`/api/documents/sources/?${params.toString()}`,{signal:documentSourceController.signal});
-      const sources=payload.sources||[];state.drawerContext={...(state.drawerContext||{}),sources,type};
-      if(!sources.length){sourceSelect.innerHTML='<option value="">No eligible unfinalized source found</option>';sourceSelect.disabled=true;drawerSave.disabled=true;if(hint)hint.textContent=requiresSearch?'Try a different employee/payment search.':'No controlled source matches this period/search, or it is already finalized.';return false;}
-      sourceSelect.innerHTML=`<option value="">Select a controlled source</option>${sources.map(item=>`<option value="${escapeHtml(item.sourceId)}">${escapeHtml(documentTypeLabel(item.type))} · ${escapeHtml(item.label)}${item.amount!==null&&item.amount!==undefined?` · ${escapeHtml(formatCurrency(item.amount))}`:''}</option>`).join('')}`;
-      sourceSelect.disabled=false;drawerSave.disabled=true;if(hint)hint.textContent=`${sources.length} result${sources.length===1?'':'s'} · maximum 25 per search.`;return true;
-    }catch(error){if(error?.name==='AbortError')return false;sourceSelect.innerHTML='<option value="">Source search failed</option>';sourceSelect.disabled=true;if(hint)hint.textContent=error.message;showToast('Document sources unavailable',error.message);return false;}
-    finally{documentSourceController=null;}
+  function cancelDocumentSourceRequest(){cancelBoundedDrawerLookups();}
+  let documentSourceTimer=null;
+
+  function setupDocumentSourceCombobox() {
+    if(state.drawerType!=='document-generate')return;
+    const typeSelect=drawerBody.querySelector('[name="document-type"]');if(!typeSelect)return;
+    const type=typeSelect.value;const requiresSearch=['salary_slip','salary_payment_receipt'].includes(type);
+    state.drawerContext={...(state.drawerContext||{}),type,selectedSource:null};drawerSave.disabled=true;
+    setupBoundedDrawerLookup({
+      key:'document-source',endpoint:'/api/documents/sources/',baseParams:()=>({workspace:state.workspace,period:periodKeyFromLabel(state.period),type:typeSelect.value}),
+      allowEmpty:!requiresSearch,minChars:2,idKey:'sourceId',
+      label:row=>`${documentTypeLabel(row.type)} · ${row.label}`,
+      meta:row=>`${row.status||'Eligible'}${row.amount!==null&&row.amount!==undefined?` · ${formatCurrency(Number(row.amount||0))}`:''}`,
+      emptyMessage:'No eligible unfinalized source matches this period/search.',autoLoad:!requiresSearch,
+      onSelect:row=>{state.drawerContext={...(state.drawerContext||{}),type:typeSelect.value,selectedSource:row||null};drawerSave.disabled=!row;}
+    });
   }
 
   async function openDocumentGenerateDrawer() {
-    state.drawerType='document-generate';state.drawerContext={sources:[]};drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Finalize Document';drawerTitle.textContent='Finalize business document';
+    state.drawerType='document-generate';state.drawerContext={selectedSource:null};drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Finalize Document';drawerTitle.textContent='Finalize business document';
     const types=documentSourceTypesForWorkspace();const preferred=(state.documentTab!=='all'&&types.includes(state.documentTab))?state.documentTab:types[0];
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>Choose one document type, then search a bounded set of eligible final/locked/paid source records. Full Payroll masters are never loaded into this drawer.</span></div><div class="form-grid"><label class="form-field"><span>Document type</span><select name="document-type">${types.map(type=>`<option value="${type}" ${type===preferred?'selected':''}>${escapeHtml(documentTypeLabel(type))}</option>`).join('')}</select></label><label class="form-field"><span>Working period</span><strong>${escapeHtml(state.period)}</strong></label><label class="form-field form-field--full"><span>Find source record</span><div class="table-toolbar__search">${icon('search')}<input name="document-source-search" type="search" placeholder="Search employee, payment, supplier, settlement or project" autocomplete="off"></div><span class="field-hint">Search results are company-scoped and capped at 25.</span></label><label class="form-field form-field--full"><span>Source record</span><select name="document-source" disabled><option value="">Loading eligible records…</option></select><span class="field-hint" data-document-source-hint>Only controlled unfinalized records can be selected.</span></label></div></section><section class="form-section" data-document-invoice-fields hidden><div class="form-section__head"><strong>Supplier invoice details</strong><span>The finalized invoice uses the approved SESCCO A4 company headpad and snapshots invoice identity, VAT and settlement values immutably.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`;
-    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
-    const typeSelect=drawerBody.querySelector('[name="document-type"]'),search=drawerBody.querySelector('[name="document-source-search"]'),sourceSelect=drawerBody.querySelector('[name="document-source"]'),invoiceFields=drawerBody.querySelector('[data-document-invoice-fields]');
-    const syncType=()=>{invoiceFields.hidden=typeSelect.value!=='supplier_invoice';if(search)search.value='';state.drawerContext={sources:[],type:typeSelect.value};loadDocumentSourceOptions({force:true});};
-    typeSelect.addEventListener('change',syncType);
-    search?.addEventListener('input',()=>{clearTimeout(documentSourceTimer);documentSourceTimer=setTimeout(()=>loadDocumentSourceOptions({force:true}),250);});
-    sourceSelect?.addEventListener('change',()=>{drawerSave.disabled=!sourceSelect.value;});
-    syncType();
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>Choose one document type, then search inside the Source dropdown. Results are bounded, paged and company-scoped; full Payroll masters are never loaded into this drawer.</span></div><div class="form-grid"><label class="form-field"><span>Document type</span><select name="document-type">${types.map(type=>`<option value="${type}" ${type===preferred?'selected':''}>${escapeHtml(documentTypeLabel(type))}</option>`).join('')}</select></label><label class="form-field"><span>Working period</span><strong>${escapeHtml(state.period)}</strong></label>${boundedDrawerLookupField({label:'Source record',name:'document-source',key:'document-source',required:true,wide:true,placeholder:'Search employee, payment, supplier, settlement or project',emptyLabel:'Search and select a controlled source',prompt:['salary_slip','salary_payment_receipt'].includes(preferred)?'Type at least 2 characters to search.':'Open to browse eligible source records.'})}</div></section><section class="form-section" data-document-invoice-fields hidden><div class="form-section__head"><strong>Supplier invoice details</strong><span>The finalized invoice uses the approved SESCCO A4 company headpad and snapshots invoice identity, VAT and settlement values immutably.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`;
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');applyPayrollRequiredFields(drawerBody,'document-generate');
+    const typeSelect=drawerBody.querySelector('[name="document-type"]'),invoiceFields=drawerBody.querySelector('[data-document-invoice-fields]');
+    const syncType=()=>{invoiceFields.hidden=typeSelect.value!=='supplier_invoice';const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');box?._lookupUiController?.abort();if(box){box.querySelector('input[type="hidden"]').value='';box.querySelector('[data-adjustment-combobox-value]').textContent='Search and select a controlled source';box.querySelector('[data-adjustment-combobox-trigger]').classList.remove('has-value');box.querySelector('[data-adjustment-combobox-search]').value='';box.querySelector('[data-adjustment-combobox-results]').innerHTML=`<div class="adjustment-combobox__empty">${['salary_slip','salary_payment_receipt'].includes(typeSelect.value)?'Type at least 2 characters to search.':'Open to browse eligible source records.'}</div>`;}setupDocumentSourceCombobox();};
+    typeSelect.addEventListener('change',syncType);syncType();
   }
 
+
   async function generateDocumentFromDrawer(get) {
-    const sourceId=get('document-source');const sources=state.drawerContext?.sources||[];const source=sources.find(item=>item.sourceId===sourceId);
+    const sourceId=get('document-source');const source=state.drawerContext?.selectedSource?.sourceId===sourceId?state.drawerContext.selectedSource:null;
     if(!source){showToast('Source required','Search and choose an eligible controlled record.');return false;}
     const body={document_type:source.type,source_id:source.sourceId};
     if(source.type==='supplier_invoice'){
@@ -9717,15 +9778,16 @@
       saveLabel: 'Create employee',
       html: () => {
         const draft = state.inlineInternalDraft || {};
-        const contextDepartment = state.departments.find(item=>item.id===state.drawerContext?.departmentId);
-        const branchOptions = state.branches.filter(item=>item.status==='Active').map(item=>({value:item.id,label:`${item.name} · ${item.code}`}));
-        const departmentOptions = state.departments.filter(item=>item.status==='Active').map(item=>({value:item.id,label:`${item.name} · ${item.code}`}));
+        const branchId=draft['employee-branch'] || state.drawerContext?.branchId || '';
+        const departmentId=draft['employee-department'] || state.drawerContext?.departmentId || '';
+        const contextBranch=state.branches.find(item=>item.id===branchId);
+        const contextDepartment=state.departments.find(item=>item.id===departmentId);
         return formSections([
           ['Employee identity', 'Create one permanent company-employee record. Payroll history will reference this master instead of duplicating the person each month.', [
-            namedField('Employee ID (auto if blank)', 'employee-id', draft['employee-id'] || ''), namedField('Full name', 'employee-name', draft['employee-name'] || ''), namedField('Position', 'employee-position', draft['employee-position'] || ''), namedSelectOptions('Department', 'employee-department', departmentOptions, draft['employee-department'] || contextDepartment?.id || departmentOptions[0]?.value || ''), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="department">+ New department</button><span class="field-hint">Create a reusable department master without leaving employee onboarding.</span></div>`
+            namedField('Employee ID (auto if blank)', 'employee-id', draft['employee-id'] || ''), namedField('Full name', 'employee-name', draft['employee-name'] || ''), namedField('Position', 'employee-position', draft['employee-position'] || ''), boundedDrawerLookupField({label:'Department',name:'employee-department',key:'internal-add-department',required:true,placeholder:'Search department name or code',emptyLabel:'Search and select a department',initialId:departmentId,initialLabel:contextDepartment?`${contextDepartment.name} · ${contextDepartment.code}`:''}), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="department">+ New department</button><span class="field-hint">Create a reusable department master without leaving employee onboarding.</span></div>`
           ]],
           ['Employment & organization', 'Internal employees belong to a company branch/office and department. Construction projects are not used as the employee master location.', [
-            namedField('Joining date', 'employee-joining', draft['employee-joining'] || '', 'date'), namedSelectOptions('Branch / Office', 'employee-branch', branchOptions, draft['employee-branch'] || state.drawerContext?.branchId || branchOptions[0]?.value || ''), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="branch">+ New branch / office</button><span class="field-hint">Newly created office returns selected in this employee form.</span></div>`, namedSelectFieldValue('Status', 'employee-status', ['Active','On Leave','Inactive'], draft['employee-status'] || 'Active'), namedField('National ID / Iqama', 'employee-national-id', draft['employee-national-id'] || ''), namedField('Phone', 'employee-phone', draft['employee-phone'] || ''), namedField('Address', 'employee-address', draft['employee-address'] || '')
+            namedField('Joining date', 'employee-joining', draft['employee-joining'] || '', 'date'), boundedDrawerLookupField({label:'Branch / Office',name:'employee-branch',key:'internal-add-branch',required:true,placeholder:'Search branch/office name, code or city',emptyLabel:'Search and select a branch / office',initialId:branchId,initialLabel:contextBranch?`${contextBranch.name} · ${contextBranch.code}`:''}), `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-internal-create="branch">+ New branch / office</button><span class="field-hint">Newly created office returns selected in this employee form.</span></div>`, namedSelectFieldValue('Status', 'employee-status', ['Active','On Leave','Inactive'], draft['employee-status'] || 'Active'), namedField('National ID / Iqama', 'employee-national-id', draft['employee-national-id'] || ''), namedField('Phone', 'employee-phone', draft['employee-phone'] || ''), namedField('Address', 'employee-address', draft['employee-address'] || '')
           ]]
         ]);
       }
@@ -9753,7 +9815,8 @@
       saveLabel: 'Create worker',
       html: () => {
         const draft = state.inlineRentalDraft || {};
-        const supplierOptions = state.suppliers.filter(s => s.status === 'Active').map(s => ({ value:s.id, label:`${s.name} · ${s.code}` }));
+        const supplierId=draft['rental-worker-supplier'] || '';
+        const selectedSupplier=state.suppliers.find(item=>item.id===supplierId);
         return formSections([
           ['Worker identity', 'Create the permanent worker once. Project, trade and rate are effective-dated assignment data and are managed separately.', [
             namedField('Worker ID (auto if blank)', 'rental-worker-code', draft['rental-worker-code'] || ''),
@@ -9762,7 +9825,7 @@
             namedField('Phone', 'rental-worker-phone', draft['rental-worker-phone'] || '')
           ]],
           ['Supplier relationship', 'Every rental worker belongs to one managed manpower supplier. Assignment history will reference this permanent worker master.', [
-            namedSelectOptions('Manpower supplier', 'rental-worker-supplier', supplierOptions, draft['rental-worker-supplier'] || supplierOptions[0]?.value || ''),
+            boundedDrawerLookupField({label:'Manpower supplier',name:'rental-worker-supplier',key:'rental-add-supplier',required:true,placeholder:'Search supplier name, code, contact or phone',emptyLabel:'Search and select a manpower supplier',initialId:supplierId,initialLabel:selectedSupplier?`${selectedSupplier.name} · ${selectedSupplier.code}`:''}),
             namedSelectFieldValue('Master status', 'rental-worker-status', ['Active','Inactive'], draft['rental-worker-status'] || 'Active'),
             `<div class="form-field"><label>&nbsp;</label><button class="btn btn--secondary btn--form" type="button" data-inline-create="supplier">+ New supplier</button><span class="field-hint">Create a supplier master without leaving worker onboarding.</span></div>`,
             namedTextareaFieldValue('Notes', 'rental-worker-notes', draft['rental-worker-notes'] || '', 'Optional worker-master notes')
@@ -9819,13 +9882,11 @@
           adjustmentLookupComboboxField({
             label:'Person', name:'adjustment-person', kind:'person', required:true,
             placeholder:isRental?'Search worker name, ID or supplier':'Search employee name or ID',
-            emptyLabel:`Select ${isRental?'worker':'employee'}`,
-            hint:`Search is inside this dropdown. Results are server-backed, paged in small batches, and never load the full ${isRental?'worker':'employee'} directory.`
+            emptyLabel:`Select ${isRental?'worker':'employee'}`
           }),
           ...(isRental ? [adjustmentLookupComboboxField({
             label:'Project', name:'adjustment-project', kind:'project', required:true, disabled:true,
-            placeholder:'Search eligible project', emptyLabel:'Select a worker first',
-            hint:"Select a worker first. Only assignment-valid active projects for the effective date are available."
+            placeholder:'Search eligible project', emptyLabel:'Select a worker first'
           })] : [namedSelectOptions('Project','adjustment-project',[{value:'',label:'Internal employee-level'}],'')]),
           namedSelectFieldValue('Transaction type','adjustment-type',types,context.type || (isRental?'Worker Advance':'Salary Advance'))
         ];
@@ -9890,13 +9951,12 @@
         const salary = employee ? employeeProfileData(employee).salary : null;
         const currentAmounts = Object.fromEntries((salary?.components || []).map(component => [component.id, Number(component.amount) || 0]));
         const recurring = state.salaryComponents.filter(component => component.status === 'Active' && component.recurrence === 'Recurring');
-        const employeeOptions = [...new Map(state.employees.map(item => [item.id,{ value:item.id,label:`${item.employeeId} · ${item.name}` }])).values()];
+
         const policyOptions = [{ value: '', label: 'No overtime policy' }, ...state.overtimePolicies.filter(item => item.status === 'Active').map(item => ({ value: item.id, label: item.name }))];
         const currentPolicy = salary?.otPolicyId || '';
         return `
           <section class="form-section"><div class="form-section__head"><strong>Structure assignment</strong><span>Salary changes require an effective date. Historical payroll keeps the structure that was valid in that period.</span></div><div class="form-grid">
-            <div class="form-field form-field--full"><label>Find employee</label><div class="table-toolbar__search">${icon('search')}<input id="salaryStructureEmployeeSearch" type="search" placeholder="Search employee name, ID or position" autocomplete="off"></div><span class="field-hint">Search runs against the server and returns at most 25 employee matches.</span></div>
-            ${namedSelectOptions('Employee', 'salary-structure-employee', employeeOptions, employeeId)}
+            ${boundedDrawerLookupField({label:'Employee',name:'salary-structure-employee',key:'salary-structure-employee',required:true,wide:true,placeholder:'Search employee name, ID or position',emptyLabel:'Search and select an employee',initialId:employeeId,initialLabel:employee?`${employee.employeeId} · ${employee.name}`:''})}
             ${namedField('Effective from', 'salary-structure-effective', '', 'date')}
             ${namedSelectOptions('Overtime policy', 'salary-structure-ot-policy', policyOptions, currentPolicy)}
             <div class="form-field"><label>Current effective date</label><div class="readonly-field">${escapeHtml(salary?.effective || 'Not configured')}</div></div>
@@ -9962,9 +10022,8 @@
     if (type === 'overtime-policy' && state.drawerContext) names.push('ot-policy-code');
 
     if (type === 'document-generate') {
-      const sources = state.drawerContext?.sources || [];
-      const index = Number(drawerBody?.querySelector('[name="document-source"]')?.value || 0);
-      if (sources[index]?.type === 'supplier_invoice') {
+      const selectedSource = state.drawerContext?.selectedSource || null;
+      if (selectedSource?.type === 'supplier_invoice') {
         names.push('document-invoice-number','document-issue-date','document-vat-amount');
       }
     }
@@ -10117,7 +10176,68 @@
   function namedSelectFieldValue(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option ${String(x) === String(current) ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}</select></div>`; }
   function namedSelectOptions(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option value="${escapeHtml(x.value)}" ${String(x.value) === String(current) ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('')}</select></div>`; }
   function selectWithCreate(label, options, type) { return `<div class="form-field form-field--full"><label>${label}</label><div class="inline-create"><select class="select">${options.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select><button class="btn btn--secondary" type="button" data-inline-create="${type}">+ New</button></div><span class="field-hint">Existing records appear here; creating a new one returns to this form.</span></div>`; }
-  function adjustmentLookupComboboxField({label,name,kind,placeholder,emptyLabel,hint,disabled=false,required=false}) {
+  function boundedDrawerLookupField({label,name,key,placeholder,emptyLabel,initialId='',initialLabel='',required=false,prompt='Type at least 2 characters to search.',wide=false}) {
+    return `<div class="form-field${wide?' form-field--full':''} bounded-drawer-lookup-field">
+      <label class="${required?'required':''}">${escapeHtml(label)}</label>
+      <div class="adjustment-combobox" data-bounded-drawer-lookup="${escapeHtml(key)}" data-empty-label="${escapeHtml(emptyLabel)}" data-required="${required?'true':'false'}">
+        <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(initialId||'')}">
+        <button class="adjustment-combobox__trigger${initialId?' has-value':''}" type="button" data-adjustment-combobox-trigger aria-haspopup="listbox" aria-expanded="false">
+          <span data-adjustment-combobox-value>${escapeHtml(initialLabel||emptyLabel)}</span>${icon('chevron')}
+        </button>
+        <div class="adjustment-combobox__menu" data-adjustment-combobox-menu hidden>
+          <div class="adjustment-combobox__search">${icon('search')}<input type="search" data-adjustment-combobox-search placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div>
+          <div class="adjustment-combobox__results" data-adjustment-combobox-results role="listbox"><div class="adjustment-combobox__empty">${escapeHtml(prompt)}</div></div>
+          <div class="adjustment-combobox__pager" data-adjustment-combobox-pager hidden>
+            <span data-adjustment-combobox-page>Page 1</span>
+            <div><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-prev disabled>Previous</button><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-next disabled>Next</button></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function setupBoundedDrawerLookup({key,endpoint,baseParams=()=>({}),allowEmpty=false,minChars=2,idKey='id',label=row=>`${row.code||''}${row.code?' · ':''}${row.name||''}`,meta=row=>row.meta||'',emptyMessage='No matching records.',onSelect=()=>{},autoLoad=false}) {
+    const box=drawerBody.querySelector(`[data-bounded-drawer-lookup="${CSS.escape(key)}"]`);if(!box)return null;
+    try{box._lookupRequestController?.abort();box._lookupUiController?.abort();}catch{/* settled */}
+    const uiController=new AbortController();box._lookupUiController=uiController;const signal=uiController.signal;
+    const hidden=box.querySelector('input[type="hidden"][name]'),trigger=box.querySelector('[data-adjustment-combobox-trigger]'),value=box.querySelector('[data-adjustment-combobox-value]'),menu=box.querySelector('[data-adjustment-combobox-menu]'),search=box.querySelector('[data-adjustment-combobox-search]'),results=box.querySelector('[data-adjustment-combobox-results]'),pager=box.querySelector('[data-adjustment-combobox-pager]'),pageLabel=box.querySelector('[data-adjustment-combobox-page]'),prev=box.querySelector('[data-adjustment-combobox-prev]'),next=box.querySelector('[data-adjustment-combobox-next]');
+    let page=1,timer=null,rowsById=new Map();
+    const closeMenu=()=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+    const clearInvalid=()=>{const field=box.closest('.form-field');field?.classList.remove('is-invalid');trigger.removeAttribute('aria-invalid');field?.querySelectorAll('.field-required-message[data-client-required="true"]').forEach(node=>node.remove());};
+    const setSelected=(row,{keepSearch=false}={})=>{const id=row?String(row[idKey]||''):'';hidden.value=id;value.textContent=row?label(row):String(trigger.dataset.emptyLabel||value.dataset.emptyLabel||'Select');trigger.classList.toggle('has-value',Boolean(id));trigger.title=row?label(row):'';box._selectedRow=row||null;if(!keepSearch&&search)search.value='';clearInvalid();closeMenu();onSelect(row||null,box);};
+    box._lookupClear=()=>{hidden.value='';value.textContent=box.dataset.emptyLabel||'Select';trigger.classList.remove('has-value');trigger.title='';box._selectedRow=null;if(search)search.value='';onSelect(null,box);};
+    // Preserve server-independent initial display provided by the template.
+    if(hidden.value)box._initialValueLabel=value.textContent;
+    const render=(rows,metaInfo,message=emptyMessage)=>{rowsById=new Map((rows||[]).map(row=>[String(row[idKey]),row]));results.innerHTML=rows?.length?rows.map(row=>{const id=String(row[idKey]);const selected=id===hidden.value;const secondary=meta(row);return `<button type="button" class="adjustment-combobox__option${selected?' is-selected':''}" role="option" aria-selected="${selected?'true':'false'}" data-bounded-lookup-option="${escapeHtml(id)}"><span><strong>${escapeHtml(label(row))}</strong>${secondary?`<small>${escapeHtml(secondary)}</small>`:''}</span>${selected?icon('check'):''}</button>`;}).join(''):`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;page=Number(metaInfo?.page||page||1);const hasPrevious=Boolean(metaInfo?.hasPrevious),hasNext=Boolean(metaInfo?.hasNext);pager.hidden=!(hasPrevious||hasNext);pageLabel.textContent=`Page ${page}`;prev.disabled=!hasPrevious;next.disabled=!hasNext;results.querySelectorAll('[data-bounded-lookup-option]').forEach(btn=>btn.addEventListener('click',()=>{const row=rowsById.get(btn.dataset.boundedLookupOption);if(row)setSelected(row);},{signal}));};
+    const lookup=async({query=search?.value||'',pageNumber=1}={})=>{const q=String(query||'').trim();page=pageNumber;if(!allowEmpty&&q.length<minChars){render([],{page:1,hasNext:false,hasPrevious:false},`Type at least ${minChars} characters to search.`);return false;}try{box._lookupRequestController?.abort();}catch{/* settled */}const controller=new AbortController();box._lookupRequestController=controller;results.innerHTML='<div class="adjustment-combobox__empty">Searching…</div>';pager.hidden=true;try{const params=new URLSearchParams({...baseParams(),page:String(pageNumber),page_size:'10'});if(q)params.set('q',q);const payload=await appApi(`${endpoint}?${params.toString()}`,{signal:controller.signal});if(box._lookupRequestController!==controller)return false;render(payload.results||payload.sources||[],payload.meta||{},emptyMessage);return true;}catch(error){if(error?.name!=='AbortError'){render([],{page:1,hasNext:false,hasPrevious:false},'Search unavailable. Try again.');showToast('Lookup unavailable',error.message);}return false;}finally{if(box._lookupRequestController===controller)box._lookupRequestController=null;}};
+    box._lookup=lookup;box._lookupSelect=setSelected;
+    const openMenu=()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');if((allowEmpty||String(search?.value||'').trim().length>=minChars)&&!rowsById.size)lookup({pageNumber:1});queueMicrotask(()=>search?.focus());};
+    trigger.addEventListener('click',()=>menu.hidden?openMenu():closeMenu(),{signal});search?.addEventListener('input',()=>{clearTimeout(timer);page=1;timer=setTimeout(()=>lookup({query:search.value,pageNumber:1}),260);},{signal});prev.addEventListener('click',()=>lookup({pageNumber:Math.max(1,page-1)}),{signal});next.addEventListener('click',()=>lookup({pageNumber:page+1}),{signal});document.addEventListener('pointerdown',event=>{if(!drawerBody.isConnected){uiController.abort();return;}if(!box.contains(event.target))closeMenu();},{signal});drawerBody.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();},{signal});if(autoLoad&&allowEmpty)queueMicrotask(()=>lookup({query:'',pageNumber:1}));return box;
+  }
+
+  function cancelBoundedDrawerLookups(){drawerBody?.querySelectorAll?.('[data-bounded-drawer-lookup]').forEach(box=>{try{box._lookupRequestController?.abort();box._lookupUiController?.abort();}catch{/* settled */}});}
+
+  function assignmentProjectLookupComboboxField({label='Project',name='rental-action-project',required=true}) {
+    return `<div class="form-field assignment-project-lookup-field">
+      <label class="${required?'required':''}">${escapeHtml(label)}</label>
+      <div class="adjustment-combobox" data-adjustment-combobox="assignment-project" data-assignment-project-lookup data-required="${required?'true':'false'}">
+        <input type="hidden" name="${escapeHtml(name)}" value="">
+        <button class="adjustment-combobox__trigger" type="button" data-adjustment-combobox-trigger aria-haspopup="listbox" aria-expanded="false">
+          <span data-adjustment-combobox-value>Search and select a project</span>${icon('chevron')}
+        </button>
+        <div class="adjustment-combobox__menu" data-adjustment-combobox-menu hidden>
+          <div class="adjustment-combobox__search">${icon('search')}<input type="search" data-adjustment-combobox-search placeholder="Search project name, code, client or location" autocomplete="off"></div>
+          <div class="adjustment-combobox__results" data-adjustment-combobox-results role="listbox"><div class="adjustment-combobox__empty">Type at least 2 characters to search.</div></div>
+          <div class="adjustment-combobox__pager" data-adjustment-combobox-pager hidden>
+            <span data-adjustment-combobox-page>Page 1</span>
+            <div><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-prev disabled>Previous</button><button type="button" class="btn btn--ghost btn--sm" data-adjustment-combobox-next disabled>Next</button></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function adjustmentLookupComboboxField({label,name,kind,placeholder,emptyLabel,disabled=false,required=false}) {
     const prompt=kind==='person'?'Type at least 2 characters to search.':'Select a worker first.';
     return `<div class="form-field form-field--wide adjustment-lookup-field">
       <label class="${required?'required':''}">${escapeHtml(label)}</label>
@@ -10135,7 +10255,6 @@
           </div>
         </div>
       </div>
-      <span class="field-hint" ${kind==='project'?'id="adjustmentProjectHint"':''}>${escapeHtml(hint)}</span>
     </div>`;
   }
 
@@ -10170,34 +10289,23 @@
     drawerSave.textContent = componentId ? 'Save changes' : 'Create component';
   }
 
-  function bindSalaryStructureEmployeeLookup() {
-    const input=document.getElementById('salaryStructureEmployeeSearch');
-    const select=drawerBody.querySelector('[name="salary-structure-employee"]');
-    if(!input||!select)return;
-    let timer=null;
-    const run=()=>{
-      clearTimeout(timer);
-      timer=setTimeout(async()=>{
-        const query=input.value.trim();
-        if(query.length<2)return;
-        try{state.salaryStructureEmployeeLookupController?.abort();}catch{/* settled */}
-        const controller=new AbortController();state.salaryStructureEmployeeLookupController=controller;
-        try{
-          const params=new URLSearchParams({q:query,archived:'current',page:'1',page_size:'25',sort:'employee',direction:'asc'});
-          const payload=await appApi(`/api/internal/employees/?${params.toString()}`,{signal:controller.signal});
-          if(state.salaryStructureEmployeeLookupController!==controller)return;
-          const rows=[...(payload.results||[])];directoryEntityMerge('employees',rows);
-          const selected=select.value;
-          const options=[...rows];
-          const selectedEmployee=state.employees.find(item=>item.id===selected);
-          if(selectedEmployee&&!options.some(item=>item.id===selectedEmployee.id))options.unshift(selectedEmployee);
-          select.innerHTML=options.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===selected?'selected':''}>${escapeHtml(item.employeeId)} · ${escapeHtml(item.name)}</option>`).join('');
-        }catch(error){if(error?.name!=='AbortError')showToast('Employee search unavailable',error.message);}finally{if(state.salaryStructureEmployeeLookupController===controller)state.salaryStructureEmployeeLookupController=null;}
-      },280);
-    };
-    input.addEventListener('input',run);
-    select.addEventListener('change',()=>{const employeeId=select.value;if(employeeId)openSalaryStructureDrawer(employeeId);});
+  function setupInternalEmployeeMasterLookups() {
+    setupBoundedDrawerLookup({key:'internal-add-branch',endpoint:'/api/internal/lookups/organization/',baseParams:()=>({kind:'branch'}),label:row=>`${row.name} · ${row.code}`,meta:row=>row.meta||'',emptyMessage:'No active branch / office matches this search.'});
+    setupBoundedDrawerLookup({key:'internal-add-department',endpoint:'/api/internal/lookups/organization/',baseParams:()=>({kind:'department'}),label:row=>`${row.name} · ${row.code}`,meta:row=>row.meta||'',emptyMessage:'No active department matches this search.'});
   }
+
+  function setupRentalWorkerMasterLookup() {
+    setupBoundedDrawerLookup({key:'rental-add-supplier',endpoint:'/api/rental/suppliers/lookup/',label:row=>`${row.name} · ${row.code}`,meta:row=>row.meta||'',emptyMessage:'No active manpower supplier matches this search.'});
+  }
+
+  function bindSalaryStructureEmployeeLookup() {
+    setupBoundedDrawerLookup({
+      key:'salary-structure-employee', endpoint:'/api/internal/lookups/employees/',
+      label:row=>`${row.code} · ${row.name}`,meta:row=>row.meta||'',emptyMessage:'No current employee matches this search.',
+      onSelect:row=>{if(row?.id&&row.id!==state.drawerContext){directoryEntityMerge('employees',[{id:row.id,employeeId:row.code,employeeNumber:row.code,name:row.name,position:row.meta||'',status:'Active'}]);openSalaryStructureDrawer(row.id);}}
+    });
+  }
+
 
   function openSalaryStructureDrawer(employeeId = null) {
     openQuickDrawer('salary-structure', employeeId);
@@ -10325,16 +10433,20 @@
     const employee=state.employees.find(item=>item.id===employeeId);
     if (!employee) return;
     state.drawerType='employee-organization'; state.drawerContext={employeeId};
-    const branchOptions=state.branches.filter(item=>item.status==='Active' || item.id===employee.branchId).map(item=>({value:item.id,label:`${item.name} · ${item.code}`}));
-    const departmentOptions=state.departments.filter(item=>item.status==='Active' || item.id===employee.departmentId).map(item=>({value:item.id,label:`${item.name} · ${item.code}`}));
     drawerTitle.textContent='Change organization assignment'; drawerSave.hidden=false; drawerSave.textContent='Apply Change';
     drawerBody.innerHTML=`<section class="organization-change-summary"><span class="eyebrow">Internal company movement</span><h3>${escapeHtml(employee.name)}</h3><p>Current: <strong>${escapeHtml(employee.branch||'Branch not set')}</strong> · ${escapeHtml(employee.department||'Department not set')} · ${escapeHtml(employee.position||'—')}</p></section>${formSections([
       ['New organization assignment','Use an effective date. Previous branch/department context remains in organization history.',[
-        namedSelectOptions('Branch / Office','organization-branch',branchOptions,employee.branchId||branchOptions[0]?.value||''), namedSelectOptions('Department','organization-department',departmentOptions,employee.departmentId||departmentByName(employee.department)?.id||departmentOptions[0]?.value||''), namedField('Position / designation','organization-position',employee.position||''), namedField('Effective date','organization-effective',rentalTodayIso(),'date'), namedTextareaField('Reason / notes','organization-reason','Transfer, department change, promotion, office move…')
+        boundedDrawerLookupField({label:'Branch / Office',name:'organization-branch',key:'organization-branch',required:true,placeholder:'Search branch/office name, code or city',emptyLabel:'Search and select a branch / office',initialId:employee.branchId||'',initialLabel:employee.branch?`${employee.branch}${state.branches.find(item=>item.id===employee.branchId)?.code?` · ${state.branches.find(item=>item.id===employee.branchId).code}`:''}`:''}),
+        boundedDrawerLookupField({label:'Department',name:'organization-department',key:'organization-department',required:true,placeholder:'Search department name or code',emptyLabel:'Search and select a department',initialId:employee.departmentId||'',initialLabel:employee.department?`${employee.department}${state.departments.find(item=>item.id===employee.departmentId)?.code?` · ${state.departments.find(item=>item.id===employee.departmentId).code}`:''}`:''}),
+        namedField('Position / designation','organization-position',employee.position||''), namedField('Effective date','organization-effective',rentalTodayIso(),'date'), namedTextareaField('Reason / notes','organization-reason','Transfer, department change, promotion, office move…')
       ]]
     ])}<section class="source-note">${icon('info')}<span><strong>History-safe change</strong>This updates the employee's current organization master only. Earlier payroll records and organization history are not rewritten.</span></section>`;
     drawer.classList.add('is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false');
+    applyPayrollRequiredFields(drawerBody,'employee-organization');
+    setupBoundedDrawerLookup({key:'organization-branch',endpoint:'/api/internal/lookups/organization/',baseParams:()=>({kind:'branch'}),label:row=>`${row.name} · ${row.code}`,meta:row=>row.meta||'',emptyMessage:'No active branch / office matches this search.'});
+    setupBoundedDrawerLookup({key:'organization-department',endpoint:'/api/internal/lookups/organization/',baseParams:()=>({kind:'department'}),label:row=>`${row.name} · ${row.code}`,meta:row=>row.meta||'',emptyMessage:'No active department matches this search.'});
   }
+
 
   function openEmployeeEditDrawer(employeeId) {
     const employee = state.employees.find(item => item.id === employeeId);
@@ -10528,9 +10640,12 @@
       openQuickDrawer(btn.dataset.inlineInternalCreate,{returnTo:'internal-employee',selectTarget:btn.dataset.inlineInternalCreate,resumeInline:true});
     }));
     if (type === 'advance') setupAdjustmentDrawer();
+    if (type === 'internal-employee') setupInternalEmployeeMasterLookups();
+    if (type === 'rental-worker') setupRentalWorkerMasterLookup();
   }
 
   function closeDrawer() {
+    cancelBoundedDrawerLookups();
     try{state.salaryStructureEmployeeLookupController?.abort();}catch{/* settled */}
     state.salaryStructureEmployeeLookupController=null;
     try{state.adjustmentPersonLookupController?.abort();}catch{/* settled */}
@@ -10539,6 +10654,10 @@
     state.adjustmentProjectLookupController=null;
     try{state.adjustmentLookupUiController?.abort();}catch{/* settled */}
     state.adjustmentLookupUiController=null;
+    try{state.assignmentProjectLookupController?.abort();}catch{/* settled */}
+    state.assignmentProjectLookupController=null;
+    try{state.assignmentProjectLookupUiController?.abort();}catch{/* settled */}
+    state.assignmentProjectLookupUiController=null;
     cancelDocumentSourceRequest();
     clearTimeout(documentSourceTimer);documentSourceTimer=null;
     drawer.classList.remove('is-open');
@@ -10805,10 +10924,9 @@
       if (action === 'advance') {
         const amount = Number(get('rental-action-amount') || 0);
         const projectId = get('rental-action-project');
-        const project = state.projects.find(item => item.id === projectId);
         const txDate = effective || rentalTodayIso();
         if (!(amount > 0)) { markPayrollFieldInvalid('rental-action-amount', 'Enter an amount greater than zero'); showToast('Advance amount required','Enter an amount greater than zero.'); return; }
-        if (!project) { drawerBody.querySelector('[name="rental-action-project"]')?.focus(); showToast('Project required','Worker Advance must be attributed to the effective project assignment.'); return; }
+        if (!projectId) { markPayrollFieldInvalid('rental-action-project','Select the effective project'); showToast('Project required','Worker Advance must be attributed to the effective project assignment.'); return; }
         drawerSave.disabled = true;
         try {
           const payload = await appApi('/api/rental/adjustments/', { method:'POST', body:{
@@ -10836,8 +10954,7 @@
       };
       if (action === 'transfer' || action === 'assign') {
         const projectId = get('rental-action-project');
-        const project = state.projects.find(item => item.id === projectId);
-        if (!project) { showToast('Project required','Select an active managed project.'); return; }
+        if (!projectId) { markPayrollFieldInvalid('rental-action-project','Select an active managed project'); showToast('Project required','Search and select an active managed project.'); return; }
         requestBody.project_id = projectId;
         requestBody.trade = get('rental-action-trade');
         requestBody.rate_type = get('rental-action-rate-type');
@@ -10887,13 +11004,14 @@
 
     if (state.drawerType === 'supplier-payment') {
       const settlementId=get('supplier-payment-settlement');
-      const payable=supplierPayables(state.period).find(item=>item.settlementId===settlementId);
+      const payable=state.drawerContext?.settlement?.id===settlementId?state.drawerContext.settlement:null;
       const amount=Number(get('supplier-payment-amount')||0), date=get('supplier-payment-date')||rentalTodayIso();
       const method=get('supplier-payment-method')||'Bank', status=get('supplier-payment-status')||'Processing';
       const reference=get('supplier-payment-reference'), note=get('supplier-payment-note');
       if(!payable){showToast('Settlement required','Select an approved rental settlement.');return;}
       if(!(amount>0)){markPayrollFieldInvalid('supplier-payment-amount','Enter an amount greater than zero');showToast('Amount required','Enter a supplier payment amount greater than zero.');return;}
-      if(amount>payable.available+.005){drawerBody.querySelector('[name="supplier-payment-amount"]')?.focus();showToast('Amount exceeds available payable',`${formatCurrency(payable.available)} is currently unreserved on this settlement.`);return;}
+      const clientAvailable=Number(payable.available||0);
+      if(amount>clientAvailable+.005){drawerBody.querySelector('[name="supplier-payment-amount"]')?.focus();showToast('Amount exceeds available payable',`${formatCurrency(clientAvailable)} is currently unreserved on this settlement.`);return;}
       if(status==='Paid' && method!=='Cash' && !reference){drawerBody.querySelector('[name="supplier-payment-reference"]')?.focus();showToast('Reference required',`Record the ${method==='Cheque'?'cheque':'bank transaction'} reference before posting this payment as Paid.`);return;}
       drawerSave.disabled=true;
       try {
@@ -10903,7 +11021,7 @@
         }});
         applyRentalSettlementPayload(payload);
         closeDrawer();state.paymentTab='supplier';renderRoute();
-        showToast(status==='Paid'?'Supplier payment posted':'Supplier payment recorded',`${payable.supplier} · ${formatCurrency(amount)} · ${status}.`);
+        showToast(status==='Paid'?'Supplier payment posted':'Supplier payment recorded',`${payable.supplier||payable.name||'Supplier'} · ${formatCurrency(amount)} · ${status}.`);
       } catch(error){drawerSave.disabled=false;showToast('Supplier payment could not be recorded',error.message);}
       return;
     }

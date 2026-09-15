@@ -320,3 +320,43 @@ class InternalOrganizationApiTests(TestCase):
         employee.refresh_from_db()
         self.assertIsNotNone(employee.deleted_at)
 
+
+    def test_drawer_lookup_endpoints_are_bounded_and_count_free(self):
+        for index in range(13):
+            create_branch(actor_membership=self.membership, code=f"LOOK-BR-{index:02d}", name=f"Lookup Branch {index:02d}")
+            create_department(actor_membership=self.membership, code=f"LOOK-DP-{index:02d}", name=f"Lookup Department {index:02d}")
+        short = self.client.get(reverse("internal_payroll:organization-lookup-api"), {"kind": "branch", "q": "L", "page_size": 10})
+        self.assertEqual(short.status_code, 200)
+        self.assertEqual(short.json()["results"], [])
+        first = self.client.get(reverse("internal_payroll:organization-lookup-api"), {"kind": "branch", "q": "Lookup", "page": 1, "page_size": 10})
+        self.assertEqual(first.status_code, 200)
+        payload = first.json()
+        self.assertEqual(len(payload["results"]), 10)
+        self.assertTrue(payload["meta"]["hasNext"])
+        self.assertNotIn("count", payload["meta"])
+        second = self.client.get(reverse("internal_payroll:organization-lookup-api"), {"kind": "department", "q": "Lookup", "page": 2, "page_size": 10})
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.json()["meta"]["hasPrevious"])
+
+    def test_employee_lookup_is_thin_bounded_and_search_gated(self):
+        for index in range(13):
+            create_employee(
+                actor_membership=self.membership,
+                employee_number=f"LOOK-E-{index:03d}",
+                full_name=f"Lookup Employee {index:03d}",
+                joining_date=date(2026, 1, 1),
+                branch_id=self.branch.pk,
+                department_id=self.department.pk,
+                position="Lookup Position",
+                status="Active",
+            )
+        short = self.client.get(reverse("internal_payroll:employee-lookup-api"), {"q": "L", "page_size": 10})
+        self.assertEqual(short.status_code, 200)
+        self.assertEqual(short.json()["results"], [])
+        response = self.client.get(reverse("internal_payroll:employee-lookup-api"), {"q": "Lookup", "page": 1, "page_size": 10})
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["results"]), 10)
+        self.assertTrue(payload["meta"]["hasNext"])
+        self.assertNotIn("count", payload["meta"])
+        self.assertEqual(set(payload["results"][0]), {"id", "code", "name", "meta"})

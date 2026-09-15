@@ -275,6 +275,68 @@ def _organization_master_filter(value: str) -> tuple[bool | None, bool | None]:
     raise ValidationError({"status": "Status filter must be Active, Inactive, Archived, or All."})
 
 
+def _lookup_page(request: HttpRequest, rows, *, serializer, min_query: int = 2) -> JsonResponse:
+    query = str(request.GET.get("q", "") or "").strip()
+    exact_id = str(request.GET.get("id", "") or "").strip()
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(25, max(1, int(request.GET.get("page_size", 10))))
+    except (TypeError, ValueError):
+        page, page_size = 1, 10
+    if exact_id:
+        rows = rows.filter(pk=exact_id)
+        page = 1
+    elif len(query) < min_query:
+        return JsonResponse({"ok": True, "results": [], "meta": {"page": 1, "pageSize": page_size, "hasPrevious": False, "hasNext": False, "requiresSearch": True}})
+    start = (page - 1) * page_size
+    window = list(rows[start:start + page_size + 1])
+    has_next = len(window) > page_size
+    results = [serializer(item) for item in window[:page_size]]
+    return JsonResponse({"ok": True, "results": results, "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "requiresSearch": True}})
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def organization_lookup_api(request: HttpRequest) -> JsonResponse:
+    """Bounded Branch/Department selector lookup for editing drawers."""
+    try:
+        kind = str(request.GET.get("kind", "") or "").strip().lower()
+        query = str(request.GET.get("q", "") or "").strip()
+        if kind == "branch":
+            rows = Branch.objects.for_company(request.company).filter(deleted_at__isnull=True, archived_at__isnull=True, is_active=True)
+            if query:
+                rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(location__icontains=query))
+            rows = rows.order_by("code", "name")
+            return _lookup_page(request, rows, serializer=lambda item: {"id": str(item.pk), "code": item.code, "name": item.name, "meta": item.location or item.get_kind_display()})
+        if kind == "department":
+            rows = Department.objects.for_company(request.company).filter(deleted_at__isnull=True, archived_at__isnull=True, is_active=True)
+            if query:
+                rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query))
+            rows = rows.order_by("code", "name")
+            return _lookup_page(request, rows, serializer=lambda item: {"id": str(item.pk), "code": item.code, "name": item.name, "meta": "Department"})
+        raise ValidationError({"kind": "Lookup kind must be branch or department."})
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.INTERNAL)
+def employee_lookup_api(request: HttpRequest) -> JsonResponse:
+    """Thin employee lookup for salary-structure and other bounded selectors."""
+    try:
+        query = str(request.GET.get("q", "") or "").strip()
+        rows = employees_for_company(company=request.company, query=query, archived=False, deleted=False)
+        return _lookup_page(
+            request, rows,
+            serializer=lambda item: {
+                "id": str(item.pk), "code": item.employee_number, "name": item.full_name,
+                "meta": (next((row.position for row in getattr(item, "organization_history", []) if row.effective_to is None), "") or item.get_status_display()),
+            },
+        )
+    except Exception as exc:
+        return _handle_error(exc)
+
+
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
 def branches_api(request: HttpRequest) -> JsonResponse:

@@ -1,0 +1,43 @@
+{
+  "release": "1.0.86",
+  "surface": "cross-workspace-payroll-drawer-selectors",
+  "internal": {
+    "add_employee": ["branch", "department"],
+    "change_organization": ["branch", "department"],
+    "salary_structure": ["employee"]
+  },
+  "rental": {
+    "add_worker": ["supplier"],
+    "worker_advance": ["effective_project"],
+    "supplier_payment": ["available_settlement"]
+  },
+  "shared": {
+    "finalize_document": ["source"]
+  },
+  "lookup_contract": {
+    "dropdown_page_size": 10,
+    "max_results_per_request": 25,
+    "master_minimum_query_chars": 2,
+    "exact_count_query": false,
+    "page_size_plus_one": true,
+    "abort_stale_requests": true,
+    "search_inside_dropdown": true,
+    "save_posts_selected_uuid": true,
+    "backend_revalidation_authoritative": true
+  },
+  "financial_safety": {
+    "supplier_payment_allowed_settlement_statuses": ["approved", "payment_processing", "partially_paid"],
+    "paid_allocations_server_calculated": true,
+    "processing_allocations_server_calculated": true,
+    "available_balance_positive_only": true,
+    "transactional_revalidation_on_save": true
+  },
+  "document_source": {
+    "paged": true,
+    "employee_and_payment_sources_require_search": true,
+    "safe_bounded_types_may_browse": true,
+    "separate_find_source_control_removed": true
+  },
+  "schema_change": false,
+  "payroll_formula_change": false
+}

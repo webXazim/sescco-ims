@@ -1,5 +1,5 @@
 {
-  "release": "1.0.83",
+  "release": "1.0.86",
   "purpose": "Bound Internal Salary Payments, Bank CSV and WPS at 2K employee scale without full-company payment-profile, readiness or batch-row hydration.",
   "shell": {
     "employee_profiles": "deferred-per-employee",

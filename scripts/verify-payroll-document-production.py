@@ -21,8 +21,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-if contract.get("release") != "1.0.83":
-    fail("document production contract is not frozen at 1.0.83")
+if contract.get("release") != "1.0.86":
+    fail("document production contract is not frozen at 1.0.86")
 if len(contract.get("document_types") or []) != 7:
     fail("all seven Payroll document types must remain covered")
 
@@ -59,11 +59,12 @@ for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets'
 
 api = text("apps/documents/api.py")
 for marker in (
-    'limit = min(25, max(1, int(request.GET.get("limit", 25))))',
+    'page_size = min(25, max(1, int(request.GET.get("page_size", 10))))',
+    'stop = start + page_size + 1',
+    'requires_search = document_type in {DocumentType.SALARY_SLIP, DocumentType.SALARY_PAYMENT_RECEIPT}',
     'Choose a document type before searching source records.',
     'source_id=OuterRef("pk")',
     '.annotate(_finalized=Exists(existing))',
-    'if len(query) >= 2:',
 ):
     if marker not in api:
         fail(f"bounded document source lookup marker missing: {marker}")
@@ -72,9 +73,9 @@ js = text("static/payroll/js/app.js")
 for marker in (
     "function documentSourceTypesForWorkspace()",
     "function cancelDocumentSourceRequest()",
-    "document-source-search",
-    "limit:'25'",
-    "Full Payroll masters are never loaded into this drawer.",
+    "function setupDocumentSourceCombobox()",
+    "key:'document-source',endpoint:'/api/documents/sources/'",
+    "full Payroll masters are never loaded into this drawer.",
     "approved SESCCO A4 company headpad",
 ):
     if marker not in js:

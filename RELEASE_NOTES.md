@@ -1,3 +1,37 @@
+# 1.0.86 — Cross-workspace drawer selector scale hardening
+
+- Audits Internal Company and Rental Manpower editing drawers for high-cardinality master/transaction selectors and applies one consistent search-inside-dropdown safety pattern.
+- Internal Company: Add Employee Branch/Department, Change Organization Branch/Department, and Salary Structure Employee selection now use bounded server-backed lookup instead of full browser master lists.
+- Rental Manpower: Add Worker Supplier, Worker Advance Project, and Supplier Payment Approved Settlement selection now use bounded server-backed lookup instead of full browser master/financial lists.
+- Shared Documents: Finalize Document now uses one search-inside-dropdown Source selector in both Internal and Rental workspaces; the previous separate Find Source + Source select controls are removed.
+- Growing master searches require at least two characters; document sources can browse bounded pages where safe and require two characters for employee/payment source types. All searchable dropdowns render 10 results per in-menu page, hard-cap requests at 25 rows, use page-size-plus-one rather than an exact COUNT query, and abort stale requests.
+- Supplier Payment lookup exposes only approved/payment-processing/partially-paid settlements with a remaining payable balance; paid and in-flight allocations are calculated server-side before a settlement can be selected.
+- Save actions post selected UUIDs directly and retain backend company/lifecycle/financial validation as final authority; large browser caches are no longer required to submit these drawers.
+- Keeps genuinely bounded configuration selectors such as status, transaction type, rate type, payment method and overtime policy as normal dropdowns.
+- Corrects an unrelated Assignment Project lookup initializer that had been attached to the Bank Template drawer instead of the Rental Assignment drawer.
+- Adds bounded lookup regressions and a mandatory release gate covering both workspaces. No database migration, Payroll formula, settlement formula, lifecycle-retention or document-output change.
+- Binds this release to the exact 1.0.85 predecessor archive SHA-256 `6154d3211c34c153ffbe91f45dde8fb817b4597a10d021d422a6ce38cdcd7f2b`.
+
+# 1.0.85 — Assignment project searchable-dropdown scale safety
+
+- Replaces the Assignment Lifecycle **Transfer to project** and **Assign to project** full project `<select>` controls with the same clean search-inside-dropdown interaction used by the hardened adjustment selectors.
+- Project search is server-backed, requires at least two characters, returns 10-row dropdown pages, and is hard-capped at 25 rows per request. The lookup uses page-size-plus-one detection instead of an exact COUNT query.
+- Filters lookup results to company-scoped Active projects whose project lifecycle dates allow the selected assignment effective date. Transfer search also excludes the worker's current project.
+- Changing the effective date clears any selected target project and requires a fresh date-valid lookup; stale project-search requests are aborted.
+- Removes the save-time dependency on the browser `state.projects` cache. The selected project UUID is posted directly and `assign_worker` / `transfer_worker` remain the transactional authority for project lifecycle, worker lifecycle, same-project transfer rejection, overlap and timesheet-snapshot safety.
+- Adds Django regressions and a mandatory static release gate for bounded assignment-project lookup.
+- No database migration, Payroll formula, settlement calculation, permission, lifecycle-retention or document-output change.
+- Binds this release to the exact 1.0.84 predecessor archive SHA-256 `8c324c4011874d20d71aea0d0e7029a0a750edc06824d834cda5fed35fb2b41a`.
+
+# 1.0.84 — Adjustment drawer clean alignment hotfix
+
+- Removes persistent feature-explanation helper text beneath the Adjustment Person and Project searchable dropdowns so the two-column Transaction owner controls align cleanly.
+- Removes the selected Project supplier/trade/effective-date metadata line from below the Project field; that metadata remains available inside the Project dropdown result rows.
+- Keeps search instructions, loading/empty states, pagination and validation inside the opened dropdown instead of consuming permanent drawer layout space.
+- Preserves the 1.0.83 server-backed selector safety contract: two-character person search gate, 10-row in-dropdown pages, 25-result request cap, stale-request cancellation, effective-assignment project restriction and transactional server revalidation on save.
+- Carries all 1.0.82 production Payroll document/headpad hardening and the 1.0.81 Worker Adjustments bounded-page cutover forward unchanged.
+- No database migration, Payroll formula, lifecycle, permission, document snapshot or financial-calculation change.
+
 # 1.0.83 — Adjustment searchable-dropdown UX & scale hardening
 
 - Replaces the separate Find worker / Person and Find project / Project controls in the Rental Worker Adjustment drawer with one clean searchable dropdown per field. Search lives inside the opened dropdown instead of consuming permanent drawer space.

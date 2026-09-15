@@ -1,0 +1,25 @@
+{
+  "release": "1.0.86",
+  "surface": "rental-assignment-project-selector",
+  "applies_to": ["assign", "transfer"],
+  "server_lookup": {
+    "endpoint": "/api/rental/assignments/project-lookup/",
+    "minimum_query_chars": 2,
+    "dropdown_page_size": 10,
+    "max_results_per_request": 25,
+    "exact_count_query": false,
+    "active_projects_only": true,
+    "effective_date_aware": true,
+    "company_scoped": true,
+    "transfer_excludes_current_project": true
+  },
+  "browser_safety": {
+    "search_inside_dropdown": true,
+    "full_project_master_hydration": false,
+    "abort_stale_requests": true,
+    "clear_selection_on_effective_date_change": true,
+    "save_does_not_require_project_directory_cache": true,
+    "previous_next_inside_dropdown": true
+  },
+  "server_authority": "assign_worker/transfer_worker transactionally revalidate company, worker lifecycle, target project lifecycle, effective date, timesheet safety, overlap rules and same-project transfer rejection"
+}

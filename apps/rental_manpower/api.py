@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from apps.projects.contracts import ProjectStatus
-from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
+from apps.rental_manpower.project_adapter import rental_project_for_company, rental_projects_for_company, project_public_id
 from apps.projects.services import archive_project, restore_project_archive, trash_unused_project, restore_project_trash
+from apps.projects.models import Project
 
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.db.models.functions import Coalesce
 
 from apps.accounts.api_permissions import api_workspace_required
 from apps.accounts.roles import Workspace
@@ -24,6 +26,9 @@ from apps.rental_manpower.models import (
     RentalAdjustment,
     AssignmentChangeType,
     WorkerAssignment,
+    RentalSettlementStatus,
+    SupplierPaymentStatus,
+    SupplierSettlement,
 )
 from apps.rental_manpower.selectors import (
     assignments_for_company,
@@ -112,6 +117,92 @@ def _archived_query(value: str) -> bool | None:
     if normalized in {"archived", "true", "1", "yes"}: return True
     if normalized == "all": return None
     raise ValidationError({"archived":"Archived filter must be current, archived, or all."})
+
+
+def _bounded_lookup_page(request: HttpRequest, rows, *, serializer, min_query: int = 2, allow_empty: bool = False) -> JsonResponse:
+    query = str(request.GET.get("q", "") or "").strip()
+    exact_id = str(request.GET.get("id", "") or "").strip()
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(25, max(1, int(request.GET.get("page_size", 10))))
+    except (TypeError, ValueError):
+        page, page_size = 1, 10
+    if exact_id:
+        rows = rows.filter(pk=exact_id)
+        page = 1
+    elif not allow_empty and len(query) < min_query:
+        return JsonResponse({"ok": True, "results": [], "meta": {"page": 1, "pageSize": page_size, "hasPrevious": False, "hasNext": False, "requiresSearch": True}})
+    start = (page - 1) * page_size
+    window = list(rows[start:start + page_size + 1])
+    has_next = len(window) > page_size
+    return JsonResponse({
+        "ok": True,
+        "results": [serializer(item) for item in window[:page_size]],
+        "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "requiresSearch": not allow_empty},
+    })
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.RENTAL)
+def supplier_lookup_api(request: HttpRequest) -> JsonResponse:
+    try:
+        query = str(request.GET.get("q", "") or "").strip()
+        rows = ManpowerSupplier.objects.for_company(request.company).filter(
+            status=SupplierStatus.ACTIVE, archived_at__isnull=True, deleted_at__isnull=True
+        )
+        if query:
+            rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(contact_person__icontains=query) | Q(phone__icontains=query))
+        rows = rows.order_by("code", "name")
+        return _bounded_lookup_page(
+            request, rows,
+            serializer=lambda item: {"id": str(item.pk), "code": item.code, "name": item.name, "meta": item.contact_person or item.phone or "Active supplier"},
+        )
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.RENTAL)
+def supplier_payment_settlement_lookup_api(request: HttpRequest) -> JsonResponse:
+    """Return only settlements that can accept a new supplier payment allocation."""
+    try:
+        query = str(request.GET.get("q", "") or "").strip()
+        period_raw = str(request.GET.get("period", "") or "").strip()
+        statuses = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID]
+        rows = SupplierSettlement.objects.for_company(request.company).filter(status__in=statuses)
+        if period_raw:
+            rows = rows.filter(period_start=_period_start(period_raw))
+        if query:
+            rows = rows.filter(
+                Q(settlement_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query)
+                | Q(project_code__icontains=query) | Q(project_name__icontains=query)
+            )
+        money_field = DecimalField(max_digits=14, decimal_places=2)
+        rows = rows.annotate(
+            _paid=Coalesce(Sum("payment_allocations__amount", filter=Q(payment_allocations__payment__status=SupplierPaymentStatus.PAID)), Value(Decimal("0.00")), output_field=money_field),
+            _processing=Coalesce(Sum("payment_allocations__amount", filter=Q(payment_allocations__payment__status=SupplierPaymentStatus.PROCESSING)), Value(Decimal("0.00")), output_field=money_field),
+            _allocated=Coalesce(
+                Sum(
+                    "payment_allocations__amount",
+                    filter=Q(payment_allocations__payment__status__in=[SupplierPaymentStatus.PAID, SupplierPaymentStatus.PROCESSING]),
+                ),
+                Value(Decimal("0.00")),
+                output_field=money_field,
+            ),
+        ).filter(total_net__gt=F("_allocated")).order_by("settlement_number")
+        # Availability is revalidated transactionally on save; the lookup never exposes a fully allocated settlement.
+        return _bounded_lookup_page(
+            request, rows, allow_empty=True, min_query=0,
+            serializer=lambda item: {
+                "id": str(item.pk), "code": item.settlement_number, "name": item.supplier_name,
+                "meta": item.project_name, "supplier": item.supplier_name, "project": item.project_name,
+                "paid": str(item._paid or Decimal("0.00")), "processing": str(item._processing or Decimal("0.00")),
+                "available": str(item.total_net - (item._paid or Decimal("0.00")) - (item._processing or Decimal("0.00"))),
+                "amount": str(item.total_net), "status": item.get_status_display(),
+            },
+        )
+    except Exception as exc:
+        return handle_api_error(exc)
 
 
 @require_http_methods(["GET", "POST"])
@@ -547,6 +638,75 @@ def _serialize_pool_worker(worker) -> dict[str, object]:
         payload["lastProjectId"] = None
         payload["lastProject"] = ""
     return payload
+
+
+@require_http_methods(["GET"])
+@api_workspace_required(Workspace.RENTAL)
+def assignment_project_lookup_api(request: HttpRequest) -> JsonResponse:
+    """Bounded project lookup for assignment/transfer drawers.
+
+    The drawer never hydrates the project master. Search pages use ``page_size + 1``
+    rows instead of COUNT, and the assignment services remain the transactional
+    authority for company, lifecycle, effective-date, and current-project rules.
+    """
+    try:
+        effective_date = parse_date(request.GET.get("effective_date"), "effective_date")
+        query = str(request.GET.get("q", "")).strip()
+        exclude_project_id = str(request.GET.get("exclude_project_id", "")).strip()
+        try:
+            page = max(1, int(request.GET.get("page", 1) or 1))
+            page_size = min(25, max(5, int(request.GET.get("page_size", 10) or 10)))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"page": "page and page_size must be integers."}) from exc
+
+        if len(query) < 2:
+            return JsonResponse({
+                "ok": True,
+                "results": [],
+                "limit": 25,
+                "requiresQuery": True,
+                "meta": {"page": 1, "pageSize": page_size, "hasNext": False, "hasPrevious": False},
+            })
+
+        rows = (
+            rental_projects_for_company(company=request.company, query=query, status=ProjectStatus.ACTIVE)
+            .filter(archived_at__isnull=True, deleted_at__isnull=True)
+            .filter(Q(start_date__isnull=True) | Q(start_date__lte=effective_date))
+            .filter(Q(end_date__isnull=True) | Q(end_date__gte=effective_date))
+            .order_by("code", "name")
+        )
+        if exclude_project_id:
+            try:
+                excluded = rental_project_for_company(company=request.company, identifier=exclude_project_id)
+            except Project.DoesNotExist:
+                excluded = None
+            if excluded is not None:
+                rows = rows.exclude(pk=excluded.pk)
+
+        start = (page - 1) * page_size
+        window = list(rows[start:start + page_size + 1])
+        has_next = len(window) > page_size
+        window = window[:page_size]
+        return JsonResponse({
+            "ok": True,
+            "results": [{
+                "id": project_public_id(project),
+                "code": project.code,
+                "name": project.name,
+                "client": project.client_name,
+                "location": project.location,
+            } for project in window],
+            "limit": 25,
+            "requiresQuery": False,
+            "meta": {
+                "page": page,
+                "pageSize": page_size,
+                "hasNext": has_next,
+                "hasPrevious": page > 1,
+            },
+        })
+    except Exception as exc:
+        return handle_api_error(exc)
 
 
 @require_http_methods(["GET", "POST"])

@@ -29,6 +29,8 @@ python3 scripts/verify-payroll-employee-residual-scale.py
 python3 scripts/verify-payroll-salary-setup-scale.py
 python3 scripts/verify-payroll-run-scale.py
 python3 scripts/verify-payroll-adjustment-scale.py
+python3 scripts/verify-payroll-assignment-project-selector-scale.py
+python3 scripts/verify-payroll-drawer-selector-scale.py
 python3 scripts/verify-payroll-rental-adjustment-selector-scale.py
 python3 scripts/verify-payroll-rental-adjustment-page-scale.py
 python3 scripts/verify-payroll-payment-scale.py

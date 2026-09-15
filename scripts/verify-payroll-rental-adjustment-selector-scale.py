@@ -19,8 +19,8 @@ def text(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 version = text("VERSION").strip()
-if version != "1.0.83":
-    fail(f"VERSION must be 1.0.83, found {version!r}")
+if version != "1.0.86":
+    fail(f"VERSION must be 1.0.86, found {version!r}")
 contract = json.loads(text("merge/payroll-rental-adjustment-selector-scale.json"))
 if contract.get("release") != version:
     fail("selector-scale contract release does not match VERSION")
@@ -39,6 +39,12 @@ if not project.get("effective_assignment_only") or not project.get("exact_select
     fail("project selector must remain assignment-aware and exactly revalidatable")
 if not browser.get("search_input_inside_dropdown") or browser.get("separate_find_fields") is not False:
     fail("search must remain inside the selector dropdown without duplicate Find fields")
+if browser.get("persistent_feature_hints_below_lookup_fields") is not False:
+    fail("lookup fields must not render persistent feature-explanation hints")
+if browser.get("selected_project_metadata_below_field") is not False:
+    fail("selected project metadata must stay inside the dropdown, not below the field")
+if not browser.get("lookup_messages_inside_dropdown") or not browser.get("aligned_two_column_control_rows"):
+    fail("lookup search/validation messaging must stay inside the dropdown so form rows remain aligned")
 
 api = text("apps/rental_manpower/api.py")
 urls = text("apps/rental_manpower/urls.py")
@@ -91,11 +97,10 @@ for needle in (
     "state.adjustmentPersonLookupController?.abort()",
     "state.adjustmentProjectLookupController?.abort()",
     "The selected worker has no eligible project assignment on the new transaction date.",
-    "Search is inside this dropdown.",
 ):
     if needle not in js:
         fail(f"drawer combobox safety protection missing: {needle}")
-for forbidden in ('>Find worker<', '>Find project<', 'id="adjustmentPersonSearch"'):
+for forbidden in ('>Find worker<', '>Find project<', 'id="adjustmentPersonSearch"', 'id="adjustmentProjectHint"', 'Search is inside this dropdown. Results are server-backed', 'Only assignment-valid active projects for the effective date are available.'):
     if forbidden in js:
         fail(f"duplicate external search UI returned: {forbidden}")
 for needle in (
@@ -132,4 +137,4 @@ for name in (
     if name not in tests:
         fail(f"Django regression missing: {name}")
 
-print("Verified SESCCO MS 1.0.83 rental adjustment selector UX/scale safety: embedded search, bounded dropdown paging, assignment-aware projects and no full-master hydration.")
+print("Verified SESCCO MS 1.0.86 rental adjustment selector UX/scale safety: embedded search, bounded dropdown paging, clean aligned fields, assignment-aware projects and no full-master hydration.")

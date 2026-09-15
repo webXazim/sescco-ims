@@ -1,5 +1,5 @@
 {
-  "release": "1.0.83",
+  "release": "1.0.86",
   "purpose": "Production-ready immutable Payroll documents and SESCCO supplier-invoice headpad",
   "document_types": [
     "salary_slip",
@@ -13,8 +13,14 @@
   "supplier_invoice_letterhead": {
     "asset": "apps/documents/assets/sescco-supplier-invoice-letterhead-v1.png",
     "sha256": "1a8a2f96834f942fbfda9e8334218cff24d81a5cde0e9694b7d1ef4a08e95641",
-    "pixel_size": [2480, 3508],
-    "source_page_size_pt": [595, 842],
+    "pixel_size": [
+      2480,
+      3508
+    ],
+    "source_page_size_pt": [
+      595,
+      842
+    ],
     "profile": "sescco_supplier_invoice_v1"
   },
   "source_lookup_max_results": 25,

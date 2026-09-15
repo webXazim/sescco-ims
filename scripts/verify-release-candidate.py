@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.83"
-PREDECESSOR = "1.0.82-payroll-document-production-hardening-sescco-headpad"
-PREDECESSOR_SHA256 = "24dcbdb2c440449b4b7f1352f3da955e468e3c908cade129d320f4994d473bc3"
-TITLE = "1.0.83 — Adjustment searchable-dropdown UX & scale hardening"
+VERSION = "1.0.86"
+PREDECESSOR = "1.0.85-assignment-project-searchable-dropdown-scale-safety"
+PREDECESSOR_SHA256 = "6154d3211c34c153ffbe91f45dde8fb817b4597a10d021d422a6ce38cdcd7f2b"
+TITLE = "1.0.86 — Cross-workspace drawer selector scale hardening"
 
 
 def fail(message: str) -> None:
@@ -30,20 +30,20 @@ if version != VERSION:
 contract = json.loads(text("merge/release-candidate.json"))
 if contract.get("release") != version:
     fail("release-candidate contract does not match VERSION")
-if contract.get("release_type") != "payroll-adjustment-searchable-dropdown-hardening":
-    fail("1.0.83 release type changed")
+if contract.get("release_type") != "cross-workspace-drawer-selector-scale-hardening":
+    fail("1.0.86 release type changed")
 if contract.get("previous_release") != PREDECESSOR:
-    fail("1.0.83 predecessor must remain the exact 1.0.82 Payroll document production hardening release")
+    fail("1.0.86 predecessor must remain the exact 1.0.85 assignment-project selector release")
 if contract.get("previous_archive_sha256") != PREDECESSOR_SHA256:
-    fail("1.0.83 predecessor checksum changed")
+    fail("1.0.86 predecessor checksum changed")
 if contract.get("feature_freeze") is not True:
-    fail("1.0.83 must remain feature-frozen")
+    fail("1.0.86 must remain feature-frozen")
 if contract.get("schema_change_in_release") is not False:
-    fail("1.0.83 must not introduce a schema change")
+    fail("1.0.86 must not introduce a schema change")
 if contract.get("schema_change_scope") != "none; carries forward the 1.0.69 PostgreSQL search indexes":
-    fail("1.0.83 schema-change scope changed")
+    fail("1.0.86 schema-change scope changed")
 if contract.get("payroll_formula_change_in_release") is not False:
-    fail("1.0.83 must not claim a Payroll formula change")
+    fail("1.0.86 must not claim a Payroll formula change")
 if set(contract.get("required_seed_profiles") or []) != {"functional", "realistic", "benchmark"}:
     fail("required seed profiles changed")
 
@@ -54,6 +54,8 @@ scale_gates = (
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-assignment-project-selector-scale.py",
+    "scripts/verify-payroll-drawer-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
@@ -63,9 +65,9 @@ scale_gates = (
 )
 for required in scale_gates:
     if required not in (contract.get("required_static_gates") or []):
-        fail(f"1.0.83 scale freeze is missing required gate: {required}")
+        fail(f"1.0.86 scale freeze is missing required gate: {required}")
 if "scripts/verify-payroll-document-production.py" not in (contract.get("required_static_gates") or []):
-    fail("1.0.83 document production gate is not release-required")
+    fail("1.0.86 document production gate is not release-required")
 
 required_benchmark = set(contract.get("required_benchmark_gates") or [])
 if not any("payroll_browser_scale_report" in item for item in required_benchmark):
@@ -75,16 +77,16 @@ if not any("certify-payroll-browser-scale.py" in item for item in required_bench
 
 notes = text("RELEASE_NOTES.md")
 if not notes.startswith(f"# {TITLE}\n"):
-    fail("1.0.83 release notes must be the first release entry")
+    fail("1.0.86 release notes must be the first release entry")
 readme = text("README.md")
 if f"SESCCO MS {TITLE}" not in readme:
-    fail("README does not identify the 1.0.83 packaged release")
+    fail("README does not identify the 1.0.86 packaged release")
 
 payroll_template = text("templates/payroll/app.html")
 for asset in ("payroll/css/v2/payroll-controls.css", "payroll/js/app.js"):
-    pattern = re.escape(asset) + r"' %\}\?v=1\.0\.83"
+    pattern = re.escape(asset) + r"' %\}\?v=1\.0\.86"
     if not re.search(pattern, payroll_template):
-        fail(f"Payroll asset cache buster is not frozen at 1.0.83 for {asset}")
+        fail(f"Payroll asset cache buster is not frozen at 1.0.86 for {asset}")
 
 release_contracts = (
     "merge/payroll-production-e2e.json",
@@ -98,6 +100,8 @@ release_contracts = (
     "merge/payroll-salary-setup-scale.json",
     "merge/payroll-run-scale.json",
     "merge/payroll-adjustment-scale.json",
+    "merge/payroll-assignment-project-selector-scale.json",
+    "merge/payroll-drawer-selector-scale.json",
     "merge/payroll-rental-adjustment-selector-scale.json",
     "merge/payroll-rental-adjustment-page-scale.json",
     "merge/payroll-payment-scale.json",
@@ -138,6 +142,8 @@ for needle in (
     "verify-payroll-salary-setup-scale.py",
     "verify-payroll-run-scale.py",
     "verify-payroll-adjustment-scale.py",
+    "verify-payroll-assignment-project-selector-scale.py",
+    "verify-payroll-drawer-selector-scale.py",
     "verify-payroll-rental-adjustment-selector-scale.py",
     "verify-payroll-payment-scale.py",
     "verify-payroll-shared-surfaces-scale.py",
@@ -190,4 +196,4 @@ deploy = text(contract["deployment_entrypoint"])
 if "scripts/verify-production-freeze.sh" not in deploy:
     fail("canonical production deployment no longer verifies the packaged freeze")
 
-print("Verified SESCCO MS 1.0.83 searchable adjustment dropdown UX/scale release contract.")
+print("Verified SESCCO MS 1.0.86 cross-workspace drawer selector scale-hardening release contract.")

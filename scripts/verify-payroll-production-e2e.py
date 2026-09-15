@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.83":
-    fail("certification contract release must be 1.0.83")
+if contract.get("release") != "1.0.86":
+    fail("certification contract release must be 1.0.86")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -74,6 +74,8 @@ required_verifiers = {
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
+    "scripts/verify-payroll-assignment-project-selector-scale.py",
+    "scripts/verify-payroll-drawer-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-selector-scale.py",
     "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
@@ -108,6 +110,8 @@ required_scenarios = {
     "salary-setup-scale-regression",
     "payroll-run-scale-regression",
     "payroll-adjustment-scale-regression",
+    "rental-assignment-project-selector-scale-regression",
+    "cross-workspace-drawer-selector-scale-regression",
     "rental-adjustment-selector-scale-regression",
     "rental-adjustment-page-scale-regression",
     "payroll-document-production-hardening",
