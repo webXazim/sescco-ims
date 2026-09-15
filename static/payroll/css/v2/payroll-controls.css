@@ -703,3 +703,9 @@
   .ui-v2-root[data-area="payroll"] .adjustment-combobox__menu { min-width: 100%; }
   .ui-v2-root[data-area="payroll"] .adjustment-combobox__results { max-height: 220px; }
 }
+
+/* Document finalization must honor hidden type-specific sections even when
+   generic .form-section uses display:grid in the V2 primitive layer. */
+.ui-v2-root[data-area="payroll"] [data-document-invoice-fields][hidden] {
+  display: none !important;
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from datetime import date
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.test import TestCase
@@ -13,6 +14,7 @@ from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
 from apps.documents.models import BusinessDocument, DocumentType, DocumentWorkspace
+from apps.internal_payroll.models import InternalEmployee, PayrollRun, PayrollRunLine, PayrollRunStatus
 
 
 def _hash(value):
@@ -51,6 +53,46 @@ class DocumentTenantBoundaryTests(TestCase):
     def test_document_detail_cannot_cross_company_boundary(self):
         response = self.client.get(reverse("documents:document-detail-api", args=[self.other_document.pk]))
         self.assertEqual(response.status_code, 404)
+
+
+    def test_employee_scoped_salary_slip_sources_do_not_require_global_search(self):
+        employee = InternalEmployee.objects.create(
+            company=self.company_a, employee_number="A-001", full_name="Scoped Employee", joining_date=date(2024, 1, 1)
+        )
+        other_employee = InternalEmployee.objects.create(
+            company=self.company_a, employee_number="A-002", full_name="Other Employee", joining_date=date(2024, 1, 1)
+        )
+        run = PayrollRun.objects.create(
+            company=self.company_a, period_start=date(2026, 8, 1), period_end=date(2026, 8, 31), status=PayrollRunStatus.APPROVED
+        )
+        selected_line = PayrollRunLine.objects.create(
+            company=self.company_a, run=run, employee=employee, employee_number=employee.employee_number, employee_name=employee.full_name, basic="18500.00", gross="18500.00", net="18500.00"
+        )
+        PayrollRunLine.objects.create(
+            company=self.company_a, run=run, employee=other_employee, employee_number=other_employee.employee_number, employee_name=other_employee.full_name, basic="9000.00", gross="9000.00", net="9000.00"
+        )
+
+        response = self.client.get(
+            reverse("documents:document-sources-api"),
+            {"workspace": "internal", "period": "2026-08", "type": DocumentType.SALARY_SLIP, "employee_id": str(employee.pk)},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["meta"]["requiresSearch"])
+        self.assertTrue(payload["meta"]["employeeScoped"])
+        self.assertEqual([row["sourceId"] for row in payload["sources"]], [str(selected_line.pk)])
+        self.assertEqual(payload["sources"][0]["employeeId"], str(employee.pk))
+
+    def test_employee_scope_cannot_be_applied_to_non_employee_document_type(self):
+        employee = InternalEmployee.objects.create(
+            company=self.company_a, employee_number="A-003", full_name="Scoped Employee", joining_date=date(2024, 1, 1)
+        )
+        response = self.client.get(
+            reverse("documents:document-sources-api"),
+            {"workspace": "internal", "period": "2026-08", "type": DocumentType.INTERNAL_TIMESHEET, "employee_id": str(employee.pk)},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("employee_id", response.json()["errors"])
 
     def test_internal_only_user_cannot_request_rental_document_sources(self):
         response = self.client.get(

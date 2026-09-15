@@ -7968,38 +7968,76 @@
   }
 
   function documentSourceTypesForWorkspace(){return state.workspace==='rental'?['rental_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']:['salary_slip','internal_timesheet','salary_payment_receipt'];}
+  function documentTypeKey(value=''){
+    const raw=String(value||'').trim();if(!raw)return '';
+    if(documentTypeMeta[raw])return raw;
+    const normalized=raw.toLowerCase();
+    return Object.keys(documentTypeMeta).find(type=>String(documentTypeMeta[type]?.label||'').toLowerCase()===normalized)||'';
+  }
   function cancelDocumentSourceRequest(){cancelBoundedDrawerLookups();}
   let documentSourceTimer=null;
 
+  function renderDocumentTypeSpecificFields(type) {
+    const host=drawerBody.querySelector('[data-document-type-fields]');if(!host)return;
+    host.innerHTML=type==='supplier_invoice'?`<section class="form-section" data-document-invoice-fields><div class="form-section__head"><strong>Supplier invoice details</strong><span>The finalized invoice uses the approved SESCCO A4 company headpad and snapshots invoice identity, VAT and settlement values immutably.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`:'';
+    applyPayrollRequiredFields(drawerBody,'document-generate');
+  }
+
+  function updateEmployeeDocumentSourceNote(row) {
+    const note=drawerBody.querySelector('[data-employee-document-source-note]');if(!note)return;
+    if(row){
+      const amount=row.amount!==null&&row.amount!==undefined?` · Net salary ${formatCurrency(Number(row.amount||0))}`:'';
+      note.innerHTML=`${icon('info')}<span><strong>Approved payroll selected.</strong> ${escapeHtml(row.status||'Eligible')}${escapeHtml(amount)}. Finalizing creates an immutable salary-slip snapshot; it does not recalculate Payroll.</span>`;
+    } else {
+      note.innerHTML=`${icon('info')}<span><strong>Employee-scoped finalization.</strong> Only this employee’s Approved-or-later payroll line for the selected working period can be used.</span>`;
+    }
+  }
+
   function setupDocumentSourceCombobox() {
     if(state.drawerType!=='document-generate')return;
-    const typeSelect=drawerBody.querySelector('[name="document-type"]');if(!typeSelect)return;
-    const type=typeSelect.value;const requiresSearch=['salary_slip','salary_payment_receipt'].includes(type);
-    state.drawerContext={...(state.drawerContext||{}),type,selectedSource:null};drawerSave.disabled=true;
+    const typeControl=drawerBody.querySelector('[name="document-type"]');if(!typeControl)return;
+    const context=state.drawerContext||{};const type=typeControl.value;
+    const scopedEmployeeId=context.employeeScoped&&context.employeeId?context.employeeId:'';
+    const requiresSearch=['salary_slip','salary_payment_receipt'].includes(type)&&!scopedEmployeeId;
+    state.drawerContext={...context,type,selectedSource:null};drawerSave.disabled=true;updateEmployeeDocumentSourceNote(null);
     setupBoundedDrawerLookup({
-      key:'document-source',endpoint:'/api/documents/sources/',baseParams:()=>({workspace:state.workspace,period:periodKeyFromLabel(state.period),type:typeSelect.value}),
-      allowEmpty:!requiresSearch,minChars:2,idKey:'sourceId',
-      label:row=>`${documentTypeLabel(row.type)} · ${row.label}`,
-      meta:row=>`${row.status||'Eligible'}${row.amount!==null&&row.amount!==undefined?` · ${formatCurrency(Number(row.amount||0))}`:''}`,
-      emptyMessage:'No eligible unfinalized source matches this period/search.',autoLoad:!requiresSearch,
-      onSelect:row=>{state.drawerContext={...(state.drawerContext||{}),type:typeSelect.value,selectedSource:row||null};drawerSave.disabled=!row;}
+      key:'document-source',endpoint:'/api/documents/sources/',baseParams:()=>({workspace:state.workspace,period:periodKeyFromLabel(state.drawerContext?.period||state.period),type:typeControl.value,...(scopedEmployeeId?{employee_id:scopedEmployeeId}:{})}),
+      allowEmpty:Boolean(scopedEmployeeId)||!requiresSearch,minChars:2,idKey:'sourceId',
+      label:row=>scopedEmployeeId?`${row.label} · ${row.status||'Eligible'}${row.amount!==null&&row.amount!==undefined?` · ${formatCurrency(Number(row.amount||0))}`:''}`:`${documentTypeLabel(row.type)} · ${row.label}`,
+      meta:row=>scopedEmployeeId?'Approved payroll source':`${row.status||'Eligible'}${row.amount!==null&&row.amount!==undefined?` · ${formatCurrency(Number(row.amount||0))}`:''}`,
+      emptyMessage:scopedEmployeeId?'No eligible Approved-or-later payroll line exists for this employee and period.':'No eligible unfinalized source matches this period/search.',
+      autoLoad:Boolean(scopedEmployeeId)||!requiresSearch,autoSelectSingle:Boolean(scopedEmployeeId),
+      onResults:rows=>{if(scopedEmployeeId&&!rows.length){const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');const value=box?.querySelector('[data-adjustment-combobox-value]');if(value&&!box?.querySelector('input[type="hidden"]')?.value)value.textContent='No eligible payroll source for this period';}},
+      onSelect:row=>{state.drawerContext={...(state.drawerContext||{}),type:typeControl.value,selectedSource:row||null};drawerSave.disabled=!row;updateEmployeeDocumentSourceNote(row);}
     });
   }
 
-  async function openDocumentGenerateDrawer() {
-    state.drawerType='document-generate';state.drawerContext={selectedSource:null};drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Finalize Document';drawerTitle.textContent='Finalize business document';
-    const types=documentSourceTypesForWorkspace();const preferred=(state.documentTab!=='all'&&types.includes(state.documentTab))?state.documentTab:types[0];
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>Choose one document type, then search inside the Source dropdown. Results are bounded, paged and company-scoped; full Payroll masters are never loaded into this drawer.</span></div><div class="form-grid"><label class="form-field"><span>Document type</span><select name="document-type">${types.map(type=>`<option value="${type}" ${type===preferred?'selected':''}>${escapeHtml(documentTypeLabel(type))}</option>`).join('')}</select></label><label class="form-field"><span>Working period</span><strong>${escapeHtml(state.period)}</strong></label>${boundedDrawerLookupField({label:'Source record',name:'document-source',key:'document-source',required:true,wide:true,placeholder:'Search employee, payment, supplier, settlement or project',emptyLabel:'Search and select a controlled source',prompt:['salary_slip','salary_payment_receipt'].includes(preferred)?'Type at least 2 characters to search.':'Open to browse eligible source records.'})}</div></section><section class="form-section" data-document-invoice-fields hidden><div class="form-section__head"><strong>Supplier invoice details</strong><span>The finalized invoice uses the approved SESCCO A4 company headpad and snapshots invoice identity, VAT and settlement values immutably.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label></div></section>`;
-    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');applyPayrollRequiredFields(drawerBody,'document-generate');
-    const typeSelect=drawerBody.querySelector('[name="document-type"]'),invoiceFields=drawerBody.querySelector('[data-document-invoice-fields]');
-    const syncType=()=>{invoiceFields.hidden=typeSelect.value!=='supplier_invoice';const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');box?._lookupUiController?.abort();if(box){box.querySelector('input[type="hidden"]').value='';box.querySelector('[data-adjustment-combobox-value]').textContent='Search and select a controlled source';box.querySelector('[data-adjustment-combobox-trigger]').classList.remove('has-value');box.querySelector('[data-adjustment-combobox-search]').value='';box.querySelector('[data-adjustment-combobox-results]').innerHTML=`<div class="adjustment-combobox__empty">${['salary_slip','salary_payment_receipt'].includes(typeSelect.value)?'Type at least 2 characters to search.':'Open to browse eligible source records.'}</div>`;}setupDocumentSourceCombobox();};
-    typeSelect.addEventListener('change',syncType);syncType();
+  async function openDocumentGenerateDrawer(preferredType='', context={}) {
+    const requestedType=documentTypeKey(preferredType);const employeeId=String(context?.employeeId||'');
+    const employee=employeeId?state.employees.find(item=>item.id===employeeId):null;
+    const employeeScoped=Boolean(state.workspace==='internal'&&employee&&requestedType==='salary_slip');
+    const period=context?.period||state.period;
+    const types=employeeScoped?['salary_slip']:documentSourceTypesForWorkspace();
+    const preferred=employeeScoped?'salary_slip':(requestedType&&types.includes(requestedType)?requestedType:((state.documentTab!=='all'&&types.includes(state.documentTab))?state.documentTab:types[0]));
+    state.drawerType='document-generate';state.drawerContext={selectedSource:null,employeeScoped,employeeId:employeeScoped?employeeId:'',period,type:preferred};
+    drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent=employeeScoped?'Finalize Salary Slip':'Finalize Document';drawerTitle.textContent=employeeScoped?'Finalize salary slip':'Finalize business document';
+    const typeControl=employeeScoped?`<label class="form-field"><span>Document type</span><strong>Salary Slip</strong><input type="hidden" name="document-type" value="salary_slip"></label>`:`<label class="form-field"><span>Document type</span><select name="document-type">${types.map(type=>`<option value="${type}" ${type===preferred?'selected':''}>${escapeHtml(documentTypeLabel(type))}</option>`).join('')}</select></label>`;
+    const employeeControl=employeeScoped?`<label class="form-field"><span>Employee</span><strong>${escapeHtml(employee.name)}</strong><small>EMP ${escapeHtml(employee.employeeId||'')}</small></label>`:'';
+    const sourceField=boundedDrawerLookupField({label:employeeScoped?'Approved payroll source':'Source record',name:'document-source',key:'document-source',required:true,wide:true,placeholder:employeeScoped?'Approved payroll source':'Search employee, payment, supplier, settlement or project',emptyLabel:employeeScoped?'Loading eligible approved payroll source…':'Search and select a controlled source',prompt:employeeScoped?'Loading this employee’s eligible payroll source…':(['salary_slip','salary_payment_receipt'].includes(preferred)?'Type at least 2 characters to search.':'Open to browse eligible source records.'),hideSearch:employeeScoped});
+    const sourceCopy=employeeScoped?'This drawer is locked to the selected employee and working period. It cannot browse another employee’s payroll source.':'Choose one document type, then search inside the Source dropdown. Results are bounded, paged and company-scoped; full Payroll masters are never loaded into this drawer.';
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Controlled source</strong><span>${escapeHtml(sourceCopy)}</span></div><div class="form-grid">${typeControl}${employeeControl}<label class="form-field"><span>Working period</span><strong>${escapeHtml(period)}</strong></label>${sourceField}</div>${employeeScoped?`<div class="source-note" data-employee-document-source-note>${icon('info')}<span><strong>Employee-scoped finalization.</strong> Only this employee’s Approved-or-later payroll line for the selected working period can be used.</span></div>`:''}</section><div data-document-type-fields></div>`;
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    const typeControlNode=drawerBody.querySelector('[name="document-type"]');
+    const syncType=()=>{const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');box?._lookupUiController?.abort();if(box){box.querySelector('input[type="hidden"]').value='';box.querySelector('[data-adjustment-combobox-value]').textContent='Search and select a controlled source';box.querySelector('[data-adjustment-combobox-trigger]').classList.remove('has-value');const search=box.querySelector('[data-adjustment-combobox-search]');if(search)search.value='';box.querySelector('[data-adjustment-combobox-results]').innerHTML=`<div class="adjustment-combobox__empty">${['salary_slip','salary_payment_receipt'].includes(typeControlNode.value)?'Type at least 2 characters to search.':'Open to browse eligible source records.'}</div>`;}state.drawerContext={...(state.drawerContext||{}),type:typeControlNode.value,selectedSource:null};renderDocumentTypeSpecificFields(typeControlNode.value);setupDocumentSourceCombobox();};
+    if(!employeeScoped)typeControlNode.addEventListener('change',syncType);
+    renderDocumentTypeSpecificFields(preferred);applyPayrollRequiredFields(drawerBody,'document-generate');setupDocumentSourceCombobox();
   }
 
 
   async function generateDocumentFromDrawer(get) {
-    const sourceId=get('document-source');const source=state.drawerContext?.selectedSource?.sourceId===sourceId?state.drawerContext.selectedSource:null;
-    if(!source){showToast('Source required','Search and choose an eligible controlled record.');return false;}
+    const drawerContext=state.drawerContext||{};const employeeReturnId=drawerContext.employeeScoped?drawerContext.employeeId:'';
+    const sourceId=get('document-source');const source=drawerContext.selectedSource?.sourceId===sourceId?drawerContext.selectedSource:null;
+    if(!source){showToast(drawerContext.employeeScoped?'No eligible payroll source':'Source required',drawerContext.employeeScoped?'This employee does not have an unfinalized Approved-or-later payroll line for the selected period.':'Search and choose an eligible controlled record.');return false;}
     const body={document_type:source.type,source_id:source.sourceId};
     if(source.type==='supplier_invoice'){
       const invoiceNumber=get('document-invoice-number').trim(),issueDate=get('document-issue-date'),vat=Number(get('document-vat-amount')||0),subtotal=Number(source.amount||0);
@@ -8007,7 +8045,7 @@
       body.invoice_number=invoiceNumber;body.issue_date=issueDate;body.subtotal=subtotal.toFixed(2);body.vat_amount=vat.toFixed(2);body.total=(subtotal+vat).toFixed(2);
     }
     drawerSave.disabled=true;
-    try{const payload=await appApi('/api/documents/',{method:'POST',body});const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';state.documentPage=1;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';closeDrawer();if(currentRoute()!=='documents')navigate('documents');else renderRoute();showToast('Document finalized',`${doc.number} is stored as an immutable final snapshot.`);return true;}
+    try{const payload=await appApi('/api/documents/',{method:'POST',body});const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';state.documentPage=1;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';const stayOnEmployee=Boolean(employeeReturnId&&currentRoute()==='internal-employees'&&currentEmployeeId()===employeeReturnId);closeDrawer();if(stayOnEmployee){state.employeeTab='documents';renderRoute();}else if(currentRoute()!=='documents')navigate('documents');else renderRoute();showToast('Document finalized',`${doc.number} is stored as an immutable final snapshot.`);return true;}
     catch(error){drawerSave.disabled=false;showToast('Document could not be finalized',error.message);return false;}
   }
 
@@ -10176,7 +10214,7 @@
   function namedSelectFieldValue(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option ${String(x) === String(current) ? 'selected' : ''}>${escapeHtml(x)}</option>`).join('')}</select></div>`; }
   function namedSelectOptions(label, name, options, current) { return `<div class="form-field"><label>${label}</label><select class="select" name="${name}">${options.map(x=>`<option value="${escapeHtml(x.value)}" ${String(x.value) === String(current) ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('')}</select></div>`; }
   function selectWithCreate(label, options, type) { return `<div class="form-field form-field--full"><label>${label}</label><div class="inline-create"><select class="select">${options.map(x=>`<option>${escapeHtml(x)}</option>`).join('')}</select><button class="btn btn--secondary" type="button" data-inline-create="${type}">+ New</button></div><span class="field-hint">Existing records appear here; creating a new one returns to this form.</span></div>`; }
-  function boundedDrawerLookupField({label,name,key,placeholder,emptyLabel,initialId='',initialLabel='',required=false,prompt='Type at least 2 characters to search.',wide=false}) {
+  function boundedDrawerLookupField({label,name,key,placeholder,emptyLabel,initialId='',initialLabel='',required=false,prompt='Type at least 2 characters to search.',wide=false,hideSearch=false}) {
     return `<div class="form-field${wide?' form-field--full':''} bounded-drawer-lookup-field">
       <label class="${required?'required':''}">${escapeHtml(label)}</label>
       <div class="adjustment-combobox" data-bounded-drawer-lookup="${escapeHtml(key)}" data-empty-label="${escapeHtml(emptyLabel)}" data-required="${required?'true':'false'}">
@@ -10185,7 +10223,7 @@
           <span data-adjustment-combobox-value>${escapeHtml(initialLabel||emptyLabel)}</span>${icon('chevron')}
         </button>
         <div class="adjustment-combobox__menu" data-adjustment-combobox-menu hidden>
-          <div class="adjustment-combobox__search">${icon('search')}<input type="search" data-adjustment-combobox-search placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div>
+          ${hideSearch?'':`<div class="adjustment-combobox__search">${icon('search')}<input type="search" data-adjustment-combobox-search placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div>`}
           <div class="adjustment-combobox__results" data-adjustment-combobox-results role="listbox"><div class="adjustment-combobox__empty">${escapeHtml(prompt)}</div></div>
           <div class="adjustment-combobox__pager" data-adjustment-combobox-pager hidden>
             <span data-adjustment-combobox-page>Page 1</span>
@@ -10196,7 +10234,7 @@
     </div>`;
   }
 
-  function setupBoundedDrawerLookup({key,endpoint,baseParams=()=>({}),allowEmpty=false,minChars=2,idKey='id',label=row=>`${row.code||''}${row.code?' · ':''}${row.name||''}`,meta=row=>row.meta||'',emptyMessage='No matching records.',onSelect=()=>{},autoLoad=false}) {
+  function setupBoundedDrawerLookup({key,endpoint,baseParams=()=>({}),allowEmpty=false,minChars=2,idKey='id',label=row=>`${row.code||''}${row.code?' · ':''}${row.name||''}`,meta=row=>row.meta||'',emptyMessage='No matching records.',onSelect=()=>{},onResults=()=>{},autoLoad=false,autoSelectSingle=false}) {
     const box=drawerBody.querySelector(`[data-bounded-drawer-lookup="${CSS.escape(key)}"]`);if(!box)return null;
     try{box._lookupRequestController?.abort();box._lookupUiController?.abort();}catch{/* settled */}
     const uiController=new AbortController();box._lookupUiController=uiController;const signal=uiController.signal;
@@ -10208,7 +10246,7 @@
     box._lookupClear=()=>{hidden.value='';value.textContent=box.dataset.emptyLabel||'Select';trigger.classList.remove('has-value');trigger.title='';box._selectedRow=null;if(search)search.value='';onSelect(null,box);};
     // Preserve server-independent initial display provided by the template.
     if(hidden.value)box._initialValueLabel=value.textContent;
-    const render=(rows,metaInfo,message=emptyMessage)=>{rowsById=new Map((rows||[]).map(row=>[String(row[idKey]),row]));results.innerHTML=rows?.length?rows.map(row=>{const id=String(row[idKey]);const selected=id===hidden.value;const secondary=meta(row);return `<button type="button" class="adjustment-combobox__option${selected?' is-selected':''}" role="option" aria-selected="${selected?'true':'false'}" data-bounded-lookup-option="${escapeHtml(id)}"><span><strong>${escapeHtml(label(row))}</strong>${secondary?`<small>${escapeHtml(secondary)}</small>`:''}</span>${selected?icon('check'):''}</button>`;}).join(''):`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;page=Number(metaInfo?.page||page||1);const hasPrevious=Boolean(metaInfo?.hasPrevious),hasNext=Boolean(metaInfo?.hasNext);pager.hidden=!(hasPrevious||hasNext);pageLabel.textContent=`Page ${page}`;prev.disabled=!hasPrevious;next.disabled=!hasNext;results.querySelectorAll('[data-bounded-lookup-option]').forEach(btn=>btn.addEventListener('click',()=>{const row=rowsById.get(btn.dataset.boundedLookupOption);if(row)setSelected(row);},{signal}));};
+    const render=(rows,metaInfo,message=emptyMessage)=>{rowsById=new Map((rows||[]).map(row=>[String(row[idKey]),row]));results.innerHTML=rows?.length?rows.map(row=>{const id=String(row[idKey]);const selected=id===hidden.value;const secondary=meta(row);return `<button type="button" class="adjustment-combobox__option${selected?' is-selected':''}" role="option" aria-selected="${selected?'true':'false'}" data-bounded-lookup-option="${escapeHtml(id)}"><span><strong>${escapeHtml(label(row))}</strong>${secondary?`<small>${escapeHtml(secondary)}</small>`:''}</span>${selected?icon('check'):''}</button>`;}).join(''):`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;page=Number(metaInfo?.page||page||1);const hasPrevious=Boolean(metaInfo?.hasPrevious),hasNext=Boolean(metaInfo?.hasNext);pager.hidden=!(hasPrevious||hasNext);pageLabel.textContent=`Page ${page}`;prev.disabled=!hasPrevious;next.disabled=!hasNext;results.querySelectorAll('[data-bounded-lookup-option]').forEach(btn=>btn.addEventListener('click',()=>{const row=rowsById.get(btn.dataset.boundedLookupOption);if(row)setSelected(row);},{signal}));if(autoSelectSingle&&rows?.length===1&&!hidden.value)setSelected(rows[0]);onResults(rows||[],metaInfo||{},box);};
     const lookup=async({query=search?.value||'',pageNumber=1}={})=>{const q=String(query||'').trim();page=pageNumber;if(!allowEmpty&&q.length<minChars){render([],{page:1,hasNext:false,hasPrevious:false},`Type at least ${minChars} characters to search.`);return false;}try{box._lookupRequestController?.abort();}catch{/* settled */}const controller=new AbortController();box._lookupRequestController=controller;results.innerHTML='<div class="adjustment-combobox__empty">Searching…</div>';pager.hidden=true;try{const params=new URLSearchParams({...baseParams(),page:String(pageNumber),page_size:'10'});if(q)params.set('q',q);const payload=await appApi(`${endpoint}?${params.toString()}`,{signal:controller.signal});if(box._lookupRequestController!==controller)return false;render(payload.results||payload.sources||[],payload.meta||{},emptyMessage);return true;}catch(error){if(error?.name!=='AbortError'){render([],{page:1,hasNext:false,hasPrevious:false},'Search unavailable. Try again.');showToast('Lookup unavailable',error.message);}return false;}finally{if(box._lookupRequestController===controller)box._lookupRequestController=null;}};
     box._lookup=lookup;box._lookupSelect=setSelected;
     const openMenu=()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');if((allowEmpty||String(search?.value||'').trim().length>=minChars)&&!rowsById.size)lookup({pageNumber:1});queueMicrotask(()=>search?.focus());};

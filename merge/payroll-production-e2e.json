@@ -1,5 +1,5 @@
 {
-  "release": "1.0.86",
+  "release": "1.0.87",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -50,6 +50,7 @@
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
+    "scripts/verify-payroll-document-finalization-context.py",
     "scripts/verify-payroll-document-production.py"
   ],
   "scenarios": [
@@ -364,6 +365,16 @@
         "apps/documents/tests/test_documents.py": [
           "test_packaged_sescco_supplier_letterhead_is_a4_hash_verified_and_served",
           "test_supplier_invoice_finalization_forces_versioned_sescco_headpad"
+        ]
+      }
+    },
+    {
+      "id": "contextual-document-finalization-regression",
+      "description": "Internal Employee Salary Slip finalization stays employee/period scoped and Supplier Invoice-only controls cannot leak into other document types.",
+      "evidence": {
+        "apps/documents/tests/test_merge_access.py": [
+          "test_employee_scoped_salary_slip_sources_do_not_require_global_search",
+          "test_employee_scope_cannot_be_applied_to_non_employee_document_type"
         ]
       }
     }

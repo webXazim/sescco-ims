@@ -53,6 +53,7 @@ python3 "${PROJECT_ROOT}/scripts/verify-payroll-payment-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-shared-surfaces-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-final-browser-certification.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-report-performance.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-document-finalization-context.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-document-production.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-production-e2e.py"
 

@@ -136,14 +136,24 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             raise PermissionDenied("This document type is not available in the selected workspace.")
 
         query = request.GET.get("q", "").strip()
-        requires_search = document_type in {DocumentType.SALARY_SLIP, DocumentType.SALARY_PAYMENT_RECEIPT}
+        raw_employee_id = request.GET.get("employee_id", "").strip()
+        scoped_employee_id = None
+        if raw_employee_id:
+            if workspace != "internal" or document_type not in {DocumentType.SALARY_SLIP, DocumentType.SALARY_PAYMENT_RECEIPT}:
+                raise ValidationError({"employee_id": "Employee context is only valid for internal employee documents."})
+            try:
+                scoped_employee_id = uuid.UUID(raw_employee_id)
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise ValidationError({"employee_id": "Employee context must be a valid UUID."}) from exc
+
+        requires_search = document_type in {DocumentType.SALARY_SLIP, DocumentType.SALARY_PAYMENT_RECEIPT} and scoped_employee_id is None
         try:
             page = max(1, int(request.GET.get("page", 1)))
             page_size = min(25, max(1, int(request.GET.get("page_size", 10))))
         except (TypeError, ValueError):
             page, page_size = 1, 10
         if requires_search and len(query) < 2:
-            return JsonResponse({"ok": True, "sources": [], "meta": {"page": 1, "pageSize": page_size, "hasPrevious": False, "hasNext": False, "query": query, "type": document_type, "requiresSearch": True}})
+            return JsonResponse({"ok": True, "sources": [], "meta": {"page": 1, "pageSize": page_size, "hasPrevious": False, "hasNext": False, "query": query, "type": document_type, "requiresSearch": True, "employeeScoped": False}})
 
         source_model_by_type = {
             DocumentType.SALARY_SLIP: "internal_payroll.payrollrunline",
@@ -165,20 +175,26 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         if document_type == DocumentType.SALARY_SLIP:
             from apps.internal_payroll.models import PayrollRunLine, PayrollRunStatus
             final_runs = [PayrollRunStatus.APPROVED, PayrollRunStatus.PAYMENT_PROCESSING, PayrollRunStatus.PAID, PayrollRunStatus.CLOSED]
-            rows = PayrollRunLine.objects.for_company(request.company).filter(run__period_start=period_start, run__status__in=final_runs).filter(
-                Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(position__icontains=query)
-            ).annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("run").order_by("employee_number")[start:stop]
-            serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name}", "status": row.run.get_status_display(), "amount": str(row.net)}
+            qs = PayrollRunLine.objects.for_company(request.company).filter(run__period_start=period_start, run__status__in=final_runs)
+            if scoped_employee_id is not None:
+                qs = qs.filter(employee_id=scoped_employee_id)
+            else:
+                qs = qs.filter(Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(position__icontains=query))
+            rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("run").order_by("employee_number")[start:stop]
+            serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name}", "status": row.run.get_status_display(), "amount": str(row.net), "employeeId": str(row.employee_id)}
         elif document_type == DocumentType.INTERNAL_TIMESHEET:
             from apps.internal_payroll.models import AttendancePeriod, AttendancePeriodStatus
             rows = AttendancePeriod.objects.for_company(request.company).filter(period_start=period_start, status=AttendancePeriodStatus.LOCKED).annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("pk")[start:stop]
             serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"Internal Timesheet · {period_start:%B %Y}", "status": "Locked", "amount": None}
         elif document_type == DocumentType.SALARY_PAYMENT_RECEIPT:
             from apps.internal_payroll.models import SalaryPaymentRow, SalaryPaymentRowStatus
-            rows = SalaryPaymentRow.objects.for_company(request.company).filter(batch__run__period_start=period_start, status=SalaryPaymentRowStatus.PAID).filter(
-                Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(transaction_reference__icontains=query) | Q(batch__reference__icontains=query)
-            ).annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("batch").order_by("employee_number", "paid_at")[start:stop]
-            serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name} · {row.transaction_reference or row.batch.reference}", "status": "Paid", "amount": str(row.amount)}
+            qs = SalaryPaymentRow.objects.for_company(request.company).filter(batch__run__period_start=period_start, status=SalaryPaymentRowStatus.PAID)
+            if scoped_employee_id is not None:
+                qs = qs.filter(employee_id=scoped_employee_id)
+            else:
+                qs = qs.filter(Q(employee_number__icontains=query) | Q(employee_name__icontains=query) | Q(transaction_reference__icontains=query) | Q(batch__reference__icontains=query))
+            rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("batch").order_by("employee_number", "paid_at")[start:stop]
+            serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name} · {row.transaction_reference or row.batch.reference}", "status": "Paid", "amount": str(row.amount), "employeeId": str(row.employee_id)}
         elif document_type == DocumentType.RENTAL_TIMESHEET:
             from apps.rental_manpower.models import RentalTimesheetPeriod, RentalTimesheetStatus
             qs = RentalTimesheetPeriod.objects.for_company(request.company).filter(period_start=period_start, status=RentalTimesheetStatus.LOCKED)
@@ -208,7 +224,7 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         return JsonResponse({
             "ok": True,
             "sources": sources,
-            "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "query": query, "type": document_type, "requiresSearch": requires_search},
+            "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "query": query, "type": document_type, "requiresSearch": requires_search, "employeeScoped": scoped_employee_id is not None},
         })
     except Exception as exc:
         return _errors(exc)

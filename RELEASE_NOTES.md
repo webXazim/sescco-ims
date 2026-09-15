@@ -1,3 +1,14 @@
+# 1.0.87 — Contextual document finalization hotfix
+
+- Fixes Internal Employee → Documents → Finalize Salary Slip so the drawer preserves the selected employee and working period instead of falling back to the company-wide document-source search.
+- Locks employee-profile finalization to Salary Slip, shows the selected employee and period as read-only context, loads only that employee’s Approved-or-later unfinalized payroll line, and automatically selects the single eligible source.
+- Adds backend `employee_id` scoping to bounded Salary Slip and Salary Payment Receipt source lookup while preserving company authorization, 25-row request caps, page-size-plus-one paging and already-finalized exclusion.
+- Removes Supplier Invoice controls from unrelated document drawers entirely: invoice number, issue date and VAT fields are created only when `supplier_invoice` is the selected document type.
+- Adds a defensive CSS hidden-section guard so future type-specific form sections cannot be forced visible by the shared `.form-section { display: grid; }` rule.
+- Keeps the user on the Internal Employee Documents tab after finalizing a salary slip, with the new immutable document immediately visible in that employee’s history.
+- Adds Django regressions and a mandatory release gate for employee-scoped source selection and document-type-only fields. No database migration, Payroll formula, settlement formula or immutable document snapshot semantics change.
+- Binds this hotfix to the exact 1.0.86 predecessor archive SHA-256 `e524860b5f7d47582f8676a74d40d929c97b87cff36afc17bff2d4ed36101256`.
+
 # 1.0.86 — Cross-workspace drawer selector scale hardening
 
 - Audits Internal Company and Rental Manpower editing drawers for high-cardinality master/transaction selectors and applies one consistent search-inside-dropdown safety pattern.

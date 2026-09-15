@@ -1,0 +1,33 @@
+{
+  "release": "1.0.87",
+  "purpose": "Keep Payroll document finalization type-aware and preserve employee context when Salary Slip is finalized from an Internal Employee profile.",
+  "employee_salary_slip": {
+    "document_type_locked": true,
+    "employee_locked": true,
+    "period_locked": true,
+    "global_employee_search": false,
+    "backend_employee_scope": true,
+    "auto_select_single_eligible_source": true,
+    "approved_or_later_only": true,
+    "stay_on_employee_documents_after_finalize": true
+  },
+  "type_specific_fields": {
+    "supplier_invoice_fields_created_only_for_supplier_invoice": true,
+    "salary_slip_supplier_fields": false,
+    "internal_timesheet_supplier_fields": false,
+    "salary_payment_receipt_supplier_fields": false
+  },
+  "source_lookup": {
+    "page_size": 10,
+    "max_page_size": 25,
+    "count_free": true,
+    "already_finalized_excluded": true,
+    "company_boundary_authoritative": true
+  },
+  "schema_change": false,
+  "payroll_formula_change": false,
+  "regressions": [
+    "apps.documents.tests.test_merge_access.DocumentTenantBoundaryTests.test_employee_scoped_salary_slip_sources_do_not_require_global_search",
+    "apps.documents.tests.test_merge_access.DocumentTenantBoundaryTests.test_employee_scope_cannot_be_applied_to_non_employee_document_type"
+  ]
+}
