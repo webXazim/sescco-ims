@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 
 
 def fail(message: str) -> None:
@@ -21,7 +21,7 @@ def text(rel: str) -> str:
 
 
 if text("VERSION").strip() != VERSION:
-    fail("VERSION is not 1.0.114")
+    fail("VERSION is not 1.0.115")
 contract = json.loads(text("merge/sourcing-data-exchange.json"))
 if contract.get("release") != VERSION or contract.get("schema_change") is not False:
     fail("data-exchange release contract changed")
@@ -103,4 +103,4 @@ for marker in ("verify-sourcing-data-exchange.py", "apps.sourcing.tests.test_dat
 if VERSION not in text("docs/SOURCING_DATA_EXCHANGE.md"):
     fail("operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.114 Sourcing Import / Export & Bulk Maintenance verified: dry-run rollback, all-or-nothing upsert, audited export, formula neutralization, permission isolation and reference-only bulk verification.")
+print("PASS: SESCCO MS 1.0.115 Sourcing Import / Export & Bulk Maintenance verified: dry-run rollback, all-or-nothing upsert, audited export, formula neutralization, permission isolation and reference-only bulk verification.")

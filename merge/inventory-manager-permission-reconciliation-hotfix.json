@@ -1,0 +1,19 @@
+{
+  "release": "1.0.115",
+  "scope": "inventory-manager-permission-reconciliation-hotfix",
+  "previous_release": "1.0.114-accounts-rental-supervisor-migration-hotfix",
+  "previous_archive_sha256": "2a3d174556821454f1f55013fba26247d2a0dc594f4276fe6aecdb3b7b07ecfb",
+  "migration": "apps/accounts/migrations/0014_inventory_manager_import_permission.py",
+  "profile_key": "role-inventory-manager",
+  "permission": "inventory.import.execute",
+  "new_schema_migration": false,
+  "database_schema_change": false,
+  "database_data_change": true,
+  "permission_catalog_change": false,
+  "storekeeper_authority_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_change": false,
+  "sourcing_business_rule_change": false,
+  "uses_schema_editor_database_alias": true,
+  "authoritative_runtime_gate": "python manage.py merge_access_report --fail-on-errors"
+}

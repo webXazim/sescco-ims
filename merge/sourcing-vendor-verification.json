@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "feature": "vendor-verification-history",
   "predecessor": {
     "release": "1.0.103-material-finder",

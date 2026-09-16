@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from urllib.parse import urljoin, urlparse, parse_qsl, urlencode, urlunparse
 
-RELEASE = "1.0.114"
+RELEASE = "1.0.115"
 VENDOR_CODE = "SDEMO-V00001"
 MATERIAL_QUERY = "SDEMO Material 0001"
 MANPOWER_CODE = "SDEMO-P00001"

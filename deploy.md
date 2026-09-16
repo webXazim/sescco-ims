@@ -1,4 +1,4 @@
-> Release 1.0.114 is a deployment-only Accounts migration-code hotfix over 1.0.113. It corrects the historical Rental Supervisor data migration to resolve `core.Company` instead of the nonexistent `accounts.Company`; no model/schema, Payroll/Inventory formula, permission, or Sourcing business behavior changes are introduced.
+> Release 1.0.115 is a data-reconciliation hotfix over 1.0.114. It adds the already-authoritative `inventory.import.execute` grant to active system Inventory Manager access profiles through forward migration `accounts.0014_inventory_manager_import_permission`; Storekeeper, Payroll, Inventory quantities, Sourcing rules and the permission catalog are unchanged.
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 

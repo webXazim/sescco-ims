@@ -27,4 +27,4 @@ Project, Branch/Office and Inventory Location scopes remain membership-owned and
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.108.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.114.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.115.

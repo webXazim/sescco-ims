@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 PREDECESSOR_SHA = "ab85b97e9fa9f60467799c6c158e950f0d8fb12d0ddb0a6eb493e69e4ab75e0f"
 
 
@@ -27,9 +27,9 @@ contract = json.loads(text("merge/sourcing-trade-workforce-catalog.json"))
 if contract.get("release") != VERSION:
     fail("trade/workforce contract release mismatch")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
-    fail("1.0.114 predecessor checksum changed")
+    fail("1.0.115 predecessor checksum changed")
 if contract.get("schema_change") is not True:
-    fail("1.0.114 must declare the Trade alias-search schema change")
+    fail("1.0.115 must declare the Trade alias-search schema change")
 if contract.get("operational_integration") is not False:
     fail("Workforce Catalog must remain reference-only")
 if contract.get("payroll_formula_change") is not False or contract.get("inventory_quantity_formula_change") is not False:
@@ -183,7 +183,7 @@ release_tasks = text("scripts/release-tasks.sh")
 for marker in ("verify-sourcing-trade-workforce-catalog.py", "apps.sourcing.tests.test_trade_workforce_catalog"):
     if marker not in release_tasks:
         fail(f"release task missing: {marker}")
-if "1.0.114" not in text("docs/SOURCING_TRADE_WORKFORCE_CATALOG.md"):
+if "1.0.115" not in text("docs/SOURCING_TRADE_WORKFORCE_CATALOG.md"):
     fail("Trade/Workforce operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.114 Worker Trade Master & Workforce Catalog verified: controlled aliases, company-scoped trade master, reference workforce quantity/rates, immutable revisions, view/edit separation and zero Rental Payroll/Inventory/Accounting integration.")
+print("PASS: SESCCO MS 1.0.115 Worker Trade Master & Workforce Catalog verified: controlled aliases, company-scoped trade master, reference workforce quantity/rates, immutable revisions, view/edit separation and zero Rental Payroll/Inventory/Accounting integration.")

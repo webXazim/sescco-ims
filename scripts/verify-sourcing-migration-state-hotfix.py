@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 MIGRATION = "apps/sourcing/migrations/0008_align_abstract_relation_state.py"
 EXPECTED_COMPANY_MODELS = {
     "sourcingmanpowercontact",
@@ -115,4 +115,4 @@ if "scripts/verify-sourcing-migration-state-hotfix.py" not in set(release.get("r
 if "python manage.py makemigrations --check --dry-run" not in set(release.get("required_runtime_gates") or []):
     fail("authoritative makemigrations drift check is not required")
 
-print("Verified SESCCO MS 1.0.114 Sourcing migration-state drift hotfix: 11 company relations + 2 deleted_by relations aligned without data/column/index changes.")
+print("Verified SESCCO MS 1.0.115 Sourcing migration-state drift hotfix: 11 company relations + 2 deleted_by relations aligned without data/column/index changes.")

@@ -1,3 +1,14 @@
+# 1.0.115 — Inventory Manager Permission Reconciliation Hotfix
+
+- Fixes the production `merge_access_report --fail-on-errors` stop where the built-in system `role-inventory-manager` profile was missing the already-authoritative `inventory.import.execute` grant.
+- Adds forward data migration `accounts.0014_inventory_manager_import_permission`; it targets only active system Inventory Manager profiles and adds the missing grant idempotently.
+- Preserves Storekeeper authority unchanged: Storekeeper still cannot import Inventory data.
+- Uses `schema_editor.connection.alias` for migration-time ORM operations and does not manually edit or fake migration history.
+- Makes no database schema, permission-catalog, Payroll formula, Inventory quantity, Sourcing business-rule, membership, scope or operational-integration change.
+- Keeps `python manage.py merge_access_report --fail-on-errors` as the authoritative runtime reconciliation gate; after migration, `system_profile_permission_drift` must be empty.
+- Carries forward the 1.0.112 index-name, 1.0.113 Sourcing migration-state, and 1.0.114 Accounts historical-migration fixes unchanged.
+- Binds this hotfix to exact 1.0.114 SHA-256 `2a3d174556821454f1f55013fba26247d2a0dc594f4276fe6aecdb3b7b07ecfb`.
+
 # 1.0.114 — Accounts Rental Supervisor Migration Hotfix
 
 - Fixes the production migration failure in `accounts.0008_rental_supervisor_profile` where historical migration code incorrectly requested `accounts.Company`; the authoritative Company model is `core.Company`.

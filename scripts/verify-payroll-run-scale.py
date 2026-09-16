@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.114":
-    fail(f"VERSION must be 1.0.114, found {version!r}")
+if version != "1.0.115":
+    fail(f"VERSION must be 1.0.115, found {version!r}")
 contract = json.loads(text("merge/payroll-run-scale.json"))
 if contract.get("release") != version:
     fail("Payroll Run scale contract does not match VERSION")
@@ -97,4 +97,4 @@ if "const branchOptions = ['All branches', ...Array.from(new Set(allRows.map" in
 if "test_payroll_run_page_context_pages_saved_snapshot_before_detail_prefetch" not in tests:
     fail("Django regression for bounded Payroll Run pages is missing")
 
-print("Verified SESCCO MS 1.0.114 Payroll Run scale cutover: bounded current/previous rows, server search/filter/pagination, exact totals and global review authority.")
+print("Verified SESCCO MS 1.0.115 Payroll Run scale cutover: bounded current/previous rows, server search/filter/pagination, exact totals and global review authority.")

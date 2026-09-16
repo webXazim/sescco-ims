@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "purpose": "Retire all legacy runtime role authority so SESCCO application access is decided only by CompanyMembership + AccessProfile + EffectiveAccess before User Management CRUD is exposed.",
   "authority": {
     "identity_model": "accounts.User",

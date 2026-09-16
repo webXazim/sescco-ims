@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 MIGRATION = "apps/accounts/migrations/0008_rental_supervisor_profile.py"
 CONTRACT = "merge/accounts-rental-supervisor-migration-hotfix.json"
 PREDECESSOR_SHA = "aa870514601cb796a1f58bd569acd0c527082c411494b07dbcba830ba25a6a41"
@@ -83,14 +83,8 @@ if (ROOT / "apps/accounts/migrations/0014_rental_supervisor_migration_hotfix.py"
 release = json.loads(read("merge/release-candidate.json"))
 if release.get("release") != VERSION:
     fail("release candidate does not match VERSION")
-if release.get("release_type") != "accounts-rental-supervisor-migration-hotfix":
-    fail("release candidate type mismatch")
-if release.get("previous_archive_sha256") != PREDECESSOR_SHA:
-    fail("release candidate predecessor checksum mismatch")
-if release.get("schema_change_in_release") is not False:
-    fail("hotfix must not claim a new schema migration")
 if "scripts/verify-accounts-rental-supervisor-migration-hotfix.py" not in set(release.get("required_static_gates") or []):
-    fail("release candidate does not require the historical migration verifier")
+    fail("release candidate does not retain the historical migration verifier")
 for runtime_gate in (
     "python manage.py check --deploy --fail-level ERROR",
     "python manage.py makemigrations --check --dry-run",
@@ -99,12 +93,9 @@ for runtime_gate in (
     if runtime_gate not in set(release.get("required_runtime_gates") or []):
         fail(f"required runtime gate missing: {runtime_gate}")
 
-notes = read("RELEASE_NOTES.md")
-if not notes.startswith("# 1.0.114 — Accounts Rental Supervisor Migration Hotfix\n"):
-    fail("release notes do not lead with the 1.0.114 hotfix")
-if "SESCCO MS 1.0.114 — Accounts Rental Supervisor Migration Hotfix" not in read("README.md"):
-    fail("README does not identify the 1.0.114 packaged release")
+if "1.0.115" not in read("docs/ACCOUNTS_RENTAL_SUPERVISOR_MIGRATION_HOTFIX.md"):
+    fail("historical hotfix guide is not carried forward to 1.0.115")
 if "do not fake it" not in read("docs/ACCOUNTS_RENTAL_SUPERVISOR_MIGRATION_HOTFIX.md").lower():
     fail("operator guide must explicitly prohibit faking accounts.0008")
 
-print("Verified SESCCO MS 1.0.114 Accounts Rental Supervisor historical migration hotfix: core.Company lookup, database-alias-safe RunPython, no new schema migration, and no remaining accounts.Company migration lookup.")
+print("Verified SESCCO MS 1.0.115 Accounts Rental Supervisor historical migration hotfix: core.Company lookup, database-alias-safe RunPython, no new schema migration, and no remaining accounts.Company migration lookup.")

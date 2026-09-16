@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "purpose": "Production-ready immutable Payroll documents and SESCCO supplier-invoice headpad",
   "document_types": [
     "salary_slip",

@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "purpose": "Final live-browser E2E and production-freeze authority for the reference-only Sourcing Directory.",
   "previous_release": "1.0.110-sourcing-security-tenant-cross-module-isolation-certification",
   "previous_archive_sha256": "bf498e6af3405b279cb42fbbf769c5baeb14d8940d59b3f732e89950dd503b2b",

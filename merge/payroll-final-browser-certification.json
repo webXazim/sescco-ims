@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "purpose": "Final 2,000 Internal / 5,000 Rental Payroll browser certification freeze. Every high-cardinality live Payroll surface, including Rental Worker Adjustments, must remain server-authoritative, request-cancellable and bounded to at most 100 rendered business rows.",
   "benchmark_volume": {
     "internal_employees": 2000,

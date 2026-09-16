@@ -1,5 +1,5 @@
 {
-  "release": "1.0.114",
+  "release": "1.0.115",
   "purpose": "Install the independent reference-only Sourcing Directory domain and database foundation without granting user access or linking Sourcing to operational Inventory, Payroll, Projects, Documents or Accounting authorities.",
   "predecessor": {
     "release": "1.0.98-access-history-guarded-recovery",

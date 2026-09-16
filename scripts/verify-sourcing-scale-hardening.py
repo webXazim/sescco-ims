@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 PREDECESSOR_SHA = "eaf3056bd03657b14cf5bd25230f72718cadef14473d0240c4992f268d8b4784"
 
 
@@ -22,7 +22,7 @@ def text(rel: str) -> str:
 
 
 if text("VERSION").strip() != VERSION:
-    fail("VERSION is not 1.0.114")
+    fail("VERSION is not 1.0.115")
 contract = json.loads(text("merge/sourcing-scale-hardening.json"))
 if contract.get("release") != VERSION or contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
     fail("release/predecessor binding changed")
@@ -106,4 +106,4 @@ for marker in ("verify-sourcing-scale-hardening.py", "seed_sourcing_test_data", 
     if marker not in release_tasks:
         fail(f"release task missing scale authority: {marker}")
 
-print("PASS: SESCCO MS 1.0.114 Sourcing scale hardening verified: benchmark seed, composite indexes, bounded profile catalogs, subquery/EXISTS directories, stale-request cancellation and runtime scale report.")
+print("PASS: SESCCO MS 1.0.115 Sourcing scale hardening verified: benchmark seed, composite indexes, bounded profile catalogs, subquery/EXISTS directories, stale-request cancellation and runtime scale report.")

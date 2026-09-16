@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.114":
-    fail(f"VERSION must be 1.0.114, found {version!r}")
+if version != "1.0.115":
+    fail(f"VERSION must be 1.0.115, found {version!r}")
 
 contract = json.loads(text("merge/payroll-final-browser-certification.json"))
 if contract.get("release") != version:
@@ -39,7 +39,7 @@ if int(contract.get("max_global_search_results") or 0) != 30:
 if int(contract.get("max_context_payload_bytes") or 0) > 2_500_000:
     fail("payload budget was loosened above 2.5 MB")
 if contract.get("schema_change") is not False or contract.get("payroll_formula_change") is not False:
-    fail("1.0.114 must not introduce schema or payroll-formula changes")
+    fail("1.0.115 must not introduce schema or payroll-formula changes")
 
 required_surfaces = {
     "internal-employee-directory",
@@ -224,4 +224,4 @@ if "scripts/verify-payroll-final-browser-certification.py" not in (candidate.get
 if not any("certify-payroll-browser-scale.py" in item for item in (candidate.get("required_benchmark_gates") or [])):
     fail("release candidate no longer requires live Chromium certification")
 
-print("Verified SESCCO MS 1.0.114 final 2K/5K Payroll browser-certification freeze contract across 24 high-cardinality surfaces.")
+print("Verified SESCCO MS 1.0.115 final 2K/5K Payroll browser-certification freeze contract across 24 high-cardinality surfaces.")

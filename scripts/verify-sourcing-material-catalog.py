@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.114"
+VERSION = "1.0.115"
 PREDECESSOR_SHA = "52ac1adef10a90e066908b21dac78599b0cadd9d8551a4b7c7c8113bc92ad008"
 
 
@@ -151,9 +151,9 @@ for rel in (
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
 
-if "1.0.114" not in text("docs/SOURCING_MATERIAL_CATALOG.md"):
+if "1.0.115" not in text("docs/SOURCING_MATERIAL_CATALOG.md"):
     fail("Material Catalog operator guide is not version-bound")
 
 print(
-    "PASS: SESCCO MS 1.0.114 Material Master & Vendor Supply Catalog verified: controlled aliases, company-scoped materials, reference quantity/rate offers, immutable revisions, view/edit separation and zero operational stock/accounting integration."
+    "PASS: SESCCO MS 1.0.115 Material Master & Vendor Supply Catalog verified: controlled aliases, company-scoped materials, reference quantity/rate offers, immutable revisions, view/edit separation and zero operational stock/accounting integration."
 )
