@@ -22,8 +22,21 @@ def suggest_material_code() -> str:
     return f"MAT-{uuid4().hex[:8].upper()}"
 
 
-def _decimal(value: Decimal | None) -> str | None:
-    return None if value is None else format(value, "f")
+def _decimal(value: Decimal | None, *, decimal_places: int | None = None) -> str | None:
+    """Serialize Decimal values deterministically for immutable sourcing evidence.
+
+    Model DecimalFields normalize scale when values are read back from the database,
+    but service-layer snapshots are intentionally captured immediately after save().
+    Form-cleaned Decimal values may therefore still be Decimal("35") even when the
+    model field contract is decimal_places=3.  Revision/audit JSON must not depend on
+    whether the instance happened to be refreshed from PostgreSQL first.
+    """
+    if value is None:
+        return None
+    decimal_value = Decimal(value)
+    if decimal_places is None:
+        return format(decimal_value, "f")
+    return format(decimal_value, f".{decimal_places}f")
 
 
 def _date(value) -> str | None:
@@ -52,11 +65,11 @@ def _offer_snapshot(offer: SourcingVendorOffer) -> dict[str, object]:
         "specification": offer.specification,
         "brand": offer.brand,
         "model": offer.model,
-        "availableQuantity": _decimal(offer.available_quantity),
+        "availableQuantity": _decimal(offer.available_quantity, decimal_places=3),
         "unit": offer.unit,
-        "minimumQuantity": _decimal(offer.minimum_quantity),
+        "minimumQuantity": _decimal(offer.minimum_quantity, decimal_places=3),
         "availability": offer.availability,
-        "rate": _decimal(offer.rate),
+        "rate": _decimal(offer.rate, decimal_places=4),
         "currency": offer.currency,
         "rateValidUntil": _date(offer.rate_valid_until),
         "leadTime": offer.lead_time,
