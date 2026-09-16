@@ -12,6 +12,8 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.api_permissions import api_company_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import branch_scope_ids, membership_has_permission, project_scope_ids, restrict_branch_snapshots, restrict_projects
 
 from .models import BusinessDocument, DocumentType
 from .selectors import document_page_context, documents_for_company, serialize_document
@@ -46,6 +48,17 @@ def _body(request: HttpRequest) -> dict[str, object]:
     return value
 
 
+def _has_document_permission(membership, workspace: str, *, finalize: bool = False) -> bool:
+    if workspace == "internal":
+        specific = AccessPermission.INTERNAL_DOCUMENTS_FINALIZE if finalize else AccessPermission.INTERNAL_DOCUMENTS_VIEW
+    elif workspace == "rental":
+        specific = AccessPermission.RENTAL_DOCUMENTS_FINALIZE if finalize else AccessPermission.RENTAL_DOCUMENTS_VIEW
+    else:
+        return False
+    shared = AccessPermission.SHARED_DOCUMENTS_FINALIZE if finalize else AccessPermission.SHARED_DOCUMENTS_VIEW
+    return membership_has_permission(membership, specific) or membership_has_permission(membership, shared)
+
+
 def _period(value: str):
     if not value:
         return None
@@ -75,6 +88,14 @@ def documents_api(request: HttpRequest) -> JsonResponse:
             )
             return JsonResponse({"ok": True, **payload})
         body = _body(request)
+        requested_type = str(body.get("document_type") or "")
+        rental_types = {
+            DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_SETTLEMENT,
+            DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT,
+        }
+        workspace_key = "rental" if requested_type in rental_types else "internal"
+        if not _has_document_permission(request.company_membership, workspace_key, finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize documents for this workspace.")
         invoice = None
         if str(body.get("document_type") or "") == DocumentType.SUPPLIER_INVOICE:
             raw_date = str(body.get("issue_date") or "")
@@ -111,16 +132,14 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         if period_start is None:
             raise ValidationError({"period": "Period is required."})
         membership = request.company_membership
-        from apps.accounts.permissions import membership_can_workspace
-        from apps.accounts.roles import Workspace
 
         if workspace == "internal":
-            if not membership_can_workspace(membership, Workspace.INTERNAL):
-                raise PermissionDenied("Your role cannot access Internal Company documents.")
+            if not _has_document_permission(membership, workspace, finalize=True):
+                raise PermissionDenied("Your access profile cannot finalize Internal Company documents.")
             allowed_types = {DocumentType.SALARY_SLIP, DocumentType.INTERNAL_TIMESHEET, DocumentType.SALARY_PAYMENT_RECEIPT}
         elif workspace == "rental":
-            if not membership_can_workspace(membership, Workspace.RENTAL):
-                raise PermissionDenied("Your role cannot access Rental Manpower documents.")
+            if not _has_document_permission(membership, workspace, finalize=True):
+                raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
             allowed_types = {DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT}
         else:
             raise ValidationError({"workspace": "Workspace must be internal or rental."})
@@ -176,6 +195,7 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             from apps.internal_payroll.models import PayrollRunLine, PayrollRunStatus
             final_runs = [PayrollRunStatus.APPROVED, PayrollRunStatus.PAYMENT_PROCESSING, PayrollRunStatus.PAID, PayrollRunStatus.CLOSED]
             qs = PayrollRunLine.objects.for_company(request.company).filter(run__period_start=period_start, run__status__in=final_runs)
+            qs = restrict_branch_snapshots(qs, membership)
             if scoped_employee_id is not None:
                 qs = qs.filter(employee_id=scoped_employee_id)
             else:
@@ -184,11 +204,15 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name}", "status": row.run.get_status_display(), "amount": str(row.net), "employeeId": str(row.employee_id)}
         elif document_type == DocumentType.INTERNAL_TIMESHEET:
             from apps.internal_payroll.models import AttendancePeriod, AttendancePeriodStatus
-            rows = AttendancePeriod.objects.for_company(request.company).filter(period_start=period_start, status=AttendancePeriodStatus.LOCKED).annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("pk")[start:stop]
+            qs = AttendancePeriod.objects.for_company(request.company).filter(period_start=period_start, status=AttendancePeriodStatus.LOCKED)
+            if membership.branch_scope_mode != "all":
+                qs = qs.none()
+            rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("pk")[start:stop]
             serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"Internal Timesheet · {period_start:%B %Y}", "status": "Locked", "amount": None}
         elif document_type == DocumentType.SALARY_PAYMENT_RECEIPT:
             from apps.internal_payroll.models import SalaryPaymentRow, SalaryPaymentRowStatus
             qs = SalaryPaymentRow.objects.for_company(request.company).filter(batch__run__period_start=period_start, status=SalaryPaymentRowStatus.PAID)
+            qs = restrict_branch_snapshots(qs, membership, field="run_line__branch_id_snapshot")
             if scoped_employee_id is not None:
                 qs = qs.filter(employee_id=scoped_employee_id)
             else:
@@ -197,7 +221,10 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.employee_number} · {row.employee_name} · {row.transaction_reference or row.batch.reference}", "status": "Paid", "amount": str(row.amount), "employeeId": str(row.employee_id)}
         elif document_type == DocumentType.RENTAL_TIMESHEET:
             from apps.rental_manpower.models import RentalTimesheetPeriod, RentalTimesheetStatus
-            qs = RentalTimesheetPeriod.objects.for_company(request.company).filter(period_start=period_start, status=RentalTimesheetStatus.LOCKED)
+            qs = restrict_projects(
+                RentalTimesheetPeriod.objects.for_company(request.company).filter(period_start=period_start, status=RentalTimesheetStatus.LOCKED),
+                membership, field="project_id",
+            )
             if query:
                 qs = qs.filter(Q(project__code__icontains=query) | Q(project__name__icontains=query))
             rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("project").order_by("project__code")[start:stop]
@@ -206,6 +233,7 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             from apps.rental_manpower.models import SupplierSettlement, RentalSettlementStatus
             final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED]
             qs = SupplierSettlement.objects.for_company(request.company).filter(period_start=period_start, status__in=final_settlements)
+            qs = restrict_projects(qs, membership, field="project_id")
             if query:
                 qs = qs.filter(Q(settlement_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query) | Q(project_code__icontains=query) | Q(project_name__icontains=query))
             rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("project_code", "supplier_code")[start:stop]
@@ -213,6 +241,14 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         elif document_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
             from apps.rental_manpower.models import SupplierPayment, SupplierPaymentStatus
             qs = SupplierPayment.objects.for_company(request.company).filter(allocations__settlement__period_start=period_start, status=SupplierPaymentStatus.PAID).distinct()
+            allowed_projects = project_scope_ids(membership)
+            if allowed_projects is not None:
+                if not allowed_projects:
+                    qs = qs.none()
+                else:
+                    from apps.rental_manpower.models import SupplierPaymentAllocation
+                    outside = SupplierPaymentAllocation.objects.for_company(request.company).filter(payment_id=OuterRef("pk")).exclude(settlement__project_id__in=allowed_projects)
+                    qs = qs.annotate(_outside_scope=Exists(outside)).filter(_outside_scope=False, allocations__settlement__project_id__in=allowed_projects).distinct()
             if query:
                 qs = qs.filter(Q(payment_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query) | Q(transaction_reference__icontains=query))
             rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("payment_date", "payment_number")[start:stop]

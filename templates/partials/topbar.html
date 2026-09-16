@@ -4,11 +4,14 @@
   </button>
   {% if page_key == 'inventory' %}
     <div class="topbar-context"><strong>Inventory</strong><span>Live search and filters below</span></div>
-  {% else %}
+  {% elif "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
     <form class="top-search" method="get" action="{% url 'inventory:list' %}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input name="q" placeholder="Search inventory, projects, suppliers…" aria-label="Search inventory, projects, suppliers">
+      <input name="q" placeholder="Search allowed inventory…" aria-label="Search allowed inventory">
     </form>
-  {% endif %}
-  <div class="top-actions"><a class="btn btn-sm" href="{% url 'projects:list' %}">Projects</a><a class="btn btn-primary btn-sm" href="{% url 'core:add_stock' %}">Add stock</a></div>
+  {% else %}<div class="topbar-context"><strong>Inventory</strong><span>Scoped workspace</span></div>{% endif %}
+  <div class="top-actions">
+    {% if "inventory.projects.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-sm" href="{% url 'projects:list' %}">Projects</a>{% endif %}
+    {% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary btn-sm" href="{% url 'core:add_stock' %}">Add stock</a>{% endif %}
+  </div>
 </header>

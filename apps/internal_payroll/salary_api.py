@@ -7,7 +7,8 @@ from django.utils import timezone
 
 from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
 
-from apps.accounts.api_permissions import api_workspace_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.api_permissions import api_method_access_required, api_workspace_required
 from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import (
     handle_api_error,
@@ -65,6 +66,7 @@ def _category_query(value: str) -> str:
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_SALARY_SETUP_VIEW, POST=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def salary_components_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -95,6 +97,7 @@ def salary_components_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE, DELETE=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def salary_component_detail_api(request: HttpRequest, component_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -125,6 +128,7 @@ def salary_component_detail_api(request: HttpRequest, component_id) -> JsonRespo
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def salary_component_lifecycle_api(request: HttpRequest, component_id) -> JsonResponse:
     try:
         body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
@@ -141,6 +145,7 @@ def salary_component_lifecycle_api(request: HttpRequest, component_id) -> JsonRe
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_SALARY_SETUP_VIEW, POST=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def overtime_policies_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -170,6 +175,7 @@ def overtime_policies_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE, DELETE=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def overtime_policy_detail_api(request: HttpRequest, policy_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -200,6 +206,7 @@ def overtime_policy_detail_api(request: HttpRequest, policy_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def overtime_policy_lifecycle_api(request: HttpRequest, policy_id) -> JsonResponse:
     try:
         body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
@@ -217,6 +224,7 @@ def overtime_policy_lifecycle_api(request: HttpRequest, policy_id) -> JsonRespon
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_SALARY_SETUP_VIEW, POST=AccessPermission.INTERNAL_SALARY_SETUP_MANAGE)
 def salary_structures_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":

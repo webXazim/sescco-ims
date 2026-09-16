@@ -18,6 +18,7 @@ class AuditArea(models.TextChoices):
     RENTAL = "rental", "Rental Manpower"
     DOCUMENTS = "documents", "Documents"
     MANAGEMENT = "management", "Management"
+    SOURCING = "sourcing", "Sourcing"
 
 
 class ImmutableAuditQuerySet(models.QuerySet):

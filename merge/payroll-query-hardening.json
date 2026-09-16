@@ -1,5 +1,5 @@
 {
-  "release": "1.0.87",
+  "release": "1.0.111",
   "purpose": "Keep high-cardinality Payroll directory, attendance and assignment searches indexable and bounded in PostgreSQL after server pagination moved large collections out of the browser.",
   "database": "postgresql",
   "extension": "pg_trgm",

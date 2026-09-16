@@ -1,18 +1,34 @@
 {
-  "release": "1.0.87",
+  "release": "1.0.111",
   "surface": "cross-workspace-payroll-drawer-selectors",
   "internal": {
-    "add_employee": ["branch", "department"],
-    "change_organization": ["branch", "department"],
-    "salary_structure": ["employee"]
+    "add_employee": [
+      "branch",
+      "department"
+    ],
+    "change_organization": [
+      "branch",
+      "department"
+    ],
+    "salary_structure": [
+      "employee"
+    ]
   },
   "rental": {
-    "add_worker": ["supplier"],
-    "worker_advance": ["effective_project"],
-    "supplier_payment": ["available_settlement"]
+    "add_worker": [
+      "supplier"
+    ],
+    "worker_advance": [
+      "effective_project"
+    ],
+    "supplier_payment": [
+      "available_settlement"
+    ]
   },
   "shared": {
-    "finalize_document": ["source"]
+    "finalize_document": [
+      "source"
+    ]
   },
   "lookup_contract": {
     "dropdown_page_size": 10,
@@ -26,7 +42,11 @@
     "backend_revalidation_authoritative": true
   },
   "financial_safety": {
-    "supplier_payment_allowed_settlement_statuses": ["approved", "payment_processing", "partially_paid"],
+    "supplier_payment_allowed_settlement_statuses": [
+      "approved",
+      "payment_processing",
+      "partially_paid"
+    ],
     "paid_allocations_server_calculated": true,
     "processing_allocations_server_calculated": true,
     "available_balance_positive_only": true,

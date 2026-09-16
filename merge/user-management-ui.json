@@ -1,0 +1,53 @@
+{
+  "release": "1.0.111",
+  "feature": "administration-user-management-ui",
+  "schema_change": false,
+  "payroll_formula_change": false,
+  "module": {
+    "key": "administration",
+    "path": "/app/administration/",
+    "permission": "access.users.view",
+    "manage_permission": "access.users.manage"
+  },
+  "register": {
+    "server_paged": true,
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "search_min_chars": 2,
+    "stale_request_cancellation": true,
+    "statuses": [
+      "all",
+      "active",
+      "inactive"
+    ]
+  },
+  "drawers": [
+    "create-user",
+    "edit-user",
+    "view-user",
+    "reset-password",
+    "activate-deactivate",
+    "delete-unused"
+  ],
+  "scope_types": [
+    "projects",
+    "branches",
+    "inventory_locations"
+  ],
+  "security_contract": [
+    "backend-authoritative",
+    "owner-protection",
+    "self-access-protection",
+    "django-admin-separate",
+    "temporary-password-not-audited",
+    "no-full-user-master-hydration"
+  ],
+  "assets": [
+    "templates/accounts/administration.html",
+    "static/platform/css/access-management.css",
+    "static/platform/js/access-management.js"
+  ]
+}

@@ -7,8 +7,8 @@ from decimal import Decimal
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Prefetch, Q, Sum
 
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.core.models import Company
 from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_INTERNAL, attendance_contract_payload
 from apps.internal_payroll.models import (
@@ -104,10 +104,11 @@ def _user_label(user) -> str | None:
 def serialize_attendance_period(period: AttendancePeriod | None, *, period_start: date, membership=None) -> dict[str, object]:
     start, end = month_bounds(period_start)
     status = period.status if period else AttendancePeriodStatus.DRAFT
-    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL) and status == AttendancePeriodStatus.DRAFT)
-    can_approve = bool(membership and membership_can_workspace(membership, Workspace.INTERNAL) and membership_has_capability(membership, Capability.APPROVE))
+    can_edit = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_EDIT) and status == AttendancePeriodStatus.DRAFT)
+    can_submit = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_SUBMIT) and status == AttendancePeriodStatus.DRAFT)
+    can_approve = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_APPROVE))
     if status == AttendancePeriodStatus.DRAFT:
-        next_action = "submit" if can_edit else None
+        next_action = "submit" if can_submit else None
     elif status == AttendancePeriodStatus.SUBMITTED:
         next_action = "approve" if can_approve else None
     elif status == AttendancePeriodStatus.APPROVED:
@@ -125,6 +126,7 @@ def serialize_attendance_period(period: AttendancePeriod | None, *, period_start
         "statusValue": status,
         "revision": period.revision if period else 0,
         "canEdit": can_edit,
+        "canSubmit": can_submit,
         "canApprove": can_approve,
         "nextAction": next_action,
         "submittedAt": period.submitted_at.isoformat() if period and period.submitted_at else None,

@@ -7,11 +7,13 @@ from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
+from apps.accounts.access_catalog import AccessPermission
+from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS
+from apps.inventory.access import restrict_inventory_projects, restrict_inventory_stock
 from apps.inventory.models import StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
@@ -55,14 +57,15 @@ def _audit_project(*, request, project: Project, action: str, before=None) -> No
     )
 
 
-class ProjectListView(InventoryWorkspaceMixin, ListView):
+class ProjectListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_PROJECTS_VIEW
     model = Project
     template_name = "projects/project_list.html"
     context_object_name = "projects"
     paginate_by = 18
 
     def get_queryset(self):
-        queryset = project_list(self.request.company)
+        queryset = restrict_inventory_projects(project_list(self.request.company), self.request.company_membership)
         query = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "").strip()
         if query:
@@ -90,7 +93,8 @@ class ProjectListView(InventoryWorkspaceMixin, ListView):
         return context
 
 
-class ProjectCreateView(InventoryWorkspaceMixin, CreateView):
+class ProjectCreateView(InventoryPermissionRequiredMixin, CreateView):
+    inventory_permission = AccessPermission.INVENTORY_PROJECTS_MANAGE
     model = Project
     form_class = ProjectForm
     template_name = "projects/project_form.html"
@@ -121,7 +125,8 @@ class ProjectCreateView(InventoryWorkspaceMixin, CreateView):
         return context
 
 
-class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
+class ProjectUpdateView(InventoryPermissionRequiredMixin, UpdateView):
+    inventory_permission = AccessPermission.INVENTORY_PROJECTS_MANAGE
     model = Project
     form_class = ProjectForm
     template_name = "projects/project_form.html"
@@ -129,7 +134,7 @@ class ProjectUpdateView(InventoryWorkspaceMixin, UpdateView):
     slug_url_kwarg = "code"
 
     def get_queryset(self):
-        return Project.objects.for_company(self.request.company).filter(deleted_at__isnull=True)
+        return restrict_inventory_projects(Project.objects.for_company(self.request.company), self.request.company_membership).filter(deleted_at__isnull=True)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -170,7 +175,8 @@ class ProjectStatusView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, code):
         project = get_object_or_404(
-            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
+            code=code, deleted_at__isnull=True
         )
         action = request.GET.get("action", "").strip()
         if action != "archive":
@@ -193,7 +199,8 @@ class ProjectStatusView(InventoryAdminRequiredMixin, View):
 
     def post(self, request, code):
         project = get_object_or_404(
-            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
+            code=code, deleted_at__isnull=True
         )
         action = request.POST.get("action", "").strip()
         try:
@@ -276,13 +283,15 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, code):
         project = get_object_or_404(
-            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
+            code=code, deleted_at__isnull=True
         )
         return render(request, self.template_name, self._context(project))
 
     def post(self, request, code):
         project = get_object_or_404(
-            Project.objects.for_company(request.company), code=code, deleted_at__isnull=True
+            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
+            code=code, deleted_at__isnull=True
         )
         context = self._context(project)
         if not context["delete_allowed"]:
@@ -309,7 +318,8 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         return redirect("projects:list")
 
 
-class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
+class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
+    inventory_permission = AccessPermission.INVENTORY_PROJECTS_VIEW
     model = Project
     template_name = "projects/project_detail.html"
     context_object_name = "project"
@@ -317,7 +327,7 @@ class ProjectDetailView(InventoryWorkspaceMixin, DetailView):
     slug_url_kwarg = "code"
 
     def get_queryset(self):
-        return project_list(self.request.company)
+        return restrict_inventory_projects(project_list(self.request.company), self.request.company_membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

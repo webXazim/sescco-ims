@@ -10,6 +10,9 @@ from django.db.models import CharField, Count, Exists, F, OuterRef, Prefetch, Q,
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission, restrict_projects
+
 from apps.rental_manpower.models import (
     ManpowerSupplier,
     RentalWorker,
@@ -101,13 +104,15 @@ def suppliers_for_company(
 
 def projects_for_company(
     *, company, query: str = "", status: str = "", client: str | None = None,
-    manager: str | None = None, supplier_id=None,
+    manager: str | None = None, supplier_id=None, membership=None,
 ):
     today = timezone.localdate()
     current_filter = Q(rental_assignments__cancelled_at__isnull=True) & Q(rental_assignments__effective_from__lte=today) & (
         Q(rental_assignments__effective_to__isnull=True) | Q(rental_assignments__effective_to__gte=today)
     )
     queryset = rental_projects_for_company(company=company, query=query, status=status)
+    if membership is not None:
+        queryset = restrict_projects(queryset, membership)
     if client is not None:
         queryset = queryset.filter(client_name=client)
     if manager is not None:
@@ -140,11 +145,25 @@ def projects_for_company(
 def workers_for_company(
     *, company, query: str = "", status: str = "", supplier_id=None, archived: bool | None = False,
     deleted: bool | None = False, operational_status: str = "", project_id=None, trade: str = "", rate_type: str = "",
+    membership=None,
 ):
     assignment_qs = WorkerAssignment.objects.for_company(company).select_related("project", "company__settings").order_by("effective_from", "created_at")
+    if membership is not None:
+        assignment_qs = restrict_projects(assignment_qs, membership, field="project_id")
     queryset = RentalWorker.objects.for_company(company).select_related("supplier", "company__settings").prefetch_related(
         Prefetch("rental_assignments", queryset=assignment_qs)
     )
+    if membership is not None and membership.project_scope_mode != "all":
+        # Include current and scheduled workers for selected projects, but never expose
+        # the supplier-wide unassigned pool to a project-scoped supervisor.
+        scoped_assignments = restrict_projects(
+            WorkerAssignment.objects.for_company(company).filter(
+                worker_id=OuterRef("pk"), cancelled_at__isnull=True
+            ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=timezone.localdate())),
+            membership,
+            field="project_id",
+        )
+        queryset = queryset.annotate(_project_scope_match=Exists(scoped_assignments)).filter(_project_scope_match=True)
     # Supplier lifecycle is an inherited worker boundary. The worker master is not
     # rewritten, which makes restore exact, but ordinary/Archive/Delete filters
     # behave as a true cascade to the supplier's workers.
@@ -334,7 +353,7 @@ def _assignment_rate_label(assignment: WorkerAssignment | None, currency: str = 
     return f"{currency} {value}/hr"
 
 
-def serialize_worker(worker: RentalWorker) -> dict[str, object]:
+def serialize_worker(worker: RentalWorker, *, include_commercial: bool = True) -> dict[str, object]:
     current, future, last = _worker_assignment_snapshot(worker)
     supplier_archived = bool(worker.supplier.archived_at)
     supplier_deleted = bool(worker.supplier.deleted_at)
@@ -467,8 +486,8 @@ def serialize_worker(worker: RentalWorker) -> dict[str, object]:
         "trade": reference.trade if reference else "Not assigned",
         "rateType": reference.get_rate_type_display() if reference else "",
         "rateTypeValue": reference.rate_type if reference else "",
-        "rateValue": float(reference.rate) if reference else None,
-        "rate": _assignment_rate_label(reference, worker.company.settings.currency_code),
+        "rateValue": (float(reference.rate) if reference else None) if include_commercial else None,
+        "rate": _assignment_rate_label(reference, worker.company.settings.currency_code) if include_commercial else "Restricted",
         "since": since,
         "currentAssignmentId": str(current.pk) if current else None,
         "nextAssignmentId": str(future.pk) if future else None,
@@ -485,6 +504,7 @@ def rental_master_context(
     period_start: date | None = None,
     worker_limit: int | None = None,
     include_assignments: bool = True,
+    membership=None,
 ) -> dict[str, object]:
     """Return the Rental master bootstrap.
 
@@ -496,9 +516,12 @@ def rental_master_context(
     from apps.rental_manpower.selectors.settlements import rental_financial_metrics_for_period
 
     period_start = (period_start or timezone.localdate()).replace(day=1)
-    suppliers = list(suppliers_for_company(company=company, archived=None))
-    projects = list(projects_for_company(company=company))
-    worker_qs = workers_for_company(company=company, archived=None)
+    can_supplier_view = bool(membership is None or membership_has_permission(membership, AccessPermission.RENTAL_SUPPLIERS_VIEW))
+    can_finance = bool(membership is None or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW))
+    can_commercial = bool(membership is None or can_finance or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE))
+    suppliers = list(suppliers_for_company(company=company, archived=None)) if can_supplier_view else []
+    projects = list(projects_for_company(company=company, membership=membership))
+    worker_qs = workers_for_company(company=company, archived=None, membership=membership)
     total_worker_count = worker_qs.count()
     active_worker_count = worker_qs.filter(status=RentalWorkerStatus.ACTIVE).count()
     workers = list(worker_qs[:worker_limit] if worker_limit else worker_qs)
@@ -507,11 +530,20 @@ def rental_master_context(
         "asOf": timezone.localdate().isoformat(),
         "summary": {},
     }
-    financial_metrics = rental_financial_metrics_for_period(company=company, period_start=period_start)
-    supplier_metrics = financial_metrics["suppliers"]
-    project_metrics = financial_metrics["projects"]
-    assigned_count = sum(int(getattr(item, "assigned_worker_count", 0)) for item in suppliers)
-    available_count = sum(max(0, int(getattr(item, "active_worker_count", 0)) - int(getattr(item, "assigned_worker_count", 0))) for item in suppliers)
+    financial_metrics = (
+        rental_financial_metrics_for_period(company=company, period_start=period_start)
+        if can_finance else {"suppliers": {}, "projects": {}, "totals": {}}
+    )
+    supplier_metrics = financial_metrics.get("suppliers", {})
+    project_metrics = financial_metrics.get("projects", {})
+    if can_supplier_view:
+        assigned_count = sum(int(getattr(item, "assigned_worker_count", 0)) for item in suppliers)
+        available_count = sum(max(0, int(getattr(item, "active_worker_count", 0)) - int(getattr(item, "assigned_worker_count", 0))) for item in suppliers)
+    else:
+        # A scoped Supervisor has no supplier-finance directory, but the workforce KPI
+        # must still reflect the allowed project roster rather than collapsing to zero.
+        assigned_count = worker_qs.filter(_has_current_assignment=True).count()
+        available_count = 0
     return {
         "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
         "financialPeriod": period_start.strftime("%B %Y"),
@@ -519,7 +551,7 @@ def rental_master_context(
         "financialMetrics": financial_metrics,
         "suppliers": [serialize_supplier(item, supplier_metrics.get(str(item.pk))) for item in suppliers],
         "projects": [serialize_project(item, project_metrics.get(project_public_id(item))) for item in projects],
-        "workers": [serialize_worker(item) for item in workers],
+        "workers": [serialize_worker(item, include_commercial=can_commercial) for item in workers],
         "assignmentsByWorker": assignments["assignmentsByWorker"],
         "assignmentAsOf": assignments["asOf"],
         "assignmentSummary": assignments["summary"],

@@ -388,6 +388,8 @@ for marker in (
     '"allowedActions": allowed_actions',
     '"canCalculate": "calculate" in allowed_actions',
     '"canSubmitReview": "submit_review" in allowed_actions',
+    '"canReview": "review" in allowed_actions',
+    '"reviewSignedOff": review_signed_off',
     '"canReturnForChanges": "return_for_changes" in allowed_actions',
     '"canApprove": "approve" in allowed_actions',
 ):
@@ -395,7 +397,11 @@ for marker in (
         raise SystemExit(f"Internal payroll workflow selector contract missing: {marker}")
 
 for marker in (
-    'allowed_actions.extend(["start", "cancel"])',
+    'if can_pay and batch.status in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:',
+    'allowed_actions.append("start")',
+    'if can_prepare and batch.status in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:',
+    'allowed_actions.append("cancel")',
+    'if can_export and batch.status not in {SalaryPaymentBatchStatus.CANCELLED, SalaryPaymentBatchStatus.CLOSED}:',
     'allowed_actions.append("import_results")',
     'allowed_actions.append("close")',
     'allowed_actions.append("reopen")',

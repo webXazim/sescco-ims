@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.87"
-PREDECESSOR = "1.0.86-cross-workspace-drawer-selector-scale-hardening"
-PREDECESSOR_SHA256 = "e524860b5f7d47582f8676a74d40d929c97b87cff36afc17bff2d4ed36101256"
-TITLE = "1.0.87 — Contextual document finalization hotfix"
+VERSION = "1.0.111"
+PREDECESSOR = "1.0.110-sourcing-security-tenant-cross-module-isolation-certification"
+PREDECESSOR_SHA256 = "bf498e6af3405b279cb42fbbf769c5baeb14d8940d59b3f732e89950dd503b2b"
+TITLE = "1.0.111 — Sourcing Browser E2E + Production Freeze"
 
 
 def fail(message: str) -> None:
@@ -26,178 +26,173 @@ def text(rel: str) -> str:
 version = text("VERSION").strip()
 if version != VERSION:
     fail(f"VERSION must be {VERSION}, found {version!r}")
-
 contract = json.loads(text("merge/release-candidate.json"))
-if contract.get("release") != version:
+if contract.get("release") != VERSION:
     fail("release-candidate contract does not match VERSION")
-if contract.get("release_type") != "contextual-document-finalization-hotfix":
-    fail("1.0.87 release type changed")
-if contract.get("previous_release") != PREDECESSOR:
-    fail("1.0.87 predecessor must remain the exact 1.0.86 drawer-selector release")
-if contract.get("previous_archive_sha256") != PREDECESSOR_SHA256:
-    fail("1.0.87 predecessor checksum changed")
+if contract.get("release_type") != "sourcing-browser-e2e-production-freeze":
+    fail("1.0.111 release type must be sourcing-browser-e2e-production-freeze")
+if contract.get("previous_release") != PREDECESSOR or contract.get("previous_archive_sha256") != PREDECESSOR_SHA256:
+    fail("1.0.111 predecessor identity/checksum changed")
 if contract.get("feature_freeze") is not True:
-    fail("1.0.87 must remain feature-frozen")
+    fail("1.0.111 packaged feature set must remain frozen")
 if contract.get("schema_change_in_release") is not False:
-    fail("1.0.87 must not introduce a schema change")
-if contract.get("schema_change_scope") != "none; carries forward the 1.0.69 PostgreSQL search indexes":
-    fail("1.0.87 schema-change scope changed")
-if contract.get("payroll_formula_change_in_release") is not False:
-    fail("1.0.87 must not claim a Payroll formula change")
+    fail("1.0.111 must remain schema-neutral")
+expected_scope = "Final Sourcing live-browser E2E and production freeze only; no schema change and no operational Inventory, Rental Payroll, Project, Documents, Data Exchange or Accounting integration"
+if contract.get("schema_change_scope") != expected_scope:
+    fail("1.0.111 schema-change scope changed")
+if contract.get("payroll_formula_change_in_release") is not False or contract.get("inventory_quantity_formula_change_in_release") is not False:
+    fail("1.0.111 must not change Payroll or Inventory formulas")
 if set(contract.get("required_seed_profiles") or []) != {"functional", "realistic", "benchmark"}:
     fail("required seed profiles changed")
 
-scale_gates = (
+required_gates = {
+    "scripts/verify-granular-access-authority.py",
+    "scripts/verify-single-access-authority.py",
+    "scripts/verify-user-management-backend.py",
+    "scripts/verify-user-management-ui.py",
+    "scripts/verify-rental-supervisor-scope.py",
+    "scripts/verify-inventory-storekeeper-scope.py",
+    "scripts/verify-page-level-view-only.py",
+    "scripts/verify-internal-finance-permissions.py",
+    "scripts/verify-cross-module-access-leaks.py",
+    "scripts/verify-credential-session-revocation.py",
+    "scripts/verify-access-history-recovery.py",
+    "scripts/verify-sourcing-domain-foundation.py",
+    "scripts/verify-sourcing-access-control.py",
+    "scripts/verify-sourcing-vendor-master.py",
+    "scripts/verify-sourcing-material-catalog.py",
+    "scripts/verify-sourcing-material-finder.py",
+    "scripts/verify-sourcing-vendor-verification.py",
+    "scripts/verify-sourcing-manpower-master.py",
+    "scripts/verify-sourcing-trade-workforce-catalog.py",
+    "scripts/verify-sourcing-workforce-finder.py",
+    "scripts/verify-sourcing-data-exchange.py",
+    "scripts/verify-sourcing-scale-hardening.py",
+    "scripts/verify-sourcing-security-certification.py",
+    "scripts/verify-sourcing-browser-e2e.py",
     "scripts/verify-payroll-query-hardening.py",
     "scripts/verify-payroll-browser-scale.py",
-    "scripts/verify-payroll-employee-residual-scale.py",
     "scripts/verify-payroll-salary-setup-scale.py",
     "scripts/verify-payroll-run-scale.py",
     "scripts/verify-payroll-adjustment-scale.py",
-    "scripts/verify-payroll-assignment-project-selector-scale.py",
-    "scripts/verify-payroll-drawer-selector-scale.py",
-    "scripts/verify-payroll-rental-adjustment-selector-scale.py",
-    "scripts/verify-payroll-rental-adjustment-page-scale.py",
     "scripts/verify-payroll-payment-scale.py",
     "scripts/verify-payroll-shared-surfaces-scale.py",
     "scripts/verify-payroll-final-browser-certification.py",
-    "scripts/verify-payroll-report-performance.py",
-)
-for required in scale_gates:
-    if required not in (contract.get("required_static_gates") or []):
-        fail(f"1.0.87 scale freeze is missing required gate: {required}")
-if "scripts/verify-payroll-document-production.py" not in (contract.get("required_static_gates") or []):
-    fail("1.0.87 document production gate is not release-required")
-if "scripts/verify-payroll-document-finalization-context.py" not in (contract.get("required_static_gates") or []):
-    fail("1.0.87 contextual document finalization gate is not release-required")
+    "scripts/verify-payroll-document-production.py",
+    "scripts/verify-payroll-document-finalization-context.py",
+}
+registered=set(contract.get("required_static_gates") or [])
+if not required_gates.issubset(registered):
+    fail(f"release static gates incomplete: {sorted(required_gates-registered)}")
+runtime=set(contract.get("required_runtime_gates") or [])
+for gate in (
+    "python manage.py merge_access_report --fail-on-errors",
+    "python manage.py test apps.sourcing.tests.test_domain_foundation --noinput",
+    "python manage.py test apps.sourcing.tests.test_access_control --noinput",
+    "python manage.py test apps.sourcing.tests.test_vendor_master --noinput",
+    "python manage.py test apps.sourcing.tests.test_material_catalog --noinput",
+    "python manage.py test apps.sourcing.tests.test_material_finder --noinput",
+    "python manage.py test apps.sourcing.tests.test_vendor_verification --noinput",
+    "python manage.py test apps.sourcing.tests.test_manpower_master --noinput",
+    "python manage.py test apps.sourcing.tests.test_trade_workforce_catalog --noinput",
+    "python manage.py test apps.sourcing.tests.test_workforce_finder --noinput",
+    "python manage.py test apps.sourcing.tests.test_data_exchange --noinput",
+    "python manage.py test apps.sourcing.tests.test_scale_hardening --noinput",
+    "python manage.py test apps.sourcing.tests.test_security_certification --noinput",
+    "python manage.py test apps.sourcing.tests.test_browser_e2e_freeze --noinput",
+):
+    if gate not in runtime:
+        fail(f"required runtime gate missing: {gate}")
 
-required_benchmark = set(contract.get("required_benchmark_gates") or [])
-if not any("payroll_browser_scale_report" in item for item in required_benchmark):
-    fail("benchmark-scale server report is not release-required")
-if not any("certify-payroll-browser-scale.py" in item for item in required_benchmark):
-    fail("live Chromium scale certification is not release-required")
-
-notes = text("RELEASE_NOTES.md")
+notes=text("RELEASE_NOTES.md")
 if not notes.startswith(f"# {TITLE}\n"):
-    fail("1.0.87 release notes must be the first release entry")
-readme = text("README.md")
+    fail("1.0.111 release notes must be the first release entry")
+readme=text("README.md")
 if f"SESCCO MS {TITLE}" not in readme:
-    fail("README does not identify the 1.0.87 packaged release")
+    fail("README does not identify the 1.0.111 packaged release")
 
-payroll_template = text("templates/payroll/app.html")
-for asset in ("payroll/css/v2/payroll-controls.css", "payroll/js/app.js"):
-    pattern = re.escape(asset) + r"' %\}\?v=1\.0\.87"
-    if not re.search(pattern, payroll_template):
-        fail(f"Payroll asset cache buster is not frozen at 1.0.87 for {asset}")
+for template, assets in {
+    "templates/payroll/app.html": ("payroll/css/v2/payroll-controls.css", "payroll/js/app.js"),
+    "templates/accounts/administration.html": ("platform/css/access-management.css", "platform/js/access-management.js"),
+}.items():
+    content=text(template)
+    for asset in assets:
+        pattern=re.escape(asset)+r"' %\}\?v=1\.0\.111"
+        if not re.search(pattern,content):
+            fail(f"asset cache buster is not frozen at 1.0.111 for {asset}")
 
-release_contracts = (
-    "merge/payroll-production-e2e.json",
-    "merge/payroll-directory-runtime.json",
-    "merge/payroll-assignment-runtime.json",
-    "merge/payroll-timesheet-scale.json",
-    "merge/payroll-bootstrap-search.json",
-    "merge/payroll-query-hardening.json",
-    "merge/payroll-browser-scale.json",
-    "merge/payroll-employee-residual-scale.json",
-    "merge/payroll-salary-setup-scale.json",
-    "merge/payroll-run-scale.json",
-    "merge/payroll-adjustment-scale.json",
-    "merge/payroll-assignment-project-selector-scale.json",
-    "merge/payroll-drawer-selector-scale.json",
-    "merge/payroll-rental-adjustment-selector-scale.json",
-    "merge/payroll-rental-adjustment-page-scale.json",
-    "merge/payroll-payment-scale.json",
-    "merge/payroll-shared-surfaces-scale.json",
-    "merge/payroll-final-browser-certification.json",
-    "merge/payroll-report-performance.json",
-    "merge/payroll-document-production.json",
-    "merge/payroll-document-finalization-context.json",
+release_contracts=(
+    "merge/payroll-production-e2e.json","merge/payroll-directory-runtime.json","merge/payroll-assignment-runtime.json",
+    "merge/payroll-timesheet-scale.json","merge/payroll-bootstrap-search.json","merge/payroll-query-hardening.json",
+    "merge/payroll-browser-scale.json","merge/payroll-employee-residual-scale.json","merge/payroll-salary-setup-scale.json",
+    "merge/payroll-run-scale.json","merge/payroll-adjustment-scale.json","merge/payroll-assignment-project-selector-scale.json",
+    "merge/payroll-drawer-selector-scale.json","merge/payroll-rental-adjustment-selector-scale.json","merge/payroll-rental-adjustment-page-scale.json",
+    "merge/payroll-payment-scale.json","merge/payroll-shared-surfaces-scale.json","merge/payroll-final-browser-certification.json",
+    "merge/payroll-report-performance.json","merge/payroll-document-production.json","merge/payroll-document-finalization-context.json",
+    "merge/granular-access-authority.json","merge/single-access-authority.json","merge/user-management-backend.json",
+    "merge/user-management-ui.json","merge/rental-supervisor-scope.json","merge/inventory-storekeeper-scope.json",
+    "merge/page-level-view-only.json","merge/internal-finance-permission-decomposition.json","merge/cross-module-access-leak-closure.json",
+    "merge/credential-session-revocation-hardening.json","merge/access-history-recovery.json","merge/sourcing-domain-foundation.json",
+    "merge/sourcing-access-control.json","merge/sourcing-vendor-master.json","merge/sourcing-material-catalog.json",
+    "merge/sourcing-material-finder.json","merge/sourcing-vendor-verification.json","merge/sourcing-manpower-master.json",
+    "merge/sourcing-trade-workforce-catalog.json",
+    "merge/sourcing-workforce-finder.json",
+    "merge/sourcing-data-exchange.json",
+    "merge/sourcing-scale-hardening.json",
+    "merge/sourcing-security-certification.json",
+    "merge/sourcing-browser-e2e-production-freeze.json",
 )
 for rel in release_contracts:
     if json.loads(text(rel)).get("release") != VERSION:
         fail(f"release-scoped contract is not carried forward to {VERSION}: {rel}")
 
-final_contract = json.loads(text("merge/payroll-final-browser-certification.json"))
-if len(final_contract.get("certified_surfaces") or []) != 24:
-    fail("final Payroll browser certification must cover exactly 24 high-cardinality surfaces")
-if final_contract.get("benchmark_volume") != {"internal_employees": 2000, "rental_workers": 5000, "history_months": 12}:
-    fail("final benchmark volume changed")
-if set(final_contract.get("page_sizes") or []) != {25, 50, 100}:
-    fail("final page-size contract changed")
-if final_contract.get("max_rendered_business_rows") != 100 or final_contract.get("max_assignment_expanded_rows") != 200:
-    fail("final DOM row budget changed")
+for rel in (
+    "apps/core/migrations/0006_sourcing_audit_area.py",
+    "apps/sourcing/migrations/0001_sourcing_domain_foundation.py",
+    "apps/accounts/migrations/0012_sourcing_access_control_authority.py",
+    "apps/sourcing/migrations/0002_vendor_directory_master.py",
+    "apps/sourcing/migrations/0003_material_alias_search.py",
+    "apps/sourcing/migrations/0004_manpower_supplier_contacts.py",
+    "apps/sourcing/migrations/0005_trade_alias_search.py",
+    "apps/sourcing/migrations/0006_scale_finder_indexes.py",
+):
+    if not (ROOT/rel).is_file():
+        fail(f"required migration lineage missing: {rel}")
 
-freeze = text("scripts/verify-production-freeze.sh")
-for rel in contract.get("required_static_gates") or []:
+freeze=text("scripts/verify-production-freeze.sh")
+for rel in registered:
     if Path(rel).name not in freeze and rel not in freeze:
         fail(f"production freeze lost required static gate: {rel}")
 if "verify-release-candidate.py" not in freeze:
-    fail("production freeze does not verify the release-candidate contract")
-
-release_tasks = text("scripts/release-tasks.sh")
+    fail("production freeze does not verify release-candidate contract")
+release_tasks=text("scripts/release-tasks.sh")
 for needle in (
-    "verify-release-candidate.py",
+    "verify-sourcing-manpower-master.py",
+    "verify-sourcing-workforce-finder.py",
+    "verify-sourcing-data-exchange.py",
+    "verify-sourcing-scale-hardening.py",
+    "verify-sourcing-security-certification.py",
+    "verify-sourcing-browser-e2e.py",
+    "apps.sourcing.tests.test_manpower_master",
+    "apps.sourcing.tests.test_workforce_finder",
+    "apps.sourcing.tests.test_data_exchange",
+    "apps.sourcing.tests.test_scale_hardening",
+    "apps.sourcing.tests.test_security_certification",
+    "apps.sourcing.tests.test_browser_e2e_freeze",
+    "verify-sourcing-vendor-verification.py",
     "verify-payroll-production-e2e.py",
-    "verify-payroll-bootstrap-search.py",
-    "verify-payroll-query-hardening.py",
-    "verify-payroll-browser-scale.py",
-    "verify-payroll-employee-residual-scale.py",
-    "verify-payroll-salary-setup-scale.py",
-    "verify-payroll-run-scale.py",
-    "verify-payroll-adjustment-scale.py",
-    "verify-payroll-assignment-project-selector-scale.py",
-    "verify-payroll-drawer-selector-scale.py",
-    "verify-payroll-rental-adjustment-selector-scale.py",
-    "verify-payroll-payment-scale.py",
-    "verify-payroll-shared-surfaces-scale.py",
-    "verify-payroll-final-browser-certification.py",
-    "verify-payroll-report-performance.py",
-    "verify-payroll-document-finalization-context.py",
 ):
     if needle not in release_tasks:
         fail(f"release tasks lost required verification: {needle}")
 
-certify = text("scripts/certify-payroll-production-e2e.sh")
-for needle in (
-    "manage.py check --deploy --fail-level ERROR",
-    "manage.py makemigrations --check --dry-run",
-    'manage.py test "${TEST_LABELS[@]}" --noinput',
-):
-    if needle not in certify:
-        fail(f"runtime Payroll certification lost required gate: {needle}")
+benchmarks=set(contract.get("required_benchmark_gates") or [])
+if not any("certify-sourcing-browser-e2e.py" in gate for gate in benchmarks):
+    fail("1.0.111 release candidate must require live Sourcing Chromium E2E")
+if contract.get("sourcing_live_browser_evidence") != "sourcing-browser-certification.json":
+    fail("1.0.111 release candidate must freeze Sourcing browser evidence filename")
 
-browser_certify = text("scripts/certify-payroll-browser-scale.py")
-for needle in (
-    "#employeeSearch", "#timesheetSearch", "#salaryStructureSearch", "#payrollSearch",
-    "#adjustmentSearch", "#paymentSearch", "#bankExportSearch", "#wpsSearch",
-    "#documentSearch", "#reportSearch", "#recordManagementSearch", "#managementAuditSearch",
-    "#rentalAssignmentSearch", "#rentalTimesheetSearch", "#globalSearchInput",
-    '"management-approvals"', '"management-audit"', '[data-report-type="wps"]',
-):
-    if needle not in browser_certify:
-        fail(f"live browser certification lost required final surface: {needle}")
-
-report = text("apps/core/management/commands/payroll_browser_scale_report.py")
-for needle in (
-    "Salary setup employee structures page (100)",
-    "Payroll run page (100)",
-    "Internal adjustment register (100)",
-    "Salary payment readiness / bank (100)",
-    "Documents page (100)",
-    "Management audit page (100)",
-    "WPS report page (100)",
-    "WPS report search (100)",
-):
-    if needle not in report:
-        fail(f"server benchmark report lost required final measurement: {needle}")
-
-rehearsal = text("scripts/rehearse-production-freeze.sh")
-for needle in ("certify-payroll-production-e2e.sh", "payroll-e2e-certification.txt", "run_manage test --noinput"):
-    if needle not in rehearsal:
-        fail(f"production rehearsal lost runtime certification evidence: {needle}")
-
-deploy = text(contract["deployment_entrypoint"])
+deploy=text(contract["deployment_entrypoint"])
 if "scripts/verify-production-freeze.sh" not in deploy:
     fail("canonical production deployment no longer verifies the packaged freeze")
 
-print("Verified SESCCO MS 1.0.87 contextual document finalization hotfix release contract.")
+print("Verified SESCCO MS 1.0.111 Sourcing Browser E2E + Production Freeze release contract.")

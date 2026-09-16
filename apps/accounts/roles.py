@@ -9,13 +9,16 @@ from django.db import models
 class AccessRole(models.TextChoices):
     OWNER = "owner", "Company Owner"
     OPERATIONS_ADMIN = "operations-admin", "Operations Administrator"
+    ACCESS_ADMINISTRATOR = "access-admin", "Access Administrator"
     INVENTORY_MANAGER = "inventory-manager", "Inventory Manager"
     STOREKEEPER = "storekeeper", "Storekeeper"
     FINANCE_MANAGER = "finance", "Finance Manager"
     INTERNAL_PAYROLL_OFFICER = "internal-officer", "Internal Payroll Officer"
     RENTAL_MANPOWER_OFFICER = "rental-officer", "Rental Manpower Officer"
+    RENTAL_SUPERVISOR = "rental-supervisor", "Rental Supervisor / Foreman"
     FINANCE_REVIEWER = "reviewer", "Finance Reviewer"
     READ_ONLY_AUDITOR = "auditor", "Read-only Auditor"
+    CUSTOM = "custom", "Custom Access Profile"
 
 
 class Workspace(StrEnum):
@@ -112,6 +115,20 @@ ROLE_DEFINITIONS: dict[str, RoleDefinition] = {
             "approval, payment or access-management authority."
         ),
     ),
+    AccessRole.ACCESS_ADMINISTRATOR: RoleDefinition(
+        label=AccessRole.ACCESS_ADMINISTRATOR.label,
+        workspaces=(Workspace.MANAGEMENT,),
+        edit_workspaces=(),
+        capabilities=frozenset({
+            Capability.VIEW_AUDIT,
+            Capability.VIEW_ACCESS,
+            Capability.MANAGE_ACCESS,
+        }),
+        description=(
+            "User/access administration and access audit authority without automatic "
+            "Inventory or Payroll operational access."
+        ),
+    ),
     AccessRole.INVENTORY_MANAGER: RoleDefinition(
         label=AccessRole.INVENTORY_MANAGER.label,
         workspaces=(Workspace.INVENTORY,),
@@ -167,6 +184,17 @@ ROLE_DEFINITIONS: dict[str, RoleDefinition] = {
             "preparation only."
         ),
     ),
+    AccessRole.RENTAL_SUPERVISOR: RoleDefinition(
+        label=AccessRole.RENTAL_SUPERVISOR.label,
+        workspaces=(Workspace.RENTAL,),
+        edit_workspaces=(Workspace.RENTAL,),
+        capabilities=frozenset(),
+        description=(
+            "Project-scoped Rental workforce supervision: assigned workers, timesheets and "
+            "overtime entry/submission without supplier finance, settlement, payment, approval "
+            "or lifecycle-management authority."
+        ),
+    ),
     AccessRole.FINANCE_REVIEWER: RoleDefinition(
         label=AccessRole.FINANCE_REVIEWER.label,
         workspaces=(Workspace.MANAGEMENT, Workspace.INTERNAL, Workspace.RENTAL),
@@ -181,7 +209,15 @@ ROLE_DEFINITIONS: dict[str, RoleDefinition] = {
         capabilities=frozenset({Capability.VIEW_AUDIT}),
         description="Read-only management and audit visibility with no operational changes.",
     ),
+    AccessRole.CUSTOM: RoleDefinition(
+        label=AccessRole.CUSTOM.label,
+        workspaces=(),
+        edit_workspaces=(),
+        capabilities=frozenset(),
+        description="Classification used by administrator-defined Access Profiles; runtime authority comes only from the assigned profile.",
+    ),
 }
+
 
 
 def role_definition(role: str) -> RoleDefinition:

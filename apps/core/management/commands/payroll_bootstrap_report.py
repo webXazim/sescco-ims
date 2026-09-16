@@ -30,9 +30,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         memberships = list(
-            CompanyMembership.objects.select_related("company", "user")
+            CompanyMembership.objects.select_related("company", "user", "access_profile")
             .filter(is_active=True, company__is_active=True, user__is_active=True)
-            .order_by("company__name", "role", "user__username")
+            .order_by("company__name", "access_profile__name", "user__username")
         )
 
         by_company: dict[object, list[CompanyMembership]] = {}
@@ -56,7 +56,7 @@ class Command(BaseCommand):
         for company_id, candidates in by_company.items():
             # Prefer the broadest active role (normally the owner) so one render exercises Internal,
             # Rental and Management bootstrap paths without multiplying expensive production queries.
-            membership = max(candidates, key=lambda item: (_workspace_score(item), item.role == "owner"))
+            membership = max(candidates, key=lambda item: (_workspace_score(item), item.access_profile.key == "role-owner"))
             request = factory.get("/app/payroll/")
             request.user = membership.user
             request.company = membership.company
@@ -72,7 +72,7 @@ class Command(BaseCommand):
                 # Force response content access so template rendering failures are not deferred.
                 _ = response.content
             except Exception as exc:  # deployment diagnostic: preserve the useful traceback
-                label = f"{membership.company.name} ({company_id}) via {membership.user.username}/{membership.role}"
+                label = f"{membership.company.name} ({company_id}) via {membership.user.username}/{membership.access_profile.key}"
                 errors.append(f"{label}: {exc.__class__.__name__}: {exc}")
                 self.stderr.write(self.style.ERROR(f"  FAIL {label}"))
                 self.stderr.write(traceback.format_exc())
@@ -80,7 +80,7 @@ class Command(BaseCommand):
                 workspace_count = _workspace_score(membership)
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"  OK {membership.company.name} via {membership.user.username}/{membership.role} "
+                        f"  OK {membership.company.name} via {membership.user.username}/{membership.access_profile.key} "
                         f"({workspace_count} Payroll workspace path(s))"
                     )
                 )

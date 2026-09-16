@@ -133,6 +133,12 @@ class SalaryPaymentServiceTests(TestCase):
         transition_payroll_run(
             actor_membership=self.reviewer,
             period_start=self.period_start,
+            action="review",
+            confirmed=True,
+        )
+        transition_payroll_run(
+            actor_membership=self.finance,
+            period_start=self.period_start,
             action="approve",
             confirmed=True,
         )
@@ -245,7 +251,7 @@ class SalaryPaymentServiceTests(TestCase):
                 template_id=template.pk,
             )
 
-    def test_payment_execution_requires_pay_capability(self):
+    def test_wps_export_permission_is_independent_from_payment_execution(self):
         self._payment_profile()
         template = self._bank_template()
         batch = prepare_salary_payment_batch(
@@ -254,16 +260,18 @@ class SalaryPaymentServiceTests(TestCase):
             channel=BankExportChannel.BANK_CSV,
             template_id=template.pk,
         )
-        with self.assertRaises(PermissionDenied):
-            export_salary_payment_batch(actor_membership=self.officer, batch_id=batch.pk)
         exported, content, filename, content_type = export_salary_payment_batch(
-            actor_membership=self.finance,
+            actor_membership=self.officer,
             batch_id=batch.pk,
         )
         self.assertEqual(exported.status, SalaryPaymentBatchStatus.EXPORTED)
         self.assertIn(SAUDI_TEST_IBAN.encode(), content)
         self.assertTrue(filename.endswith(".csv"))
         self.assertEqual(content_type, "text/csv")
+        with self.assertRaises(PermissionDenied):
+            start_salary_payment_batch(actor_membership=self.officer, batch_id=batch.pk)
+        started = start_salary_payment_batch(actor_membership=self.finance, batch_id=batch.pk)
+        self.assertEqual(started.status, SalaryPaymentBatchStatus.PROCESSING)
 
     def test_failed_payment_can_retry_and_close_without_recalculating_payroll(self):
         self._payment_profile()
@@ -335,7 +343,7 @@ class SalaryPaymentServiceTests(TestCase):
             company=self.company, period_start=self.period_start, membership=self.officer
         )
         officer_batch = next(item for item in officer_context["batches"] if item["id"] == str(batch.pk))
-        self.assertEqual(officer_batch["allowedActions"], [])
+        self.assertEqual(set(officer_batch["allowedActions"]), {"export", "cancel"})
 
         cancel_salary_payment_batch(
             actor_membership=self.finance, batch_id=batch.pk, reason="Test cancellation before transmission"

@@ -1,0 +1,24 @@
+{% extends "sourcing/base.html" %}
+{% block title %}Verification History · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog">{{ vendor.code }}</a><span>/</span><strong>Verification History</strong></nav>
+    <h1>Verification History</h1>
+    <p>{{ vendor.display_name|default:vendor.name }} · {{ offer.material.name }}{% if offer.specification %} · {{ offer.specification }}{% endif %}</p>
+  </div>
+  <div class="sourcing-profile-actions">{% if can_manage and offer.is_active and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_offer_verify' vendor.id offer.id %}?next={{ request.get_full_path|urlencode }}">Verify now</a>{% endif %}<a class="sourcing-btn" href="{{ next_url }}">Back</a></div>
+</section>
+
+<div class="sourcing-reference-banner"><strong>Immutable sourcing evidence.</strong><span>Each row records what SESCCO knew at that time. Historical values are never rewritten when a later verification changes quantity, rate or lead time.</span></div>
+
+<section class="sourcing-card">
+  <header class="sourcing-card-head"><div><h2>{{ offer.material.name }}</h2><p>Current reference: {% if offer.available_quantity != None %}{{ offer.available_quantity }} {{ offer.unit|default:offer.material.default_unit }}{% else %}quantity unknown{% endif %}{% if offer.rate != None %} · {{ offer.currency }} {{ offer.rate }}{% endif %}</p></div><form method="get"><input type="hidden" name="next" value="{{ next_url }}"><select class="sourcing-select sourcing-select--small" name="page_size" aria-label="Rows per page" onchange="this.form.submit()">{% for size in page_sizes %}<option value="{{ size }}"{% if page_size == size %} selected{% endif %}>{{ size }} / page</option>{% endfor %}</select></form></header>
+  <div class="sourcing-verification-timeline">{% for revision in entries %}<article>
+    <div class="sourcing-verification-time"><time datetime="{{ revision.verified_at|date:'c' }}">{{ revision.verified_at|date:"d M Y H:i" }}</time><span>{{ revision.verified_at|timesince }} ago</span></div>
+    <div class="sourcing-verification-body"><header><strong>{{ revision.actor.display_name|default:revision.actor.username|default:'System' }}</strong>{% if revision.contact_name %}<span>Spoke with {{ revision.contact_name }}</span>{% endif %}</header>{% if revision.note %}<p class="sourcing-verification-note">{{ revision.note }}</p>{% endif %}{% if revision.display_changes %}<div class="sourcing-change-grid">{% for change in revision.display_changes %}<div><span>{{ change.label }}</span><del>{{ change.before|default:'—' }}</del><strong>{{ change.after|default:'—' }}</strong></div>{% endfor %}</div>{% else %}<p class="sourcing-muted-value">Confirmation recorded with no business-value change.</p>{% endif %}</div>
+  </article>{% empty %}<div class="sourcing-empty"><strong>No verification history</strong><p>No confirmed sourcing snapshot has been recorded yet.</p></div>{% endfor %}</div>
+</section>
+
+{% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav aria-label="Verification history pages">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&page_size={{ page_size }}&next={{ next_url|urlencode }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&page_size={{ page_size }}&next={{ next_url|urlencode }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
+{% endblock %}

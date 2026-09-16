@@ -14,7 +14,9 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import DetailView, ListView, UpdateView
 
-from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
+from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
@@ -26,6 +28,15 @@ from apps.projects.models import Project
 from apps.projects.selectors import active_projects
 from apps.projects.services import restore_project_trash
 
+from .access import (
+    location_in_inventory_scope,
+    project_in_inventory_scope,
+    restrict_inventory_location_queryset,
+    restrict_inventory_movements,
+    restrict_inventory_projects,
+    restrict_inventory_stock,
+    restrict_inventory_transfers,
+)
 from .forms import (
     MovementFilterForm,
     MovementReversalForm,
@@ -414,7 +425,8 @@ def _stock_item_from_reference(company, value: str) -> StockItem | None:
         return None
 
 
-class StockItemListView(InventoryWorkspaceMixin, ListView):
+class StockItemListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     model = StockItem
     template_name = "inventory/stockitem_list.html"
     context_object_name = "stock_items"
@@ -431,11 +443,11 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
                 "columns": DEFAULT_STOCK_COLUMNS,
             },
         )
-        return StockItemFilterForm(data, company=self.request.company)
+        return StockItemFilterForm(data, company=self.request.company, membership=self.request.company_membership)
 
     def get_queryset(self):
         self.filter_form = self.get_filter_form()
-        queryset = stock_items(self.request.company)
+        queryset = restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership)
         if self.filter_form.is_valid():
             self.filter_data = self.filter_form.cleaned_data
             queryset = filter_stock_items(queryset, self.filter_data)
@@ -475,7 +487,8 @@ class StockItemListView(InventoryWorkspaceMixin, ListView):
         return context
 
 
-class StockItemCreateView(InventoryWorkspaceMixin, View):
+class StockItemCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_RECEIVE
     """Preserve the old URL while enforcing creation through an addition movement."""
 
     def get(self, request):
@@ -489,7 +502,8 @@ class StockItemCreateView(InventoryWorkspaceMixin, View):
         return self.get(request)
 
 
-class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
+class StockItemUpdateView(InventoryPermissionRequiredMixin, UpdateView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_ADJUST
     model = StockItem
     form_class = StockItemForm
     template_name = "inventory/stockitem_form.html"
@@ -497,11 +511,12 @@ class StockItemUpdateView(InventoryWorkspaceMixin, UpdateView):
     slug_url_kwarg = "reference"
 
     def get_queryset(self):
-        return stock_items(self.request.company)
+        return restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["company"] = self.request.company
+        kwargs["membership"] = self.request.company_membership
         return kwargs
 
     def form_valid(self, form):
@@ -556,7 +571,10 @@ class StockItemStatusView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, reference):
         item = get_object_or_404(
-            StockItem.objects.for_company(request.company).select_related("location", "project", "unit"),
+            restrict_inventory_stock(
+                StockItem.objects.for_company(request.company).select_related("location", "project", "unit"),
+                request.company_membership,
+            ),
             reference=reference,
             deleted_at__isnull=True,
         )
@@ -576,7 +594,8 @@ class StockItemStatusView(InventoryAdminRequiredMixin, View):
 
     def post(self, request, reference):
         item = get_object_or_404(
-            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+            restrict_inventory_stock(StockItem.objects.for_company(request.company), request.company_membership),
+            reference=reference, deleted_at__isnull=True
         )
         action = request.POST.get("action", "").strip()
         try:
@@ -629,13 +648,15 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, reference):
         stock_item = get_object_or_404(
-            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+            restrict_inventory_stock(StockItem.objects.for_company(request.company), request.company_membership),
+            reference=reference, deleted_at__isnull=True
         )
         return render(request, self.template_name, self._context(stock_item))
 
     def post(self, request, reference):
         stock_item = get_object_or_404(
-            StockItem.objects.for_company(request.company), reference=reference, deleted_at__isnull=True
+            restrict_inventory_stock(StockItem.objects.for_company(request.company), request.company_membership),
+            reference=reference, deleted_at__isnull=True
         )
         context = self._context(stock_item)
         if not context["delete_allowed"]:
@@ -659,7 +680,8 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
         return redirect("inventory:list")
 
 
-class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
+class StockItemDetailView(InventoryPermissionRequiredMixin, DetailView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     model = StockItem
     template_name = "inventory/stockitem_detail.html"
     context_object_name = "stock_item"
@@ -667,7 +689,7 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
     slug_url_kwarg = "reference"
 
     def get_queryset(self):
-        return stock_items(self.request.company)
+        return restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -725,7 +747,8 @@ class StockItemDetailView(InventoryWorkspaceMixin, DetailView):
         return context
 
 
-class StockAdditionView(InventoryWorkspaceMixin, View):
+class StockAdditionView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_RECEIVE
     template_name = "inventory/stock_addition_form.html"
 
     def get_initial(self):
@@ -733,7 +756,7 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
         stock_reference = self.request.GET.get("stock", "").strip()
         if stock_reference:
             item = _stock_item_from_reference(self.request.company, stock_reference)
-            if item:
+            if item and location_in_inventory_scope(self.request.company_membership, item.location):
                 supplier = Supplier.objects.for_company(self.request.company).filter(
                     normalized_name=item.normalized_supplier_name,
                     normalized_phone=item.normalized_supplier_phone,
@@ -748,15 +771,15 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
                 )
         project_code = self.request.GET.get("project", "").strip()
         if project_code and "project" not in initial:
-            initial["project"] = active_projects(self.request.company).filter(code=project_code).first()
+            initial["project"] = restrict_inventory_projects(active_projects(self.request.company), self.request.company_membership).filter(code=project_code).first()
         return initial
 
     def get(self, request):
-        form = StockAdditionForm(initial=self.get_initial(), company=request.company)
+        form = StockAdditionForm(initial=self.get_initial(), company=request.company, membership=request.company_membership)
         return render(request, self.template_name, self._context(form))
 
     def post(self, request):
-        form = StockAdditionForm(request.POST, request.FILES, company=request.company)
+        form = StockAdditionForm(request.POST, request.FILES, company=request.company, membership=request.company_membership)
         if form.is_valid():
             data = form.cleaned_data
             try:
@@ -805,7 +828,8 @@ class StockAdditionView(InventoryWorkspaceMixin, View):
         }
 
 
-class StockUsageView(InventoryWorkspaceMixin, View):
+class StockUsageView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_ISSUE
     template_name = "inventory/stock_usage_form.html"
 
     def get_initial(self):
@@ -813,20 +837,20 @@ class StockUsageView(InventoryWorkspaceMixin, View):
         stock_reference = self.request.GET.get("stock", "").strip()
         if stock_reference:
             item = _stock_item_from_reference(self.request.company, stock_reference)
-            if item:
+            if item and location_in_inventory_scope(self.request.company_membership, item.location):
                 initial["project"] = item.project
                 initial["stock_item"] = item
         project_code = self.request.GET.get("project", "").strip()
         if project_code and "project" not in initial:
-            initial["project"] = active_projects(self.request.company).filter(code=project_code).first()
+            initial["project"] = restrict_inventory_projects(active_projects(self.request.company), self.request.company_membership).filter(code=project_code).first()
         return initial
 
     def get(self, request):
-        form = StockUsageForm(initial=self.get_initial(), company=request.company)
+        form = StockUsageForm(initial=self.get_initial(), company=request.company, membership=request.company_membership)
         return render(request, self.template_name, self._context(form))
 
     def post(self, request):
-        form = StockUsageForm(request.POST, request.FILES, company=request.company)
+        form = StockUsageForm(request.POST, request.FILES, company=request.company, membership=request.company_membership)
         if form.is_valid():
             data = form.cleaned_data
             try:
@@ -859,7 +883,7 @@ class StockUsageView(InventoryWorkspaceMixin, View):
         selected = None
         value = form["stock_item"].value()
         if value and str(value).isdigit():
-            selected = stock_items(self.request.company).filter(pk=int(value)).first()
+            selected = restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership).filter(pk=int(value)).first()
         return {
             "page_key": "remove-stock",
             "page_title": "Use stock",
@@ -869,12 +893,13 @@ class StockUsageView(InventoryWorkspaceMixin, View):
         }
 
 
-class StockAdjustmentView(InventoryWorkspaceMixin, View):
+class StockAdjustmentView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_ADJUST
     template_name = "inventory/stock_adjustment_form.html"
 
     def dispatch(self, request, *args, **kwargs):
         self.stock_item = get_object_or_404(
-            stock_items(request.company),
+            restrict_inventory_stock(stock_items(request.company), request.company_membership),
             reference=kwargs["reference"],
         )
         return super().dispatch(request, *args, **kwargs)
@@ -919,7 +944,8 @@ class StockAdjustmentView(InventoryWorkspaceMixin, View):
         }
 
 
-class StockTransferListView(InventoryWorkspaceMixin, ListView):
+class StockTransferListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     model = StockTransfer
     template_name = "inventory/transfer_list.html"
     context_object_name = "transfers"
@@ -929,6 +955,7 @@ class StockTransferListView(InventoryWorkspaceMixin, ListView):
         queryset = StockTransfer.objects.for_company(self.request.company).select_related(
             "source_location", "destination_location", "created_by", "reversed_by"
         ).prefetch_related("lines")
+        queryset = restrict_inventory_transfers(queryset, self.request.company_membership)
         query = self.request.GET.get("q", "").strip()
         if query:
             queryset = queryset.filter(
@@ -952,7 +979,8 @@ class StockTransferListView(InventoryWorkspaceMixin, ListView):
         return context
 
 
-class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
+class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     model = StockItem
     template_name = "inventory/office_inventory.html"
     context_object_name = "stock_items"
@@ -960,7 +988,7 @@ class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
 
     def dispatch(self, request, *args, **kwargs):
         self.office_locations = (
-            InventoryLocation.objects.for_company(request.company)
+            restrict_inventory_location_queryset(InventoryLocation.objects.for_company(request.company), request.company_membership)
             .filter(
                 location_type=InventoryLocation.Type.OFFICE,
                 is_active=True,
@@ -979,7 +1007,7 @@ class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        queryset = stock_items(self.request.company).filter(location=self.office, status=StockItem.Status.ACTIVE)
+        queryset = restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership).filter(location=self.office, status=StockItem.Status.ACTIVE)
         return apply_stock_search(queryset, self.request.GET.get("q", "")).order_by(
             "material_name", "condition", "supplier_name"
         )
@@ -997,7 +1025,8 @@ class OfficeInventoryView(InventoryWorkspaceMixin, ListView):
         return context
 
 
-class StockTransferCreateView(InventoryWorkspaceMixin, View):
+class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_TRANSFER
     template_name = "inventory/transfer_form.html"
 
     def _closeout_project(self, request):
@@ -1005,7 +1034,7 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
         if not code:
             return None
         return get_object_or_404(
-            Project.objects.for_company(request.company),
+            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
             code=code,
             status=Project.Status.ACTIVE,
             deleted_at__isnull=True,
@@ -1016,9 +1045,9 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             return closeout_project.inventory_location
         value = (request.GET.get("source") or request.POST.get("source_location") or "").strip()
         if value and value.isdigit():
-            return InventoryLocation.objects.for_company(request.company).select_related("project").filter(
-                pk=int(value), is_active=True, archived_at__isnull=True, deleted_at__isnull=True
-            ).first()
+            return restrict_inventory_location_queryset(
+                InventoryLocation.objects.for_company(request.company).select_related("project"), request.company_membership
+            ).filter(pk=int(value), is_active=True, archived_at__isnull=True, deleted_at__isnull=True).first()
         return None
 
     def get(self, request):
@@ -1029,6 +1058,7 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             require_full_transfer=bool(closeout_project),
             lock_source=bool(closeout_project),
             company=request.company,
+            membership=request.company_membership,
         )
         return render(request, self.template_name, self._context(form, source, closeout_project))
 
@@ -1042,6 +1072,7 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             require_full_transfer=bool(closeout_project),
             lock_source=bool(closeout_project),
             company=request.company,
+            membership=request.company_membership,
         )
         if form.is_valid():
             data = form.cleaned_data
@@ -1126,14 +1157,16 @@ class StockTransferCreateView(InventoryWorkspaceMixin, View):
             ),
             "form": form,
             "source": source,
-            "source_locations": InventoryLocation.objects.for_company(self.request.company).select_related("project")
-            .filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
+            "source_locations": restrict_inventory_location_queryset(
+                InventoryLocation.objects.for_company(self.request.company).select_related("project"), self.request.company_membership
+            ).filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
             .order_by("location_type", "code"),
             "closeout_project": closeout_project,
         }
 
 
-class StockTransferDetailView(InventoryWorkspaceMixin, DetailView):
+class StockTransferDetailView(InventoryPermissionRequiredMixin, DetailView):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     model = StockTransfer
     slug_field = "reference"
     slug_url_kwarg = "reference"
@@ -1141,13 +1174,14 @@ class StockTransferDetailView(InventoryWorkspaceMixin, DetailView):
     context_object_name = "transfer"
 
     def get_queryset(self):
-        return StockTransfer.objects.for_company(self.request.company).select_related(
+        queryset = StockTransfer.objects.for_company(self.request.company).select_related(
             "source_location", "destination_location", "created_by", "reversed_by"
         ).prefetch_related(
             "lines__source_stock_item__unit",
             "lines__destination_stock_item",
             "lines__movements",
         )
+        return restrict_inventory_transfers(queryset, self.request.company_membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1168,9 +1202,10 @@ class StockTransferDetailView(InventoryWorkspaceMixin, DetailView):
         return context
 
 
-class StockTransferAttachmentView(InventoryWorkspaceMixin, View):
+class StockTransferAttachmentView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     def get(self, request, reference):
-        transfer = get_object_or_404(StockTransfer.objects.for_company(request.company), reference=reference)
+        transfer = get_object_or_404(restrict_inventory_transfers(StockTransfer.objects.for_company(request.company), request.company_membership), reference=reference)
         if not transfer.attachment:
             raise Http404("This transfer has no attachment.")
         try:
@@ -1188,7 +1223,10 @@ class StockTransferReversalView(InventoryAdminRequiredMixin, View):
 
     def dispatch(self, request, *args, **kwargs):
         self.transfer = get_object_or_404(
-            StockTransfer.objects.for_company(request.company).select_related("source_location", "destination_location"),
+            restrict_inventory_transfers(
+                StockTransfer.objects.for_company(request.company).select_related("source_location", "destination_location"),
+                request.company_membership,
+            ),
             reference=kwargs["reference"],
         )
         return super().dispatch(request, *args, **kwargs)
@@ -1227,7 +1265,8 @@ class StockTransferReversalView(InventoryAdminRequiredMixin, View):
         )
 
 
-class StockMovementListView(InventoryWorkspaceMixin, ListView):
+class StockMovementListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     model = StockMovement
     template_name = "inventory/movement_list.html"
     context_object_name = "movements"
@@ -1239,10 +1278,10 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
             self.request,
             {"sort": "-date", "columns": DEFAULT_MOVEMENT_COLUMNS},
         )
-        return MovementFilterForm(data, company=self.request.company)
+        return MovementFilterForm(data, company=self.request.company, membership=self.request.company_membership)
 
     def get_queryset(self):
-        queryset = stock_movements(self.request.company)
+        queryset = restrict_inventory_movements(stock_movements(self.request.company), self.request.company_membership)
         self.filter_form = self.get_filter_form()
         if self.filter_form.is_valid():
             self.filter_data = self.filter_form.cleaned_data
@@ -1288,7 +1327,8 @@ class StockMovementListView(InventoryWorkspaceMixin, ListView):
         return context
 
 
-class InventoryColumnPreferenceView(InventoryWorkspaceMixin, View):
+class InventoryColumnPreferenceView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     def post(self, request):
         view_type = request.POST.get("view_type", "")
         settings = COLUMN_SETTINGS.get(view_type)
@@ -1322,7 +1362,8 @@ class InventoryColumnPreferenceView(InventoryWorkspaceMixin, View):
         return redirect(target)
 
 
-class StockMovementDetailView(InventoryWorkspaceMixin, DetailView):
+class StockMovementDetailView(InventoryPermissionRequiredMixin, DetailView):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     model = StockMovement
     template_name = "inventory/movement_detail.html"
     context_object_name = "movement"
@@ -1330,7 +1371,7 @@ class StockMovementDetailView(InventoryWorkspaceMixin, DetailView):
     slug_url_kwarg = "reference"
 
     def get_queryset(self):
-        return stock_movements(self.request.company)
+        return restrict_inventory_movements(stock_movements(self.request.company), self.request.company_membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1342,9 +1383,10 @@ class StockMovementDetailView(InventoryWorkspaceMixin, DetailView):
         return context
 
 
-class MovementAttachmentView(InventoryWorkspaceMixin, View):
+class MovementAttachmentView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_MOVEMENTS_VIEW
     def get(self, request, reference):
-        movement = get_object_or_404(stock_movements(request.company), reference=reference)
+        movement = get_object_or_404(restrict_inventory_movements(stock_movements(request.company), request.company_membership), reference=reference)
         if not movement.attachment:
             raise Http404("This movement has no attachment.")
         try:
@@ -1357,9 +1399,15 @@ class MovementAttachmentView(InventoryWorkspaceMixin, View):
         return response
 
 
-class StockDocumentAttachmentView(InventoryWorkspaceMixin, View):
+class StockDocumentAttachmentView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     def get(self, request, reference):
-        document = get_object_or_404(StockDocument.objects.for_company(request.company), reference=reference)
+        document = get_object_or_404(
+            StockDocument.objects.for_company(request.company).filter(
+                stock_item__in=restrict_inventory_stock(stock_items(request.company), request.company_membership)
+            ),
+            reference=reference,
+        )
         try:
             file_handle = document.file.open("rb")
         except FileNotFoundError as exc:
@@ -1378,7 +1426,7 @@ class MovementReversalView(InventoryAdminRequiredMixin, View):
 
     def dispatch(self, request, *args, **kwargs):
         self.movement = get_object_or_404(
-            stock_movements(request.company),
+            restrict_inventory_movements(stock_movements(request.company), request.company_membership),
             reference=kwargs["reference"],
         )
         return super().dispatch(request, *args, **kwargs)
@@ -1438,7 +1486,7 @@ class LowStockListView(StockItemListView):
                 "columns": DEFAULT_STOCK_COLUMNS,
             },
         )
-        form = StockItemFilterForm(data, company=self.request.company)
+        form = StockItemFilterForm(data, company=self.request.company, membership=self.request.company_membership)
         form.fields["stock_status"].choices = (
             ("", "Low and out of stock"),
             ("low", "Low stock"),
@@ -1448,7 +1496,7 @@ class LowStockListView(StockItemListView):
 
     def get_queryset(self):
         self.filter_form = self.get_filter_form()
-        queryset = low_stock_items(self.request.company)
+        queryset = restrict_inventory_stock(low_stock_items(self.request.company), self.request.company_membership)
         if self.filter_form.is_valid():
             self.filter_data = self.filter_form.cleaned_data
             # Keep this view permanently scoped to active low/out-of-stock records.
@@ -1478,7 +1526,8 @@ class LowStockListView(StockItemListView):
         return context
 
 
-class ArchiveListView(InventoryWorkspaceMixin, View):
+class ArchiveListView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.SHARED_ARCHIVE_VIEW
     template_name = "inventory/archive_list.html"
     kinds = {"stock", "projects", "units", "suppliers", "locations"}
 
@@ -1488,13 +1537,24 @@ class ArchiveListView(InventoryWorkspaceMixin, View):
             kind = "stock"
         query = request.GET.get("q", "").strip()
 
-        archived_stock = stock_items(self.request.company).filter(status=StockItem.Status.ARCHIVED)
-        archived_projects = Project.objects.for_company(self.request.company).filter(
-            status=Project.Status.ARCHIVED, deleted_at__isnull=True
+        archived_stock = restrict_inventory_stock(
+            stock_items(self.request.company).filter(status=StockItem.Status.ARCHIVED),
+            request.company_membership,
+        )
+        archived_projects = restrict_inventory_projects(
+            Project.objects.for_company(self.request.company).filter(
+                status=Project.Status.ARCHIVED, deleted_at__isnull=True
+            ),
+            request.company_membership,
         )
         archived_units = Unit.objects.for_company(self.request.company).filter(archived_at__isnull=False, deleted_at__isnull=True)
         archived_suppliers = Supplier.objects.for_company(self.request.company).filter(archived_at__isnull=False, deleted_at__isnull=True)
-        archived_locations = InventoryLocation.objects.for_company(self.request.company).select_related("project").filter(archived_at__isnull=False, deleted_at__isnull=True)
+        archived_locations = restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(self.request.company).select_related("project").filter(
+                archived_at__isnull=False, deleted_at__isnull=True
+            ),
+            request.company_membership,
+        )
         counts = {
             "stock": archived_stock.count(),
             "projects": archived_projects.count(),
@@ -1689,7 +1749,8 @@ class TrashRestoreView(InventoryAdminRequiredMixin, View):
         return redirect("inventory:trash")
 
 
-class UnitListCreateView(InventoryWorkspaceMixin, View):
+class UnitListCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_LOCATIONS_MANAGE
     template_name = "inventory/unit_list.html"
 
     def get(self, request):
@@ -1730,7 +1791,8 @@ class UnitListCreateView(InventoryWorkspaceMixin, View):
         }
 
 
-class UnitUpdateView(InventoryWorkspaceMixin, UpdateView):
+class UnitUpdateView(InventoryPermissionRequiredMixin, UpdateView):
+    inventory_permission = AccessPermission.INVENTORY_LOCATIONS_MANAGE
     model = Unit
     form_class = UnitForm
     template_name = "inventory/unit_form.html"
@@ -1836,13 +1898,17 @@ class UnitDeleteView(InventoryAdminRequiredMixin, View):
         return redirect("inventory:units")
 
 
-class SupplierListCreateView(InventoryWorkspaceMixin, View):
+class SupplierListCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_SUPPLIERS_VIEW
     template_name = "inventory/supplier_list.html"
 
     def get(self, request):
         return render(request, self.template_name, self._context(SupplierForm(company=request.company)))
 
     def post(self, request):
+        if not membership_has_permission(request.company_membership, AccessPermission.INVENTORY_SUPPLIERS_MANAGE):
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied("Supplier management authority is required.")
         form = SupplierForm(request.POST, company=request.company)
         if form.is_valid():
             supplier = form.save(commit=False)
@@ -1881,7 +1947,8 @@ class SupplierListCreateView(InventoryWorkspaceMixin, View):
         }
 
 
-class SupplierUpdateView(InventoryWorkspaceMixin, UpdateView):
+class SupplierUpdateView(InventoryPermissionRequiredMixin, UpdateView):
+    inventory_permission = AccessPermission.INVENTORY_SUPPLIERS_MANAGE
     model = Supplier
     form_class = SupplierForm
     template_name = "inventory/supplier_form.html"
@@ -1990,7 +2057,8 @@ class SupplierDeleteView(InventoryAdminRequiredMixin, View):
         return redirect("inventory:suppliers")
 
 
-class InventoryLocationListView(InventoryWorkspaceMixin, View):
+class InventoryLocationListView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_LOCATIONS_VIEW
     template_name = "inventory/location_list.html"
 
     def get(self, request):
@@ -1998,7 +2066,9 @@ class InventoryLocationListView(InventoryWorkspaceMixin, View):
         status = request.GET.get("status", "active").strip().lower()
         if status not in {"active", "archived", "all"}:
             status = "active"
-        locations = InventoryLocation.objects.for_company(request.company).select_related("project").filter(deleted_at__isnull=True)
+        locations = restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(request.company).select_related("project"), request.company_membership
+        ).filter(deleted_at__isnull=True)
         if status == "active":
             locations = locations.filter(archived_at__isnull=True, is_active=True)
         elif status == "archived":
@@ -2092,18 +2162,19 @@ class InventoryLocationDeleteView(InventoryAdminRequiredMixin, View):
         return redirect("inventory:locations")
 
 
-class StockPickerAPIView(InventoryWorkspaceMixin, View):
+class StockPickerAPIView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
     def get(self, request):
         project_identifier = request.GET.get("project", "").strip()
         query = request.GET.get("q", "").strip()
         if not project_identifier:
             return JsonResponse({"results": []})
         project = get_object_or_404(
-            active_projects(request.company),
+            restrict_inventory_projects(active_projects(request.company), request.company_membership),
             Q(code=project_identifier)
             | Q(pk=project_identifier if project_identifier.isdigit() else 0),
         )
-        queryset = stock_items(request.company).filter(
+        queryset = restrict_inventory_stock(stock_items(request.company), request.company_membership).filter(
             project=project,
             status=StockItem.Status.ACTIVE,
             current_quantity__gt=0,
@@ -2133,7 +2204,8 @@ class StockPickerAPIView(InventoryWorkspaceMixin, View):
         )
 
 
-class StockMatchAPIView(InventoryWorkspaceMixin, View):
+class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_RECEIVE
     def get(self, request):
         project_identifier = request.GET.get("project", "").strip()
         material_name = request.GET.get("material_name", "")
@@ -2145,7 +2217,7 @@ class StockMatchAPIView(InventoryWorkspaceMixin, View):
                 status=400,
             )
         project = get_object_or_404(
-            active_projects(request.company),
+            restrict_inventory_projects(active_projects(request.company), request.company_membership),
             Q(code=project_identifier)
             | Q(pk=project_identifier if project_identifier.isdigit() else 0),
         )

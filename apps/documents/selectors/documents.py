@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 
-from apps.accounts.permissions import membership_can_workspace
-from apps.accounts.roles import Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import branch_scope_ids, membership_has_permission, project_scope_ids
 
-from ..models import BusinessDocument, DocumentWorkspace
+from ..models import BusinessDocument, DocumentType, DocumentWorkspace
+from apps.internal_payroll.models import PayrollRunLine, SalaryPaymentRow
+from apps.rental_manpower.models import RentalTimesheetPeriod, SupplierPayment, SupplierPaymentAllocation, SupplierSettlement
 from ..services import verify_document_snapshot
 
 
@@ -28,14 +30,54 @@ def _page_size(value: object) -> int:
     return size if size in DOCUMENT_PAGE_SIZES else 50
 
 
+
+def _scope_documents(qs, *, company, membership):
+    """Apply Branch/Project scope to immutable document history.
+
+    Whole-company Internal Timesheet documents are intentionally unavailable to a
+    branch-restricted membership because the snapshot contains employees outside that branch.
+    Supplier payment receipts are visible only when *every* allocation belongs to an
+    allowed project; mixed-project receipts fail closed instead of being partially redacted.
+    """
+    branch_ids = branch_scope_ids(membership)
+    project_ids = project_scope_ids(membership)
+    allowed = Q()
+
+    if branch_ids is None:
+        allowed |= Q(workspace=DocumentWorkspace.INTERNAL)
+    elif branch_ids:
+        salary_ids = PayrollRunLine.objects.for_company(company).filter(branch_id_snapshot__in=branch_ids).values("pk")
+        receipt_ids = SalaryPaymentRow.objects.for_company(company).filter(run_line__branch_id_snapshot__in=branch_ids).values("pk")
+        allowed |= Q(document_type=DocumentType.SALARY_SLIP, source_id__in=salary_ids)
+        allowed |= Q(document_type=DocumentType.SALARY_PAYMENT_RECEIPT, source_id__in=receipt_ids)
+
+    if project_ids is None:
+        allowed |= Q(workspace=DocumentWorkspace.RENTAL)
+    elif project_ids:
+        timesheet_ids = RentalTimesheetPeriod.objects.for_company(company).filter(project_id__in=project_ids).values("pk")
+        settlement_ids = SupplierSettlement.objects.for_company(company).filter(project_id__in=project_ids).values("pk")
+        outside_allocations = SupplierPaymentAllocation.objects.for_company(company).filter(payment_id=OuterRef("pk")).exclude(settlement__project_id__in=project_ids)
+        payment_ids = (
+            SupplierPayment.objects.for_company(company)
+            .annotate(_outside_scope=Exists(outside_allocations))
+            .filter(_outside_scope=False, allocations__settlement__project_id__in=project_ids)
+            .values("pk")
+        )
+        allowed |= Q(document_type=DocumentType.RENTAL_TIMESHEET, source_id__in=timesheet_ids)
+        allowed |= Q(document_type__in=[DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE], source_id__in=settlement_ids)
+        allowed |= Q(document_type=DocumentType.SUPPLIER_PAYMENT_RECEIPT, source_id__in=payment_ids)
+
+    return qs.filter(allowed) if allowed else qs.none()
+
 def documents_for_company(*, company, membership, workspace: str = "", query: str = "", period_start=None, document_type: str = "", entity_reference: str = ""):
     qs = BusinessDocument.objects.for_company(company).select_related("finalized_by")
     allowed = []
-    if membership_can_workspace(membership, Workspace.INTERNAL):
+    if membership_has_permission(membership, AccessPermission.INTERNAL_DOCUMENTS_VIEW) or membership_has_permission(membership, AccessPermission.SHARED_DOCUMENTS_VIEW):
         allowed.append(DocumentWorkspace.INTERNAL)
-    if membership_can_workspace(membership, Workspace.RENTAL):
+    if membership_has_permission(membership, AccessPermission.RENTAL_DOCUMENTS_VIEW) or membership_has_permission(membership, AccessPermission.SHARED_DOCUMENTS_VIEW):
         allowed.append(DocumentWorkspace.RENTAL)
     qs = qs.filter(workspace__in=allowed)
+    qs = _scope_documents(qs, company=company, membership=membership)
     if workspace:
         qs = qs.filter(workspace=workspace)
     if period_start:

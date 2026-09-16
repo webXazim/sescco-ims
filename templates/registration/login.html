@@ -31,6 +31,7 @@
       <div class="brand-mark login-box-mark brand-mark--image"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="SESCCO"></div>
       <h2>Welcome back</h2>
       <p>Sign in to SESCCO MS.</p>
+      {% if request.GET.reason == "access-updated" %}<div class="alert alert-danger">Your access or security settings changed. Sign in again.</div>{% endif %}
       {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors|striptags }}</div>{% endif %}
       <form method="post" novalidate>
         {% csrf_token %}

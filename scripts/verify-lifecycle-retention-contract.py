@@ -33,7 +33,7 @@ def persisted_models() -> set[str]:
                     continue
                 bases = {ast.unparse(base) for base in node.bases}
                 is_model = any(
-                    base in {"models.Model", "CompanyOwnedModel", "UUIDTimeStampedModel", "AbstractUser"}
+                    base in {"models.Model", "CompanyOwnedModel", "UUIDTimeStampedModel", "AbstractUser", "SourcingLifecycleModel"}
                     for base in bases
                 )
                 is_abstract = False
@@ -59,6 +59,8 @@ if not isinstance(models, dict) or not models:
 
 allowed_modes = {
     "access_deactivate_only",
+    "access_policy_child_replaceable",
+    "access_scope_assignment",
     "cascade_recovery_state",
     "effective_dated_supersede_only",
     "employment_lifecycle_archive_delete_unused",
@@ -71,6 +73,10 @@ allowed_modes = {
     "master_archive_trash_30d",
     "master_archive_trash_30d_reversible_cascade",
     "profile_delete_unused_or_deactivate",
+    "reference_master_archive_trash_30d",
+    "reference_master_deactivate_only",
+    "reference_offer_deactivate_only",
+    "immutable_reference_history",
     "system_singleton_no_delete",
     "user_preference_delete_ok",
     "worker_lifecycle_archive_delete_unused",
@@ -123,9 +129,35 @@ for model_name in (
     if f"register_lifecycle_policy({model_name}," not in policy_texts:
         fail(f"{model_name} is not registered with the central lifecycle authority")
 
-salary_api = (ROOT / "apps/internal_payroll/salary_api.py").read_text(encoding="utf-8")
-if '@require_http_methods(["GET", "POST"])\n@api_workspace_required(Workspace.INTERNAL)\ndef salary_structures_api' not in salary_api:
+salary_api_path = ROOT / "apps/internal_payroll/salary_api.py"
+salary_api = salary_api_path.read_text(encoding="utf-8")
+salary_tree = ast.parse(salary_api, filename=str(salary_api_path))
+salary_structure_view = next(
+    (node for node in salary_tree.body if isinstance(node, ast.FunctionDef) and node.name == "salary_structures_api"),
+    None,
+)
+if salary_structure_view is None:
+    fail("salary structures API is missing")
+http_methods: set[str] | None = None
+for decorator in salary_structure_view.decorator_list:
+    if not isinstance(decorator, ast.Call) or ast.unparse(decorator.func) != "require_http_methods":
+        continue
+    if not decorator.args or not isinstance(decorator.args[0], (ast.List, ast.Tuple)):
+        fail("salary structures HTTP-method contract is malformed")
+    values: set[str] = set()
+    for item in decorator.args[0].elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            fail("salary structures HTTP-method contract must use literal method names")
+        values.add(item.value.upper())
+    http_methods = values
+    break
+if http_methods != {"GET", "POST"}:
     fail("salary structures must remain create/read effective-dated records; ordinary PATCH/DELETE is not allowed")
+if any(
+    isinstance(node, ast.FunctionDef) and node.name in {"salary_structure_detail_api", "salary_structure_update_api", "salary_structure_delete_api"}
+    for node in salary_tree.body
+):
+    fail("salary structures must not gain an ordinary detail/update/delete API; changes are effective-dated supersessions")
 
 app_js = (ROOT / "static/payroll/js/app.js").read_text(encoding="utf-8")
 for needle in (

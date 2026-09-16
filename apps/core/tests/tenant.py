@@ -26,12 +26,7 @@ def grant_company_access(
 ) -> CompanyMembership:
     company = company or primary_company()
     if role is None:
-        if user.is_superuser:
-            role = AccessRole.OWNER
-        elif user.role == User.Role.ADMIN:
-            role = AccessRole.OPERATIONS_ADMIN
-        else:
-            role = AccessRole.STOREKEEPER
+        role = AccessRole.OWNER if user.is_superuser else AccessRole.STOREKEEPER
     membership, _ = CompanyMembership.objects.update_or_create(
         company=company,
         user=user,

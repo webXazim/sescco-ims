@@ -1,3 +1,5 @@
+> Release 1.0.111 is the final Sourcing Browser E2E + Production Freeze. It adds no schema or operational business behavior change and requires live Chromium certification on the benchmark rehearsal image before cutover.
+
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 
 - SESCCO: `127.0.0.1:8081`
@@ -171,6 +173,20 @@ Expected final message:
 ```text
 Preflight passed
 ```
+
+## 7A. Final Sourcing browser rehearsal gate
+
+On the benchmark rehearsal deployment, after seeding and before production cutover, run the live Chromium Sourcing journey with a Sourcing edit-capable benchmark account:
+
+```sh
+export IMS_SOURCING_BROWSER_PASSWORD='REDACTED'
+python scripts/certify-sourcing-browser-e2e.py \
+  --base-url https://<rehearsal-host> \
+  --username <sourcing-benchmark-user> \
+  --password-env IMS_SOURCING_BROWSER_PASSWORD
+```
+
+Keep the generated `sourcing-browser-certification.json` with the release evidence.
 
 ## 8. Deploy IMS
 

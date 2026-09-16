@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from django.db.models import Prefetch, Q
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.core.models import AuditArea, AuditEvent, Company
 from apps.internal_payroll.models import (
     AttendanceCode,
@@ -90,7 +92,7 @@ def _attendance_profile(*, company: Company, employee: InternalEmployee, period_
     }
 
 
-def _payroll_history(*, company: Company, employee: InternalEmployee) -> list[dict[str, object]]:
+def _payroll_history(*, company: Company, employee: InternalEmployee, include_payment: bool = True) -> list[dict[str, object]]:
     payment_rows = (
         SalaryPaymentRow.objects.for_company(company)
         .select_related("batch")
@@ -126,9 +128,9 @@ def _payroll_history(*, company: Company, employee: InternalEmployee) -> list[di
                 "gross": _money(line.gross),
                 "deductions": _money(line.total_deductions),
                 "net": _money(line.net),
-                "payment": payment.get_status_display() if payment is not None else "Not prepared",
-                "paymentStatusValue": payment.status if payment is not None else None,
-                "paymentReference": payment.transaction_reference if payment is not None else "",
+                "payment": (payment.get_status_display() if payment is not None else "Not prepared") if include_payment else None,
+                "paymentStatusValue": (payment.status if payment is not None else None) if include_payment else None,
+                "paymentReference": (payment.transaction_reference if payment is not None else "") if include_payment else "",
                 "status": line.run.get_status_display(),
                 "statusValue": line.run.status,
             }
@@ -276,13 +278,27 @@ def _period_adjustments(*, company: Company, employee: InternalEmployee, period_
     return [serialize_payroll_adjustment(item) for item in rows]
 
 
-def employee_profile_context(*, company: Company, employee: InternalEmployee, period_start: date) -> dict[str, object]:
+def employee_profile_context(*, company: Company, employee: InternalEmployee, period_start: date, membership=None) -> dict[str, object]:
     if employee.company_id != company.pk:
         raise ValueError("Employee does not belong to the active company.")
-    organization_history = list(
-        employee.organization_assignments.select_related("branch", "department").order_by("-effective_from", "-created_at")
-    )
-    return {
+
+    can_organization = membership is None or membership_has_permission(membership, AccessPermission.INTERNAL_ORGANIZATION_VIEW)
+    can_attendance = membership is None or membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_VIEW)
+    can_adjustments = membership is None or membership_has_permission(membership, AccessPermission.INTERNAL_ADJUSTMENTS_VIEW)
+    can_payroll = membership is None or membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_VIEW)
+    can_payments = membership is None or membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_VIEW)
+    can_audit = membership is None or membership_has_permission(membership, AccessPermission.ACCESS_AUDIT_VIEW)
+
+    organization_history = []
+    if can_organization:
+        organization_history = list(
+            employee.organization_assignments.select_related("branch", "department").order_by("-effective_from", "-created_at")
+        )
+
+    # Employee-only access must never become a side channel into attendance, salary,
+    # payroll, payments or audit evidence. The response shape is stable, but unauthorized
+    # sections are empty/None and their backing queries are not executed.
+    profile = {
         "employeeId": str(employee.pk),
         "employeeNumber": employee.employee_number,
         "period": f"{period_start:%Y-%m}",
@@ -297,8 +313,17 @@ def employee_profile_context(*, company: Company, employee: InternalEmployee, pe
             }
             for item in organization_history
         ],
-        "attendance": _attendance_profile(company=company, employee=employee, period_start=period_start),
-        "adjustments": _period_adjustments(company=company, employee=employee, period_start=period_start),
-        "payrollHistory": _payroll_history(company=company, employee=employee),
-        "activity": _employee_activity(company=company, employee=employee),
+        "attendance": _attendance_profile(company=company, employee=employee, period_start=period_start) if can_attendance else None,
+        "adjustments": _period_adjustments(company=company, employee=employee, period_start=period_start) if can_adjustments else [],
+        "payrollHistory": _payroll_history(company=company, employee=employee, include_payment=can_payments) if can_payroll else [],
+        "activity": _employee_activity(company=company, employee=employee) if can_audit else [],
+        "visibility": {
+            "organization": can_organization,
+            "attendance": can_attendance,
+            "adjustments": can_adjustments,
+            "payroll": can_payroll,
+            "payments": can_payments,
+            "audit": can_audit,
+        },
     }
+    return profile

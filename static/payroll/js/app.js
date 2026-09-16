@@ -31,7 +31,7 @@
   const accessContextNode = document.getElementById('payroll-access-context');
   if (!accessContextNode) throw new Error('Missing server access context.');
   const serverAccess = JSON.parse(accessContextNode.textContent || '{}');
-  if (!serverAccess.role || !serverAccess.role_matrix) throw new Error('Invalid server access context.');
+  if (!serverAccess.role || !serverAccess.role_matrix || !serverAccess.effective_access?.profile || !Array.isArray(serverAccess.effective_access?.permissions)) throw new Error('Invalid server access context.');
   const internalMasterNode = document.getElementById('payroll-internal-master-context');
   if (!internalMasterNode) throw new Error('Missing internal payroll master context.');
   const internalMaster = JSON.parse(internalMasterNode.textContent || '{}');
@@ -932,6 +932,10 @@
   const storedManagementWorkspacePeriod = localStorage.getItem('payroll-ui-management-period') || defaultInternalPeriod;
   const accessRoles = serverAccess.role_matrix;
   const serverWorkspaces = Array.isArray(serverAccess.workspaces) ? serverAccess.workspaces : [];
+  const serverEditWorkspaces = Array.isArray(serverAccess.edit_workspaces) ? serverAccess.edit_workspaces : [];
+  const serverCapabilities = new Set(Array.isArray(serverAccess.capabilities) ? serverAccess.capabilities : []);
+  const effectivePermissions = new Set(Array.isArray(serverAccess.effective_access?.permissions) ? serverAccess.effective_access.permissions : []);
+  const accessProfile = serverAccess.effective_access?.profile || {};
   const urlWorkspace = new URLSearchParams(location.search).get('workspace');
   const serverInitialWorkspace = typeof serverAccess.initial_workspace === 'string' ? serverAccess.initial_workspace : '';
   const requestedWorkspace = serverWorkspaces.includes(serverInitialWorkspace)
@@ -1885,25 +1889,62 @@
   }
 
   function roleDefinition(role = state.accessRole) {
+    // Compatibility metadata only. Authorization is never derived from this matrix.
     const definition = accessRoles[role];
-    if (!definition) throw new Error(`Unknown server access role: ${role}`);
+    if (!definition) return { label: accessProfile.name || 'Access profile', description: '', workspaces: [], edit: [] };
     return definition;
   }
 
-  function roleCanWorkspace(workspace) {
-    // The request-specific workspace list is authoritative.  The role matrix is useful
-    // for labels/capabilities, but it must not be able to disagree with the membership
-    // context that the server authorized for this request.
-    return serverWorkspaces.includes(workspace);
-  }
+  function accessProfileLabel() { return accessProfile.name || serverAccess.role_label || roleDefinition().label || 'Access profile'; }
+  function accessProfileDescription() { return roleDefinition().description || 'Company access is enforced by the assigned Access Profile.'; }
 
-  function roleCanEdit(workspace = state.workspace) {
-    return roleDefinition().edit.includes(workspace);
-  }
+  function roleCanWorkspace(workspace) { return serverWorkspaces.includes(workspace); }
+  function roleCanEdit(workspace = state.workspace) { return serverEditWorkspaces.includes(workspace); }
+  function roleCanApprove() { return serverCapabilities.has('approve'); }
+  function roleCanPay() { return serverCapabilities.has('pay'); }
+  function roleCanSettings() { return serverCapabilities.has('manage_settings'); }
+  function roleCanViewAccess() { return serverCapabilities.has('view_access'); }
+  function roleCanManageAccess() { return serverCapabilities.has('manage_access'); }
 
-  function roleCanApprove() { return !!roleDefinition().approve; }
-  function roleCanPay() { return !!roleDefinition().pay; }
-  function roleCanSettings() { return !!roleDefinition().settings; }
+  function hasAccessPermission(permission) { return effectivePermissions.has(permission); }
+  function hasAnyAccessPermission(...permissions) { return permissions.some(permission => effectivePermissions.has(permission)); }
+
+  const internalRoutePermissions = {
+    overview: ['internal.overview.view'],
+    'internal-employees': ['internal.employees.view'],
+    branches: ['internal.organization.view'],
+    departments: ['internal.organization.view'],
+    'salary-setup': ['internal.salary_setup.view'],
+    timesheets: ['internal.attendance.view'],
+    'payroll-runs': ['internal.payroll_runs.view'],
+    adjustments: ['internal.adjustments.view'],
+    payments: ['internal.payments.view'],
+    'bank-export': ['internal.wps.view'],
+    wps: ['internal.wps.view'],
+    documents: ['internal.documents.view','shared.documents.view'],
+    archive: ['shared.archive.view'],
+    trash: ['shared.trash.view'],
+    reports: ['internal.reports.view','shared.reports.view'],
+    settings: ['settings.view','settings.manage']
+  };
+
+  const rentalRoutePermissions = {
+    overview: ['rental.overview.view'],
+    'rental-workforce': ['rental.workers.view'],
+    'rental-onboarding': ['rental.workers.manage'],
+    'rental-assignments': ['rental.assignments.view'],
+    projects: ['rental.assignments.manage'],
+    suppliers: ['rental.suppliers.view'],
+    timesheets: ['rental.timesheets.view','rental.overtime.view'],
+    'rental-settlements': ['rental.settlements.view'],
+    adjustments: ['rental.adjustments.view'],
+    payments: ['rental.payments.view'],
+    documents: ['rental.documents.view','shared.documents.view'],
+    archive: ['shared.archive.view'],
+    trash: ['shared.trash.view'],
+    reports: ['rental.reports.view','shared.reports.view'],
+    settings: ['settings.view','settings.manage']
+  };
 
   function workspaceLabel() {
     if (state.workspace === 'rental') return 'Rental Manpower';
@@ -1923,12 +1964,27 @@
     return new Set(['overview','management-cost','management-approvals','management-audit','reports','access-roles','settings']);
   }
 
+  function managementAllowsRoute(route) {
+    if(route==='overview')return hasAccessPermission('internal.overview.view')&&hasAccessPermission('rental.overview.view');
+    if(route==='management-cost'||route==='reports')return hasAnyAccessPermission('shared.reports.view')&&hasAccessPermission('internal.payroll_runs.view')&&hasAccessPermission('rental.settlements.view');
+    if(route==='management-approvals')return ['internal.payroll_runs.view','internal.adjustments.view','internal.payments.view','rental.settlements.view','rental.adjustments.view','rental.payments.view'].every(hasAccessPermission);
+    if(route==='management-audit')return hasAccessPermission('access.audit.view');
+    if(route==='settings')return hasAnyAccessPermission('settings.view','settings.manage');
+    if(route==='access-roles')return hasAnyAccessPermission('access.users.view','access.profiles.view');
+    return false;
+  }
+
   function workspaceAllowsRoute(route) {
     if (!roleCanWorkspace(state.workspace)) return false;
-    if (route === 'settings' && !roleCanSettings()) return false;
-    if (route === 'access-roles' && !roleDefinition().view_access) return false;
-    const set = state.workspace === 'rental' ? rentalRouteSet() : state.workspace === 'management' ? managementRouteSet() : internalRouteSet();
-    return set.has(route);
+    if (state.workspace === 'rental') {
+      const required = rentalRoutePermissions[route];
+      return Boolean(required && required.some(permission => hasAccessPermission(permission)));
+    }
+    if (state.workspace === 'internal') {
+      const required = internalRoutePermissions[route];
+      return Boolean(required && required.some(permission => hasAccessPermission(permission)));
+    }
+    return managementRouteSet().has(route) && managementAllowsRoute(route);
   }
 
   function workspaceNavSections() {
@@ -1943,18 +1999,39 @@
       ['Operations', [['rental-assignments','Assignment Lifecycle','arrow'],['projects','Projects','project'],['timesheets','Project Timesheets','timesheet']]],
       ['Cost & Settlement', [['rental-settlements','Supplier Settlements','calculator'],['adjustments','Worker Adjustments','wallet'],['payments','Supplier Payments','bank']]],
       ['Records', [['documents','Rental Documents','document'],['archive','Archive','archive'],['trash','Delete','trash'],['reports','Rental Reports','calculator']]]
-    ];
+    ].map(([label,items]) => [label, items.filter(([route]) => workspaceAllowsRoute(route))]);
     return [
       ['Workspace', [['overview','Overview','users']]],
       ['Organization', [['internal-employees','Employees','users'],['branches','Branches & Offices','branch'],['departments','Departments','department']]],
       ['Time', [['timesheets','Attendance & Overtime','timesheet']]],
       ['Payroll', [['salary-setup','Salary Setup','wallet'],['payroll-runs','Payroll Runs','calculator'],['adjustments','Advances & Adjustments','wallet'],['payments','Salary Payments','bank'],['bank-export','Bank & WPS Export','bank']]],
       ['Records', [['documents','Salary Slips & Documents','document'],['archive','Archive','archive'],['trash','Delete','trash'],['reports','Reports','calculator']]]
-    ];
+    ].map(([label,items]) => [label, items.filter(([route]) => workspaceAllowsRoute(route))]);
+  }
+
+  function firstAllowedWorkspaceRoute() {
+    const candidates = state.workspace === 'rental'
+      ? ['overview','rental-workforce','rental-assignments','timesheets','suppliers','rental-settlements','adjustments','payments','documents','reports','archive','trash','settings']
+      : state.workspace === 'internal'
+        ? ['overview','internal-employees','branches','departments','timesheets','salary-setup','payroll-runs','adjustments','payments','bank-export','documents','reports','archive','trash','settings']
+        : ['overview','management-cost','management-approvals','management-audit','reports','access-roles','settings'];
+    return candidates.find((route) => workspaceAllowsRoute(route)) || '';
   }
 
   function workspaceNavItem(route, label, iconName) {
     return `<a class="ui-v2-nav-item" href="#/${route}" data-route="${route}" data-active="false">${icon(iconName)}<span>${escapeHtml(label)}</span></a>`;
+  }
+
+  function rentalQuickAddTemplate() {
+    const rows = [];
+    if (hasAccessPermission('rental.workers.manage')) {
+      rows.push(`<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="rental-worker"><span class="ui-v2-command__icon">RW</span><span><strong>Rental Worker</strong><small>Create permanent supplier worker</small></span></button>`);
+      rows.push(`<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-route-link="rental-onboarding"><span class="ui-v2-command__icon">BI</span><span><strong>Bulk Onboard Workers</strong><small>Paste / import a supplier roster</small></span></button>`);
+    }
+    if (hasAccessPermission('rental.assignments.manage')) rows.push(`<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="project"><span class="ui-v2-command__icon">PR</span><span><strong>Project</strong><small>Create rental project master</small></span></button>`);
+    if (hasAccessPermission('rental.suppliers.manage')) rows.push(`<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="supplier"><span class="ui-v2-command__icon">SP</span><span><strong>Manpower Supplier</strong><small>Create supplier company</small></span></button>`);
+    if (hasAccessPermission('rental.adjustments.manage')) rows.push(`<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="advance"><span class="ui-v2-command__icon">AD</span><span><strong>Worker Adjustment</strong><small>Advance / deduction / earning</small></span></button>`);
+    return rows.length ? rows.join('') : `<div class="ui-v2-prs-menu-header"><strong>${escapeHtml(accessProfileLabel())}</strong><span>Scoped operations</span></div><div class="ui-v2-prs-menu-note">Use Project Timesheets for the projects assigned to your access scope. Master-data and financial creation actions are restricted.</div>`;
   }
 
   function renderWorkspaceShell() {
@@ -1987,16 +2064,16 @@
       if ('disabled' in control) control.disabled = !allowed;
       if (!allowed) control.tabIndex = -1;
       else control.removeAttribute('tabindex');
-      control.title = allowed ? `Open ${target === 'internal' ? 'Internal Company' : target === 'rental' ? 'Rental Manpower' : 'Management'}` : `${roleDefinition().label} does not have access to this workspace`;
+      control.title = allowed ? `Open ${target === 'internal' ? 'Internal Company' : target === 'rental' ? 'Rental Manpower' : 'Management'}` : `${accessProfileLabel()} does not have access to this workspace`;
     });
     const accountLabel = document.getElementById('workspaceAccountLabel');
     if (accountLabel) accountLabel.textContent = workspaceLabel();
     const accountMenuWorkspaceLabel = document.getElementById('accountMenuWorkspaceLabel');
     if (accountMenuWorkspaceLabel) accountMenuWorkspaceLabel.textContent = workspaceLabel();
     const accountRoleLabel = document.getElementById('accountRoleLabel');
-    if (accountRoleLabel) accountRoleLabel.textContent = roleDefinition().label;
+    if (accountRoleLabel) accountRoleLabel.textContent = accessProfileLabel();
     const accountMenuRoleLabel = document.getElementById('accountMenuRoleLabel');
-    if (accountMenuRoleLabel) accountMenuRoleLabel.textContent = roleDefinition().label;
+    if (accountMenuRoleLabel) accountMenuRoleLabel.textContent = accessProfileLabel();
     const settingsLink = document.querySelector('[data-account-settings]');
     if (settingsLink) settingsLink.hidden = !roleCanSettings();
 
@@ -2005,7 +2082,7 @@
       quickAddMenu.innerHTML = state.workspace === 'management'
         ? `<div class="ui-v2-prs-menu-header"><strong>Management workspace</strong><span>Read-only aggregate</span></div><div class="ui-v2-prs-menu-note">Create and edit operational records inside Internal Company or Rental Manpower. Management intentionally does not create cross-workspace records.</div>`
         : state.workspace === 'rental'
-        ? `<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="rental-worker"><span class="ui-v2-command__icon">RW</span><span><strong>Rental Worker</strong><small>Create permanent supplier worker</small></span></button><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-route-link="rental-onboarding"><span class="ui-v2-command__icon">BI</span><span><strong>Bulk Onboard Workers</strong><small>Paste / import a supplier roster</small></span></button><div class="ui-v2-menu__separator"></div><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="project"><span class="ui-v2-command__icon">PR</span><span><strong>Project</strong><small>Create rental project master</small></span></button><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="supplier"><span class="ui-v2-command__icon">SP</span><span><strong>Manpower Supplier</strong><small>Create supplier company</small></span></button><div class="ui-v2-menu__separator"></div><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="advance"><span class="ui-v2-command__icon">AD</span><span><strong>Worker Adjustment</strong><small>Advance / deduction / earning</small></span></button>`
+        ? rentalQuickAddTemplate()
         : `<button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="internal-employee"><span class="ui-v2-command__icon">IE</span><span><strong>Internal Employee</strong><small>Add company employee</small></span></button><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="branch"><span class="ui-v2-command__icon">BR</span><span><strong>Branch / Office</strong><small>Create company office master</small></span></button><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="department"><span class="ui-v2-command__icon">DP</span><span><strong>Department</strong><small>Create department master</small></span></button><div class="ui-v2-menu__separator"></div><button class="ui-v2-menu__item ui-v2-prs-menu-rich" data-quick-add="advance"><span class="ui-v2-command__icon">AD</span><span><strong>Employee Adjustment</strong><small>Advance / deduction / earning</small></span></button>`;
     }
 
@@ -2016,7 +2093,9 @@
         const critical = Number(approvalSummary.critical||0),approvalCount=Number(approvalSummary.count||approvals.length);
         notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Company control attention</strong><span>${approvalCount} items</span></div><a href="#/management-approvals" class="notice-row"><span class="notice-icon ${critical?'notice-icon--warn':''}">${critical?'!':'A'}</span><span><strong>${critical ? `${critical} critical control item${critical===1?'':'s'}` : 'Approval center'}</strong><small>Internal payroll and rental settlement reviews stay separately attributable.</small></span></a><a href="#/management-cost" class="notice-row"><span class="notice-icon">C</span><span><strong>Workforce cost visibility</strong><small>Compare finalized Internal and Rental costs without merging operational records.</small></span></a><a href="#/management-audit" class="notice-row"><span class="notice-icon">AU</span><span><strong>Audit trail</strong><small>Review payroll, settlement, assignment and payment lifecycle events.</small></span></a>`;
       } else if (state.workspace === 'rental') {
-        notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Rental manpower controls</strong><span>Current workspace</span></div><a href="#/timesheets" class="notice-row"><span class="notice-icon">T</span><span><strong>Project timesheets</strong><small>Review supplier manpower hours before settlement.</small></span></a><a href="#/rental-assignments" class="notice-row"><span class="notice-icon notice-icon--warn">!</span><span><strong>Assignment changes</strong><small>Transfers, trade and rate changes remain effective-dated.</small></span></a><a href="#/rental-settlements" class="notice-row"><span class="notice-icon">S</span><span><strong>Supplier settlements</strong><small>Approved timesheets feed supplier payable calculations.</small></span></a><a href="#/suppliers" class="notice-row"><span class="notice-icon">SP</span><span><strong>Supplier deployment</strong><small>Review active and available workers by company.</small></span></a>`;
+        notificationMenu.innerHTML = hasAccessPermission('rental.settlements.view')
+          ? `<div class="ui-v2-prs-menu-header"><strong>Rental manpower controls</strong><span>Current workspace</span></div><a href="#/timesheets" class="notice-row"><span class="notice-icon">T</span><span><strong>Project timesheets</strong><small>Review supplier manpower hours before settlement.</small></span></a><a href="#/rental-assignments" class="notice-row"><span class="notice-icon notice-icon--warn">!</span><span><strong>Assignment changes</strong><small>Transfers, trade and rate changes remain effective-dated.</small></span></a><a href="#/rental-settlements" class="notice-row"><span class="notice-icon">S</span><span><strong>Supplier settlements</strong><small>Approved timesheets feed supplier payable calculations.</small></span></a>`
+          : `<div class="ui-v2-prs-menu-header"><strong>Project supervision</strong><span>Scoped access</span></div><a href="#/timesheets" class="notice-row"><span class="notice-icon">T</span><span><strong>Project timesheets</strong><small>Enter attendance and overtime for assigned projects, then submit for review.</small></span></a><a href="#/rental-workforce" class="notice-row"><span class="notice-icon">RW</span><span><strong>Assigned workforce</strong><small>Only workers inside your Project scope are visible.</small></span></a>`;
       } else {
         notificationMenu.innerHTML = `<div class="ui-v2-prs-menu-header"><strong>Internal payroll controls</strong><span>Current workspace</span></div><a href="#/bank-export" class="notice-row"><span class="notice-icon">BK</span><span><strong>Bank / WPS readiness</strong><small>Review current employee and company payment readiness.</small></span></a><a href="#/timesheets" class="notice-row"><span class="notice-icon">T</span><span><strong>Attendance & overtime</strong><small>Approve the monthly input before payroll review.</small></span></a><a href="#/payroll-runs" class="notice-row"><span class="notice-icon">P</span><span><strong>Payroll run</strong><small>Company payroll stays isolated from rental settlements.</small></span></a><a href="#/branches" class="notice-row"><span class="notice-icon">BR</span><span><strong>Organization setup</strong><small>Employees are organized by branch and department, not project.</small></span></a>`;
       }
@@ -2037,7 +2116,7 @@
 
   function switchWorkspace(nextWorkspace) {
     const next = ['internal','rental','management'].includes(nextWorkspace) ? nextWorkspace : 'internal';
-    if (!roleCanWorkspace(next)) { showToast('Workspace access restricted', `${roleDefinition().label} cannot open ${next === 'internal' ? 'Internal Company' : next === 'rental' ? 'Rental Manpower' : 'Management'}.`); return; }
+    if (!roleCanWorkspace(next)) { showToast('Workspace access restricted', `${accessProfileLabel()} cannot open ${next === 'internal' ? 'Internal Company' : next === 'rental' ? 'Rental Manpower' : 'Management'}.`); return; }
     if (next === state.workspace) { syncWorkspaceUrl(next); navigate('overview'); return; }
     if (state.workspace === 'internal') localStorage.setItem('payroll-ui-internal-period', state.period);
     else if (state.workspace === 'rental') localStorage.setItem('payroll-ui-rental-period', state.period);
@@ -2187,7 +2266,23 @@
     });
   }
 
+  function rentalSupervisorOverviewTemplate() {
+    const assigned = Number(state.rentalMasterSummary.assignedWorkerCount ?? state.rentalWorkers.filter(worker => worker.status === 'Assigned').length);
+    const activeProjects = state.projects.filter(project => project.status === 'Active' && !project.legacyInternal && !project.deleted && !project.archived);
+    const activityStore = rentalAssignmentStore('activity');
+    if (!(activityStore?.results || []).length && !activityStore?.loading) queueMicrotask(() => loadRentalAssignmentServer('activity'));
+    const activity = [...(activityStore?.results || [])].slice(0,5);
+    return `<section class="page workspace-overview workspace-overview--rental rental-control-overview">
+      <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Rental Manpower · Project Supervision · ${escapeHtml(state.period)}</span><h1>Assigned Project Workforce</h1><p>Enter attendance and overtime for the projects assigned to your access scope, then submit completed timesheets for review.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="rental-workforce">Assigned Workers</button><button class="btn btn--primary" data-route-link="timesheets">Project Timesheets</button></div></div>
+      <div class="workspace-context-banner workspace-context-banner--rental"><span class="workspace-context-banner__icon">RM</span><div><strong>${escapeHtml(accessProfileLabel())}</strong><span>Project scope is enforced by the server. Supplier finance, settlements, payments, approvals and sensitive lifecycle actions are not part of this access profile.</span></div></div>
+      <div class="summary-strip summary-strip--4"><div class="summary-item"><span>Assigned projects</span><strong>${activeProjects.length}</strong><small>Visible scope</small></div><div class="summary-item"><span>Visible workers</span><strong>${assigned}</strong><small>Scoped workforce</small></div><div class="summary-item"><span>Timesheet authority</span><strong>${hasAccessPermission('rental.timesheets.edit') ? 'Entry' : 'View'}</strong><small>${hasAccessPermission('rental.timesheets.submit') ? 'Submit for review enabled' : 'Read only'}</small></div><div class="summary-item"><span>Approval authority</span><strong>${hasAccessPermission('rental.timesheets.approve') ? 'Enabled' : 'Separated'}</strong><small>${hasAccessPermission('rental.timesheets.approve') ? 'Can approve' : 'Manager/Finance review'}</small></div></div>
+      <section class="panel"><div class="panel__head"><div><h2>Assigned projects</h2><p>Select Project Timesheets to work on attendance and overtime. Only projects assigned in Administration are returned by the API.</p></div></div><div class="management-approval-mini">${activeProjects.slice(0,8).map(project=>`<button data-open-rental-timesheet-project="${escapeHtml(project.id)}" data-timesheet-period="${escapeHtml(state.period)}"><span class="management-approval-dot"></span><div><strong>${escapeHtml(project.code || project.name)}</strong><small>${escapeHtml(project.name)}${project.location?` · ${escapeHtml(project.location)}`:''}</small></div><em>Timesheet</em>${icon('chevron')}</button>`).join('') || '<div class="empty-inline">No active Rental projects are assigned to this user. Update Project scope in Administration → Users.</div>'}</div></section>
+      <section class="panel"><div class="panel__head"><div><h2>Recent assignment activity</h2><p>Scoped workforce history only. Commercial rates are withheld from Supervisor/Foreman access.</p></div></div><div class="management-approval-mini">${activity.map(item=>`<div class="notice-row"><span class="notice-icon">A</span><span><strong>${escapeHtml(item.workerName || item.worker || item.projectName || 'Assignment')}</strong><small>${escapeHtml(item.projectName || item.project || '')} · ${escapeHtml(item.status || item.changeType || '')}</small></span></div>`).join('') || '<div class="empty-inline">No recent scoped assignment activity.</div>'}</div></section>
+    </section>`;
+  }
+
   function rentalOverviewTemplate() {
+    if (!hasAccessPermission('rental.settlements.view')) return rentalSupervisorOverviewTemplate();
     if (!state.rentalSettlementLoadedPeriods.has(state.period) && state.rentalSettlementLoadingPeriod !== state.period) loadRentalSettlementContext(state.period, { render:true });
     const assigned = Number(state.rentalMasterSummary.assignedWorkerCount ?? state.rentalWorkers.filter(worker => worker.status === 'Assigned').length);
     const available = Number(state.rentalMasterSummary.availableWorkerCount ?? state.rentalWorkers.filter(worker => worker.status === 'Available').length);
@@ -2279,13 +2374,13 @@
     const approvals = ctx.approvals || [], approvalSummary=ctx.approvalSummary||{};const critical=Number(approvalSummary.critical||0),approvalCount=Number(approvalSummary.count||approvals.length);
     return `<section class="page management-overview">
       <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Management · Company Control · ${escapeHtml(ctx.periodLabel || state.period)}</span><h1>Company Workforce Control</h1><p>Compare controlled Internal Company payroll and Rental Manpower settlement records without merging their operational ledgers.</p></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="management-audit">Audit Trail</button><button class="btn btn--primary" data-route-link="management-approvals">Approval Center${approvalCount?` · ${approvalCount}`:''}</button></div></div>
-      <div class="management-boundary-banner"><span class="management-boundary-banner__icon">MG</span><div><strong>Read-only aggregate</strong><span>Financial values come from controlled payroll and supplier-settlement snapshots. Management does not calculate or mutate operational records.</span></div><span class="management-role-chip">${escapeHtml(roleDefinition().label)}</span></div>
+      <div class="management-boundary-banner"><span class="management-boundary-banner__icon">MG</span><div><strong>Read-only aggregate</strong><span>Financial values come from controlled payroll and supplier-settlement snapshots. Management does not calculate or mutate operational records.</span></div><span class="management-role-chip">${escapeHtml(accessProfileLabel())}</span></div>
       <div class="management-workforce-cards">
         <article class="management-workforce-card management-workforce-card--internal"><div class="management-workforce-card__head"><span>IC</span><div><strong>Internal Company</strong><small>Branches · Departments · Employees</small></div>${managementWorkspaceLink('internal','overview','Open workspace')}</div><div class="management-workforce-card__metrics"><div><span>Current employees</span><strong>${Number(ctx.headcount?.internal||0)}</strong></div><div><span>Selected payroll</span><strong>${internal.finalized?formatCurrency(internal.net):'Not finalized'}</strong><small>${escapeHtml(internal.status||'Not calculated')}</small></div><div><span>Salary payment outstanding</span><strong>${formatCurrency(payments.internal?.pending||0)}</strong><small>${Number(payments.internal?.failed||0)} failed/reversed</small></div></div></article>
         <article class="management-workforce-card management-workforce-card--rental"><div class="management-workforce-card__head"><span>RM</span><div><strong>Rental Manpower</strong><small>Suppliers · Workers · Projects</small></div>${managementWorkspaceLink('rental','overview','Open workspace')}</div><div class="management-workforce-card__metrics"><div><span>Currently assigned workers</span><strong>${Number(ctx.headcount?.rental||0)}</strong></div><div><span>Approved settlement cost</span><strong>${rental.finalized?formatCurrency(rental.net):'Not finalized'}</strong><small>${Number(rental.records||0)} settlement${Number(rental.records||0)===1?'':'s'}</small></div><div><span>Supplier outstanding</span><strong>${formatCurrency(payments.rental?.outstanding||0)}</strong><small>${Number(payments.rental?.failed||0)} failed/reversed</small></div></div></article>
       </div>
       <section class="panel panel--flush management-comparison-card"><div class="panel__head panel__head--padded"><div><h2>${escapeHtml(ctx.periodLabel || state.period)} cost comparability</h2><p>Combined cost is shown only when both domains have finalized records for the same period.</p></div><button class="text-link" data-route-link="management-cost">Full cost view →</button></div><div class="management-comparison-grid"><div><span>Internal finalized payroll</span><strong>${internal.finalized?formatCurrency(internal.net):'Not finalized'}</strong><small>${escapeHtml(internal.status||'—')}</small></div><div><span>Rental approved settlements</span><strong>${rental.finalized?formatCurrency(rental.net):'Not finalized'}</strong><small>${Number(rental.records||0)} finalized settlement${Number(rental.records||0)===1?'':'s'}</small></div><div class="${ctx.comparable?'is-comparable':'is-incomplete'}"><span>Comparable workforce cost</span><strong>${ctx.comparable?formatCurrency(ctx.combined):'Not comparable yet'}</strong><small>${ctx.comparable?'Both controlled sources are finalized.':'No estimated or draft values are added.'}</small></div></div></section>
-      <div class="grid-2 management-control-grid"><section class="panel"><div class="panel__head"><div><h2>Approval & exception center</h2><p>Cross-workspace attention while record ownership remains unchanged.</p></div><span class="placeholder__stage ${critical?'placeholder__stage--warn':''}">${critical?`${critical} critical`:`${approvalCount} open`}</span></div><div class="management-approval-mini">${approvals.slice(0,5).map(item=>`<button data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}"><span class="management-approval-dot management-approval-dot--${String(item.severity||'Review').toLowerCase()}"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div><em>${escapeHtml(item.workspace==='internal'?'Internal':'Rental')}</em>${icon('chevron')}</button>`).join('')||'<div class="empty-inline">No review or payment exceptions are currently recorded.</div>'}</div></section><section class="panel"><div class="panel__head"><div><h2>Access boundary</h2><p>Server-enforced access for the authenticated company membership.</p></div>${roleDefinition().view_access?'<button class="text-link" data-route-link="access-roles">View roles →</button>':''}</div><div class="management-access-summary"><div><span>Current role</span><strong>${escapeHtml(roleDefinition().label)}</strong><small>${escapeHtml(roleDefinition().description)}</small></div><div class="management-access-badges">${roleDefinition().workspaces.map(workspace=>`<span>${workspace==='internal'?'IC':workspace==='rental'?'RM':'MG'} · ${workspace}</span>`).join('')}</div></div></section></div>
+      <div class="grid-2 management-control-grid"><section class="panel"><div class="panel__head"><div><h2>Approval & exception center</h2><p>Cross-workspace attention while record ownership remains unchanged.</p></div><span class="placeholder__stage ${critical?'placeholder__stage--warn':''}">${critical?`${critical} critical`:`${approvalCount} open`}</span></div><div class="management-approval-mini">${approvals.slice(0,5).map(item=>`<button data-management-open="${escapeHtml(item.workspace)}|${escapeHtml(item.route)}"><span class="management-approval-dot management-approval-dot--${String(item.severity||'Review').toLowerCase()}"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div><em>${escapeHtml(item.workspace==='internal'?'Internal':'Rental')}</em>${icon('chevron')}</button>`).join('')||'<div class="empty-inline">No review or payment exceptions are currently recorded.</div>'}</div></section><section class="panel"><div class="panel__head"><div><h2>Access boundary</h2><p>Server-enforced access for the authenticated company membership.</p></div>${roleCanViewAccess()?'<button class="text-link" data-route-link="access-roles">View profiles →</button>':''}</div><div class="management-access-summary"><div><span>Current access profile</span><strong>${escapeHtml(accessProfileLabel())}</strong><small>${escapeHtml(accessProfileDescription())}</small></div><div class="management-access-badges">${serverWorkspaces.map(workspace=>`<span>${workspace==='internal'?'IC':workspace==='rental'?'RM':'MG'} · ${workspace}</span>`).join('')}</div></div></section></div>
     </section>`;
   }
 
@@ -4714,6 +4809,7 @@
     const overtimeHours = Number(summary.overtimeHours ?? pageTotals.otHours ?? 0);
     const missingCount = Number(summary.missingCount ?? pageTotals.missing ?? 0);
     const editable = rentalTimesheetCanEdit();
+    const canEditCommercialRate = hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage');
     const project = state.projects.find(item => item.id === state.rentalTimesheetProject);
     return `
       <div class="ui-v2-payroll-summary-strip ui-v2-prs-rental-timesheet-summary">
@@ -4726,7 +4822,7 @@
         <div class="ui-v2-payroll-register__toolbar ui-v2-prs-rental-ot-toolbar"><div><strong>Worker overtime register</strong><span>OT inputs stay separate from supplier settlement calculation.</span></div><button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-tab-jump="daily">Daily Timesheet</button></div>
         <div class="ui-v2-table-wrap"><table class="ui-v2-table ui-v2-prs-rental-ot-table"><thead><tr><th>Worker</th><th>Trade / commercial rate</th><th class="is-numeric">Regular</th><th>OT hours</th><th>OT hourly rate</th><th>Settlement</th></tr></thead><tbody>${workers.length ? workers.map(worker=>{
           const metrics=rentalWorkerTimesheetMetrics(worker);
-          return `<tr><td><button class="ui-v2-prs-rental-ot-worker" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))} · ${escapeHtml(rentalWorkerSupplier(worker)?.name || 'Supplier not linked')}</span></button></td><td><strong>${escapeHtml(rentalPeriodAssignmentsLabel(worker))}</strong><span class="ui-v2-prs-rental-ot-rate-label">${escapeHtml(rentalPeriodAssignmentsLabel(worker,undefined,undefined,'rate'))}</span></td><td class="is-numeric">${metrics.hours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</td><td><input class="ui-v2-input ui-v2-prs-rental-ot-input" type="number" min="0" step="0.25" value="${metrics.otHours || ''}" data-rental-ot-hours="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hours for ${escapeHtml(worker.name)}"></td><td><div class="ui-v2-prs-money-input"><span>${escapeHtml(currencyCode())}</span><input class="ui-v2-input" type="number" min="0" step="0.01" value="${metrics.otRate || ''}" data-rental-ot-rate="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hourly rate for ${escapeHtml(worker.name)}"></div></td><td><span class="ui-v2-muted">Calculated after lock</span></td></tr>`;
+          return `<tr><td><button class="ui-v2-prs-rental-ot-worker" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))} · ${escapeHtml(rentalWorkerSupplier(worker)?.name || 'Supplier not linked')}</span></button></td><td><strong>${escapeHtml(rentalPeriodAssignmentsLabel(worker))}</strong><span class="ui-v2-prs-rental-ot-rate-label">${canEditCommercialRate?escapeHtml(rentalPeriodAssignmentsLabel(worker,undefined,undefined,'rate')):'Commercial rate restricted'}</span></td><td class="is-numeric">${metrics.hours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</td><td><input class="ui-v2-input ui-v2-prs-rental-ot-input" type="number" min="0" step="0.25" value="${metrics.otHours || ''}" data-rental-ot-hours="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hours for ${escapeHtml(worker.name)}"></td><td>${canEditCommercialRate?`<div class="ui-v2-prs-money-input"><span>${escapeHtml(currencyCode())}</span><input class="ui-v2-input" type="number" min="0" step="0.01" value="${metrics.otRate || ''}" data-rental-ot-rate="${escapeHtml(worker.id)}" ${editable?'':'disabled'} aria-label="Overtime hourly rate for ${escapeHtml(worker.name)}"></div>`:'<span class="ui-v2-muted">Restricted</span>'}</td><td><span class="ui-v2-muted">Calculated after lock</span></td></tr>`;
         }).join('') : '<tr><td colspan="6"><div class="ui-v2-payroll-table-empty"><strong>No workers match this overtime view.</strong><span>Change the project, supplier or search filter on the Daily Timesheet tab.</span></div></td></tr>'}</tbody>${workers.length ? `<tfoot><tr><td colspan="2"><strong>Page total</strong></td><td class="is-numeric"><strong>${rentalTimesheetProjectTotals(workers).hours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</strong></td><td><strong>${rentalTimesheetProjectTotals(workers).otHours.toLocaleString('en-SA',{maximumFractionDigits:2})} h</strong></td><td></td><td></td></tr></tfoot>` : ''}</table></div>
         <div class="ui-v2-payroll-timesheet-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${page.rangeStart}–${page.rangeEnd}</strong> of <strong>${Number(page.count || workers.length).toLocaleString()}</strong> workers <i></i> Settlement values remain server-calculated after lock</span>${page.totalPages > 1 ? `<div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-rental-timesheet-page="${page.page - 1}" ${page.page <= 1 ? 'disabled' : ''}>‹</button><span>Page <strong>${page.page}</strong> / ${page.totalPages}</span><button type="button" data-rental-timesheet-page="${page.page + 1}" ${page.page >= page.totalPages ? 'disabled' : ''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="rentalTimesheetPageSize" class="ui-v2-select ui-v2-payroll-dense-select"><option value="25" ${page.pageSize===25?'selected':''}>25</option><option value="50" ${page.pageSize===50?'selected':''}>50</option><option value="100" ${page.pageSize===100?'selected':''}>100</option></select></label></div>` : ''}</div>
       </section>
@@ -4785,10 +4881,10 @@
 
   function emptyPayrollContext(period = state.period) {
     return {
-      run: { id:null, exists:false, label:period, statusValue:'draft', status:'Draft', revision:0, calculatedAt:null, submittedAt:null, approvedAt:null, reviewerNote:'', canEdit:false, canApprove:false, totals:{} },
+      run: { id:null, exists:false, label:period, statusValue:'draft', status:'Draft', revision:0, calculatedAt:null, submittedAt:null, reviewedAt:null, reviewedBy:null, approvedAt:null, reviewerNote:'', canEdit:false, canPrepare:false, canReview:false, canApprove:false, totals:{} },
       rows: [], summary:{employeeCount:0,basic:0,allowances:0,overtime:0,otherEarnings:0,gross:0,advanceRecovery:0,otherDeductions:0,deductions:0,net:0,ready:0,blocked:0,warning:0}, meta:{page:1,pageSize:state.payrollPageSize||50,count:0,totalPages:1,rangeStart:0,rangeEnd:0}, filters:{branches:[],departments:[]}, reviewSummary:{Critical:0,Warning:0,Info:0,All:0}, sourceErrors: [], policy: { prorationMethod:'not_configured', prorationLabel:'Not configured', configured:false },
       adjustments: [], adjustmentsByEmployee: {}, reviewHistory: [], attendanceStatus:'Not created', attendanceLocked:false,
-      workflow:{statusValue:'draft',allowedActions:[],nextAction:null,canCalculate:false,canReset:false,canSubmitReview:false,canReturnForChanges:false,canApprove:false,sourceClear:false,attendanceCalculable:false,attendanceLocked:false},
+      workflow:{statusValue:'draft',allowedActions:[],nextAction:null,canCalculate:false,canReset:false,canSubmitReview:false,canReview:false,reviewSignedOff:false,canReturnForChanges:false,canApprove:false,sourceClear:false,attendanceCalculable:false,attendanceLocked:false},
       previous: { label:payrollPreviousPeriod(period), run:null, rows:[] }
     };
   }
@@ -4800,6 +4896,8 @@
       status: source.status || 'Draft',
       calculatedAt: source.calculatedAt || null,
       submittedAt: source.submittedAt || null,
+      reviewedAt: source.reviewedAt || null,
+      reviewedBy: source.reviewedBy || null,
       approvedAt: source.approvedAt || null,
       reviewerNote: source.reviewerNote || '',
       reviewHistory: Array.isArray(context.reviewHistory) ? context.reviewHistory : []
@@ -5138,6 +5236,7 @@
     const critical = counts.Critical || 0;
     const comparison = review.comparison;
     const workflow = context.workflow || {};
+    const canReview = !!workflow.canReview && critical === 0;
     const canApprove = !!workflow.canApprove && critical === 0;
     const previousNet = comparison.previousTotals?.net ?? null;
     const currentNet = comparison.currentTotals.net;
@@ -5153,7 +5252,7 @@
       <div class="review-layout">
         <div class="review-main-stack">
           <section class="data-panel review-status-panel">
-            <div class="review-status-copy"><span class="review-status-icon">${run.status === 'Review' ? 'R' : 'V'}</span><div><strong>${run.status === 'Review' ? 'Submitted for finance review' : 'Pre-review validation'}</strong><p>${run.status === 'Review' ? `Submitted ${payrollTimestamp(run.submittedAt)}. Review exceptions and comparison before approving.` : 'Validate the saved payroll snapshot before submission. Critical items will block approval.'}</p></div></div>
+            <div class="review-status-copy"><span class="review-status-icon">${workflow.reviewSignedOff ? '✓' : run.status === 'Review' ? 'R' : 'V'}</span><div><strong>${workflow.reviewSignedOff ? 'Finance review signed off' : run.status === 'Review' ? 'Submitted for finance review' : 'Pre-review validation'}</strong><p>${workflow.reviewSignedOff ? `Reviewed ${payrollTimestamp(run.reviewedAt)}${run.reviewedBy ? ` by ${escapeHtml(run.reviewedBy)}` : ''}. Final approval is a separate authority.` : run.status === 'Review' ? `Submitted ${payrollTimestamp(run.submittedAt)}. A Finance Reviewer must sign off before final approval.` : 'Validate the saved payroll snapshot before submission. Critical items will block review.'}</p></div></div>
             <div class="review-status-meta"><span>Snapshot</span><strong>${escapeHtml(run.snapshot?.timesheetStatus || timesheetStatus())}</strong></div>
           </section>
 
@@ -5207,8 +5306,8 @@
 
           <section class="data-panel review-decision-card">
             <div class="panel__head panel__head--padded"><div><h2>Reviewer decision</h2><p>${run.status === 'Review' ? 'Decisions are recorded in the run audit trail.' : 'Submit the calculated run to Review before a final decision.'}</p></div></div>
-            <div class="review-decision-actions"><button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${canApprove ? '' : 'disabled'}>Approve Payroll</button></div>
-            ${critical ? `<span class="review-decision-help">Resolve all critical exceptions before approval.</span>` : run.status !== 'Review' ? `<span class="review-decision-help">Approval becomes available after submission to Review.</span>` : ''}
+            <div class="review-decision-actions"><button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button>${!workflow.reviewSignedOff ? `<button class="btn btn--primary" data-review-mark ${canReview ? '' : 'disabled'}>Mark Reviewed</button>` : `<span class="review-clear-badge">✓ Finance reviewed</span>`}<button class="btn btn--primary" data-review-approve ${canApprove ? '' : 'disabled'}>Final Approve</button></div>
+            ${critical ? `<span class="review-decision-help">Resolve all critical exceptions before finance review/final approval.</span>` : run.status !== 'Review' ? `<span class="review-decision-help">Finance review becomes available after submission to Review.</span>` : !workflow.reviewSignedOff ? `<span class="review-decision-help">Finance review sign-off is required before final approval.</span>` : ''}
           </section>
         </aside>
       </div>`;
@@ -5257,7 +5356,7 @@
           <div class="page-head__actions payroll-head-actions">
             <button class="btn btn--secondary" data-route-link="timesheets">Open Timesheets</button>
             <button class="btn btn--secondary" data-route-link="salary-setup">Salary Setup</button>
-            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${workflow.canSubmitReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button><button class="btn btn--primary" data-review-approve ${workflow.canApprove && !Number(context.reviewSummary?.Critical || 0) ? '' : 'disabled'}>Approve Payroll</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : ['Payment Processing','Paid','Closed'].includes(run.status) ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
+            ${run.status === 'Draft' ? `<button class="btn btn--primary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>${icon('calculator')} Calculate Payroll</button>` : run.status === 'Calculated' ? `<button class="btn btn--secondary" data-payroll-calculate ${workflow.canCalculate ? '' : 'disabled'}>Recalculate</button><button class="btn btn--primary" data-payroll-submit-review ${workflow.canSubmitReview ? '' : 'disabled'}>Submit for Review</button>` : run.status === 'Review' ? `<button class="btn btn--secondary" data-review-return ${workflow.canReturnForChanges ? '' : 'disabled'}>Return for Changes</button>${workflow.reviewSignedOff ? '<span class="review-clear-badge">✓ Finance reviewed</span>' : `<button class="btn btn--primary" data-review-mark ${workflow.canReview && !Number(context.reviewSummary?.Critical || 0) ? '' : 'disabled'}>Mark Reviewed</button>`}<button class="btn btn--primary" data-review-approve ${workflow.canApprove && !Number(context.reviewSummary?.Critical || 0) ? '' : 'disabled'}>Final Approve</button>` : run.status === 'Approved' ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="bank-export">Continue to Bank / WPS</button>` : ['Payment Processing','Paid','Closed'].includes(run.status) ? `<button class="btn btn--secondary" data-payroll-view-review>View Approval</button><button class="btn btn--primary" data-route-link="payments">View Payments</button>` : `<button class="btn btn--secondary" disabled>${escapeHtml(run.status)}</button>`}
           </div>
         </div>
 
@@ -5429,7 +5528,7 @@
       period:key, payrollStatus:null, payrollStatusLabel:'Not calculated', profiles:{}, templates:[], batches:[],
       bankReadiness:{ready:false,companyBlockers:['Salary payment data has not been loaded.'],readyCount:0,blockedCount:0,employees:[]},
       wpsReadiness:{ready:false,companyBlockers:['Salary payment data has not been loaded.'],readyCount:0,blockedCount:0,employees:[]},
-      settings:{}, canEditSetup:false, canPay:false
+      settings:{}, canEditSetup:false, canExport:false, canPay:false
     });
   }
 
@@ -5818,12 +5917,13 @@
   }
 
   function paymentSetupAction() {
-    return `<button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button>`;
+    const context = paymentContextForPeriod();
+    return context.canEditSetup ? `<button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button>` : '';
   }
 
   function wpsWorkflowGate() {
     const context = paymentContextForPeriod(); const rows = wpsAllRows(); const summary = wpsSummary(rows);
-    return { rows, summary, payrollApproved: context.payrollStatus === 'approved', canPrepare: !!context.wpsReadiness?.ready && context.payrollStatus === 'approved', allPayrollEmployeesReady: summary.blocked === 0 && !(context.wpsReadiness?.companyBlockers || []).length };
+    return { rows, summary, payrollApproved: context.payrollStatus === 'approved', canPrepare: !!context.canEditSetup && !!context.wpsReadiness?.ready && context.payrollStatus === 'approved', allPayrollEmployeesReady: summary.blocked === 0 && !(context.wpsReadiness?.companyBlockers || []).length };
   }
 
   function wpsValidationTemplate() {
@@ -5868,7 +5968,7 @@
 
   function bankBatchesTemplate() {
     const batches=bankBatchesForPeriod();
-    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank payment batches</h2><p>Immutable approved-payroll snapshots and export history.</p></div><button class="btn btn--primary" data-bank-batch-prepare>Prepare Batch</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Batch</th><th>Template</th><th>Prepared</th><th>Employees</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${batches.length?batches.map(batch=>`<tr><td><button class="entity-link" data-bank-batch-open="${escapeHtml(batch.id)}">${escapeHtml(batch.reference)}</button></td><td>${escapeHtml(batch.templateName)}</td><td>${escapeHtml(payrollTimestamp(batch.createdAt))}</td><td>${batch.employeeCount}</td><td class="num table-money"><strong>${formatCurrency(Number(batch.total||0))}</strong></td><td>${bankBatchStatusBadge(batch.status)}</td><td><button class="icon-btn icon-btn--sm" data-bank-batch-open="${escapeHtml(batch.id)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No bank payment batches for ${escapeHtml(state.period)}.</strong><span>Prepare one from an approved payroll after configuring employee payment profiles and an export template.</span></div></td></tr>`}</tbody></table></div></section>`;
+    return `<section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>Bank payment batches</h2><p>Immutable approved-payroll snapshots and export history.</p></div><button class="btn btn--primary" data-bank-batch-prepare ${paymentContextForPeriod().canEditSetup ? '' : 'disabled'}>Prepare Batch</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Batch</th><th>Template</th><th>Prepared</th><th>Employees</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${batches.length?batches.map(batch=>`<tr><td><button class="entity-link" data-bank-batch-open="${escapeHtml(batch.id)}">${escapeHtml(batch.reference)}</button></td><td>${escapeHtml(batch.templateName)}</td><td>${escapeHtml(payrollTimestamp(batch.createdAt))}</td><td>${batch.employeeCount}</td><td class="num table-money"><strong>${formatCurrency(Number(batch.total||0))}</strong></td><td>${bankBatchStatusBadge(batch.status)}</td><td><button class="icon-btn icon-btn--sm" data-bank-batch-open="${escapeHtml(batch.id)}">${icon('chevron')}</button></td></tr>`).join(''):`<tr><td colspan="7"><div class="table-empty"><strong>No bank payment batches for ${escapeHtml(state.period)}.</strong><span>Prepare one from an approved payroll after configuring employee payment profiles and an export template.</span></div></td></tr>`}</tbody></table></div></section>`;
   }
 
   function bankReconciliationTemplate() {
@@ -6495,24 +6595,55 @@
   function rentalWorkerOverviewTab(worker, supplier, snapshot) {
     const history = rentalAssignmentsFor(worker);
     const changes = Math.max(0, history.filter(item => item.kind === 'assignment').length - 1);
+    const canManageWorker = hasAccessPermission('rental.workers.manage');
+    const canManageAssignment = hasAccessPermission('rental.assignments.manage');
+    const canManageAdjustment = hasAccessPermission('rental.adjustments.manage');
+    const canViewSupplier = hasAccessPermission('rental.suppliers.view');
+    const assignmentAction = canManageAssignment
+      ? (snapshot.project && !worker.nextAssignmentId
+        ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>`
+        : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project</button>` : '')
+      : '';
+    const workerControls = [];
+    if (canManageAssignment && snapshot.project && !worker.nextAssignmentId) {
+      workerControls.push(`<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button>`);
+      if (snapshot.projectOperational) {
+        workerControls.push(`<button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Change trade <span>→</span></button>`);
+        workerControls.push(`<button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Change rate <span>→</span></button>`);
+      }
+      workerControls.push(`<button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>`);
+    } else if (canManageAssignment && worker.status === 'Available') {
+      workerControls.push(`<button data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project <span>→</span></button>`);
+    }
+    if (canManageAssignment && worker.nextAssignmentId) workerControls.push(`<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel latest scheduled change <span>→</span></button>`);
+    if (canManageAdjustment) workerControls.push(`<button data-rental-worker-action="advance" data-worker-id="${escapeHtml(worker.id)}">Record advance <span>→</span></button>`);
     return `<div class="rental-profile-grid">
       <div class="profile-main-stack">
-        <section class="panel panel--flush"><div class="section-headline"><div><h2>Worker overview</h2><p>Permanent worker identity stays separate from changing project, trade and rate assignments.</p></div><button class="btn btn--secondary btn--sm" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit worker</button></div><div class="worker-overview-grid"><div><span>Worker ID</span><strong>${escapeHtml(rentalWorkerCode(worker))}</strong></div><div><span>Iqama / National ID</span><strong>${escapeHtml(worker.nationalId || 'Not recorded')}</strong></div><div><span>Phone</span><strong>${escapeHtml(worker.phone || 'Not recorded')}</strong></div><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || 'Not linked')}</strong></div><div><span>Master status</span><strong>${escapeHtml(worker.masterStatus || 'Active')}</strong>${worker.terminatedOn?`<small>Terminated ${escapeHtml(rentalDisplayDate(worker.terminatedOn))}</small>`:worker.inactiveOn?`<small>Stopped ${escapeHtml(rentalDisplayDate(worker.inactiveOn))}</small>`:''}</div><div><span>Assignment changes</span><strong>${changes}</strong></div></div></section>
-        <section class="panel panel--flush"><div class="section-headline"><div><h2>Current assignment</h2><p>Current state is resolved from effective-dated assignment history.</p></div>${snapshot.project && !snapshot.project.deleted ? `<button class="text-link" data-open-project="${escapeHtml(snapshot.project.id)}">Open project →</button>` : ''}</div><div class="current-assignment-card ${snapshot.project ? '' : 'is-pool'}"><div class="current-assignment-card__icon">${snapshot.project ? 'PR' : 'AV'}</div><div><span class="eyebrow">${snapshot.project ? (snapshot.projectOperational ? 'Active project assignment' : 'Retained project assignment') : 'Supplier worker pool'}</span><h3>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive / not available' : worker.status === 'Scheduled' ? `Scheduled for ${worker.nextProject || 'project assignment'}` : 'Available for assignment'))}</h3><div class="assignment-preview__meta"><span>${escapeHtml(snapshot.trade)}</span><span>${escapeHtml(snapshot.rate)}</span>${snapshot.since ? `<span>From ${escapeHtml(rentalDisplayDate(snapshot.since))}</span>` : ''}</div></div><div class="current-assignment-card__action">${snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project</button>` : ''}</div></div>${snapshot.project && !snapshot.projectOperational ? `<div class="source-note source-note--compact">${icon('info')}<span><strong>Project lifecycle boundary.</strong> ${escapeHtml(snapshot.projectLifecycleLabel || 'This assignment is retained for history, but project-local operational changes are stopped until the project is restored/active or the worker is transferred/released.')}</span></div>` : ''}</section>
+        <section class="panel panel--flush"><div class="section-headline"><div><h2>Worker overview</h2><p>Permanent worker identity stays separate from changing project, trade and rate assignments.</p></div>${canManageWorker ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}">Edit worker</button>` : ''}</div><div class="worker-overview-grid"><div><span>Worker ID</span><strong>${escapeHtml(rentalWorkerCode(worker))}</strong></div><div><span>Iqama / National ID</span><strong>${escapeHtml(worker.nationalId || 'Not recorded')}</strong></div><div><span>Phone</span><strong>${escapeHtml(worker.phone || 'Not recorded')}</strong></div><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || 'Not linked')}</strong></div><div><span>Master status</span><strong>${escapeHtml(worker.masterStatus || 'Active')}</strong>${worker.terminatedOn?`<small>Terminated ${escapeHtml(rentalDisplayDate(worker.terminatedOn))}</small>`:worker.inactiveOn?`<small>Stopped ${escapeHtml(rentalDisplayDate(worker.inactiveOn))}</small>`:''}</div><div><span>Assignment changes</span><strong>${changes}</strong></div></div></section>
+        <section class="panel panel--flush"><div class="section-headline"><div><h2>Current assignment</h2><p>Current state is resolved from effective-dated assignment history.</p></div>${snapshot.project && !snapshot.project.deleted ? `<button class="text-link" data-open-project="${escapeHtml(snapshot.project.id)}">Open project →</button>` : ''}</div><div class="current-assignment-card ${snapshot.project ? '' : 'is-pool'}"><div class="current-assignment-card__icon">${snapshot.project ? 'PR' : 'AV'}</div><div><span class="eyebrow">${snapshot.project ? (snapshot.projectOperational ? 'Active project assignment' : 'Retained project assignment') : 'Supplier worker pool'}</span><h3>${escapeHtml(snapshot.project?.name || (worker.status === 'Inactive' ? 'Inactive / not available' : worker.status === 'Scheduled' ? `Scheduled for ${worker.nextProject || 'project assignment'}` : 'Available for assignment'))}</h3><div class="assignment-preview__meta"><span>${escapeHtml(snapshot.trade)}</span><span>${escapeHtml(snapshot.rate)}</span>${snapshot.since ? `<span>From ${escapeHtml(rentalDisplayDate(snapshot.since))}</span>` : ''}</div></div><div class="current-assignment-card__action">${assignmentAction}</div></div>${snapshot.project && !snapshot.projectOperational ? `<div class="source-note source-note--compact">${icon('info')}<span><strong>Project lifecycle boundary.</strong> ${escapeHtml(snapshot.projectLifecycleLabel || 'This assignment is retained for history, but project-local operational changes are stopped until the project is restored/active or the worker is transferred/released.')}</span></div>` : ''}</section>
       </div>
-      <aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Master links</h3></div><div class="rental-master-links">${supplier ? `<button class="mini-entity" data-open-supplier="${escapeHtml(supplier.id)}"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Manpower supplier</small></span>${icon('chevron')}</button>` : ''}${snapshot.project && !snapshot.project.deleted ? `<button class="mini-entity" data-open-project="${escapeHtml(snapshot.project.id)}"><span class="mini-entity__icon">PR</span><span><strong>${escapeHtml(snapshot.project.name)}</strong><small>Current project</small></span>${icon('chevron')}</button>` : ''}</div></section><section class="detail-card"><div class="detail-card__head"><h3>Worker controls</h3></div><div class="rental-worker-actions-list">${snapshot.project && !worker.nextAssignmentId ? (snapshot.projectOperational ? `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="trade" data-worker-id="${escapeHtml(worker.id)}">Change trade <span>→</span></button><button data-rental-worker-action="rate" data-worker-id="${escapeHtml(worker.id)}">Change rate <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>` : `<button data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer project <span>→</span></button><button data-rental-worker-action="release" data-worker-id="${escapeHtml(worker.id)}">Release worker <span>→</span></button>`) : worker.status === 'Available' ? `<button data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to project <span>→</span></button>` : ''}${worker.nextAssignmentId ? `<button class="is-danger" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel latest scheduled change <span>→</span></button>` : ''}<button data-rental-worker-action="advance" data-worker-id="${escapeHtml(worker.id)}">Record advance <span>→</span></button></div></section></aside>
+      <aside class="profile-side-stack"><section class="detail-card"><div class="detail-card__head"><h3>Master links</h3></div><div class="rental-master-links">${supplier ? (canViewSupplier ? `<button class="mini-entity" data-open-supplier="${escapeHtml(supplier.id)}"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Manpower supplier</small></span>${icon('chevron')}</button>` : `<div class="mini-entity"><span class="mini-entity__icon">SP</span><span><strong>${escapeHtml(supplier.name)}</strong><small>Worker supplier</small></span></div>`) : ''}${snapshot.project && !snapshot.project.deleted ? `<button class="mini-entity" data-open-project="${escapeHtml(snapshot.project.id)}"><span class="mini-entity__icon">PR</span><span><strong>${escapeHtml(snapshot.project.name)}</strong><small>Current project</small></span>${icon('chevron')}</button>` : ''}</div></section><section class="detail-card"><div class="detail-card__head"><h3>Worker controls</h3></div><div class="rental-worker-actions-list">${workerControls.length ? workerControls.join('') : `<div class="source-note source-note--compact">${icon('info')}<span>This access profile can supervise assigned-project attendance and overtime but cannot change worker, assignment, rate or financial records.</span></div>`}</div></section></aside>
     </div>`;
   }
 
   function rentalWorkerAssignmentsTab(worker) {
-    return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Assignment history</h2><p>Project, trade and rate changes are effective-dated. Previous records are closed, never overwritten.</p></div><div class="section-headline__actions"><button class="btn btn--ghost btn--sm" data-route-link="rental-assignments">All assignment activity</button>${worker.status === 'Assigned' && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign</button>` : ''}${worker.nextAssignmentId ? `<button class="btn btn--ghost btn--sm" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel scheduled</button>` : ''}</div></div>${rentalAssignmentHistoryHtml(worker)}<div class="assignment-integrity-note">${icon('info')}<span><strong>Historical integrity:</strong> a transfer, trade change or rate change closes the previous assignment on the day before the new effective date. The permanent worker and supplier relationship remain unchanged.</span></div></section>`;
+    const canManageAssignment = hasAccessPermission('rental.assignments.manage');
+    const actions = canManageAssignment
+      ? `${worker.status === 'Assigned' && !worker.nextAssignmentId ? `<button class="btn btn--secondary btn--sm" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer</button>` : worker.status === 'Available' ? `<button class="btn btn--primary btn--sm" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign</button>` : ''}${worker.nextAssignmentId ? `<button class="btn btn--ghost btn--sm" data-rental-worker-action="cancel" data-worker-id="${escapeHtml(worker.id)}">Cancel scheduled</button>` : ''}`
+      : '';
+    return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Assignment history</h2><p>Project and trade changes are effective-dated. Commercial rate values are only included when the access profile is authorized for them.</p></div><div class="section-headline__actions"><button class="btn btn--ghost btn--sm" data-route-link="rental-assignments">All assignment activity</button>${actions}</div></div>${rentalAssignmentHistoryHtml(worker)}<div class="assignment-integrity-note">${icon('info')}<span><strong>Historical integrity:</strong> a transfer, trade change or rate change closes the previous assignment on the day before the new effective date. The permanent worker and supplier relationship remain unchanged.</span></div></section>`;
   }
 
   function rentalWorkerTimesheetsTab(worker) {
+    if (!hasAccessPermission('rental.settlements.view')) {
+      const project = rentalWorkerCurrentProject(worker);
+      return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Project timesheet work</h2><p>Attendance and overtime are managed from the scoped Project Timesheets workspace. Supplier settlement and worker cost snapshots are intentionally unavailable to this access profile.</p></div><button class="btn btn--primary btn--sm" data-route-link="timesheets">Open Project Timesheets</button></div><div class="worker-overview-grid"><div><span>Worker</span><strong>${escapeHtml(worker.name)}</strong></div><div><span>Current project</span><strong>${escapeHtml(project?.name || worker.project || 'No current project')}</strong></div><div><span>Timesheet access</span><strong>${hasAccessPermission('rental.timesheets.edit') ? 'Entry enabled' : 'View only'}</strong></div><div><span>Submit for review</span><strong>${hasAccessPermission('rental.timesheets.submit') ? 'Enabled' : 'Not permitted'}</strong></div></div><div class="source-note source-note--compact">${icon('info')}<span>Project scope is revalidated by the server on every timesheet and overtime request.</span></div></section>`;
+    }
     if (!state.rentalSettlementLoadedPeriods.has(state.period)) loadRentalSettlementContext(state.period,{render:false});
     const rows=Object.values(state.rentalSettlements||{}).filter(group=>group.period===state.period).flatMap(group=>(group.rows||[]).filter(row=>row.workerId===worker.id).map(row=>({group,row})));
     return `<section class="panel panel--flush"><div class="section-headline"><div><h2>Timesheet / settlement history</h2><p>Locked rental timesheet data stays tied to the commercial assignment effective on each work date.</p></div><button class="btn btn--secondary btn--sm" data-route-link="timesheets">Open Timesheets</button></div>${rows.length?`<div class="table-scroll"><table class="data-table rental-profile-table"><thead><tr><th>Period</th><th>Project</th><th>Supplier</th><th>Regular Hours</th><th>OT Hours</th><th>Settlement</th><th>Status</th></tr></thead><tbody>${rows.map(({group,row})=>`<tr><td><strong>${escapeHtml(group.period)}</strong></td><td><button class="entity-link" data-open-project="${escapeHtml(group.projectId)}">${escapeHtml(group.project)}</button></td><td>${escapeHtml(group.supplier)}</td><td class="table-money">${Number(row.hours||0).toLocaleString('en-SA',{maximumFractionDigits:2})}</td><td class="table-money">${Number(row.otHours||0).toLocaleString('en-SA',{maximumFractionDigits:2})}</td><td>${escapeHtml(group.number||'Calculated snapshot')}</td><td>${rentalSettlementStatusBadge(group.status)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="table-empty table-empty--card"><strong>No calculated snapshot for ${escapeHtml(state.period)}.</strong><span>Approved/locked project timesheets remain available in the Timesheets workspace; calculated settlement snapshots appear here once settlement is prepared.</span></div>`}</section>`;
   }
+
   function rentalWorkerCostTab(worker) {
     if (!state.rentalSettlementLoadedPeriods.has(state.period)) loadRentalSettlementContext(state.period,{render:false});
     const matches=Object.values(state.rentalSettlements||{}).filter(group=>group.period===state.period).flatMap(group=>(group.rows||[]).filter(row=>row.workerId===worker.id).map(row=>({group,row})));
@@ -6860,32 +6991,49 @@
     if (!worker) return `<section class="page"><div class="placeholder"><div class="placeholder__inner"><div class="placeholder__icon">RW</div><h2>Rental worker not found</h2><p>This worker master record is not available.</p><button class="btn btn--secondary" data-route-link="rental-workforce">Back to Rental Workforce</button></div></div></section>`;
     const supplier = rentalWorkerSupplier(worker);
     const snapshot = rentalWorkerCurrentSnapshot(worker);
-    const sourceMetrics = rentalWorkerSettlementMetrics(worker);
+    const canManageWorker = hasAccessPermission('rental.workers.manage');
+    const canManageAssignment = hasAccessPermission('rental.assignments.manage');
+    const canViewSupplier = hasAccessPermission('rental.suppliers.view');
+    const canViewSettlement = hasAccessPermission('rental.settlements.view');
+    const sourceMetrics = canViewSettlement ? rentalWorkerSettlementMetrics(worker) : {hours:null,gross:null,advance:null,net:null,period:null};
     const assignmentCount = rentalAssignmentsFor(worker).filter(item => item.kind === 'assignment').length;
-    const tabs = [
-      ['overview','Overview'],['assignments','Assignments'],['timesheets','Timesheets'],['cost','Manpower Cost'],['advances','Advances'],['documents','Documents']
-    ];
+    const tabs = [['overview','Overview']];
+    if (hasAccessPermission('rental.assignments.view')) tabs.push(['assignments','Assignments']);
+    if (hasAccessPermission('rental.timesheets.view')) tabs.push(['timesheets','Timesheets']);
+    if (canViewSettlement) tabs.push(['cost','Manpower Cost']);
+    if (hasAccessPermission('rental.adjustments.view')) tabs.push(['advances','Advances']);
+    if (hasAnyAccessPermission('rental.documents.view','shared.documents.view')) tabs.push(['documents','Documents']);
+    if (!tabs.some(([id]) => id === state.rentalWorkerTab)) state.rentalWorkerTab = 'overview';
     let content = rentalWorkerOverviewTab(worker, supplier, snapshot);
     if (state.rentalWorkerTab === 'assignments') content = rentalWorkerAssignmentsTab(worker);
     else if (state.rentalWorkerTab === 'timesheets') content = rentalWorkerTimesheetsTab(worker);
     else if (state.rentalWorkerTab === 'cost') content = rentalWorkerCostTab(worker);
     else if (state.rentalWorkerTab === 'advances') content = rentalWorkerAdvancesTab(worker);
     else if (state.rentalWorkerTab === 'documents') content = rentalWorkerDocumentsTab(worker);
-
+    const primaryAction = canManageAssignment
+      ? (!worker.archived && snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--primary" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer Project</button>` : !worker.archived && worker.status === 'Available' ? `<button class="btn btn--primary" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to Project</button>` : '')
+      : '';
+    const lifecycleMenu = canManageWorker ? lifecycleActionsMenu([
+      ...(!worker.archived ? [{label:'Edit worker',hint:'Update current worker master details',iconName:'edit',attrs:`data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}"`}] : []),
+      {label:worker.masterStatus==='Terminated'?'Worker terminated':'Manage worker status',hint:worker.masterStatus==='Terminated'?'Termination is final for this worker record':'Deactivate, reactivate, or terminate worker activity',iconName:'info',disabled:worker.archived || worker.masterStatus==='Terminated',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|manage"`},
+      'separator',
+      {label:worker.archived?'Restore from archive':'Archive worker',hint:worker.archived?'Restore previous state':'Archive immediately while retaining assignments and history',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|${worker.archived?'restore':'archive'}"`},
+      {label:'Delete',hint:'Delete with 30-day recovery; assignments and history are retained for restore',iconName:'trash',danger:true,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|delete"`}
+    ]) : '';
+    const supplierIdentity = supplier
+      ? (canViewSupplier ? `<button class="text-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>` : `<span>${escapeHtml(supplier.name)}</span>`)
+      : '';
+    const thirdKpi = canViewSettlement
+      ? `<div><span>Current period net</span><strong>${sourceMetrics.net == null ? '—' : formatCurrency(sourceMetrics.net)}</strong><small>${sourceMetrics.period || 'No settlement source'}</small></div>`
+      : `<div><span>Financial authority</span><strong>Restricted</strong><small>Settlement/payment data withheld</small></div>`;
     return `<section class="page rental-worker-profile-page">
       <div class="profile-crumb ui-v2-payroll-profile-crumb"><button type="button" class="text-link text-link--muted" data-route-link="rental-workforce">Rental Workforce</button><span>›</span><span>${escapeHtml(rentalWorkerCode(worker))}</span></div>
       <header class="entity-header rental-worker-header">
-        <div class="entity-header__identity"><span class="entity-avatar rental-worker-avatar">RW</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(worker.name)}</h1>${statusBadge(worker.status || 'Available')}</div><div class="entity-subline"><span>${escapeHtml(rentalWorkerCode(worker))}</span><span>·</span><span>Rental worker</span>${supplier ? `<span>·</span><button class="text-link" data-open-supplier="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</button>` : ''}</div></div></div>
-        <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${!worker.archived && snapshot.project && !worker.nextAssignmentId ? `<button class="btn btn--primary" data-rental-worker-action="transfer" data-worker-id="${escapeHtml(worker.id)}">Transfer Project</button>` : !worker.archived && worker.status === 'Available' ? `<button class="btn btn--primary" data-rental-worker-action="assign" data-worker-id="${escapeHtml(worker.id)}">Assign to Project</button>` : ''}${lifecycleActionsMenu([
-          ...(!worker.archived ? [{label:'Edit worker',hint:'Update current worker master details',iconName:'edit',attrs:`data-rental-worker-action="edit" data-worker-id="${escapeHtml(worker.id)}"`}] : []),
-          {label:worker.masterStatus==='Terminated'?'Worker terminated':'Manage worker status',hint:worker.masterStatus==='Terminated'?'Termination is final for this worker record':'Deactivate, reactivate, or terminate worker activity',iconName:'info',disabled:worker.archived || worker.masterStatus==='Terminated',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|manage"`},
-          'separator',
-          {label:worker.archived?'Restore from archive':'Archive worker',hint:worker.archived?'Restore previous state':'Archive immediately while retaining assignments and history',iconName:'info',attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|${worker.archived?'restore':'archive'}"`},
-          {label:'Delete',hint:'Delete with 30-day recovery; assignments and history are retained for restore',iconName:'trash',danger:true,attrs:`data-rental-master-lifecycle="worker|${escapeHtml(worker.id)}|delete"`}
-        ])}</div>
+        <div class="entity-header__identity"><span class="entity-avatar rental-worker-avatar">RW</span><div><div class="entity-title-row ui-v2-payroll-entity-title"><h1>${escapeHtml(worker.name)}</h1>${statusBadge(worker.status || 'Available')}</div><div class="entity-subline"><span>${escapeHtml(rentalWorkerCode(worker))}</span><span>·</span><span>Rental worker</span>${supplier ? `<span>·</span>${supplierIdentity}` : ''}</div></div></div>
+        <div class="entity-header__actions ui-v2-payroll-entity-header__actions">${primaryAction}${lifecycleMenu}</div>
       </header>
       <div class="profile-facts rental-worker-facts"><div><span>Supplier</span><strong>${escapeHtml(supplier?.name || worker.supplier || 'Not linked')}</strong></div><div><span>Current project</span><strong>${escapeHtml(snapshot.project?.name || (worker.status === 'Terminated' ? 'Terminated' : worker.status === 'Inactive' ? 'Inactive' : worker.status === 'Archived' ? 'Archived' : worker.status === 'Released' ? 'Released / unassigned' : 'Available / unassigned'))}</strong></div><div><span>Current trade</span><strong>${escapeHtml(snapshot.trade)}</strong></div><div><span>Current rate</span><strong>${escapeHtml(snapshot.rate)}</strong></div></div>
-      <div class="rental-profile-kpis"><div><span>Assignments</span><strong>${assignmentCount}</strong><small>effective-dated record${assignmentCount === 1 ? '' : 's'}</small></div><div><span>Current period hours</span><strong>${sourceMetrics.hours == null ? '—' : Number(sourceMetrics.hours).toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>${sourceMetrics.period || 'No source timesheet'}</small></div><div><span>Current period net</span><strong>${sourceMetrics.net == null ? '—' : formatCurrency(sourceMetrics.net)}</strong><small>${sourceMetrics.period || 'No settlement source'}</small></div><div><span>Worker status</span><strong class="text-value">${escapeHtml(worker.status || 'Available')}</strong><small>${snapshot.since ? `Since ${escapeHtml(rentalDisplayDate(snapshot.since))}` : 'Permanent worker master'}</small></div></div>
+      <div class="rental-profile-kpis"><div><span>Assignments</span><strong>${assignmentCount}</strong><small>effective-dated record${assignmentCount === 1 ? '' : 's'}</small></div><div><span>Current period hours</span><strong>${sourceMetrics.hours == null ? '—' : Number(sourceMetrics.hours).toLocaleString('en-SA',{maximumFractionDigits:2})}</strong><small>${sourceMetrics.period || (canViewSettlement ? 'No source timesheet' : 'Use Project Timesheets')}</small></div>${thirdKpi}<div><span>Worker status</span><strong class="text-value">${escapeHtml(worker.status || 'Available')}</strong><small>${snapshot.since ? `Since ${escapeHtml(rentalDisplayDate(snapshot.since))}` : 'Permanent worker master'}</small></div></div>
       <div class="tabs profile-tabs rental-worker-tabs">${tabs.map(([id,label]) => `<button type="button" class="${state.rentalWorkerTab === id ? 'is-active' : ''}" data-rental-worker-tab="${id}">${escapeHtml(label)}${id === 'assignments' ? `<span class="tab-count">${assignmentCount}</span>` : id === 'advances' && Number(rentalSourceMonth(worker)?.advance || 0) > 0 ? '<span class="tab-count">1</span>' : ''}</button>`).join('')}</div>
       ${content}
     </section>`;
@@ -8199,14 +8347,14 @@
       const activeWpsTemplates=bankTemplatesAll('wps').filter(item=>item.active && !item.archived);
       return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">WPS & salary payments</span><h2>Employer payment configuration</h2><p>Company payment identity and configured WPS export layouts used by the server-side salary payment workflow.</p></div><div class="payment-head-actions"><button class="btn btn--secondary" data-payment-settings>Edit Payment Settings</button><button class="btn btn--secondary" data-route-link="wps">Open WPS Workspace</button></div></div><div class="settings-list settings-list--two"><div class="settings-summary-row"><span><strong>Employer identifier</strong><small>Used only by templates that require it.</small></span><strong>${escapeHtml(paymentSettings.employerIdentifier||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer bank</strong><small>${escapeHtml(paymentSettings.employerBankCode||'No bank code')}</small></span><strong>${escapeHtml(paymentSettings.employerBankName||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Employer IBAN</strong><small>Encrypted at rest.</small></span><strong class="mono-cell">${escapeHtml(paymentSettings.employerIbanMasked||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Bank customer reference</strong><small>Optional bank-specific identifier.</small></span><strong>${escapeHtml(paymentSettings.bankCustomerReference||'Not configured')}</strong></div><div class="settings-summary-row"><span><strong>Active WPS templates</strong><small>Export layouts are company-defined.</small></span><strong>${activeWpsTemplates.length}</strong></div></div></section>`;
     }
-    if(state.settingsTab==='access') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Access</span><h2>Workspace authorization</h2><p>Company-scoped Django memberships enforce workspace and action permissions on the server.</p></div><button class="btn btn--secondary" data-route-link="access-roles">Open Access & Roles</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Current role</strong><small>Resolved from the active company membership.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div><div class="settings-summary-row"><span><strong>Operational separation</strong><small>Internal Company and Rental Manpower keep separate masters, calculations and payment workflows.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Management workspace</strong><small>Aggregates controlled records without owning operational writes.</small></span><strong>Read-only</strong></div></div><div class="settings-policy-note"><span>${icon('info')}</span><p>Access changes are applied through company membership controls and audited server-side. Browser state never grants permissions.</p></div></section>`;
+    if(state.settingsTab==='access') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Access</span><h2>Workspace authorization</h2><p>Company-scoped Django memberships enforce workspace and action permissions on the server.</p></div><button class="btn btn--secondary" data-route-link="access-roles">Open Access & Roles</button></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Current access profile</strong><small>Resolved from the active company membership.</small></span><strong>${escapeHtml(accessProfileLabel())}</strong></div><div class="settings-summary-row"><span><strong>Operational separation</strong><small>Internal Company and Rental Manpower keep separate masters, calculations and payment workflows.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Management workspace</strong><small>Aggregates controlled records without owning operational writes.</small></span><strong>Read-only</strong></div></div><div class="settings-policy-note"><span>${icon('info')}</span><p>Access changes are applied through company membership controls and audited server-side. Browser state never grants permissions.</p></div></section>`;
     if(state.settingsTab==='documents') {
       const branding=general.branding || {};
       const mode=general.documentBrandingMode || branding.mode || 'standard';
       return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Documents</span><h2>Final document controls</h2><p>Document identity, branding and finalization are server-controlled and snapshotted at finalization.</p></div><button class="btn btn--secondary" data-route-link="documents">Open Documents</button></div><div class="settings-list"><div class="settings-field"><span><strong>Print branding mode</strong><small>Use the normal issuer header, or reserve the page for a full-page letterhead image.</small></span><select class="select" data-company-setting="documentBrandingMode" ${state.systemSettings.canManage?'':'disabled'}><option value="standard" ${mode==='standard'?'selected':''}>Standard header</option><option value="letterhead" ${mode==='letterhead'?'selected':''}>Full-page letterhead</option></select></div><div class="settings-summary-row"><span><strong>Number allocation</strong><small>Company-scoped server sequence.</small></span><strong>Server controlled</strong></div><div class="settings-summary-row"><span><strong>Final records</strong><small>Source, payment evidence, issuer identity and branding versions are snapshotted at finalization.</small></span><strong>Immutable</strong></div><div class="settings-summary-row"><span><strong>Integrity</strong><small>Final JSON snapshots and historical branding assets are SHA-256 verified before printing.</small></span><strong>Verified</strong></div></div><div class="branding-asset-grid">${brandingAssetTemplate('logo','Company logo','Displayed beside the standard document header.')}${brandingAssetTemplate('letterhead','A4 letterhead','Full-page background used when Letterhead mode is selected.')}${brandingAssetTemplate('watermark','Watermark','Centered, faint background mark used on finalized documents.')}</div><div class="settings-policy-note"><span>${icon('info')}</span><p>Replacing or clearing current branding never rewrites previously finalized documents. Historical documents keep their original image hash and storage version.</p></div></section>`;
     }
     if(state.settingsTab==='workflow') return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">Workflow</span><h2>Approval & audit controls</h2><p>Financial lifecycle rules are enforced by the owning Django services and database constraints.</p></div></div><div class="settings-list"><div class="settings-summary-row"><span><strong>Internal payroll</strong><small>Calculation, Finance Review, approval and payment are separate controlled states.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Rental settlement</strong><small>Locked timesheets feed reviewed/approved immutable settlement snapshots.</small></span><strong>Enforced</strong></div><div class="settings-summary-row"><span><strong>Payments</strong><small>Payment results, retries and reversals never rewrite approved financial snapshots.</small></span><strong>Audited</strong></div><div class="settings-summary-row"><span><strong>Audit trail</strong><small>Security and financial lifecycle events are append-only through the application layer.</small></span><strong>Enabled</strong></div></div></section>`;
-    return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">General</span><h2>Company settings</h2><p>Company identity, legal print details and locale values are stored in Django and audited when changed.</p></div></div><div class="settings-list">${settingsInputRow('companyName','Company name',general.companyName,'Operational display name.','maxlength="200" autocomplete="organization"')}${settingsInputRow('legalName','Legal name',general.legalName,'Legal entity name used on finalized payroll documents.','maxlength="250" autocomplete="organization"')}${settingsInputRow('commercialRegistration','Commercial registration',general.commercialRegistration,'Printed on finalized payroll and manpower documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('vatNumber','VAT number',general.vatNumber,'Company VAT identity for branded documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('documentAddress','Document address',general.documentAddress,'Registered/company address shown on final documents.','maxlength="400" autocomplete="street-address"')}${settingsInputRow('documentEmail','Document email',general.documentEmail,'Contact email shown on final documents.','maxlength="254" type="email" autocomplete="email"')}${settingsInputRow('documentPhone','Document phone',general.documentPhone,'Contact number shown on final documents.','maxlength="40" autocomplete="tel"')}${settingsInputRow('website','Website',general.website,'Website shown on final documents.','maxlength="300" type="url" autocomplete="url"')}<div class="settings-summary-row"><span><strong>Current role</strong><small>Only authorized company roles may change these settings.</small></span><strong>${escapeHtml(serverAccess.role_label||serverAccess.role||'—')}</strong></div>${settingsInputRow('timezone','Timezone',general.timezone,'IANA timezone, for example Asia/Riyadh.','autocomplete="off"')}${settingsInputRow('currency','Currency',general.currency,'ISO 4217 currency code.','maxlength="3" autocomplete="off"')}${settingsInputRow('country','Country',general.country,'ISO 3166-1 alpha-2 country code.','maxlength="2" autocomplete="off"')}</div>${state.systemSettings.canManage?'':'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Your company role has read-only access to these settings.</p></div>'}</section>`;
+    return `<section class="settings-panel"><div class="settings-panel__head"><div><span class="eyebrow">General</span><h2>Company settings</h2><p>Company identity, legal print details and locale values are stored in Django and audited when changed.</p></div></div><div class="settings-list">${settingsInputRow('companyName','Company name',general.companyName,'Operational display name.','maxlength="200" autocomplete="organization"')}${settingsInputRow('legalName','Legal name',general.legalName,'Legal entity name used on finalized payroll documents.','maxlength="250" autocomplete="organization"')}${settingsInputRow('commercialRegistration','Commercial registration',general.commercialRegistration,'Printed on finalized payroll and manpower documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('vatNumber','VAT number',general.vatNumber,'Company VAT identity for branded documents.','maxlength="60" autocomplete="off"')}${settingsInputRow('documentAddress','Document address',general.documentAddress,'Registered/company address shown on final documents.','maxlength="400" autocomplete="street-address"')}${settingsInputRow('documentEmail','Document email',general.documentEmail,'Contact email shown on final documents.','maxlength="254" type="email" autocomplete="email"')}${settingsInputRow('documentPhone','Document phone',general.documentPhone,'Contact number shown on final documents.','maxlength="40" autocomplete="tel"')}${settingsInputRow('website','Website',general.website,'Website shown on final documents.','maxlength="300" type="url" autocomplete="url"')}<div class="settings-summary-row"><span><strong>Current access profile</strong><small>Only profiles with Settings Manage authority may change these settings.</small></span><strong>${escapeHtml(accessProfileLabel())}</strong></div>${settingsInputRow('timezone','Timezone',general.timezone,'IANA timezone, for example Asia/Riyadh.','autocomplete="off"')}${settingsInputRow('currency','Currency',general.currency,'ISO 4217 currency code.','maxlength="3" autocomplete="off"')}${settingsInputRow('country','Country',general.country,'ISO 3166-1 alpha-2 country code.','maxlength="2" autocomplete="off"')}</div>${state.systemSettings.canManage?'':'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Your access profile has read-only access to these settings.</p></div>'}</section>`;
   }
 
   function settingsTemplate() {
@@ -8366,7 +8514,12 @@
       if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     }
     applyTimesheetFullscreenState();
-    if (!workspaceAllowsRoute(route)) { navigate('overview'); return; }
+    if (!workspaceAllowsRoute(route)) {
+      const fallback = firstAllowedWorkspaceRoute();
+      if (fallback && fallback !== route) navigate(fallback);
+      else if (pageRoot) pageRoot.innerHTML = `<section class="page"><div class="placeholder"><div class="placeholder__inner"><div class="placeholder__icon">${icon('info')}</div><h2>No page access</h2><p>Your Access Profile does not include a page in this workspace.</p></div></div></section>`;
+      return;
+    }
     const projectId = currentProjectId();
     const supplierId = currentSupplierId();
     const branchId = currentBranchId();
@@ -8528,7 +8681,7 @@
     document.querySelectorAll('[data-management-open]').forEach(btn => btn.addEventListener('click', () => {
       const [workspace, route] = String(btn.dataset.managementOpen || '').split('|');
       if (!workspace || !route) return;
-      if (!roleCanWorkspace(workspace)) { showToast('Access restricted', `${roleDefinition().label} cannot open this owning workspace.`); return; }
+      if (!roleCanWorkspace(workspace)) { showToast('Access restricted', `${accessProfileLabel()} cannot open this owning workspace.`); return; }
       const afterSwitch = () => navigate(route);
       if (state.workspace !== workspace) {
         if (state.workspace === 'internal') localStorage.setItem('payroll-ui-internal-period', state.period);
@@ -8873,10 +9026,17 @@
       showToast('Previous period opened', `${previous} is ready for payroll calculation. Once it has a snapshot, switch back to ${currentPeriod} for automatic variance comparison.`);
     }));
     document.querySelectorAll('[data-review-return]').forEach(btn => btn.addEventListener('click', () => openPayrollReviewDecisionDrawer('return')));
+    document.querySelectorAll('[data-review-mark]').forEach(btn => btn.addEventListener('click', () => {
+      const critical = Number(payrollContextForPeriod().reviewSummary?.Critical ?? payrollReviewCounts(payrollReviewIssues(payrollRowsForDisplay()).issues).Critical);
+      if (critical) { showToast('Review blocked', `${critical} critical review issue${critical === 1 ? '' : 's'} must be resolved first.`); return; }
+      if (payrollRunStatus() !== 'Review') { showToast('Submit for review first', 'Finance review is available only while the payroll run is in Review.'); return; }
+      openPayrollReviewDecisionDrawer('review');
+    }));
     document.querySelectorAll('[data-review-approve]').forEach(btn => btn.addEventListener('click', () => {
       const critical = Number(payrollContextForPeriod().reviewSummary?.Critical ?? payrollReviewCounts(payrollReviewIssues(payrollRowsForDisplay()).issues).Critical);
       if (critical) { showToast('Approval blocked', `${critical} critical review issue${critical === 1 ? '' : 's'} must be resolved first.`); return; }
       if (payrollRunStatus() !== 'Review') { showToast('Submit for review first', 'Final approval is available only while the payroll run is in Review.'); return; }
+      if (!payrollContextForPeriod().workflow?.reviewSignedOff) { showToast('Finance review required', 'A Finance Reviewer must sign off this payroll before final approval.'); return; }
       openPayrollReviewDecisionDrawer('approve');
     }));
 
@@ -9039,7 +9199,9 @@
       const hours = Number(input.value || 0);
       if (!Number.isFinite(hours) || hours < 0 || hours > 500) { showToast('Invalid OT hours','Enter a non-negative overtime-hour value.'); renderRoute(); return; }
       const workerId=input.dataset.rentalOtHours; const key=rentalTimesheetRecordKey(); const current=state.rentalOvertime[key]?.[workerId]||{};
-      appApi('/api/rental/timesheets/overtime/',{method:'PATCH',body:{project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),worker_id:workerId,hours,rate:current.rate||null}}).then(payload=>{applyRentalTimesheetPayload(payload);renderRoute();}).catch(error=>{showToast('OT update failed',error.message);loadRentalTimesheet();});
+      const body={project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),worker_id:workerId,hours};
+      if (hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage')) body.rate=current.rate||null;
+      appApi('/api/rental/timesheets/overtime/',{method:'PATCH',body}).then(payload=>{applyRentalTimesheetPayload(payload);renderRoute();}).catch(error=>{showToast('OT update failed',error.message);loadRentalTimesheet();});
     }));
     document.querySelectorAll('[data-rental-ot-rate]').forEach(input => input.addEventListener('change', () => {
       if (rentalTimesheetStatusValue() !== 'draft' || rentalProjectHasSettlementSnapshot(state.period,state.rentalTimesheetProject)) { showToast('OT protected', rentalTimesheetStatusValue() !== 'draft' ? 'Only Draft rental timesheet overtime can be edited.' : 'A calculated settlement already uses these OT values. Return the settlement for changes before editing OT.'); renderRoute(); return; }
@@ -9483,14 +9645,16 @@
     const run = payrollRunRecord();
     state.drawerType = 'payroll-review-decision';
     state.drawerContext = decision;
-    drawerTitle.textContent = decision === 'approve' ? `Approve ${state.period} payroll` : `Return ${state.period} for changes`;
+    const isReview = decision === 'review';
+    const isApprove = decision === 'approve';
+    drawerTitle.textContent = isReview ? `Review ${state.period} payroll` : isApprove ? `Final approve ${state.period} payroll` : `Return ${state.period} for changes`;
     drawerSave.hidden = false;
-    drawerSave.textContent = decision === 'approve' ? 'Approve Payroll' : 'Return for Changes';
+    drawerSave.textContent = isReview ? 'Mark Reviewed' : isApprove ? 'Final Approve' : 'Return for Changes';
     const review = payrollReviewIssues(payrollRowsForDisplay());
     const counts = payrollReviewCounts(review.issues);
-    drawerBody.innerHTML = decision === 'approve' ? `
-      <section class="form-section"><div class="form-section__head"><strong>Final reviewer confirmation</strong><span>This decision changes the run from Review to Approved and writes an audit-trail event. Payment/WPS remains a later lifecycle step.</span></div><div class="review-decision-summary"><div><span>Period</span><strong>${escapeHtml(state.period)}</strong></div><div><span>Net payable</span><strong>${formatCurrency(payrollTotals(payrollRowsForDisplay()).net)}</strong></div><div><span>Critical exceptions</span><strong>${counts.Critical}</strong></div><div><span>Warnings</span><strong>${counts.Warning}</strong></div></div></section>
-      <section class="form-section"><div class="form-section__head"><strong>Reviewer note</strong><span>Optional note is retained with the approval record.</span></div><div class="form-grid"><div class="form-field form-field--full"><label>Approval note</label><textarea class="textarea" name="payroll-review-note" placeholder="Reviewed payroll calculation, attendance snapshot and exceptions…"></textarea></div><label class="review-confirm"><input type="checkbox" name="payroll-review-confirm"><span><strong>I reviewed the payroll exceptions and calculation snapshot.</strong><small>This confirmation is required before the server accepts final approval.</small></span></label></div></section>` : `
+    drawerBody.innerHTML = (isReview || isApprove) ? `
+      <section class="form-section"><div class="form-section__head"><strong>${isReview ? 'Independent finance review' : 'Final approval authority'}</strong><span>${isReview ? 'This sign-off confirms the payroll snapshot was independently reviewed. It does not approve payment.' : 'Final approval is available only after a separate finance-review sign-off. Payment/WPS remains a later controlled stage.'}</span></div><div class="review-decision-summary"><div><span>Period</span><strong>${escapeHtml(state.period)}</strong></div><div><span>Net payable</span><strong>${formatCurrency(payrollTotals(payrollRowsForDisplay()).net)}</strong></div><div><span>Critical exceptions</span><strong>${counts.Critical}</strong></div><div><span>Finance review</span><strong>${isApprove ? (run.reviewedAt ? `Signed off ${escapeHtml(payrollTimestamp(run.reviewedAt))}` : 'Required') : 'Pending sign-off'}</strong></div></div></section>
+      <section class="form-section"><div class="form-section__head"><strong>${isReview ? 'Review note' : 'Approval note'}</strong><span>${isReview ? 'Optional finance-review note is retained in the immutable audit trail.' : 'Optional final-approval note is retained with the approval record.'}</span></div><div class="form-grid"><div class="form-field form-field--full"><label>${isReview ? 'Finance review note' : 'Final approval note'}</label><textarea class="textarea" name="payroll-review-note" placeholder="${isReview ? 'Reviewed payroll calculation, attendance snapshot and exceptions…' : 'Final approval after independent finance review…'}"></textarea></div><label class="review-confirm"><input type="checkbox" name="payroll-review-confirm"><span><strong>${isReview ? 'I independently reviewed the payroll exceptions and calculation snapshot.' : 'I confirm the finance review sign-off and authorize final payroll approval.'}</strong><small>This confirmation is required before the server accepts ${isReview ? 'the finance review sign-off' : 'final approval'}.</small></span></label></div></section>` : `
       <section class="form-section"><div class="form-section__head"><strong>Return to Payroll</strong><span>The run returns to Calculated so Payroll can correct salary setup, attendance, overtime or adjustments and recalculate before resubmitting.</span></div><div class="form-grid">${namedSelectField('Reason category', 'payroll-return-category', ['Payroll setup','Attendance / overtime','Adjustment / deduction','Bank / WPS data','Other'])}<div class="form-field form-field--full"><label>Reviewer note</label><textarea class="textarea" name="payroll-review-note" placeholder="Describe what needs to be corrected…"></textarea></div></div></section>
       <section class="source-note">${icon('info')}<span><strong>History is preserved</strong>Returning a run does not delete its prior calculation or submission events from the audit trail.</span></section>`;
     drawer.classList.add('is-open');
@@ -9540,7 +9704,7 @@
         const target = control.dataset.workspaceSwitch;
         if (!roleCanWorkspace(target)) {
           event.preventDefault();
-          showToast('Workspace access restricted', `${roleDefinition().label} cannot open this workspace.`);
+          showToast('Workspace access restricted', `${accessProfileLabel()} cannot open this workspace.`);
           return;
         }
         // Keep the anchor as a real fallback if JavaScript never initializes, but once
@@ -9674,6 +9838,7 @@
   }
 
   function openSearch() {
+    if(!hasAccessPermission('shared.search.use'))return;
     searchDialog.hidden = false;
     searchDialog.classList.add('is-open');
     searchDialog.setAttribute('aria-hidden', 'false');
@@ -9702,29 +9867,39 @@
         {type:'Page',code:'AP',name:'Approval Center',meta:'Payroll · settlement · payment exceptions',route:'management-approvals',workspace:'management'},
         {type:'Page',code:'AU',name:'Audit Trail',meta:'Cross-workspace lifecycle events',route:'management-audit',workspace:'management'},
         {type:'Page',code:'RP',name:'Management Reports',meta:'Controlled workforce cost reporting',route:'reports',workspace:'management'},
-      ];
-      if(['owner','finance'].includes(state.accessRole))rows.push({type:'Page',code:'AC',name:'Access & Roles',meta:'Workspace permission matrix',route:'access-roles',workspace:'management'});
+        {type:'Page',code:'AC',name:'Access & Roles',meta:'Workspace permission matrix',route:'access-roles',workspace:'management'},
+      ].filter(item=>workspaceAllowsRoute(item.route));
     }
     return rows.filter(item=>!q||`${item.type} ${item.name} ${item.meta}`.toLowerCase().includes(q));
   }
 
   function globalSearchEndpointSpecs(query) {
+    if(!hasAccessPermission('shared.search.use'))return [];
     const q=String(query||'').trim();
     const encoded=encodeURIComponent(q);
     const specs=[];
-    if(roleCanWorkspace('internal')&&(state.workspace==='internal'||state.workspace==='management')){
+    const canEmployees=hasAccessPermission('internal.employees.view');
+    const canOrganization=hasAccessPermission('internal.organization.view');
+    const canWorkers=hasAccessPermission('rental.workers.view');
+    const canProjects=hasAccessPermission('rental.assignments.view')||hasAccessPermission('rental.assignments.manage');
+    const canSuppliers=hasAccessPermission('rental.suppliers.view');
+    if(canEmployees){
+      specs.push({kind:'employees',url:`/api/internal/employees/?q=${encoded}&archived=current&sort=employee&direction=asc&page=1&page_size=5`,map:item=>({type:'Employee',code:'IE',name:item.name,meta:`EMP ${item.employeeId} · ${item.branch||'Branch not set'} · ${item.department||'Department not set'}`,route:`internal-employees/${item.id}`,workspace:'internal'})});
+    }
+    if(canOrganization){
       specs.push(
-        {kind:'employees',url:`/api/internal/employees/?q=${encoded}&archived=current&sort=employee&direction=asc&page=1&page_size=5`,map:item=>({type:'Employee',code:'IE',name:item.name,meta:`EMP ${item.employeeId} · ${item.branch||'Branch not set'} · ${item.department||'Department not set'}`,route:`internal-employees/${item.id}`,workspace:'internal'})},
         {kind:'branches',url:`/api/internal/branches/?q=${encoded}&status=all&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Branch',code:'BR',name:item.name,meta:`${item.code} · ${item.location||'Location not set'} · ${Number(item.activeEmployeeCount||0).toLocaleString()} active`,route:`branches/${item.id}`,workspace:'internal'})},
         {kind:'departments',url:`/api/internal/departments/?q=${encoded}&status=all&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Department',code:'DP',name:item.name,meta:`${item.code} · ${Number(item.activeEmployeeCount||0).toLocaleString()} active employees`,route:`departments/${item.id}`,workspace:'internal'})},
       );
     }
-    if(roleCanWorkspace('rental')&&(state.workspace==='rental'||state.workspace==='management')){
-      specs.push(
-        {kind:'workers',url:`/api/rental/workers/?q=${encoded}&sort=worker&direction=asc&page=1&page_size=5`,map:item=>({type:'Worker',code:'RW',name:item.name,meta:`${rentalWorkerCode(item)} · ${item.trade||'Rental worker'} · ${item.supplier||'Supplier not linked'}`,route:`rental-workforce/${item.id}`,workspace:'rental'})},
-        {kind:'projects',url:`/api/rental/projects/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Project',code:'PR',name:item.name,meta:`${item.code} · ${item.location||'Location not set'} · ${Number(item.rentalWorkers||0).toLocaleString()} workers`,route:`projects/${item.id}`,workspace:'rental'})},
-        {kind:'suppliers',url:`/api/rental/suppliers/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Supplier',code:'SP',name:item.name,meta:`${item.code} · ${Number(item.activeWorkers||0).toLocaleString()} assigned · ${Number(item.activeProjects||0).toLocaleString()} projects`,route:`suppliers/${item.id}`,workspace:'rental'})},
-      );
+    if(canWorkers){
+      specs.push({kind:'workers',url:`/api/rental/workers/?q=${encoded}&sort=worker&direction=asc&page=1&page_size=5`,map:item=>({type:'Worker',code:'RW',name:item.name,meta:`${rentalWorkerCode(item)} · ${item.trade||'Rental worker'} · ${item.supplier||'Supplier not linked'}`,route:`rental-workforce/${item.id}`,workspace:'rental'})});
+    }
+    if(canProjects){
+      specs.push({kind:'projects',url:`/api/rental/projects/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Project',code:'PR',name:item.name,meta:`${item.code} · ${item.location||'Location not set'} · ${Number(item.rentalWorkers||0).toLocaleString()} workers`,route:`projects/${item.id}`,workspace:'rental'})});
+    }
+    if(canSuppliers){
+      specs.push({kind:'suppliers',url:`/api/rental/suppliers/?q=${encoded}&sort=code&direction=asc&page=1&page_size=5`,map:item=>({type:'Supplier',code:'SP',name:item.name,meta:`${item.code} · ${Number(item.activeWorkers||0).toLocaleString()} assigned · ${Number(item.activeProjects||0).toLocaleString()} projects`,route:`suppliers/${item.id}`,workspace:'rental'})});
     }
     return specs;
   }
@@ -9767,7 +9942,7 @@
       closeSearch();
       const targetWorkspace=btn.dataset.searchWorkspace||state.workspace;
       if(targetWorkspace!==state.workspace){
-        if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${roleDefinition().label} cannot open this result.`);return;}
+        if(!roleCanWorkspace(targetWorkspace)){showToast('Access restricted',`${accessProfileLabel()} cannot open this result.`);return;}
         state.workspace=targetWorkspace;localStorage.setItem('payroll-ui-workspace',targetWorkspace);syncWorkspaceUrl(targetWorkspace);
         state.period=targetWorkspace==='rental'?(localStorage.getItem('payroll-ui-rental-period')||defaultInternalPeriod):targetWorkspace==='management'?(localStorage.getItem('payroll-ui-management-period')||defaultInternalPeriod):(localStorage.getItem('payroll-ui-internal-period')||defaultInternalPeriod);
         localStorage.setItem('payroll-ui-period',state.period);periodLabel.textContent=state.period;renderWorkspaceShell();
@@ -9794,7 +9969,10 @@
   }
 
   function initSearch() {
-    document.getElementById('globalSearchButton').addEventListener('click', openSearch);
+    const globalSearchButton=document.getElementById('globalSearchButton');
+    const canGlobalSearch=hasAccessPermission('shared.search.use');
+    if(globalSearchButton){globalSearchButton.hidden=!canGlobalSearch;if(canGlobalSearch)globalSearchButton.addEventListener('click', openSearch);}
+    if(!canGlobalSearch)return;
     searchInput.addEventListener('input',()=>{
       const value=searchInput.value;
       if(globalSearchTimer)clearTimeout(globalSearchTimer);
@@ -10114,7 +10292,7 @@
     }
 
     if (type === 'payroll-review-decision') {
-      if (state.drawerContext === 'approve') names.push('payroll-review-confirm');
+      if (['review','approve'].includes(state.drawerContext)) names.push('payroll-review-confirm');
       else names.push('payroll-review-note');
     }
 
@@ -10712,9 +10890,13 @@
   async function saveDrawer() {
     const approvalDrawer = ['payroll-review-decision','attendance-return'].includes(state.drawerType);
     const paymentDrawer = ['supplier-payment','supplier-payment-result'].includes(state.drawerType);
-    if (approvalDrawer && !roleCanApprove()) { showToast('Approval permission required', `${roleDefinition().label} cannot make final review decisions.`); return; }
-    if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${roleDefinition().label} cannot post or reconcile payments.`); return; }
-    if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${roleDefinition().label} can view this workspace but cannot change operational records.`); return; }
+    if (state.drawerType === 'payroll-review-decision') {
+      const needed = state.drawerContext === 'approve' ? 'internal.payroll_runs.approve' : 'internal.payroll_runs.review';
+      if (!hasAccessPermission(needed)) { showToast('Payroll decision restricted', `${accessProfileLabel()} does not have this payroll decision authority.`); return; }
+    } else if (state.drawerType === 'attendance-return' && !hasAccessPermission('internal.attendance.approve')) { showToast('Approval permission required', `${accessProfileLabel()} cannot return attendance for changes.`); return; }
+    else if (approvalDrawer && !roleCanApprove()) { showToast('Approval permission required', `${accessProfileLabel()} cannot make this review decision.`); return; }
+    if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${accessProfileLabel()} cannot post or reconcile payments.`); return; }
+    if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${accessProfileLabel()} can view this workspace but cannot change operational records.`); return; }
     if (!validatePayrollRequiredFields()) return;
     if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','employee-record-lifecycle','project-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
       const type = state.drawerType;
@@ -11100,6 +11282,24 @@
     if (state.drawerType === 'payroll-review-decision') {
       const decision = state.drawerContext;
       const note = get('payroll-review-note');
+      if (decision === 'review') {
+        const confirmed = !!drawerBody.querySelector('[name="payroll-review-confirm"]')?.checked;
+        const counts = payrollReviewCounts(payrollReviewIssues(payrollRowsForDisplay()).issues);
+        if (counts.Critical) { showToast('Review blocked', `${counts.Critical} critical review issue${counts.Critical === 1 ? '' : 's'} remain.`); return; }
+        if (!confirmed) { showToast('Finance review confirmation required', 'Confirm that you independently reviewed the exceptions and calculation snapshot.'); return; }
+        try {
+          drawerSave.disabled = true;
+          await requestPayrollWorkflow('review', { note, confirmed:true });
+          closeDrawer();
+          state.payrollView = 'review';
+          renderRoute();
+          showToast('Finance review signed off', `${state.period} payroll is ready for separate final approval.`);
+        } catch (error) {
+          showToast('Finance review failed', error.message);
+          drawerSave.disabled = false;
+        }
+        return;
+      }
       if (decision === 'approve') {
         const confirmed = !!drawerBody.querySelector('[name="payroll-review-confirm"]')?.checked;
         const counts = payrollReviewCounts(payrollReviewIssues(payrollRowsForDisplay()).issues);
@@ -11720,10 +11920,43 @@
 
   function permissionGuardAction(target) {
     if (!target) return null;
+    if (state.workspace === 'rental') {
+      if (target.matches('[data-rental-timesheet-save],[data-rental-timesheet-import],[data-rental-ts-bulk]') && !hasAccessPermission('rental.timesheets.edit')) return 'edit';
+      if (target.matches('[data-rental-timesheet-workflow]')) {
+        const next = rentalTimesheetNextAction(rentalTimesheetStatus()).next;
+        if (next === 'Submitted' && !hasAccessPermission('rental.timesheets.submit')) return 'edit';
+        if (['Approved','Locked'].includes(next) && !hasAccessPermission('rental.timesheets.approve')) return 'approval';
+      }
+      if (target.matches('[data-rental-master-lifecycle],[data-rental-worker-action],[data-onboarding-create-master],[data-onboarding-import],[data-onboarding-apply-defaults]') && !hasAccessPermission('rental.workers.manage')) return 'edit';
+      if (target.matches('[data-project-lifecycle]') && !hasAccessPermission('rental.assignments.manage')) return 'edit';
+      if (target.matches('[data-adjustment-action]') && !hasAccessPermission(target.dataset.adjustmentAction === 'approve' ? 'rental.adjustments.approve' : 'rental.adjustments.manage')) return target.dataset.adjustmentAction === 'approve' ? 'approval' : 'edit';
+      if (target.matches('[data-document-generate]') && !hasAnyAccessPermission('rental.documents.finalize','shared.documents.finalize')) return 'edit';
+      if (target.dataset?.quickAdd === 'rental-worker' && !hasAccessPermission('rental.workers.manage')) return 'edit';
+      if (target.dataset?.quickAdd === 'project' && !hasAccessPermission('rental.assignments.manage')) return 'edit';
+      if (target.dataset?.quickAdd === 'supplier' && !hasAccessPermission('rental.suppliers.manage')) return 'edit';
+      if (target.dataset?.quickAdd === 'advance' && !hasAccessPermission('rental.adjustments.manage')) return 'edit';
+    }
+    if (state.workspace === 'internal') {
+      if (target.matches('[data-review-mark],[data-review-return]') && !hasAccessPermission('internal.payroll_runs.review')) return 'approval';
+      if (target.matches('[data-review-approve]') && !hasAccessPermission('internal.payroll_runs.approve')) return 'approval';
+      if (target.matches('[data-payroll-calculate],[data-payroll-reopen],[data-payroll-reset-run],[data-payroll-submit-review]') && !hasAccessPermission('internal.payroll_runs.prepare')) return 'edit';
+      if (target.matches('[data-timesheet-save],[data-timesheet-import],[data-timesheet-bulk-action]') && !hasAccessPermission('internal.attendance.edit')) return 'edit';
+      if (target.matches('[data-timesheet-workflow]')) {
+        const next=timesheetNextAction(timesheetStatus()).next;
+        if (next === 'Submitted' && !hasAccessPermission('internal.attendance.submit')) return 'edit';
+        if (['Approved','Locked'].includes(next) && !hasAccessPermission('internal.attendance.approve')) return 'approval';
+      }
+      if (target.matches('[data-adjustment-action="approve"]') && !hasAccessPermission('internal.adjustments.approve')) return 'approval';
+      if (target.matches('[data-adjustment-action="submit"]') && !hasAccessPermission('internal.adjustments.manage')) return 'edit';
+      if (target.matches('[data-bank-batch-prepare],[data-wps-prepare],[data-payment-profile-edit],[data-payment-settings]') && !hasAccessPermission('internal.payments.prepare')) return 'edit';
+      if (target.matches('[data-bank-template-new],[data-bank-template-edit],[data-payment-export],[data-wps-validate]') && !hasAccessPermission('internal.wps.export')) return 'edit';
+      if (target.matches('[data-payment-start],[data-payment-start-batch],[data-payment-retry],[data-payment-close-payroll],[data-payment-close-batch],[data-payment-reopen-batch]') && !hasAccessPermission('internal.payments.execute')) return 'payment';
+      if (target.matches('[data-payment-cancel-batch]') && !hasAccessPermission('internal.payments.prepare')) return 'edit';
+    }
     if (target.matches('[data-settings-save]') && !roleCanSettings()) return 'settings';
-    if (target.matches('[data-payment-start],[data-payment-start-batch],[data-payment-export],[data-payment-retry],[data-payment-cancel-batch],[data-payment-close-payroll],[data-payment-close-batch],[data-payment-reopen-batch],[data-supplier-payment-new],[data-pay-supplier-settlement],[data-supplier-payment-retry],[data-settlement-close]') && !roleCanPay()) return 'payment';
-    if (target.matches('[data-review-approve],[data-review-return]') && !roleCanApprove()) return 'approval';
-    if (target.matches('[data-adjustment-action="approve"]') && !roleCanApprove()) return 'approval';
+    if (target.matches('[data-supplier-payment-new],[data-pay-supplier-settlement],[data-supplier-payment-retry],[data-settlement-close]') && !roleCanPay()) return 'payment';
+    if (target.matches('[data-review-approve],[data-review-return],[data-review-mark]') && state.workspace !== 'internal' && !roleCanApprove()) return 'approval';
+    if (target.matches('[data-adjustment-action="approve"]') && state.workspace !== 'internal' && !roleCanApprove()) return 'approval';
     if (target.matches('[data-settlement-return]') && !roleCanApprove()) return 'approval';
     if (target.matches('[data-settlement-progress]')) {
       if (target.dataset.settlementProgress === 'Approved') return roleCanApprove() ? null : 'approval';
@@ -11732,13 +11965,8 @@
     }
     if (target.matches('[data-timesheet-workflow]')) {
       const next=timesheetNextAction(timesheetStatus()).next;
-      if (['Approved','Locked'].includes(next) && !roleCanApprove()) return 'approval';
-      if (next === 'Submitted' && !roleCanEdit('internal')) return 'edit';
-    }
-    if (target.matches('[data-rental-timesheet-workflow]')) {
-      const next=rentalTimesheetNextAction(rentalTimesheetStatus()).next;
-      if (['Approved','Locked'].includes(next) && !roleCanApprove()) return 'approval';
-      if (next === 'Submitted' && !roleCanEdit('rental')) return 'edit';
+      if (['Approved','Locked'].includes(next) && !hasAccessPermission('internal.attendance.approve')) return 'approval';
+      if (next === 'Submitted' && !hasAccessPermission('internal.attendance.submit')) return 'edit';
     }
     const editSelector = [
       '[data-quick-add]','[data-edit-branch]','[data-edit-department]','[data-change-employee-organization]','[data-employee-lifecycle]',
@@ -11761,14 +11989,14 @@
       if (!reason) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const message = reason === 'approval' ? 'This role does not have final review/approval authority.' : reason === 'payment' ? 'This role does not have payment posting/reconciliation authority.' : reason === 'settings' ? 'Only a role with company-settings authority can change this section.' : 'This role has read-only access to the current operational workspace.';
-      showToast('Action restricted', `${roleDefinition().label}: ${message}`);
+      showToast('Action restricted', `${accessProfileLabel()}: ${message}`);
     }, true);
     document.addEventListener('input', event => {
       const target = event.target;
       if (roleCanEdit(state.workspace)) return;
       if (target.matches?.('[data-attendance-input],[data-ot-hours],[data-rental-ts-input],[data-rental-ot-hours],[data-rental-ot-rate],[data-onboarding-field]')) {
         event.preventDefault();
-        showToast('Read-only workspace access', `${roleDefinition().label} cannot edit operational values.`);
+        showToast('Read-only workspace access', `${accessProfileLabel()} cannot edit operational values.`);
         renderRoute();
       }
     }, true);

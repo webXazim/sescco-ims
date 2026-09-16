@@ -1,0 +1,28 @@
+{% extends "sourcing/base.html" %}
+{% block title %}Verify Supply Reference · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:vendor_list' %}">Vendors</a><span>/</span><a href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog">{{ vendor.code }}</a><span>/</span><strong>Verify</strong></nav>
+    <h1>Verify Supply Reference</h1>
+    <p>{{ vendor.display_name|default:vendor.name }} · {{ offer.material.name }}{% if offer.specification %} · {{ offer.specification }}{% endif %}</p>
+  </div>
+  <div class="sourcing-profile-actions"><a class="sourcing-btn" href="{% url 'sourcing:vendor_offer_history' vendor.id offer.id %}?next={{ next_url|urlencode }}">View full history</a><a class="sourcing-btn" href="{{ next_url }}">Back</a></div>
+</section>
+
+<div class="sourcing-reference-banner"><strong>Reference-only verification.</strong><span>Saving confirms what this Vendor told SESCCO now. It updates the current sourcing snapshot and appends immutable history; it never creates stock, a purchase, a payable, Payroll or Accounting entries.</span></div>
+
+<div class="sourcing-verify-layout">
+  <form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+    {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="sourcing-form-section"><header><h2>Availability</h2><p>Record the quantity and availability the Vendor confirmed during this call or message.</p></header><div class="sourcing-form-grid">{% include "sourcing/vendors/field.html" with field=form.availability %}{% include "sourcing/vendors/field.html" with field=form.available_quantity %}{% include "sourcing/vendors/field.html" with field=form.unit %}{% include "sourcing/vendors/field.html" with field=form.minimum_quantity %}{% include "sourcing/vendors/field.html" with field=form.lead_time %}</div></section>
+    <section class="sourcing-form-section"><header><h2>Reference Rate</h2><p>Last quoted sourcing rate only. Blank rate means the Vendor did not confirm a price.</p></header><div class="sourcing-form-grid">{% include "sourcing/vendors/field.html" with field=form.rate %}{% include "sourcing/vendors/field.html" with field=form.currency %}{% include "sourcing/vendors/field.html" with field=form.rate_valid_until %}</div></section>
+    <section class="sourcing-form-section"><header><h2>Contact Evidence</h2><p>Capture who confirmed the information and any conditions worth remembering.</p></header><div class="sourcing-form-grid">{% include "sourcing/vendors/field.html" with field=form.contact_name %}{% include "sourcing/vendors/field.html" with field=form.verification_note %}</div></section>
+    <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{{ next_url }}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">Save Verification</button></footer>
+  </form>
+
+  <aside class="sourcing-card sourcing-verify-history"><header class="sourcing-card-head"><div><h2>Recent Verification History</h2><p>Previous snapshots are immutable.</p></div><span class="sourcing-count">{{ history_total }}</span></header>
+    <div class="sourcing-verification-list">{% for revision in recent_history %}<article><div class="sourcing-verification-meta"><time datetime="{{ revision.verified_at|date:'c' }}">{{ revision.verified_at|date:"d M Y H:i" }}</time><strong>{{ revision.actor.display_name|default:revision.actor.username|default:'System' }}</strong></div>{% if revision.contact_name %}<p><span>Spoke with</span> {{ revision.contact_name }}</p>{% endif %}{% if revision.note %}<p><span>Note</span> {{ revision.note }}</p>{% endif %}{% if revision.display_changes %}<ul>{% for change in revision.display_changes %}<li><strong>{{ change.label }}</strong><span>{{ change.before|default:'—' }} → {{ change.after|default:'—' }}</span></li>{% endfor %}</ul>{% else %}<p class="sourcing-muted-value">Confirmation recorded with no business-value change.</p>{% endif %}</article>{% empty %}<div class="sourcing-empty"><strong>No verification history yet</strong><p>This will become the first confirmed sourcing snapshot.</p></div>{% endfor %}</div>
+  </aside>
+</div>
+{% endblock %}

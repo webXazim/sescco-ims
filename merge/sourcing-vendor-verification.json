@@ -1,0 +1,30 @@
+{
+  "release": "1.0.111",
+  "feature": "vendor-verification-history",
+  "predecessor": {
+    "release": "1.0.103-material-finder",
+    "archive_sha256": "490c83bdcaab2f4586b973ca5ac78f11051df2429babd5a6c9683c3610516214"
+  },
+  "schema_change": false,
+  "operational_integration": false,
+  "permissions": {
+    "history": "sourcing.vendors.view",
+    "verify": "sourcing.vendors.manage"
+  },
+  "verification_fields": [
+    "availability",
+    "available_quantity",
+    "unit",
+    "minimum_quantity",
+    "rate",
+    "currency",
+    "rate_valid_until",
+    "lead_time",
+    "contact_name",
+    "verification_note"
+  ],
+  "immutable_history": true,
+  "inventory_stock_effect": false,
+  "accounting_posting": false,
+  "payroll_effect": false
+}

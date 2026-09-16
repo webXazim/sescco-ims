@@ -13,8 +13,10 @@ from django.utils import timezone
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
-from apps.accounts.permissions import user_has_capability_for_company
-from apps.accounts.roles import Capability
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
+from apps.accounts.permissions import user_membership_for_company
+from apps.inventory.access import project_in_inventory_scope
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.normalization import clean_display_text, normalize_phone, normalize_text
 from apps.inventory.services.matching import find_stock_matches
@@ -673,8 +675,11 @@ def confirm_import(
     user,
     include_similar_rows: bool = False,
 ) -> ImportJob:
-    if not user_has_capability_for_company(user, job.company, Capability.MANAGE_INVENTORY):
-        raise ImportProcessingError("Only an inventory manager can confirm imports.")
+    membership = user_membership_for_company(user, job.company)
+    if membership is None or not membership_has_permission(membership, AccessPermission.INVENTORY_IMPORT_EXECUTE):
+        raise ImportProcessingError("Inventory import authority is required.")
+    if job.project_id and not project_in_inventory_scope(membership, job.project):
+        raise ImportProcessingError("The import project is outside your assigned Inventory scope.")
     try:
         with transaction.atomic():
             locked_job = ImportJob.objects.for_company(job.company).select_for_update().get(pk=job.pk)
@@ -688,6 +693,12 @@ def confirm_import(
             skipped = 0
             rows = locked_job.rows.select_for_update().order_by("row_number")
             for row in rows:
+                if locked_job.import_type == ImportJob.Type.OPENING_STOCK and row.cleaned_data.get("project_id"):
+                    project = Project.objects.for_company(locked_job.company).filter(pk=row.cleaned_data["project_id"]).first()
+                    if project is None or not project_in_inventory_scope(membership, project):
+                        raise ImportProcessingError(
+                            f"Row {row.row_number} targets a project outside your assigned Inventory scope."
+                        )
                 if (
                     row.status == ImportRow.Status.ERROR
                     or row.planned_action == ImportRow.Action.SKIP

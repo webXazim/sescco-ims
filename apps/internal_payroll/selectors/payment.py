@@ -6,8 +6,8 @@ from decimal import Decimal
 from django.core.paginator import Paginator
 from django.db.models import Q, Sum
 
-from apps.accounts.permissions import membership_can_edit, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.internal_payroll.models import (
     BankExportChannel,
     BankExportTemplate,
@@ -110,12 +110,16 @@ def serialize_payment_batch(batch: SalaryPaymentBatch, *, membership=None, inclu
         rows = getattr(batch, "payment_rows", None)
         if rows is None:
             rows = list(batch.rows.all().order_by("employee_number"))
-    can_pay = bool(membership and membership_has_capability(membership, Capability.PAY))
+    can_prepare = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_PREPARE))
+    can_export = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_WPS_EXPORT))
+    can_pay = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE))
     allowed_actions: list[str] = []
-    if can_pay and batch.status not in {SalaryPaymentBatchStatus.CANCELLED, SalaryPaymentBatchStatus.CLOSED}:
+    if can_export and batch.status not in {SalaryPaymentBatchStatus.CANCELLED, SalaryPaymentBatchStatus.CLOSED}:
         allowed_actions.append("export")
     if can_pay and batch.status in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:
-        allowed_actions.extend(["start", "cancel"])
+        allowed_actions.append("start")
+    if can_prepare and batch.status in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:
+        allowed_actions.append("cancel")
     if can_pay and batch.status in {SalaryPaymentBatchStatus.PROCESSING, SalaryPaymentBatchStatus.PARTIALLY_PAID, SalaryPaymentBatchStatus.ATTENTION}:
         allowed_actions.append("import_results")
     if can_pay and batch.status == SalaryPaymentBatchStatus.PAID:
@@ -145,6 +149,8 @@ def serialize_payment_batch(batch: SalaryPaymentBatch, *, membership=None, inclu
         "completedAt": batch.completed_at.isoformat() if batch.completed_at else None,
         "closedAt": batch.closed_at.isoformat() if batch.closed_at else None,
         "lastExportSha256": batch.last_export_sha256,
+        "canPrepare": can_prepare,
+        "canExport": can_export,
         "canPay": can_pay,
         "allowedActions": allowed_actions,
         "nextAction": next_action,
@@ -286,8 +292,9 @@ def salary_payment_shell_context(
             "blockedCount": 0,
             "employees": [],
         },
-        "canEditSetup": bool(membership and membership_can_edit(membership, Workspace.INTERNAL)),
-        "canPay": bool(membership and membership_has_capability(membership, Capability.PAY)),
+        "canEditSetup": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_PREPARE)),
+        "canExport": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_WPS_EXPORT)),
+        "canPay": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)),
     }
 
 
@@ -485,7 +492,7 @@ def salary_payment_batch_rows_context(
     bounded_size = _bounded_page_size(page_size)
     paginator = Paginator(rows_qs, bounded_size)
     page_obj = paginator.get_page(_bounded_page(page))
-    can_pay = bool(membership and membership_has_capability(membership, Capability.PAY))
+    can_pay = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE))
     summary_qs = SalaryPaymentRow.objects.for_company(company).filter(batch=batch)
     summary = {
         "count": summary_qs.count(),
@@ -548,6 +555,7 @@ def salary_payment_context(*, company, period_start: date, membership=None, bank
         "wpsReadinessTemplateId": str(active_wps_template.pk) if active_wps_template else None,
         "bankReadiness": _serialize_readiness(company=company, run=run, channel=BankExportChannel.BANK_CSV, template=active_bank_template),
         "wpsReadiness": _serialize_readiness(company=company, run=run, channel=BankExportChannel.WPS, template=active_wps_template),
-        "canEditSetup": bool(membership and membership_can_edit(membership, Workspace.INTERNAL)),
-        "canPay": bool(membership and membership_has_capability(membership, Capability.PAY)),
+        "canEditSetup": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_PREPARE)),
+        "canExport": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_WPS_EXPORT)),
+        "canPay": bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)),
     }

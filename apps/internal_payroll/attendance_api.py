@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from apps.accounts.api_permissions import api_workspace_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.api_permissions import api_method_access_required, api_workspace_required
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import handle_api_error, json_body
 from apps.internal_payroll.models import AttendanceEntry, AttendanceOvertimeEntry
@@ -40,6 +42,11 @@ def _request_period(request: HttpRequest, body: dict[str, object] | None = None)
     if not raw:
         raise ValidationError({"period": "Period is required in YYYY-MM format."})
     return _period_start(raw)
+
+
+def _require_action_permission(request: HttpRequest, permission: AccessPermission) -> None:
+    if not membership_has_permission(request.company_membership, permission):
+        raise PermissionDenied("Your access profile does not allow this attendance workflow action.")
 
 
 def _bounded_page(request: HttpRequest) -> tuple[int, int]:
@@ -107,6 +114,7 @@ def _overtime_delta(*, company, period, employee_ids: set[str], membership=None)
 
 @require_http_methods(["GET", "PATCH"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_ATTENDANCE_VIEW, PATCH=AccessPermission.INTERNAL_ATTENDANCE_EDIT)
 def attendance_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -147,6 +155,7 @@ def attendance_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_ATTENDANCE_EDIT)
 def overtime_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
@@ -168,14 +177,33 @@ def overtime_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=(AccessPermission.INTERNAL_ATTENDANCE_SUBMIT, AccessPermission.INTERNAL_ATTENDANCE_APPROVE))
 def attendance_workflow_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
         period_start = _request_period(request, body)
+        action = str(body.get("action") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        action = {
+            "submit_for_review": "submit",
+            "send_for_review": "submit",
+            "lock_period": "lock",
+            "return": "return_to_draft",
+            "reject": "return_to_draft",
+        }.get(action, action)
+        required_permission = (
+            AccessPermission.INTERNAL_ATTENDANCE_SUBMIT
+            if action == "submit"
+            else AccessPermission.INTERNAL_ATTENDANCE_APPROVE
+            if action in {"approve", "lock", "return_to_draft"}
+            else None
+        )
+        if required_permission is None:
+            raise ValidationError({"action": "Unsupported attendance workflow action."})
+        _require_action_permission(request, required_permission)
         period = transition_attendance_period(
             actor_membership=request.company_membership,
             period_start=period_start,
-            action=str(body.get("action") or ""),
+            action=action,
             reason=str(body.get("reason") or ""),
             request=request,
         )
@@ -190,6 +218,7 @@ def attendance_workflow_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_ATTENDANCE_EDIT)
 def attendance_import_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)

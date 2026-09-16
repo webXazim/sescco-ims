@@ -1,0 +1,37 @@
+{
+  "release": "1.0.111",
+  "feature": "sourcing-manpower-master",
+  "predecessor": {
+    "release": "1.0.105-vendor-verification-history-ux",
+    "archive_sha256": "88220df5d3896cb626a36bfa49ffba25becd1a3ab1c161e158535b149b8fc9cf"
+  },
+  "schema_change": true,
+  "schema_scope": "Adds only the company-scoped SourcingManpowerContact child table; existing SourcingManpowerSupplier remains the independent reference supplier master.",
+  "operational_integration": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "permissions": {
+    "view": "sourcing.manpower.view",
+    "manage": "sourcing.manpower.manage"
+  },
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "trash_retention_days": 30,
+  "audit_actions": [
+    "sourcing.manpower_supplier.created",
+    "sourcing.manpower_supplier.updated",
+    "sourcing.manpower_supplier.status_changed",
+    "sourcing.manpower_supplier.archived",
+    "sourcing.manpower_supplier.archive_restored",
+    "sourcing.manpower_supplier.trashed",
+    "sourcing.manpower_supplier.trash_restored",
+    "sourcing.manpower_supplier.contact_created",
+    "sourcing.manpower_supplier.contact_updated",
+    "sourcing.manpower_supplier.contact_deactivated"
+  ],
+  "runtime_test": "apps.sourcing.tests.test_manpower_master",
+  "static_verifier": "scripts/verify-sourcing-manpower-master.py"
+}

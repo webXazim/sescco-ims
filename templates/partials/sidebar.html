@@ -18,56 +18,70 @@
   <nav class="nav inventory-sidebar__nav" aria-label="Inventory sections">
     <div class="nav-group inventory-nav-group">
       <div class="nav-label">Workspace</div>
+      {% if "inventory.dashboard.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'dashboard' %}active{% endif %}" href="{% url 'core:dashboard' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v8H4zM14 4h6v5h-6zM4 16h6v4H4zM14 13h6v7h-6z"/></svg><span>Overview</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'inventory' or page_key == 'stock-detail' %}active{% endif %}" href="{% url 'inventory:list' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM4 9h16M9 4v16"/></svg><span>Inventory</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add stock</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.issue" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span>Use stock</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions or "inventory.movements.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'transfers' %}active{% endif %}" href="{% url 'inventory:transfer_list' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3m3 3-3 3M17 17H6l3 3m-3-3 3-3"/></svg><span>Transfers</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'office' %}active{% endif %}" href="{% url 'inventory:office' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5"/></svg><span>Office stock</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.movements.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'activity' %}active{% endif %}" href="{% url 'core:activity' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h11M16 4l3 3-3 3M16 17H5m3-3-3 3 3 3"/></svg><span>Activity</span>
-      </a>
+      </a>{% endif %}
     </div>
 
     <div class="nav-group inventory-nav-group">
       <div class="nav-label">Management</div>
+      {% if "inventory.projects.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'projects' or page_key == 'project-detail' %}active{% endif %}" href="{% url 'projects:list' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 8-8 8-8-8 8-8z"/></svg><span>Projects</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.locations.manage" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'units' %}active{% endif %}" href="{% url 'inventory:units' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4v10a6 6 0 0 0 12 0V4"/></svg><span>Units</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.locations.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'locations' %}active{% endif %}" href="{% url 'inventory:locations' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6c0 4.5 6 12 6 12s6-7.5 6-12a6 6 0 0 0-6-6zm0 8.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg><span>Locations</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.suppliers.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'suppliers' %}active{% endif %}" href="{% url 'inventory:suppliers' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7a5 5 0 0 1 9-2M17 17a5 5 0 0 1-9 2M7 7v4h4M17 17v-4h-4"/></svg><span>Suppliers</span>
-      </a>
+      </a>{% endif %}
+      {% if "shared.archive.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'archive' %}active{% endif %}" href="{% url 'inventory:archive' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"/></svg><span>Archive</span><span class="nav-count">{{ NAV_ARCHIVE_COUNT }}</span>
-      </a>
-      {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}">
+      </a>{% endif %}
+      {% if "shared.trash.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="nav-link {% if page_key == 'trash' %}active{% endif %}" href="{% url 'inventory:trash' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5m4-5v5"/></svg><span>Trash</span><span class="nav-count">{{ NAV_TRASH_COUNT }}</span>
       </a>{% endif %}
+      {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'low-stock' %}active{% endif %}" href="{% url 'inventory:low_stock' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3zM12 9v5m0 3h.01"/></svg><span>Low stock</span><span class="nav-count">{{ NAV_LOW_STOCK_COUNT }}</span>
-      </a>
+      </a>{% endif %}
+      {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'saved-views' %}active{% endif %}" href="{% url 'explorer:saved_views' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16l-6-4-6 4V4z"/></svg><span>Saved views</span>
-      </a>
-      {% if "manage_inventory" in ACCESS_CONTEXT.capabilities %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}">
+      </a>{% endif %}
+      {% if "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions %}<a class="nav-link {% if page_key == 'imports' %}active{% endif %}" href="{% url 'data_exchange:import_list' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M5 14v6h14v-6"/></svg><span>Excel imports</span>
       </a>{% endif %}
     </div>
@@ -79,14 +93,14 @@
         <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
         <span class="platform-account__copy">
           <strong>{{ request.user.display_name }}</strong>
-          <small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }}</small>
+          <small>{{ ACCESS_CONTEXT.role_label }}</small>
         </span>
         <svg class="platform-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5-5 5 5"/></svg>
       </summary>
       <div class="platform-account__menu" role="menu" aria-label="Account menu">
         <div class="platform-account__identity">
           <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
-          <span><strong>{{ request.user.display_name }}</strong><small>{{ ACTIVE_COMPANY_MEMBERSHIP.get_role_display }}</small></span>
+          <span><strong>{{ request.user.display_name }}</strong><small>{{ ACCESS_CONTEXT.role_label }}</small></span>
         </div>
         <div class="platform-account__separator" aria-hidden="true"></div>
         <form method="post" action="{% url 'accounts:logout' %}" class="platform-account__form">

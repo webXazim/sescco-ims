@@ -1,0 +1,42 @@
+{
+  "release": "1.0.111",
+  "feature": "workforce-finder-verification-history",
+  "predecessor": {
+    "release": "1.0.106-worker-trade-workforce-catalog",
+    "archive_sha256": "3be72bcc9edc38b95cab475d31d5b4b1e500685f579b62c88d9f82d1df642365"
+  },
+  "schema_change": false,
+  "operational_integration": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "permissions": {
+    "finder": "sourcing.manpower.view",
+    "history": "sourcing.manpower.view",
+    "verify": "sourcing.manpower.manage"
+  },
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "freshness": [
+    "fresh",
+    "needs-verification",
+    "stale",
+    "never"
+  ],
+  "rate_bases": [
+    "hour",
+    "day",
+    "month"
+  ],
+  "audit_action": "sourcing.workforce_offer.verified",
+  "runtime_test": "apps.sourcing.tests.test_workforce_finder",
+  "reference_only_guarantees": [
+    "No Rental Manpower supplier or worker relation",
+    "No worker or assignment creation",
+    "No attendance or timesheet mutation",
+    "No Payroll or settlement rate mutation",
+    "No Inventory or Accounting mutation"
+  ]
+}

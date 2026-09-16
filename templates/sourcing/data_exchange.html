@@ -1,0 +1,56 @@
+{% extends "sourcing/base.html" %}
+{% load static %}
+{% block title %}Sourcing Data Exchange · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Import / Export</strong></nav>
+    <h1>Sourcing Data Exchange</h1>
+    <p>Controlled bulk maintenance for sourcing reference lists only. Imports never create Inventory stock, Rental Workers, Payroll transactions or Accounting entries.</p>
+  </div>
+</section>
+
+<div class="sourcing-reference-banner">
+  <strong>Safe bulk workflow</strong>
+  <span>Run validation first. Imports are all-or-nothing: if any row fails, no rows are committed. Catalog imports can also bulk-verify rows by setting <code>verified_now=yes</code>.</span>
+</div>
+
+<div class="sourcing-exchange-grid">
+  {% if import_choices %}
+  <section class="sourcing-panel sourcing-exchange-panel">
+    <div class="sourcing-panel__head"><div><span class="eyebrow">Bulk maintenance</span><h2>Import CSV / XLSX</h2></div></div>
+    <form method="post" enctype="multipart/form-data" class="sourcing-form sourcing-import-form">
+      {% csrf_token %}
+      {% for field in form %}<div class="sourcing-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<span class="sourcing-field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
+      {% for error in form.non_field_errors %}<div class="alert alert-error">{{ error }}</div>{% endfor %}
+      <div class="sourcing-form-actions"><button class="sourcing-btn sourcing-btn--primary" type="submit">Run Import</button></div>
+    </form>
+    <div class="sourcing-import-rules">
+      <strong>Import rules</strong>
+      <p>Maximum {{ max_import_rows }} rows / 2 MB. Master datasets upsert by code. Vendor catalog rows use <code>vendor_code + material_code</code>; workforce rows use <code>supplier_code + trade_code</code>. Missing references are rejected rather than created implicitly.</p>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if export_choices %}
+  <section class="sourcing-panel sourcing-exchange-panel">
+    <div class="sourcing-panel__head"><div><span class="eyebrow">Audited export</span><h2>Export Sourcing Data</h2></div></div>
+    <p>Exports require the separate Sourcing Export permission plus view access to the selected dataset. CSV cells are protected against spreadsheet formula injection.</p>
+    <div class="sourcing-export-list">
+      {% for key,label in export_choices %}
+      <div class="sourcing-export-row"><span><strong>{{ label }}</strong><small>{{ key }}</small></span><span class="sourcing-export-actions"><a class="sourcing-btn" href="{% url 'sourcing:data_export' key %}?format=xlsx">XLSX</a><a class="sourcing-btn" href="{% url 'sourcing:data_export' key %}?format=csv">CSV</a></span></div>
+      {% endfor %}
+    </div>
+    <small>For a filtered export, use <strong>Export current view</strong> from the corresponding Vendor, Material, Manpower, Trade or Finder page.</small>
+  </section>
+  {% endif %}
+</div>
+
+{% if import_result %}
+<section class="sourcing-panel sourcing-import-results">
+  <div class="sourcing-panel__head"><div><span class="eyebrow">{% if import_result.dry_run %}Validation result{% else %}Import result{% endif %}</span><h2>{{ import_result.dataset }}</h2></div><div class="sourcing-status-strip"><span>Rows {{ import_result.total }}</span><span>Creates {{ import_result.creates }}</span><span>Updates {{ import_result.updates }}</span><span>Errors {{ import_result.errors|length }}</span></div></div>
+  <div class="sourcing-table-wrap"><table class="sourcing-table"><thead><tr><th>Row</th><th>Identity</th><th>Outcome</th><th>Message</th></tr></thead><tbody>{% for row in import_result.rows %}<tr><td class="num">{{ row.row_number }}</td><td><code>{{ row.identity }}</code></td><td>{% if row.outcome == 'error' %}<span class="sourcing-pill sourcing-pill--danger">Error</span>{% elif row.outcome == 'create' %}<span class="sourcing-pill sourcing-pill--success">Create</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Update</span>{% endif %}</td><td>{{ row.message|default:'—' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if import_result.dry_run and not import_result.errors %}<div class="sourcing-reference-banner"><strong>Ready to commit</strong><span>Upload the same file again with “Validate only” unchecked. The commit will re-run the same validation inside one database transaction.</span></div>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

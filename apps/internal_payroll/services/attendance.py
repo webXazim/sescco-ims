@@ -11,9 +11,9 @@ from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest
 from django.utils import timezone
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.models import CompanyMembership
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
 from apps.core.payroll_attendance_contract import (
     ATTENDANCE_WORKSPACE_INTERNAL,
@@ -42,16 +42,19 @@ def month_bounds(period_start: date) -> tuple[date, date]:
     return start, end
 
 
-def _require_internal_edit(membership: CompanyMembership) -> None:
-    if not membership_can_edit(membership, Workspace.INTERNAL):
-        raise PermissionDenied("Your role cannot modify internal attendance and overtime.")
+def _require_attendance_edit(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_EDIT):
+        raise PermissionDenied("Your access profile cannot edit internal attendance and overtime.")
 
 
-def _require_internal_approval(membership: CompanyMembership) -> None:
-    if not membership_can_workspace(membership, Workspace.INTERNAL):
-        raise PermissionDenied("Your role cannot access internal attendance and overtime.")
-    if not membership_has_capability(membership, Capability.APPROVE):
-        raise PermissionDenied("Your role cannot approve internal attendance and overtime.")
+def _require_attendance_submit(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_SUBMIT):
+        raise PermissionDenied("Your access profile cannot submit internal attendance for approval.")
+
+
+def _require_attendance_approval(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_APPROVE):
+        raise PermissionDenied("Your access profile cannot approve, lock, or reopen internal attendance.")
 
 
 def operational_internal_employees(*, company, for_update: bool = False):
@@ -183,7 +186,7 @@ def save_attendance_entries(
     entries: list[dict[str, object]],
     request: HttpRequest | None = None,
 ) -> AttendancePeriod:
-    _require_internal_edit(actor_membership)
+    _require_attendance_edit(actor_membership)
     if not isinstance(entries, list) or not entries:
         raise ValidationError({"entries": "At least one attendance entry is required."})
     if len(entries) > 5000:
@@ -385,7 +388,7 @@ def save_overtime_entries(
     entries: list[dict[str, object]],
     request: HttpRequest | None = None,
 ) -> AttendancePeriod:
-    _require_internal_edit(actor_membership)
+    _require_attendance_edit(actor_membership)
     if not isinstance(entries, list) or not entries:
         raise ValidationError({"entries": "At least one overtime entry is required."})
     if len(entries) > 1000:
@@ -576,9 +579,9 @@ def transition_attendance_period(
     company = actor_membership.company
     normalized_action = normalize_attendance_workflow_action(action)
     if normalized_action == "submit":
-        _require_internal_edit(actor_membership)
+        _require_attendance_submit(actor_membership)
     else:
-        _require_internal_approval(actor_membership)
+        _require_attendance_approval(actor_membership)
 
     period = _get_or_create_period_locked(
         actor_membership=actor_membership,
@@ -666,7 +669,7 @@ def import_attendance_rows(
     dry_run: bool = False,
     request: HttpRequest | None = None,
 ) -> dict[str, object]:
-    _require_internal_edit(actor_membership)
+    _require_attendance_edit(actor_membership)
     if not isinstance(rows, list) or not rows:
         raise ValidationError({"rows": "Import must contain at least one employee row."})
     if len(rows) > 1000:

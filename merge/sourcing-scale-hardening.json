@@ -1,0 +1,38 @@
+{
+  "release": "1.0.111",
+  "feature": "sourcing-scale-hardening-benchmarking",
+  "predecessor": {
+    "release": "1.0.108-sourcing-import-export-bulk-maintenance",
+    "archive_sha256": "eaf3056bd03657b14cf5bd25230f72718cadef14473d0240c4992f268d8b4784"
+  },
+  "schema_change": true,
+  "schema_change_scope": "Additive Sourcing-only composite indexes for active/freshness Finder and directory access; no operational relation or data rewrite",
+  "operational_integration": false,
+  "benchmark_volume": {
+    "vendors": 10000,
+    "materials": 2000,
+    "vendor_offers": 50000,
+    "manpower_suppliers": 5000,
+    "trades": 250,
+    "workforce_offers": 25000
+  },
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "max_browser_rows": 100,
+  "max_import_rows": 5000,
+  "scale_safety": [
+    "directory aggregate counts use correlated subqueries instead of multi-join DISTINCT fanout",
+    "Vendor and Manpower contact search uses EXISTS instead of joining contact rows into the directory result",
+    "Vendor Supply Catalog and Manpower Workforce profile tables are server paginated",
+    "Material Finder and Workforce Finder progressive enhancement aborts stale requests with AbortController",
+    "Finder DOM replacement never contains more than 100 rows",
+    "benchmark seed is deterministic, namespaced SDEMO, restart-safe and mixed-company guarded",
+    "scale report measures directory/finder/profile query counts and a 5000-row import parse",
+    "no Inventory, Rental Payroll, Project or Accounting mutation"
+  ],
+  "runtime_test": "apps.sourcing.tests.test_scale_hardening",
+  "benchmark_command": "python manage.py sourcing_scale_report --require-benchmark-volume --fail-on-limits"
+}

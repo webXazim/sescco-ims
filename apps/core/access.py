@@ -1,6 +1,7 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.views import redirect_to_login
 
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.permissions import membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
 
@@ -22,6 +23,22 @@ class InventoryWorkspaceMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self) -> bool:
         return membership_can_workspace(
             getattr(self.request, "company_membership", None), Workspace.INVENTORY
+        )
+
+
+class InventoryPermissionRequiredMixin(InventoryWorkspaceMixin):
+    """Require one exact granular Inventory/platform permission."""
+
+    inventory_permission = None
+
+    def test_func(self) -> bool:
+        return bool(
+            super().test_func()
+            and self.inventory_permission
+            and membership_has_permission(
+                getattr(self.request, "company_membership", None),
+                self.inventory_permission,
+            )
         )
 
 

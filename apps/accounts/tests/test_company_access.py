@@ -88,7 +88,7 @@ class UnifiedRolePolicyTests(TestCase):
         self.user = User.objects.create_user(username="policy-user")
 
     def membership(self, role):
-        return CompanyMembership(company=self.company, user=self.user, role=role, is_active=True)
+        return CompanyMembership.objects.create(company=self.company, user=self.user, role=role, is_active=True)
 
     def test_storekeeper_can_edit_inventory_but_not_manage_or_import(self):
         membership = self.membership(AccessRole.STOREKEEPER)

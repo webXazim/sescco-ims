@@ -10,6 +10,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.context import access_context_for_request
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.permissions import (
     company_access_required,
     membership_can_workspace,
@@ -72,6 +74,25 @@ def payroll_app(request):
     can_rental = membership_can_workspace(membership, Workspace.RENTAL)
     can_management = membership_can_workspace(membership, Workspace.MANAGEMENT)
 
+    # 1.0.94: workspace membership is no longer enough to decide which bootstrap
+    # payloads may be disclosed. Custom profiles can expose only one or two pages,
+    # so initial HTML must follow the same exact page permissions as the APIs.
+    can_internal_master = any(membership_has_permission(membership, permission) for permission in (
+        AccessPermission.INTERNAL_OVERVIEW_VIEW,
+        AccessPermission.INTERNAL_EMPLOYEES_VIEW,
+        AccessPermission.INTERNAL_ORGANIZATION_VIEW,
+        AccessPermission.INTERNAL_ATTENDANCE_VIEW,
+    ))
+    can_internal_attendance = membership_has_permission(membership, AccessPermission.INTERNAL_ATTENDANCE_VIEW)
+    can_rental_master = any(membership_has_permission(membership, permission) for permission in (
+        AccessPermission.RENTAL_OVERVIEW_VIEW,
+        AccessPermission.RENTAL_WORKERS_VIEW,
+        AccessPermission.RENTAL_SUPPLIERS_VIEW,
+        AccessPermission.RENTAL_ASSIGNMENTS_VIEW,
+        AccessPermission.RENTAL_TIMESHEETS_VIEW,
+        AccessPermission.RENTAL_OVERTIME_VIEW,
+    ))
+
     # Keep the active Payroll workspace addressable in the URL.  The browser app still
     # switches workspaces without a full reload, but a real query parameter gives each
     # switcher item a reload-safe/no-JavaScript fallback and lets the server reject a
@@ -94,7 +115,7 @@ def payroll_app(request):
     # their server APIs only when the relevant route needs them.
     internal_context = (
         internal_master_context(company=request.company, include_histories=False, employee_limit=50)
-        if can_internal
+        if can_internal_master
         else {
             "branches": [], "departments": [], "employees": [], "employeeOrganizationHistory": {},
             "bootstrapComplete": True,
@@ -119,7 +140,7 @@ def payroll_app(request):
             page=1,
             page_size=50,
         )
-        if can_internal
+        if can_internal_attendance
         else {
             "period": {
                 "id": None,
@@ -170,9 +191,10 @@ def payroll_app(request):
 
     rental_context = (
         rental_master_context(
-            company=request.company, period_start=current_month, worker_limit=50, include_assignments=False
+            company=request.company, period_start=current_month, worker_limit=50, include_assignments=False,
+            membership=membership,
         )
-        if can_rental
+        if can_rental_master
         else {
             "suppliers": [],
             "projects": [],

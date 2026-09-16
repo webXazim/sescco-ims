@@ -5,6 +5,8 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET
 
 from apps.accounts.api_permissions import api_company_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.permissions import membership_can_workspace
 from apps.accounts.roles import Workspace
 from apps.core.selectors.record_management import record_management_page_context
@@ -22,14 +24,19 @@ def record_management_api(request: HttpRequest) -> JsonResponse:
         if workspace_enum not in {Workspace.INTERNAL, Workspace.RENTAL}:
             raise ValidationError({"workspace": "Record Management supports Internal Company or Rental Manpower."})
         if not membership_can_workspace(request.company_membership, workspace_enum):
-            raise PermissionDenied("Your role cannot access this workspace.")
+            raise PermissionDenied("Your access profile cannot access this workspace.")
+        bucket = request.GET.get("bucket", "archive").strip().lower()
+        required = AccessPermission.SHARED_TRASH_VIEW if bucket == "trash" else AccessPermission.SHARED_ARCHIVE_VIEW
+        if not membership_has_permission(request.company_membership, required):
+            raise PermissionDenied("Your access profile cannot view Archive / Delete recovery records.")
         payload = record_management_page_context(
             company=request.company,
             workspace=workspace,
-            bucket=request.GET.get("bucket", "archive"),
+            bucket=bucket,
             page=request.GET.get("page", 1),
             page_size=request.GET.get("page_size", 50),
             query=request.GET.get("q", ""),
+            membership=request.company_membership,
         )
         return JsonResponse({"ok": True, **payload})
     except PermissionDenied as exc:

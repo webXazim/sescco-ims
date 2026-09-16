@@ -1,0 +1,42 @@
+{
+  "release": "1.0.111",
+  "purpose": "Install the independent reference-only Sourcing Directory domain and database foundation without granting user access or linking Sourcing to operational Inventory, Payroll, Projects, Documents or Accounting authorities.",
+  "predecessor": {
+    "release": "1.0.98-access-history-guarded-recovery",
+    "archive_sha256": "ee87fc1253b800e1f4a336cae00283160d3379b3d73f1b6efd6678014cf56e38"
+  },
+  "schema_change": true,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "module_access_enabled": true,
+  "database_authority": [
+    "sourcing.SourcingVendor",
+    "sourcing.SourcingVendorContact",
+    "sourcing.SourcingMaterial",
+    "sourcing.SourcingVendorOffer",
+    "sourcing.SourcingVendorOfferRevision",
+    "sourcing.SourcingManpowerSupplier",
+    "sourcing.SourcingTrade",
+    "sourcing.SourcingWorkforceOffer",
+    "sourcing.SourcingWorkforceOfferRevision",
+    "sourcing.SourcingSettings"
+  ],
+  "isolation_contract": [
+    "SourcingVendor has no Inventory Supplier relationship",
+    "SourcingManpowerSupplier has no Rental Manpower Supplier relationship",
+    "Sourcing offers have no Stock/Worker/Assignment/Payroll/Project operational relationship",
+    "only core/accounts/sourcing database relations are permitted",
+    "Sourcing quantities and rates are reference values only",
+    "module access is permitted only through explicit persisted sourcing.* Access Profile grants from the 1.0.101 cutover"
+  ],
+  "migrations": [
+    "apps/core/migrations/0006_sourcing_audit_area.py",
+    "apps/sourcing/migrations/0001_sourcing_domain_foundation.py",
+    "apps/sourcing/migrations/0002_vendor_directory_master.py",
+    "apps/sourcing/migrations/0003_material_alias_search.py"
+  ],
+  "release_gate": "scripts/verify-sourcing-domain-foundation.py",
+  "runtime_test_label": "apps.sourcing.tests.test_domain_foundation",
+  "operator_guide": "docs/SOURCING_DOMAIN_FOUNDATION.md",
+  "permission_cutover_contract": "merge/sourcing-access-control.json"
+}

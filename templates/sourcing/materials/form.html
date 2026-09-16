@@ -1,0 +1,12 @@
+{% extends "sourcing/base.html" %}
+{% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:material_list' %}">Materials</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
+<form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="sourcing-form-section"><header><h2>Material Identity</h2><p>Independent Sourcing vocabulary used for Vendor capability tracking.</p></header><div class="sourcing-form-grid">{% include "sourcing/vendors/field.html" with field=form.code %}{% include "sourcing/vendors/field.html" with field=form.name %}{% include "sourcing/vendors/field.html" with field=form.category %}{% include "sourcing/vendors/field.html" with field=form.default_unit %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Search Aliases</h2><p>Use aliases to avoid duplicate item names while still finding common terminology.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.aliases %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Remarks</h2><p>Reference notes only; no Inventory or accounting effect.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+  <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:material_list' %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label }}</button></footer>
+</form>
+{% endblock %}

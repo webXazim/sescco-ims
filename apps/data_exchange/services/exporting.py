@@ -19,6 +19,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from apps.explorer.filtering import querydict_to_plain, resolve_date_range
+from apps.inventory.access import restrict_inventory_movements, restrict_inventory_stock
 from apps.inventory.forms import MovementFilterForm, StockHistoryFilterForm, StockItemFilterForm
 from apps.inventory.models import StockItem, StockMovement, Unit
 from apps.inventory.selectors import (
@@ -327,7 +328,7 @@ def _visible_columns(
     return tuple(mapping[key] for key in selected if key in mapping)
 
 
-def inventory_dataset(query: QueryDict, *, company, low_stock: bool = False) -> ExportDataset:
+def inventory_dataset(query: QueryDict, *, company, membership=None, low_stock: bool = False) -> ExportDataset:
     data = _with_defaults(
         query,
         {
@@ -337,11 +338,13 @@ def inventory_dataset(query: QueryDict, *, company, low_stock: bool = False) -> 
             "columns": DEFAULT_STOCK_COLUMNS,
         },
     )
-    form = StockItemFilterForm(data, company=company)
+    form = StockItemFilterForm(data, company=company, membership=membership)
     if not form.is_valid():
         raise ValueError("The current inventory filters are invalid.")
     cleaned = form.cleaned_data
     queryset = low_stock_items(company) if low_stock else stock_items(company)
+    if membership is not None:
+        queryset = restrict_inventory_stock(queryset, membership)
     if low_stock:
         scoped = dict(cleaned)
         scoped["status"] = StockItem.Status.ACTIVE
@@ -371,13 +374,16 @@ def inventory_dataset(query: QueryDict, *, company, low_stock: bool = False) -> 
     )
 
 
-def activity_dataset(query: QueryDict, *, company) -> ExportDataset:
+def activity_dataset(query: QueryDict, *, company, membership=None) -> ExportDataset:
     data = _with_defaults(query, {"sort": "-date", "columns": DEFAULT_MOVEMENT_COLUMNS})
-    form = MovementFilterForm(data, company=company)
+    form = MovementFilterForm(data, company=company, membership=membership)
     if not form.is_valid():
         raise ValueError("The current activity filters are invalid.")
     cleaned = form.cleaned_data
-    queryset = filter_stock_movements(stock_movements(company), cleaned)
+    base_queryset = stock_movements(company)
+    if membership is not None:
+        base_queryset = restrict_inventory_movements(base_queryset, membership)
+    queryset = filter_stock_movements(base_queryset, cleaned)
     sort = cleaned.get("sort") or "-date"
     queryset = queryset.order_by(*MOVEMENT_SORTS.get(sort, MOVEMENT_SORTS["-date"]))
     columns = _visible_columns(

@@ -234,6 +234,14 @@ class PayrollRun(CompanyOwnedModel):
         blank=True,
         related_name="submitted_internal_payroll_runs",
     )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_internal_payroll_runs",
+    )
     approved_at = models.DateTimeField(null=True, blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

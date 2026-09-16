@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.internal_payroll.apps.InternalPayrollConfig",
     "apps.rental_manpower.apps.RentalManpowerConfig",
     "apps.documents.apps.DocumentsConfig",
+    "apps.sourcing.apps.SourcingConfig",
 ]
 
 MIDDLEWARE = [
@@ -37,7 +38,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.SecuritySessionMiddleware",
     "apps.accounts.middleware.CompanyContextMiddleware",
+    "apps.accounts.middleware.MandatoryPasswordChangeMiddleware",
     "apps.core.middleware.CompanyTimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

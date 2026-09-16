@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 
 from apps.accounts.models import CompanyMembership, User
@@ -40,6 +40,18 @@ class PayrollServiceTests(TestCase):
             company=self.company,
             user=self.reviewer_user,
             role=AccessRole.FINANCE_REVIEWER,
+        )
+        self.finance_user = User.objects.create_user(username="payroll-finance-manager", password="test-password")
+        self.finance = CompanyMembership.objects.create(
+            company=self.company,
+            user=self.finance_user,
+            role=AccessRole.FINANCE_MANAGER,
+        )
+        self.owner_user = User.objects.create_user(username="payroll-owner", password="test-password")
+        self.owner = CompanyMembership.objects.create(
+            company=self.company,
+            user=self.owner_user,
+            role=AccessRole.OWNER,
         )
         branch = create_branch(actor_membership=self.officer, code="HQ", name="Head Office")
         department = create_department(actor_membership=self.officer, code="OPS", name="Operations")
@@ -248,6 +260,12 @@ class PayrollServiceTests(TestCase):
         transition_payroll_run(
             actor_membership=self.reviewer,
             period_start=self.period_start,
+            action="review",
+            confirmed=True,
+        )
+        transition_payroll_run(
+            actor_membership=self.finance,
+            period_start=self.period_start,
             action="approve",
             confirmed=True,
         )
@@ -264,6 +282,69 @@ class PayrollServiceTests(TestCase):
         self.assertTrue(
             AuditEvent.objects.filter(company=self.company, action="internal.payroll_run.approved").exists()
         )
+
+    def test_final_approval_requires_independent_review_signoff(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        transition_payroll_run(actor_membership=self.officer, period_start=self.period_start, action="submit_review")
+
+        with self.assertRaises(ValidationError):
+            transition_payroll_run(
+                actor_membership=self.finance, period_start=self.period_start, action="approve", confirmed=True
+            )
+
+        reviewed = transition_payroll_run(
+            actor_membership=self.reviewer, period_start=self.period_start, action="review", confirmed=True
+        )
+        self.assertIsNotNone(reviewed.reviewed_at)
+        self.assertEqual(reviewed.reviewed_by_id, self.reviewer_user.pk)
+        approved = transition_payroll_run(
+            actor_membership=self.finance, period_start=self.period_start, action="approve", confirmed=True
+        )
+        self.assertEqual(approved.status, PayrollRunStatus.APPROVED)
+        self.assertEqual(approved.approved_by_id, self.finance_user.pk)
+
+    def test_finance_reviewer_cannot_final_approve_after_signoff(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        transition_payroll_run(actor_membership=self.officer, period_start=self.period_start, action="submit_review")
+        transition_payroll_run(
+            actor_membership=self.reviewer, period_start=self.period_start, action="review", confirmed=True
+        )
+        with self.assertRaises(PermissionDenied):
+            transition_payroll_run(
+                actor_membership=self.reviewer, period_start=self.period_start, action="approve", confirmed=True
+            )
+
+    def test_finance_review_must_be_by_different_user_from_submitter(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        transition_payroll_run(actor_membership=self.owner, period_start=self.period_start, action="submit_review")
+        with self.assertRaises(ValidationError):
+            transition_payroll_run(
+                actor_membership=self.owner, period_start=self.period_start, action="review", confirmed=True
+            )
+
+    def test_final_approver_must_differ_from_finance_reviewer(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        transition_payroll_run(actor_membership=self.officer, period_start=self.period_start, action="submit_review")
+        transition_payroll_run(actor_membership=self.owner, period_start=self.period_start, action="review", confirmed=True)
+        with self.assertRaises(ValidationError):
+            transition_payroll_run(actor_membership=self.owner, period_start=self.period_start, action="approve", confirmed=True)
+
+    def test_final_approver_must_differ_from_payroll_submitter(self):
+        self._complete_attendance()
+        self._approve_attendance(lock=True)
+        calculate_payroll_run(actor_membership=self.officer, period_start=self.period_start)
+        transition_payroll_run(actor_membership=self.owner, period_start=self.period_start, action="submit_review")
+        transition_payroll_run(actor_membership=self.reviewer, period_start=self.period_start, action="review", confirmed=True)
+        with self.assertRaises(ValidationError):
+            transition_payroll_run(actor_membership=self.owner, period_start=self.period_start, action="approve", confirmed=True)
 
     def test_calculation_is_all_or_nothing_when_any_employee_is_blocked(self):
         second = create_employee(
@@ -336,7 +417,7 @@ class PayrollServiceTests(TestCase):
         self.assertEqual(run.status, PayrollRunStatus.REVIEW)
         self.assertEqual(run.revision, 2)
         review = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.reviewer)
-        self.assertEqual(set(review["workflow"]["allowedActions"]), {"return_for_changes", "approve"})
+        self.assertEqual(set(review["workflow"]["allowedActions"]), {"return_for_changes", "review"})
 
         transition_payroll_run(actor_membership=self.reviewer, period_start=self.period_start, action="reject")
         run.refresh_from_db()
@@ -347,12 +428,18 @@ class PayrollServiceTests(TestCase):
         transition_payroll_run(
             actor_membership=self.reviewer,
             period_start=self.period_start,
+            action="review",
+            confirmed=True,
+        )
+        transition_payroll_run(
+            actor_membership=self.finance,
+            period_start=self.period_start,
             action="approve",
             confirmed=True,
         )
         run.refresh_from_db()
         self.assertEqual(run.status, PayrollRunStatus.APPROVED)
-        self.assertEqual(run.revision, 5)
+        self.assertEqual(run.revision, 6)
         approved = payroll_period_context(company=self.company, period_start=self.period_start, membership=self.officer)
         self.assertEqual(approved["workflow"]["allowedActions"], [])
 

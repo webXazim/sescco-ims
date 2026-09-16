@@ -30,8 +30,8 @@ def block(source: str, start_marker: str, end_marker: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.87":
-    fail(f"VERSION must be 1.0.87, found {version!r}")
+if version != "1.0.111":
+    fail(f"VERSION must be 1.0.111, found {version!r}")
 
 contract = json.loads(text("merge/payroll-query-hardening.json"))
 if contract.get("release") != version:

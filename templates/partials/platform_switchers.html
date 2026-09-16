@@ -30,9 +30,9 @@
 
   <details class="platform-switcher platform-switcher--module" data-platform-switcher>
     <summary class="platform-switcher__trigger" aria-label="Switch module" title="Switch module">
-      <span class="platform-switcher__code" aria-hidden="true">{% if PLATFORM_CONTEXT.current_module == 'payroll' %}PM{% else %}IM{% endif %}</span>
+      <span class="platform-switcher__code" aria-hidden="true">{% if PLATFORM_CONTEXT.current_module == 'payroll' %}PM{% elif PLATFORM_CONTEXT.current_module == 'administration' %}AD{% elif PLATFORM_CONTEXT.current_module == 'sourcing' %}SD{% else %}IM{% endif %}</span>
       <span class="platform-switcher__copy">
-        <strong>{% if PLATFORM_CONTEXT.current_module == 'payroll' %}Payroll Management{% else %}Inventory Management{% endif %}</strong>
+        <strong>{% if PLATFORM_CONTEXT.current_module == 'payroll' %}Payroll Management{% elif PLATFORM_CONTEXT.current_module == 'administration' %}Administration{% elif PLATFORM_CONTEXT.current_module == 'sourcing' %}Sourcing Directory{% else %}Inventory Management{% endif %}</strong>
         <small>Module</small>
       </span>
       <svg class="platform-switcher__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>

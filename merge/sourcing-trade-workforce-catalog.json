@@ -1,0 +1,48 @@
+{
+  "release": "1.0.111",
+  "feature": "sourcing-trade-workforce-catalog",
+  "predecessor": {
+    "release": "1.0.105-manpower-sourcing-master",
+    "archive_sha256": "ab85b97e9fa9f60467799c6c158e950f0d8fb12d0ddb0a6eb493e69e4ab75e0f"
+  },
+  "schema_change": true,
+  "schema_scope": "Adds normalized Sourcing Trade alias search/collision authority only; SourcingWorkforceOffer and immutable SourcingWorkforceOfferRevision remain the independent reference tables created by the original Sourcing foundation.",
+  "operational_integration": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "permissions": {
+    "trade_view": "sourcing.masters.view",
+    "trade_manage": "sourcing.masters.manage",
+    "workforce_view": "sourcing.manpower.view",
+    "workforce_manage": "sourcing.manpower.manage"
+  },
+  "page_sizes": [
+    25,
+    50,
+    100
+  ],
+  "rate_bases": [
+    "hour",
+    "day",
+    "month"
+  ],
+  "audit_actions": [
+    "sourcing.trade.created",
+    "sourcing.trade.updated",
+    "sourcing.trade.activated",
+    "sourcing.trade.deactivated",
+    "sourcing.workforce_offer.created",
+    "sourcing.workforce_offer.updated",
+    "sourcing.workforce_offer.activated",
+    "sourcing.workforce_offer.deactivated"
+  ],
+  "runtime_test": "apps.sourcing.tests.test_trade_workforce_catalog",
+  "migration": "sourcing.0005_trade_alias_search",
+  "reference_only_guarantees": [
+    "No Rental Manpower supplier relation",
+    "No Rental worker creation",
+    "No assignment or timesheet creation",
+    "No Payroll or settlement rate mutation",
+    "No Inventory or Accounting mutation"
+  ]
+}

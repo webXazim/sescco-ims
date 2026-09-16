@@ -8,10 +8,13 @@ from django.http import HttpRequest
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 
+from .access_catalog import system_profile_key_for_role
 from .models import CompanyMembership, User
 from .permissions import membership_has_capability
 from .roles import AccessRole, Capability
 from .selectors import ACTIVE_COMPANY_SESSION_KEY, active_memberships_for_user
+from .access_provisioning import ensure_system_access_profile
+from .security import bump_user_security_version
 
 
 @transaction.atomic
@@ -24,13 +27,14 @@ def create_company_membership(
 ) -> CompanyMembership:
     if not membership_has_capability(actor_membership, Capability.MANAGE_ACCESS):
         raise PermissionDenied("Only company access administrators can add members.")
-    if role not in AccessRole.values:
-        raise ValidationError({"role": "Unknown company role."})
+    if role not in AccessRole.values or role == AccessRole.CUSTOM:
+        raise ValidationError({"role": "Choose a built-in company role; custom access uses an explicit Access Profile."})
 
+    profile = ensure_system_access_profile(company=actor_membership.company, role=role)
     membership, created = CompanyMembership.objects.get_or_create(
         company=actor_membership.company,
         user=user,
-        defaults={"role": role, "is_active": True},
+        defaults={"role": role, "access_profile": profile, "is_active": True},
     )
     if not created:
         raise ValidationError("This user already belongs to the company.")
@@ -43,7 +47,7 @@ def create_company_membership(
         object_id=membership.pk,
         object_label=user.display_name,
         actor_membership=actor_membership,
-        after={"user_id": str(user.pk), "role": role, "is_active": True},
+        after={"user_id": str(user.pk), "role": role, "access_profile": profile.key, "is_active": True},
         request=request,
     )
     return membership
@@ -71,29 +75,42 @@ def change_membership_role(
 ) -> CompanyMembership:
     if not membership_has_capability(actor_membership, Capability.MANAGE_ACCESS):
         raise PermissionDenied("Only company access administrators can change roles.")
-    if role not in AccessRole.values:
-        raise ValidationError({"role": "Unknown company role."})
+    if role not in AccessRole.values or role == AccessRole.CUSTOM:
+        raise ValidationError({"role": "Choose a built-in company role; custom access uses an explicit Access Profile."})
 
     target = (
         CompanyMembership.objects.select_for_update()
-        .select_related("company", "user")
+        .select_related("company", "user", "access_profile")
         .get(id=membership_id, company=actor_membership.company)
     )
     previous_role = target.role
     if previous_role == role:
         return target
 
-    if target.role == AccessRole.OWNER and role != AccessRole.OWNER:
+    owner_key = system_profile_key_for_role(AccessRole.OWNER)
+    target_is_owner = bool(
+        target.access_profile_id
+        and target.access_profile.key == owner_key
+        and target.access_profile.is_system
+        and target.access_profile.is_active
+    )
+    if target_is_owner and role != AccessRole.OWNER:
         active_owner_count = (
             CompanyMembership.objects.select_for_update()
-            .filter(company=target.company, role=AccessRole.OWNER, is_active=True, user__is_active=True)
+            .filter(
+                company=target.company, access_profile__key=owner_key,
+                access_profile__is_system=True, access_profile__is_active=True,
+                is_active=True, user__is_active=True,
+            )
             .count()
         )
         if target.is_active and target.user.is_active and active_owner_count <= 1:
-            raise ValidationError("A company must keep at least one active owner.")
+            raise ValidationError("A company must keep at least one active owner profile.")
 
     target.role = role
-    target.save(update_fields=("role", "updated_at"))
+    target.access_profile = ensure_system_access_profile(company=target.company, role=role)
+    target.save(update_fields=("role", "access_profile", "updated_at"))
+    bump_user_security_version(target.user_id)
     record_audit_event(
         company=target.company,
         area=AuditArea.ACCESS,
@@ -103,7 +120,7 @@ def change_membership_role(
         object_label=target.user.display_name,
         actor_membership=actor_membership,
         before={"role": previous_role},
-        after={"role": target.role},
+        after={"role": target.role, "access_profile": target.access_profile.key},
         request=request,
     )
     return target
@@ -122,24 +139,36 @@ def set_membership_active(
 
     target = (
         CompanyMembership.objects.select_for_update()
-        .select_related("company", "user")
+        .select_related("company", "user", "access_profile")
         .get(id=membership_id, company=actor_membership.company)
     )
     previous_active = target.is_active
     if previous_active == is_active:
         return target
 
-    if target.role == AccessRole.OWNER and target.is_active and not is_active and target.user.is_active:
+    owner_key = system_profile_key_for_role(AccessRole.OWNER)
+    target_is_owner = bool(
+        target.access_profile_id
+        and target.access_profile.key == owner_key
+        and target.access_profile.is_system
+        and target.access_profile.is_active
+    )
+    if target_is_owner and target.is_active and not is_active and target.user.is_active:
         active_owner_count = (
             CompanyMembership.objects.select_for_update()
-            .filter(company=target.company, role=AccessRole.OWNER, is_active=True, user__is_active=True)
+            .filter(
+                company=target.company, access_profile__key=owner_key,
+                access_profile__is_system=True, access_profile__is_active=True,
+                is_active=True, user__is_active=True,
+            )
             .count()
         )
         if active_owner_count <= 1:
-            raise ValidationError("A company must keep at least one active owner.")
+            raise ValidationError("A company must keep at least one active owner profile.")
 
     target.is_active = is_active
     target.save(update_fields=("is_active", "updated_at"))
+    bump_user_security_version(target.user_id)
     record_audit_event(
         company=target.company,
         area=AuditArea.ACCESS,

@@ -3,7 +3,8 @@ from __future__ import annotations
 from django.conf import settings
 from django.db.models import QuerySet
 
-from .models import CompanyMembership, User
+from .access_catalog import system_profile_key_for_role
+from .models import AccessProfile, CompanyMembership, User
 
 
 ACTIVE_COMPANY_SESSION_KEY = "active_company_id"
@@ -11,7 +12,8 @@ ACTIVE_COMPANY_SESSION_KEY = "active_company_id"
 
 def active_memberships_for_user(user: User) -> QuerySet[CompanyMembership]:
     return (
-        CompanyMembership.objects.select_related("company", "company__settings", "user")
+        CompanyMembership.objects.select_related("company", "company__settings", "user", "access_profile")
+        .prefetch_related("access_profile__permission_grants")
         .filter(user=user, is_active=True, company__is_active=True)
         .order_by("company__name", "created_at")
     )
@@ -31,3 +33,15 @@ def resolve_membership(user: User, company_id: str | None = None) -> CompanyMemb
         if membership is not None:
             return membership
     return memberships.first()
+
+
+def system_access_profile_for_role(company, role: str) -> AccessProfile | None:
+    return (
+        AccessProfile.objects.filter(
+            company=company,
+            key=system_profile_key_for_role(role),
+            is_system=True,
+            is_active=True,
+        )
+        .first()
+    )

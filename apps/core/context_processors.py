@@ -34,32 +34,60 @@ def application_context(request):
             context["NAV_TRASH_COUNT"] = 0
             return context
 
+        from apps.accounts.access_catalog import AccessPermission
+        from apps.accounts.access_control import membership_has_permission
         from apps.core.trash import active_trash
+        from apps.inventory.access import (
+            restrict_inventory_location_queryset,
+            restrict_inventory_stock,
+        )
         from apps.inventory.models import InventoryLocation, StockItem, Supplier, Unit
         from apps.inventory.selectors import low_stock_items
         from apps.projects.models import Project
+        from apps.inventory.access import restrict_inventory_projects
 
-        context["NAV_LOW_STOCK_COUNT"] = low_stock_items(company).count()
-        context["NAV_ARCHIVE_COUNT"] = (
-            StockItem.objects.for_company(company).filter(
-                status=StockItem.Status.ARCHIVED,
-                deleted_at__isnull=True,
-                project__deleted_at__isnull=True,
-            ).count()
-            + Project.objects.for_company(company).filter(
-                status=Project.Status.ARCHIVED, deleted_at__isnull=True
-            ).count()
-            + Unit.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
-            + Supplier.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
-            + InventoryLocation.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
-        )
-        context["NAV_TRASH_COUNT"] = (
-            active_trash(StockItem.objects.for_company(company)).count()
-            + active_trash(Project.objects.for_company(company)).count()
-            + active_trash(Unit.objects.for_company(company)).count()
-            + active_trash(Supplier.objects.for_company(company)).count()
-            + active_trash(InventoryLocation.objects.for_company(company)).count()
-        )
+        context["NAV_LOW_STOCK_COUNT"] = restrict_inventory_stock(
+            low_stock_items(company), membership
+        ).count()
+        if membership_has_permission(membership, AccessPermission.SHARED_ARCHIVE_VIEW):
+            context["NAV_ARCHIVE_COUNT"] = (
+                restrict_inventory_stock(
+                    StockItem.objects.for_company(company).filter(
+                        status=StockItem.Status.ARCHIVED,
+                        deleted_at__isnull=True,
+                        project__deleted_at__isnull=True,
+                    ),
+                    membership,
+                ).count()
+                + restrict_inventory_projects(
+                    Project.objects.for_company(company).filter(
+                        status=Project.Status.ARCHIVED, deleted_at__isnull=True
+                    ),
+                    membership,
+                ).count()
+                + Unit.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
+                + Supplier.objects.for_company(company).filter(archived_at__isnull=False, deleted_at__isnull=True).count()
+                + restrict_inventory_location_queryset(
+                    InventoryLocation.objects.for_company(company).filter(
+                        archived_at__isnull=False, deleted_at__isnull=True
+                    ),
+                    membership,
+                ).count()
+            )
+        else:
+            context["NAV_ARCHIVE_COUNT"] = 0
+        if membership_has_permission(membership, AccessPermission.SHARED_TRASH_VIEW):
+            context["NAV_TRASH_COUNT"] = (
+                restrict_inventory_stock(active_trash(StockItem.objects.for_company(company)), membership).count()
+                + restrict_inventory_projects(active_trash(Project.objects.for_company(company)), membership).count()
+                + active_trash(Unit.objects.for_company(company)).count()
+                + active_trash(Supplier.objects.for_company(company)).count()
+                + restrict_inventory_location_queryset(
+                    active_trash(InventoryLocation.objects.for_company(company)), membership
+                ).count()
+            )
+        else:
+            context["NAV_TRASH_COUNT"] = 0
     else:
         context["NAV_LOW_STOCK_COUNT"] = 0
         context["NAV_ARCHIVE_COUNT"] = 0

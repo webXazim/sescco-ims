@@ -13,6 +13,8 @@ from apps.core.forms import StyledForm, StyledModelForm
 from apps.explorer.filtering import DATE_PRESETS
 from apps.projects.models import Project
 
+from .access import restrict_inventory_location_queryset, restrict_inventory_projects, restrict_inventory_stock
+
 from .normalization import normalize_phone, normalize_text
 
 from .models import (
@@ -149,9 +151,10 @@ class StockItemForm(StyledModelForm):
         }
         labels = {"description": "Description / specification"}
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         company = company or getattr(self.instance, "company", None)
+        self.membership = membership
         active_projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         )
@@ -163,6 +166,8 @@ class StockItemForm(StyledModelForm):
             active_units = Unit.objects.for_company(company).filter(deleted_at__isnull=True).filter(
                 models.Q(is_active=True) | models.Q(pk=self.instance.unit_id)
             )
+        if membership is not None:
+            active_projects = restrict_inventory_projects(active_projects, membership)
         self.fields["project"].queryset = active_projects.order_by("code")
         self.fields["unit"].queryset = active_units.order_by("name")
         if self.instance.pk and self.instance.movements.exists():
@@ -281,12 +286,16 @@ class StockAdditionForm(IdempotentMovementForm):
         label="I reviewed the similar record and this is intentionally separate",
     )
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
-        self.fields["project"].queryset = Project.objects.for_company(company).filter(
+        self.membership = membership
+        projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
-        ).order_by("code")
+        )
+        if membership is not None:
+            projects = restrict_inventory_projects(projects, membership)
+        self.fields["project"].queryset = projects.order_by("code")
         self.fields["unit"].queryset = Unit.objects.for_company(company).filter(
             is_active=True, archived_at__isnull=True, deleted_at__isnull=True
         ).order_by("name")
@@ -384,12 +393,16 @@ class StockUsageForm(IdempotentMovementForm):
         help_text="Optional PDF, JPG or PNG, maximum 10 MB.",
     )
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
-        self.fields["project"].queryset = Project.objects.for_company(company).filter(
+        self.membership = membership
+        projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
-        ).order_by("code")
+        )
+        if membership is not None:
+            projects = restrict_inventory_projects(projects, membership)
+        self.fields["project"].queryset = projects.order_by("code")
 
         selected_item_id = None
         selected_project_id = None
@@ -415,6 +428,8 @@ class StockUsageForm(IdempotentMovementForm):
             project__deleted_at__isnull=True,
             current_quantity__gt=0,
         )
+        if membership is not None:
+            queryset = restrict_inventory_stock(queryset, membership)
         if selected_project_id and str(selected_project_id).isdigit():
             queryset = queryset.filter(project_id=int(selected_project_id))
         elif selected_item_id and str(selected_item_id).isdigit():
@@ -527,6 +542,7 @@ class StockTransferForm(StyledForm):
         require_full_transfer=False,
         lock_source=False,
         company=None,
+        membership=None,
         **kwargs,
     ):
         initial = kwargs.setdefault("initial", {})
@@ -540,6 +556,8 @@ class StockTransferForm(StyledForm):
         self.company = company
         super().__init__(*args, **kwargs)
         locations = InventoryLocation.objects.for_company(company).select_related("project").filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
+        if membership is not None:
+            locations = restrict_inventory_location_queryset(locations, membership)
         self.fields["source_location"].queryset = locations.order_by("location_type", "code")
         self.fields["destination_location"].queryset = locations.order_by(
             "location_type", "code"
@@ -802,15 +820,16 @@ class StockItemFilterForm(DateRangeFilterForm):
         label="Visible columns",
     )
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
-        self.fields["project"].queryset = Project.objects.for_company(company).filter(deleted_at__isnull=True).order_by(
-            "code"
-        )
-        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).filter(
-            is_active=True, deleted_at__isnull=True
-        ).order_by("location_type", "code")
+        projects = Project.objects.for_company(company).filter(deleted_at__isnull=True)
+        locations = InventoryLocation.objects.for_company(company).filter(is_active=True, deleted_at__isnull=True)
+        if membership is not None:
+            projects = restrict_inventory_projects(projects, membership)
+            locations = restrict_inventory_location_queryset(locations, membership)
+        self.fields["project"].queryset = projects.order_by("code")
+        self.fields["location"].queryset = locations.order_by("location_type", "code")
         self.fields["unit"].queryset = Unit.objects.for_company(company).filter(deleted_at__isnull=True).order_by("name")
         self.fields["q"].widget.attrs.update(
             {
@@ -927,15 +946,16 @@ class MovementFilterForm(DateRangeFilterForm):
         label="Visible columns",
     )
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
-        self.fields["project"].queryset = Project.objects.for_company(company).filter(deleted_at__isnull=True).order_by(
-            "code"
-        )
-        self.fields["location"].queryset = InventoryLocation.objects.for_company(company).filter(
-            deleted_at__isnull=True
-        ).order_by("location_type", "code")
+        projects = Project.objects.for_company(company).filter(deleted_at__isnull=True)
+        locations = InventoryLocation.objects.for_company(company).filter(deleted_at__isnull=True)
+        if membership is not None:
+            projects = restrict_inventory_projects(projects, membership)
+            locations = restrict_inventory_location_queryset(locations, membership)
+        self.fields["project"].queryset = projects.order_by("code")
+        self.fields["location"].queryset = locations.order_by("location_type", "code")
         self.fields["q"].widget.attrs.update(
             {
                 "placeholder": ("Search project, material, supplier, reference, purpose, or user…"),

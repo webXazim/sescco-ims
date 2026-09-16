@@ -1,0 +1,107 @@
+{% extends "sourcing/base.html" %}
+{% load static %}
+{% block title %}Vendors · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Vendors</strong></nav>
+    <h1>Vendors</h1>
+    <p>Reference companies SESCCO may call for materials. This directory never creates Inventory stock or supplier transactions.</p>
+  </div>
+  {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_create' %}">+ New Vendor</a>{% endif %}
+  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% url 'sourcing:data_export' 'vendors' %}?format=xlsx&{{ request.GET.urlencode }}">Export current view</a>{% endif %}
+</section>
+
+<section class="sourcing-directory-card">
+  <form class="sourcing-toolbar" method="get" action="{% url 'sourcing:vendor_list' %}">
+    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, contact, phone, email, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
+    <div class="sourcing-toolbar__actions">
+      <select class="sourcing-select" name="status" onchange="this.form.submit()" aria-label="Vendor status">
+        <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>
+        <option value="inactive" {% if directory.status == 'inactive' %}selected{% endif %}>Inactive ({{ counts.inactive }})</option>
+        <option value="archived" {% if directory.status == 'archived' %}selected{% endif %}>Archived ({{ counts.archived }})</option>
+        <option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Trash ({{ counts.trash }})</option>
+        <option value="all" {% if directory.status == 'all' %}selected{% endif %}>All current Vendors</option>
+      </select>
+      <select class="sourcing-select sourcing-select--small" name="page_size" onchange="this.form.submit()" aria-label="Rows per page">
+        {% for size in page_sizes %}<option value="{{ size }}" {% if directory.page_size == size %}selected{% endif %}>{{ size }} / page</option>{% endfor %}
+      </select>
+      <details class="sourcing-popover sourcing-column-menu" data-column-menu>
+        <summary title="Choose columns" aria-label="Choose columns">Columns</summary>
+        <div class="sourcing-popover__panel">
+          <strong>Visible columns</strong>
+          <label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label>
+          <label><input type="checkbox" data-column-toggle="email" checked> Email</label>
+          <label><input type="checkbox" data-column-toggle="phone" checked> Phone</label>
+          <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
+          <label><input type="checkbox" data-column-toggle="items" checked> Items</label>
+          <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
+        </div>
+      </details>
+    </div>
+    <input type="hidden" name="sort" value="{{ directory.sort }}">
+    <input type="hidden" name="dir" value="{{ directory.direction }}">
+  </form>
+
+  <div class="sourcing-status-strip" aria-label="Vendor filters">
+    <a class="{% if directory.status == 'active' %}active{% endif %}" href="?status=active&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Active <span>{{ counts.active }}</span></a>
+    <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?status=inactive&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Inactive <span>{{ counts.inactive }}</span></a>
+    <a class="{% if directory.status == 'archived' %}active{% endif %}" href="?status=archived&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Archived <span>{{ counts.archived }}</span></a>
+  </div>
+
+  <div class="sourcing-table-wrap">
+    <table class="sourcing-table" data-vendor-table>
+      <thead><tr>
+        <th>Vendor</th>
+        <th data-column="contact">Primary Contact</th>
+        <th data-column="email">Email</th>
+        <th data-column="phone">Phone</th>
+        <th data-column="location">Location</th>
+        <th data-column="items" class="num">Items</th>
+        <th>Status</th>
+        <th data-column="updated">Updated</th>
+        <th class="row-menu-col"><span class="sr-only">Actions</span></th>
+      </tr></thead>
+      <tbody>
+        {% for vendor in vendors %}
+        <tr>
+          <td class="sourcing-vendor-cell"><a href="{% url 'sourcing:vendor_detail' vendor.id %}"><strong>{{ vendor.display_name|default:vendor.name }}</strong><small>{{ vendor.code }}{% if vendor.cr_number %} · CR {{ vendor.cr_number }}{% endif %}</small></a></td>
+          <td data-column="contact">{{ vendor.primary_contact_name|default:'—' }}{% if vendor.contact_count %}<small class="cell-note">{{ vendor.contact_count }} saved contact{{ vendor.contact_count|pluralize }}</small>{% endif %}</td>
+          <td data-column="email">{% if vendor.email %}<a class="plain-link" href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</td>
+          <td data-column="phone">{{ vendor.phone|default:vendor.mobile|default:'—' }}</td>
+          <td data-column="location">{% if vendor.city or vendor.region %}{{ vendor.city }}{% if vendor.city and vendor.region %}, {% endif %}{{ vendor.region }}{% else %}—{% endif %}</td>
+          <td data-column="items" class="num">{{ vendor.supply_item_count }}</td>
+          <td>
+            {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>
+            {% elif vendor.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>
+            {% elif vendor.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>
+            {% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}
+          </td>
+          <td data-column="updated"><time datetime="{{ vendor.updated_at|date:'c' }}">{{ vendor.updated_at|date:"d M Y" }}</time></td>
+          <td class="row-menu-col">
+            <details class="sourcing-row-menu"><summary aria-label="Vendor actions">⋯</summary><div>
+              <a href="{% url 'sourcing:vendor_detail' vendor.id %}">View</a>
+              {% if can_manage and not vendor.deleted_at and not vendor.archived_at %}<a href="{% url 'sourcing:vendor_edit' vendor.id %}">Edit</a>{% endif %}
+            </div></details>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9"><div class="sourcing-empty"><strong>No Vendors found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Vendor when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_create' %}">New Vendor</a>{% endif %}</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.count %}
+  <footer class="sourcing-pagination">
+    <span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span>
+    <nav aria-label="Vendor pages">
+      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}
+      <strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>
+      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}
+    </nav>
+  </footer>
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.111"></script>{% endblock %}

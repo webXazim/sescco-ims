@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.87":
-    fail("certification contract release must be 1.0.87")
+if contract.get("release") != "1.0.111":
+    fail("certification contract release must be 1.0.111")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":
@@ -53,6 +53,13 @@ required_labels = {
     "apps.documents.tests.test_merge_access",
     "apps.core.tests.test_management_reporting",
     "apps.core.tests.test_merge_management_access",
+    "apps.accounts.tests.test_granular_access",
+    "apps.accounts.tests.test_user_management",
+    "apps.accounts.tests.test_user_management_ui",
+    "apps.inventory.tests.test_storekeeper_scope.StorekeeperScopedAuthorityTests",
+    "apps.accounts.tests.test_custom_access_profiles",
+    "apps.accounts.tests.test_cross_module_access_leaks",
+    "apps.accounts.tests.test_session_security",
 }
 if not required_labels.issubset(set(labels)):
     missing = sorted(required_labels - set(labels))
@@ -84,6 +91,16 @@ required_verifiers = {
     "scripts/verify-tenant-reconciliation.py",
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
+    "scripts/verify-granular-access-authority.py",
+    "scripts/verify-single-access-authority.py",
+    "scripts/verify-user-management-backend.py",
+    "scripts/verify-user-management-ui.py",
+    "scripts/verify-rental-supervisor-scope.py",
+    "scripts/verify-inventory-storekeeper-scope.py",
+    "scripts/verify-page-level-view-only.py",
+    "scripts/verify-internal-finance-permissions.py",
+    "scripts/verify-cross-module-access-leaks.py",
+    "scripts/verify-credential-session-revocation.py",
 }
 registered_verifiers = set(contract.get("static_verifiers") or [])
 if not required_verifiers.issubset(registered_verifiers):
@@ -118,6 +135,16 @@ required_scenarios = {
     "salary-payment-scale-regression",
     "shared-payroll-surfaces-scale-regression",
     "report-wps-performance-regression",
+    "granular-access-authority-foundation",
+    "single-access-authority-cutover",
+    "user-management-backend-crud",
+    "administration-user-management-ui",
+    "rental-supervisor-foreman-scoped-access",
+    "inventory-storekeeper-scoped-authority",
+    "page-level-view-only-custom-profiles",
+    "internal-payroll-finance-permission-decomposition",
+    "cross-module-access-leak-closure",
+    "credential-session-revocation-hardening",
 }
 scenario_ids = {row.get("id") for row in scenarios}
 if not required_scenarios.issubset(scenario_ids):

@@ -14,9 +14,9 @@ from django.db.models import Q, Sum
 from django.http import HttpRequest
 from django.utils import timezone
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.models import CompanyMembership
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.internal_payroll.models import (
@@ -51,16 +51,29 @@ def _money(value: Decimal | int | str) -> Decimal:
     return Decimal(value).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
-def _require_internal_edit(membership: CompanyMembership) -> None:
-    if not membership_can_edit(membership, Workspace.INTERNAL):
-        raise PermissionDenied("Your role cannot modify internal payroll.")
+def _require_permission(membership: CompanyMembership, permission: AccessPermission, message: str) -> None:
+    if not membership_has_permission(membership, permission):
+        raise PermissionDenied(message)
 
 
-def _require_internal_approval(membership: CompanyMembership) -> None:
-    if not membership_can_workspace(membership, Workspace.INTERNAL):
-        raise PermissionDenied("Your role cannot access internal payroll.")
-    if not membership_has_capability(membership, Capability.APPROVE):
-        raise PermissionDenied("Your role cannot approve internal payroll.")
+def _require_payroll_prepare(membership: CompanyMembership) -> None:
+    _require_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE, "Your access profile cannot prepare Internal Payroll runs.")
+
+
+def _require_payroll_review(membership: CompanyMembership) -> None:
+    _require_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW, "Your access profile cannot review Internal Payroll runs.")
+
+
+def _require_payroll_approval(membership: CompanyMembership) -> None:
+    _require_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE, "Your access profile cannot approve Internal Payroll runs.")
+
+
+def _require_adjustment_manage(membership: CompanyMembership) -> None:
+    _require_permission(membership, AccessPermission.INTERNAL_ADJUSTMENTS_MANAGE, "Your access profile cannot manage Internal Payroll adjustments.")
+
+
+def _require_adjustment_approval(membership: CompanyMembership) -> None:
+    _require_permission(membership, AccessPermission.INTERNAL_ADJUSTMENTS_APPROVE, "Your access profile cannot approve Internal Payroll adjustments.")
 
 
 def _hash_payload(value: object) -> str:
@@ -83,7 +96,7 @@ def update_payroll_policy(
     proration_method: str,
     request: HttpRequest | None = None,
 ) -> InternalPayrollPolicy:
-    _require_internal_edit(actor_membership)
+    _require_payroll_prepare(actor_membership)
     company = actor_membership.company
     try:
         normalized = PayrollProrationMethod(proration_method).value
@@ -160,7 +173,7 @@ def create_payroll_adjustment(
     recovery_start: date | None = None,
     request: HttpRequest | None = None,
 ) -> PayrollAdjustment:
-    _require_internal_edit(actor_membership)
+    _require_adjustment_manage(actor_membership)
     company = actor_membership.company
     start, _end = month_bounds(period_start)
     _assert_adjustment_period_mutable(company=company, period_start=start)
@@ -213,7 +226,7 @@ def update_payroll_adjustment(
     values: dict[str, object],
     request: HttpRequest | None = None,
 ) -> PayrollAdjustment:
-    _require_internal_edit(actor_membership)
+    _require_adjustment_manage(actor_membership)
     company = actor_membership.company
     adjustment = (
         PayrollAdjustment.objects.select_for_update().for_company(company).select_related("employee").filter(pk=adjustment_id).first()
@@ -296,9 +309,9 @@ def transition_payroll_adjustment(
     company = actor_membership.company
     normalized = action.strip().lower().replace("-", "_")
     if normalized == "submit":
-        _require_internal_edit(actor_membership)
+        _require_adjustment_manage(actor_membership)
     else:
-        _require_internal_approval(actor_membership)
+        _require_adjustment_approval(actor_membership)
     adjustment = (
         PayrollAdjustment.objects.select_for_update().for_company(company).select_related("employee").filter(pk=adjustment_id).first()
     )
@@ -989,7 +1002,7 @@ def calculate_payroll_run(
     period_start: date,
     request: HttpRequest | None = None,
 ) -> PayrollRun:
-    _require_internal_edit(actor_membership)
+    _require_payroll_prepare(actor_membership)
     company = actor_membership.company
     start, end = month_bounds(period_start)
     run = PayrollRun.objects.select_for_update().for_company(company).filter(period_start=start).first()
@@ -1024,6 +1037,8 @@ def calculate_payroll_run(
     run.calculated_by = actor_membership.user
     run.submitted_at = None
     run.submitted_by = None
+    run.reviewed_at = None
+    run.reviewed_by = None
     run.approved_at = None
     run.approved_by = None
     run.reviewer_note = ""
@@ -1211,7 +1226,7 @@ def reset_payroll_run(
     reason: str = "",
     request: HttpRequest | None = None,
 ) -> PayrollRun:
-    _require_internal_edit(actor_membership)
+    _require_payroll_prepare(actor_membership)
     company = actor_membership.company
     start, end = month_bounds(period_start)
     run = PayrollRun.objects.select_for_update().for_company(company).filter(period_start=start).first()
@@ -1236,6 +1251,8 @@ def reset_payroll_run(
     run.calculated_by = None
     run.submitted_at = None
     run.submitted_by = None
+    run.reviewed_at = None
+    run.reviewed_by = None
     run.approved_at = None
     run.approved_by = None
     run.reviewer_note = ""
@@ -1277,11 +1294,17 @@ def transition_payroll_run(
         "return": "return_for_changes",
         "reject": "return_for_changes",
         "return_to_calculated": "return_for_changes",
+        "mark_reviewed": "review",
+        "review_complete": "review",
     }.get(normalized, normalized)
     if normalized == "submit_review":
-        _require_internal_edit(actor_membership)
+        _require_payroll_prepare(actor_membership)
+    elif normalized in {"review", "return_for_changes"}:
+        _require_payroll_review(actor_membership)
+    elif normalized == "approve":
+        _require_payroll_approval(actor_membership)
     else:
-        _require_internal_approval(actor_membership)
+        raise ValidationError({"action": "Action must be submit_review, review, return_for_changes, or approve."})
     run = (
         # attendance_period is nullable; scope the row lock to PayrollRun so
         # PostgreSQL does not attempt FOR UPDATE on the nullable outer-joined
@@ -1303,7 +1326,22 @@ def transition_payroll_run(
         run.status = PayrollRunStatus.REVIEW
         run.submitted_at = now
         run.submitted_by = actor_membership.user
+        run.reviewed_at = None
+        run.reviewed_by = None
+        run.reviewer_note = ""
         audit_action = "internal.payroll_run.submitted_for_review"
+    elif normalized == "review":
+        if run.status != PayrollRunStatus.REVIEW:
+            raise ValidationError({"payroll": "Only a payroll run in Finance Review can be reviewed."})
+        if not confirmed:
+            raise ValidationError({"confirmation": "Reviewer confirmation is required before recording review sign-off."})
+        if run.submitted_by_id == actor_membership.user_id:
+            raise ValidationError({"payroll": "Finance Review must be completed by a different user from the payroll submitter."})
+        _verify_run_locked(run=run, require_locked_attendance=True)
+        run.reviewed_at = now
+        run.reviewed_by = actor_membership.user
+        run.reviewer_note = note.strip()
+        audit_action = "internal.payroll_run.reviewed"
     elif normalized == "return_for_changes":
         if run.status != PayrollRunStatus.REVIEW:
             raise ValidationError({"payroll": "Only a payroll run in Review can be returned for changes."})
@@ -1313,13 +1351,21 @@ def transition_payroll_run(
         run.status = PayrollRunStatus.CALCULATED
         run.submitted_at = None
         run.submitted_by = None
+        run.reviewed_at = None
+        run.reviewed_by = None
         run.reviewer_note = note
         audit_action = "internal.payroll_run.returned_for_changes"
     elif normalized == "approve":
         if run.status != PayrollRunStatus.REVIEW:
             raise ValidationError({"payroll": "Only a payroll run in Finance Review can be approved."})
         if not confirmed:
-            raise ValidationError({"confirmation": "Reviewer confirmation is required before approval."})
+            raise ValidationError({"confirmation": "Approver confirmation is required before final approval."})
+        if not run.reviewed_at or not run.reviewed_by_id:
+            raise ValidationError({"payroll": "Finance Review sign-off is required before final approval."})
+        if run.reviewed_by_id == actor_membership.user_id:
+            raise ValidationError({"payroll": "Final approval must be completed by a different user from the Finance Reviewer."})
+        if run.submitted_by_id == actor_membership.user_id:
+            raise ValidationError({"payroll": "Final approval must be completed by a different user from the payroll submitter."})
         _verify_run_locked(run=run, require_locked_attendance=True)
         run.status = PayrollRunStatus.APPROVED
         run.approved_at = now
@@ -1327,7 +1373,7 @@ def transition_payroll_run(
         run.reviewer_note = note.strip()
         audit_action = "internal.payroll_run.approved"
     else:
-        raise ValidationError({"action": "Action must be submit_review, return_for_changes, or approve."})
+        raise ValidationError({"action": "Action must be submit_review, review, return_for_changes, or approve."})
 
     run.revision += 1
     run.full_clean()
@@ -1344,6 +1390,7 @@ def transition_payroll_run(
         after={
             "status": run.status,
             "submitted_at": run.submitted_at.isoformat() if run.submitted_at else None,
+            "reviewed_at": run.reviewed_at.isoformat() if run.reviewed_at else None,
             "approved_at": run.approved_at.isoformat() if run.approved_at else None,
             "reviewer_note": run.reviewer_note,
             "revision": run.revision,

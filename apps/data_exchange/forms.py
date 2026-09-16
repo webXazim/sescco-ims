@@ -4,6 +4,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 
 from apps.core.forms import StyledForm
+from apps.inventory.access import restrict_inventory_projects
 from apps.inventory.models import Unit
 from apps.projects.models import Project
 
@@ -45,12 +46,15 @@ class LegacyImportUploadForm(StyledForm):
         ),
     )
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
-        self.fields["project"].queryset = Project.objects.for_company(company).filter(
+        projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
-        ).order_by("code")
+        )
+        if membership is not None:
+            projects = restrict_inventory_projects(projects, membership)
+        self.fields["project"].queryset = projects.order_by("code")
         self.fields["default_unit"].queryset = Unit.objects.for_company(company).filter(
             is_active=True, deleted_at__isnull=True
         ).order_by("name")

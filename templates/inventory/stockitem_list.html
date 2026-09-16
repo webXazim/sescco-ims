@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
-  <div class="head-actions">{% include "partials/save_view_control.html" %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a><a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a></div>
+  <div class="head-actions">{% include "partials/save_view_control.html" %}{% if "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}{% endif %}{% if "inventory.locations.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a>{% endif %}{% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a>{% endif %}</div>
 </div>
 <section class="card explorer">
   <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
@@ -94,7 +94,7 @@
     {% if "updated" in visible_columns %}<td>{{ item.updated_at|date:"d M Y" }}<div class="cell-sub">{% if item.updated_by %}{{ item.updated_by.display_name }}{% endif %}</div></td>{% endif %}
     {% if "created" in visible_columns %}<td>{{ item.created_at|date:"d M Y" }}<div class="cell-sub">{% if item.created_by %}{{ item.created_by.display_name }}{% endif %}</div></td>{% endif %}
     <td>{% include "partials/stock_actions_menu.html" with item=item %}</td>
-  </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">▦</div><h2>No matching stock records</h2><p>Change or clear the current filters, or add new project stock.</p><a class="btn btn-primary" href="{% url 'core:add_stock' %}">Add stock</a></div></td></tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">▦</div><h2>No matching stock records</h2><p>Change or clear the current filters, or review your assigned scope.</p>{% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'core:add_stock' %}">Add stock</a>{% endif %}</div></td></tr>{% endfor %}
     </tbody></table></div>
     {% include "partials/pagination.html" %}
   </div>

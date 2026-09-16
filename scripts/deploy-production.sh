@@ -26,9 +26,9 @@ while (( $# )); do
       cat <<'EOF'
 Usage: scripts/deploy-production.sh [--seed] [--seed-profile functional|realistic|benchmark] [--allow-mixed-scale-seed]
 
-  --seed                 Seed complete idempotent functional DEMO Payroll/WPS/report/lifecycle fixtures.
+  --seed                 Seed complete idempotent functional Payroll plus Sourcing reference fixtures.
   --seed-profile PROFILE Also add restart-safe scale fixtures. realistic = 250 internal / 750 rental / 6 months;
-                         benchmark = 2,000 internal / 5,000 rental / 12 months.
+                         benchmark = 2,000 internal / 5,000 rental / 12 months plus 10k/50k Vendor and 5k/25k Manpower Sourcing benchmarks.
                          Optional env: IMS_SEED_COMPANY_SLUG, IMS_SEED_PERIOD, IMS_SEED_BATCH_SIZE.
   --allow-mixed-scale-seed
                          Explicitly allow namespaced realistic/benchmark DEMO data beside existing test masters.
@@ -119,7 +119,8 @@ for asset in \
   /static/platform/js/inventory-shell.js \
   /static/platform/js/form-validation.js \
   /static/payroll/css/v2/index.css \
-  /static/payroll/js/app.js; do
+  /static/payroll/js/app.js \
+  /static/sourcing/js/finder-scale.js; do
   curl --fail --silent --show-error \
     --header "Host: ${public_domain}" \
     --header 'X-Forwarded-Proto: https' \

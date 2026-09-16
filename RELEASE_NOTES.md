@@ -1,3 +1,289 @@
+# 1.0.111 — Sourcing Browser E2E + Production Freeze
+
+- Finalizes the Sourcing Directory feature set with a live Chromium certification runner covering the complete Vendor and Manpower sourcing journeys; no schema, permission-catalog, Payroll formula or Inventory quantity formula change is introduced.
+- Certifies Vendor Directory → Supply Catalog → Material Finder → Verification History → Verify now → immutable history evidence using deterministic benchmark `SDEMO-*` fixtures.
+- Certifies Manpower Supplier Directory → Workforce Catalog → Workforce Finder → Verification History → Verify now → immutable history evidence using the same bounded server-authoritative workflow.
+- Enforces a maximum of 100 rendered business rows, the existing 350 ms Finder debounce, stale-request cancellation, final-query preservation, same-origin 5xx detection, uncaught browser-error detection and a 10-second per-scenario settle budget.
+- The live runner never creates/deletes Sourcing masters. Its only write is a verification revision on seeded Sourcing reference rows; the 1.0.110 runtime security suite remains authoritative proof of zero operational-module mutation.
+- Adds `scripts/certify-sourcing-browser-e2e.py`, `scripts/verify-sourcing-browser-e2e.py`, `apps.sourcing.tests.test_browser_e2e_freeze`, `merge/sourcing-browser-e2e-production-freeze.json`, and `docs/SOURCING_BROWSER_E2E.md`.
+- Makes the Sourcing browser gate mandatory in the release candidate and production freeze, while preserving all 1.0.110 security/tenant/cross-module certification requirements.
+- Binds this release to exact predecessor 1.0.110 SHA-256 `bf498e6af3405b279cb42fbbf769c5baeb14d8940d59b3f732e89950dd503b2b`.
+
+# 1.0.110 — Sourcing Security, Tenant & Cross-module Isolation Certification
+
+- Adds a focused production certification suite for the independent Sourcing Directory; no database migration, permission-catalog expansion, Payroll formula change or Inventory quantity change is introduced.
+- Certifies Vendor-only versus Manpower-only authority in both directions and confirms Reference Master edit authority remains separate.
+- Certifies Company A / Company B tenant isolation through the real company-context middleware and company-scoped Sourcing object lookups.
+- Certifies direct backend POST denial for View-only users across Vendor, Manpower, Material/Trade master and verification endpoints; rejected requests leave Sourcing rows and immutable revision counts unchanged.
+- Certifies Material Finder and Workforce Finder never return archived or trashed sources and continue to require active parent/reference rows.
+- Certifies Vendor and Workforce verification revisions remain append-only through queryset and instance mutation guards.
+- Certifies Sourcing Access Profile edits increment assigned users' `security_version` and revoke stale authenticated sessions on the next request.
+- Adds runtime zero-mutation evidence across every installed operational app model while Sourcing create/verify services execute; Inventory, Projects, Internal Payroll, Rental Manpower, Documents and Data Exchange row counts must remain unchanged, with future standalone Accounting automatically included if installed.
+- Adds `merge/sourcing-security-certification.json`, `docs/SOURCING_SECURITY_CERTIFICATION.md`, `scripts/verify-sourcing-security-certification.py`, and `apps.sourcing.tests.test_security_certification` as mandatory release gates.
+- Binds this release to exact 1.0.109 predecessor SHA-256 `4de083b4bf99c38672548b9ccbe7b0ef2a66f9d0a461af34ffde21b295d0c1a2`.
+
+# 1.0.109 — Sourcing Scale Hardening & Benchmarking
+
+- Adds deterministic Sourcing `functional`, `realistic`, and `benchmark` seed profiles. Benchmark volume is frozen at 10,000 Vendors, 2,000 Materials, 50,000 Vendor offers, 5,000 Manpower Suppliers, 250 Trades, and 25,000 Workforce offers.
+- Adds `seed_sourcing_test_data` with the `SDEMO-` namespace, restart-safe `bulk_create(ignore_conflicts=True)`, mixed-company protection, and direct integration into `deploy-production.sh --seed` / release tasks.
+- Replaces Vendor and Manpower directory multi-join `DISTINCT` aggregation with correlated count subqueries and `EXISTS` contact matching, avoiding high-cardinality join fanout.
+- Adds additive Sourcing-only composite indexes for active Material/Trade, supplier/vendor, availability, and verification-freshness paths via migration `sourcing.0006_scale_finder_indexes`.
+- Makes Vendor Supply Catalog and Manpower Workforce profile tables server-paged at 25/50/100 rows instead of hydrating every capability row into the browser.
+- Adds progressive Finder request hardening: 350 ms debounce, `AbortController` cancellation of stale requests, bounded DOM replacement, and full GET fallback when JavaScript is unavailable.
+- Adds `sourcing_scale_report` with query/time budgets across all Sourcing directories, both Finders, profile catalogs, and the 5,000-row import parser.
+- Adds focused scale regressions, `merge/sourcing-scale-hardening.json`, `docs/SOURCING_SCALE_HARDENING.md`, and mandatory static/runtime/benchmark release gates.
+- Keeps Sourcing reference-only; no Inventory quantity, Rental Payroll worker/rate, Project, or Accounting behavior changes.
+- Binds this release to exact 1.0.108 predecessor SHA-256 `eaf3056bd03657b14cf5bd25230f72718cadef14473d0240c4992f268d8b4784`.
+
+# 1.0.108 — Sourcing Import / Export & Bulk Maintenance
+
+- Adds a dedicated **Sourcing Data Exchange** page for controlled CSV/XLSX bulk maintenance and audited exports across Vendor, Material, Vendor Catalog, Manpower Supplier, Trade and Workforce Catalog datasets.
+- Imports are capped at 2 MB / 5,000 data rows, upsert through existing Sourcing services, reject duplicate identities and unknown catalog references, and commit all-or-nothing.
+- Adds **Validate only** dry-run authority: the complete import executes inside a rollback-only transaction so model uniqueness, service validation and row-level errors are exercised without changing data.
+- Catalog imports support controlled bulk verification through `verified_now=yes`, `contact_name` and `verification_note`, reusing immutable Vendor/Workforce revision and audit paths.
+- Export requires `sourcing.export.execute` plus matching dataset view permission, supports CSV/XLSX and current-view filters, records `sourcing.data_exported`, and neutralizes spreadsheet-formula prefixes in exported text.
+- Import authority remains the existing edit boundary: Vendor, Manpower and Reference Master imports cannot cross-grant one another. Successful committed batches record `sourcing.data_import.completed`.
+- Keeps the module strictly reference-only: no Inventory stock/supplier, Rental Payroll worker/supplier, assignment, timesheet, settlement, Project or Accounting record is created or changed.
+- Adds `merge/sourcing-data-exchange.json`, `docs/SOURCING_DATA_EXCHANGE.md`, focused runtime regressions and a mandatory static/runtime release gate. No database migration or Payroll/Inventory formula change.
+- Binds this release to exact 1.0.107 predecessor SHA-256 `ca590378d85bf74bbad4c6fb0b77ea7265be4bff53d2ce2593c47ce027fa0c4c`.
+
+# 1.0.107 — Workforce Finder & Verification History
+
+- Adds a production **Workforce Finder** under the independent Sourcing Directory: search controlled worker type/trade code, name, alias or category first, then compare matching Manpower Suppliers without opening supplier profiles one by one.
+- Adds server-side availability, freshness, trade category, supplier, work-location, Hour/Day/Month rate-basis and rate-range filters plus deterministic 25/50/100 pagination and sorting by trade, supplier, quantity, rate, verification time or update time.
+- Reuses the company Sourcing freshness policy (`Fresh`, `Needs verification`, `Stale`, `Never verified`) and separately flags expired reference-rate validity so stale commercial information cannot look current.
+- Adds **Verify now** from Workforce Finder and supplier Workforce Catalog, limited to sourcing availability/quantity/rate/basis/overtime/validity/mobilization/location fields; captures `Spoke With`, verification note and confirming SESCCO user/time.
+- Adds server-paginated immutable **Workforce Verification History** with field-level before → after changes. `sourcing.manpower.view` may inspect history; only `sourcing.manpower.manage` may submit verification.
+- Writes `sourcing.workforce_offer.verified`, updates supplier freshness and appends immutable `SourcingWorkforceOfferRevision` evidence on every confirmation, including confirmations with no business-value change.
+- Keeps the workflow strictly reference-only: no Rental Manpower supplier/worker, assignment, attendance/timesheet, Payroll/settlement rate, Inventory or Accounting record is created or changed.
+- Adds focused regressions, `merge/sourcing-workforce-finder.json`, `docs/SOURCING_WORKFORCE_FINDER.md`, and a mandatory static/runtime release gate. No database migration or Payroll/Inventory formula change.
+- Binds this release to exact 1.0.106 predecessor SHA-256 `3be72bcc9edc38b95cab475d31d5b4b1e500685f579b62c88d9f82d1df642365`.
+
+# 1.0.106 — Worker Trade Master & Workforce Catalog
+
+- Activates the independent **Worker Types / Trades** Sourcing reference master with company-scoped code/name/category, controlled aliases, Active/Inactive lifecycle, server-side search and bounded 25/50/100 pagination.
+- Adds normalized trade-alias search/collision protection so equivalent terms such as AC Technician / A/C Technician can resolve to one canonical Sourcing worker type.
+- Activates each Manpower Supplier's **Workforce Catalog** using the existing Sourcing-owned `SourcingWorkforceOffer`: worker type, availability, nullable available quantity, nullable reference rate, Hour/Day/Month basis, optional overtime rate, rate validity, mobilization lead time, work location/coverage and notes.
+- Adds `Verified now`, confirming SESCCO user/time, optional contacted-person and verification note capture, supplier freshness updates, immutable `SourcingWorkforceOfferRevision` evidence and Sourcing audit events for every catalog mutation.
+- Enforces `sourcing.masters.view/manage` independently for the Trade master and `sourcing.manpower.view/manage` for Workforce Catalog rows; a Manpower Editor may select active Trades without gaining Trade-master edit authority.
+- Keeps Sourcing strictly reference-only: no Rental Payroll supplier/worker, assignment, timesheet, settlement, Payroll rate, Inventory or Accounting records are created or changed.
+- Adds forward migration `sourcing.0005_trade_alias_search`, focused Trade/Workforce regressions, `merge/sourcing-trade-workforce-catalog.json`, `docs/SOURCING_TRADE_WORKFORCE_CATALOG.md`, and a mandatory release gate.
+- Binds this release to exact 1.0.105 predecessor SHA-256 `ab85b97e9fa9f60467799c6c158e950f0d8fb12d0ddb0a6eb493e69e4ab75e0f`.
+
+# 1.0.105 — Manpower Sourcing Master
+
+- Activates the independent **Manpower Suppliers** sourcing directory with server-side search, status filters, deterministic sorting and bounded 25/50/100 pagination.
+- Adds company-scoped create/edit/detail screens for sourcing-only manpower suppliers using the existing `SourcingManpowerSupplier` master; no Rental Payroll supplier is created or synchronized.
+- Adds `SourcingManpowerContact` for callable contact persons, including one active primary contact per supplier and deactivate-not-destroy contact lifecycle.
+- Adds explicit Active/Inactive, reversible Archive and reversible 30-day Trash lifecycle. Trash requires exact supplier-code confirmation and a reason.
+- Records immutable `AuditArea.SOURCING` evidence for supplier master, lifecycle and contact mutations and exposes a bounded Activity timeline.
+- Enforces `sourcing.manpower.view` for every read surface and `sourcing.manpower.manage` for every mutation, independent from Vendor, Inventory, Storekeeper, Foreman, Finance and Rental Payroll authority.
+- Keeps the Workforce profile tab reference-only in this release; worker type / quantity / rate management remains reserved for Upgrade 1.0.106.
+- Adds migration `sourcing.0004_manpower_supplier_contacts`, focused Manpower-master regressions, `merge/sourcing-manpower-master.json`, `docs/SOURCING_MANPOWER_MASTER.md`, and a mandatory release gate.
+- Binds this release to exact 1.0.104 predecessor SHA-256 `88220df5d3896cb626a36bfa49ffba25becd1a3ab1c161e158535b149b8fc9cf`.
+
+# 1.0.104 — Vendor Verification & History UX
+
+- Adds a fast **Verify now** workflow from Material Finder and each Vendor Supply Catalog row so sourcing staff can confirm current availability, quantity, unit, minimum order, reference rate, quote validity and lead time without reopening the full offer editor.
+- Captures the Vendor person contacted plus a verification note, stamps the confirming SESCCO user/time, updates the current Sourcing reference snapshot and advances Vendor freshness.
+- Appends immutable `SourcingVendorOfferRevision` evidence on every confirmation, including calls where the business values did not change, and writes `sourcing.vendor_offer.verified` to the Sourcing audit ledger.
+- Adds a server-paginated 25/50/100 **Verification History** available to Vendor viewers, with field-level before → after differences and contacted-person/note evidence.
+- Keeps mutation authority at `sourcing.vendors.manage`; `sourcing.vendors.view` can inspect history but cannot submit verification directly or through backend endpoints.
+- Adds safe return navigation between Finder, Vendor profile, Verify and History while rejecting non-Sourcing redirect targets.
+- Keeps the workflow strictly reference-only: no Inventory Supplier/stock, purchase/receiving, Accounting, Payroll, Rental Manpower or Project records are created or changed.
+- Adds focused Vendor verification regressions, `merge/sourcing-vendor-verification.json`, `docs/SOURCING_VENDOR_VERIFICATION.md`, and a mandatory release gate.
+- No database migration, Payroll formula, Inventory quantity formula, or Accounting posting behavior changes.
+- Binds this release to exact 1.0.103 predecessor SHA-256 `490c83bdcaab2f4586b973ca5ac78f11051df2429babd5a6c9683c3610516214`.
+
+# 1.0.103 — Material Finder
+
+- Adds a production **Material Finder** under the independent Sourcing Directory: search a material/item first, then compare matching reference Vendors without opening Vendor profiles one by one.
+- Searches Sourcing Material code/name/controlled aliases plus offer specification, brand/model and Vendor code/name, with company-scoped server-side filtering and deterministic 25/50/100 pagination.
+- Adds Availability, Freshness, Category, Vendor, Location and reference-rate filters, plus sorting by Material, Vendor, rate, quantity, verification time or update time.
+- Activates the per-company Sourcing freshness policy: Fresh within the configured window (default 7 days), Needs verification through the configured stale threshold (default 30 days), Stale after that, and Never verified when no confirmation exists.
+- Excludes inactive/archived/Trash Vendors, inactive Materials and inactive Vendor offer rows from on-demand Finder results while preserving all underlying reference/history records.
+- Enforces `sourcing.vendors.view` on the Finder and only renders Edit reference actions for `sourcing.vendors.manage`. Material Master permission is not required to search controlled material names/aliases.
+- Keeps the Finder strictly read-only and reference-only: searching does not create verification history, Inventory stock/suppliers, purchase/receiving records, Accounting entries, Payroll data or Rental Manpower records.
+- Adds focused Material Finder regressions, reusable Sourcing freshness authority, `merge/sourcing-material-finder.json`, `docs/SOURCING_MATERIAL_FINDER.md`, and a mandatory release gate.
+- No database migration, Payroll formula, Inventory quantity formula, or Accounting posting behavior changes.
+- Binds this release to exact 1.0.102 predecessor SHA-256 `b96eb8585a20f52337871b8c04916976399cc3f59604a7ad33d5afe0745270ce`.
+
+# 1.0.102 — Material Master & Vendor Supply Catalog
+
+- Activates the independent Sourcing Material master with company-scoped code/name/category/default-unit management, controlled aliases, Active/Inactive state, server search and bounded 25/50/100 pagination.
+- Adds normalized alias search and rejects exact company-local material name/alias collisions so common terms resolve to one controlled Sourcing Material.
+- Replaces the Vendor profile Supply Catalog placeholder with production catalog rows for material, specification, brand/model, availability, nullable available quantity, unit, minimum quantity, nullable reference rate, currency, validity date and lead time.
+- Adds Vendor Supply Catalog create/edit/activate/deactivate flows under `sourcing.vendors.manage`; Vendor viewers can read catalog rows but cannot mutate them. Material master edits remain separately gated by `sourcing.masters.manage`.
+- Adds `Verified now`, verifier identity and optional contact/note capture. Confirmed updates advance Vendor verification time and every catalog mutation writes immutable `SourcingVendorOfferRevision` before/after evidence plus Sourcing audit events.
+- Keeps Sourcing strictly reference-only: no catalog quantity changes Inventory on-hand, no catalog rate creates purchase/accounting values, and no Sourcing Material is linked to an Inventory item master.
+- Adds forward migration `sourcing.0003_material_alias_search`, focused Material/Catalog regressions, `merge/sourcing-material-catalog.json`, `docs/SOURCING_MATERIAL_CATALOG.md`, and a mandatory release gate.
+- Binds this release to exact 1.0.101 predecessor SHA-256 `52ac1adef10a90e066908b21dac78599b0cadd9d8551a4b7c7c8113bc92ad008`.
+
+# 1.0.101 — Vendor Sourcing Master
+
+- Promotes Vendor Sourcing from a permission-only shell into a production reference Vendor directory with server-side search, deterministic sorting, status filters and bounded 25/50/100 pagination.
+- Adds company-scoped Vendor create/edit/detail screens with primary contact summary, phone/email, city/region, CR/VAT, website and sourcing notes.
+- Adds `SourcingVendorContact` for additional contact persons, with one active primary contact per Vendor and deactivate-not-destroy application lifecycle.
+- Adds explicit Active/Inactive, reversible Archive, and reversible 30-day Trash lifecycle for Sourcing Vendors. Trash requires exact Vendor-code confirmation and a reason; no application hard-delete action is exposed.
+- Records immutable `AuditArea.SOURCING` evidence for Vendor master, lifecycle and contact-person mutations and exposes a bounded Vendor Activity timeline.
+- Enforces `sourcing.vendors.view` for every Vendor read surface and `sourcing.vendors.manage` for every mutation, including direct lifecycle/contact endpoints.
+- Keeps the module reference-only: no Vendor action creates Inventory suppliers/stock, purchase/payable records, workers, Payroll activity or Accounting entries.
+- Adds migration `sourcing.0002_vendor_directory_master`, focused Vendor-master regressions, `merge/sourcing-vendor-master.json`, `docs/SOURCING_VENDOR_MASTER.md`, and a mandatory release gate.
+- Binds this release to exact 1.0.100 predecessor SHA-256 `4fba174a74f472ef419b62a05082ceb12625a439d925c6006e3f1582d388db88`.
+
+# 1.0.100 — Sourcing Access-Control Authority
+
+- Enables the independent **Sourcing Directory** only through explicit persisted Access Profile permissions; no Inventory, Payroll, Rental Manpower, Finance, Storekeeper, Foreman or other operational role inherits Sourcing access.
+- Adds seven permissions: Vendor Sourcing view/edit, Manpower Sourcing view/edit, Sourcing Reference Masters view/edit, and Sourcing export. Edit grants require their matching view permission; export requires at least one Sourcing view grant.
+- Company Owner is the only built-in profile that receives the new Sourcing permissions automatically. Existing Access Administrators can create custom profiles such as Vendor Viewer, Vendor Editor, Manpower Viewer, Manpower Editor or mixed Sourcing roles and assign them when creating/editing users.
+- Adds `accounts.0012_sourcing_access_control_authority`, extending the database permission check constraint from 87 to 94 allowed permission keys and reconciling existing built-in Owner profiles without widening any other built-in role.
+- Adds permission-aware Sourcing module visibility to the shared module switcher and `/app/sourcing/` backend enforcement. Direct access without a `sourcing.*` grant returns HTTP 403.
+- Keeps the 1.0.99 reference-only isolation contract unchanged.
+- Binds this release to exact 1.0.99 predecessor SHA-256 `3de0aa62e4045695764b4deb6378d8ea32b708afdd541612b8c2a7fb5e906326`.
+
+# 1.0.99 — Sourcing Domain Foundation
+
+- Adds a completely separate **Sourcing Directory** Django domain for reference-only Vendor and Manpower sourcing. It does not reuse Inventory suppliers or Rental Manpower suppliers.
+- Adds company-scoped `SourcingVendor`, `SourcingMaterial`, Vendor supply offers, `SourcingManpowerSupplier`, `SourcingTrade`, Workforce offers and per-company freshness settings.
+- Adds immutable Vendor-offer and Workforce-offer verification revision tables so future quantity/rate refreshes can preserve before/after history rather than overwrite evidence.
+- Makes quantity and rate nullable and supports explicit Unknown availability so sourcing data is never misrepresented as live stock or committed workforce.
+- Adds `AuditArea.SOURCING` plus a Django system check that rejects any Sourcing database relation into Inventory, Projects, Internal Payroll, Rental Manpower, Documents or Data Exchange.
+- Registers `/app/sourcing/` and `PlatformModule.SOURCING`, but intentionally keeps the module fail-closed for every normal membership until Upgrade 1.0.100 introduces explicit Vendor/Manpower view/edit permissions.
+- Adds migrations `core.0006_sourcing_audit_area` and `sourcing.0001_sourcing_domain_foundation`, focused domain-isolation regressions, operator documentation and a mandatory release gate.
+- No Payroll formula, Rental settlement formula, Inventory quantity formula or existing operational lifecycle behavior changes.
+- Binds this release to exact predecessor 1.0.98 SHA-256 `ee87fc1253b800e1f4a336cae00283160d3379b3d73f1b6efd6678014cf56e38`.
+
+# 1.0.98 — Access History & Guarded Recovery
+
+- Exposes the existing immutable Access audit ledger inside Administration through a bounded, server-paged **Access History** register guarded by the exact `access.audit.view` permission.
+- Adds per-user Access History in the User drawer without granting edit authority to audit-only profiles.
+- Adds guarded **Restore prior access** for authorized administrators. Recovery requires both `access.audit.view` and `access.users.manage`, exact username confirmation, and can only reapply the `before` snapshot from a supported immutable user-access event.
+- Revalidates the historical Access Profile, Project scope, Branch/Office scope, Inventory Location scope, current lifecycle state, company boundary and final-owner protections before applying recovery.
+- Recovery never rolls back usernames, email addresses, names or credentials from audit JSON. Successful recovery increments the target user's `security_version`, revokes existing sessions and appends a new immutable `access.user.access_restored` event referencing the source event.
+- Uses page-size-plus-one pagination (25/50/100 rows) for Access History and avoids loading or counting the complete ledger during normal browsing.
+- Adds focused Access History/recovery regressions, `merge/access-history-recovery.json`, `docs/ACCESS_HISTORY_RECOVERY.md`, and a mandatory production release gate. No database migration, Payroll formula, Rental settlement formula, Inventory quantity formula or lifecycle-retention semantic change.
+- Binds this release to exact predecessor 1.0.97 SHA-256 `801d25b6f65a898f7f0dc96044df1e868949ff84db8547aff1ccc42788453ca4`.
+
+# 1.0.97 — Credential & Session Revocation Hardening
+
+- Adds `accounts.User.security_version` as a monotonic server-side session revocation stamp. Existing sessions become invalid on the next request after security-sensitive access changes.
+- Revokes affected sessions after Access Profile assignment, Project/Branch/Inventory Location scope changes, membership activation/deactivation, temporary-password reset, legacy role changes and Django-superuser membership corrections.
+- Editing the permissions or active state of a custom Access Profile revokes sessions for every assigned identity, preventing an already-open browser shell from continuing under stale authorization.
+- Enforces `must_change_password`: temporary-password users are redirected to the dedicated password-change screen and operational APIs fail with HTTP 428 until the password is replaced.
+- A successful personal password change clears the mandatory flag, rotates Django's authentication hash, increments/stamps the new security version and records an immutable Access audit event. Stale API sessions fail with explicit HTTP 401 `session_revoked`.
+- Adds migration `accounts.0011_user_security_version`, focused session-security regressions, `merge/credential-session-revocation-hardening.json`, operator guide `docs/CREDENTIAL_SESSION_REVOCATION.md`, and a mandatory release gate.
+- No Payroll calculation formula, Rental settlement formula, Inventory quantity formula, document snapshot, or lifecycle-retention semantic change.
+- Binds this release to exact predecessor 1.0.96 SHA-256 `a94d4a289abac628d6305db7def2c41e4255ae6def8bab1dad89f13f667b4751`.
+
+# 1.0.96 — Cross-module Access Leak Closure
+
+- Closes indirect authorization leaks across global search, employee profile deep links, finalized Documents, report/export surfaces, Management aggregates, Archive/Trash and server-backed selectors.
+- Applies Branch scope to live Internal employee directories/profile access and immutable Branch snapshots to historical payroll/payment/report/document rows.
+- Applies Project scope to Rental supplier lookup, settlements/payments, Documents, reports and recovery registers; narrowed supplier views no longer project company-wide financial metrics.
+- Requires the underlying sensitive page permission in addition to generic Reports permission, so WPS, Payments, Payroll and Settlement reports cannot be inferred through Reports-only profiles.
+- Fails company-wide Management overview/approval/audit surfaces closed when data scopes are narrowed, and prevents Access Administrators from receiving finance/workforce aggregates merely because they can open Administration.
+- Makes global search require `shared.search.use` and query only entity endpoints backed by the caller's exact page permission.
+- Adds focused runtime regressions and `merge/cross-module-access-leak-closure.json`; no database migration, Payroll formula, settlement formula or Inventory quantity formula changes.
+- Binds this release to exact predecessor 1.0.95 SHA-256 `1591e72505ceb6b3c9720dc62c53568eaf00ed9f624be255cb270af3ddb45425`.
+
+# 1.0.95 — Internal Payroll + Finance Permission Decomposition
+
+- Separates Internal Payroll preparation from independent Finance Review, final approval, Bank/WPS export and payment execution instead of relying on broad edit/approve/pay capabilities.
+- Adds the exact `internal.payroll_runs.review` permission and freezes built-in duty separation: Internal Payroll Officer prepares, Finance Reviewer reviews/returns, and Finance Manager final-approves and executes payments. Finance Manager does not inherit Finance Review authority; review and final approval are distinct actors from the submitter and from each other.
+- Adds immutable finance-review sign-off evidence to PayrollRun (`reviewed_at` / `reviewed_by`). Final approval fails closed until a separate finance review has been recorded against the locked, source-valid payroll snapshot.
+- Enforces action-specific permissions in Attendance, Adjustments, Payroll Run and Salary Payment APIs/services so a permission for one workflow action cannot be reused for another action sharing the same endpoint.
+- Decouples Bank/WPS file generation from payment execution: authorized Payroll staff may prepare/export files without gaining payment-posting/reconciliation authority; payment execution remains Finance-only.
+- Makes server workflow projections and the Payroll browser consume the exact prepare/review/approve/export/execute permissions, including a distinct **Mark Reviewed** step before **Final Approve**.
+- Adds migrations `accounts.0010_internal_finance_permission_decomposition` and `internal_payroll.0014_payroll_review_signoff`, focused regressions, `merge/internal-finance-permission-decomposition.json`, and a mandatory production release gate.
+- The curated production-E2E contract now covers 34 scenarios / 181 critical Django methods / 24 runtime labels. No Payroll calculation formula, Rental settlement formula, document snapshot or Inventory quantity formula changes.
+- Binds this release to the exact 1.0.94 predecessor archive SHA-256 `9920b4009f29fdf1dd09db51bb5fdf5c29eb4ecc32c937961c5537e0fa20e6d3`.
+
+# 1.0.94 — Page-level View Only + Custom Access Profiles
+
+- Adds production CRUD for company-scoped **custom Access Profiles** over the existing 1.0.88 permission tables. Built-in profiles remain immutable, assigned profiles cannot be deleted, active assigned profiles cannot be disabled, and an administrator cannot alter the profile currently granting their own authority.
+- Adds the Administration → **Access Profiles** workspace with grouped page/action permissions and a View-only mode. Custom profiles can expose narrow combinations such as Internal Employees + Attendance or Rental Workers + Timesheets without granting edit authority.
+- Enforces permission coherence when saving custom profiles: action permissions require the corresponding page-view permission, preventing invisible edit-only profiles. Profile create/update/delete changes are recorded on the immutable Access audit ledger.
+- Moves Internal Payroll read/write endpoints from broad workspace authority to exact method-level page/action permissions across Employees, Organization, Attendance, Salary Setup, Payroll Runs, Adjustments, Salary Payments and WPS. A view permission never authorizes POST/PATCH/DELETE.
+- Makes Internal Payroll browser navigation exact-permission aware and falls back to the first authorized page instead of assuming Overview exists. Unauthorized deep links fail closed in the browser while the backend independently rejects the API request.
+- Makes the initial Payroll HTML bootstrap page-aware: an Employee-only viewer no longer receives Attendance roster/records/overtime merely because both pages belong to the Internal workspace. Rental and Inventory continue to retain their 1.0.92/1.0.93 scoped backend authorities.
+- Adds focused custom-profile/view-only regressions, `merge/page-level-view-only.json` and a mandatory production release gate. The curated E2E contract now covers 33 scenarios / 172 critical Django methods / 23 runtime labels.
+- No database migration, Payroll formula, Rental settlement formula, document snapshot or Inventory quantity change.
+- Binds this release to the exact 1.0.93 predecessor archive SHA-256 `a202be1a77f796734822d4356abc3a681c7850cc3e3a74ac4f9aab1cfc94e2cb`.
+
+# 1.0.93 — Inventory Storekeeper Scoped Authority
+
+- Freezes the built-in **Storekeeper** Access Profile to exactly eleven operational permissions: Inventory overview/stock/movement/project/supplier/location visibility, receive, issue, transfer, scoped export and shared search. It does not inherit adjustment, reversal, import, master-management, Archive or Trash authority.
+- Enforces Inventory access as the intersection of **Project scope + Inventory Location scope**. Project-backed locations must satisfy both boundaries; office locations require the Inventory Location grant, and `all`, `selected` and `none` modes remain backend-authoritative.
+- Applies scope to stock, movements, projects, locations, low-stock counters, dashboard totals, direct detail routes and filtered exports. Direct URLs cannot bypass the same selectors used by normal navigation.
+- Requires both source and destination locations to be in scope before a Storekeeper can transfer stock. Receive/Add and Issue/Use are separately protected by exact permissions and server-side scope revalidation.
+- Keeps stock adjustment, movement/transfer reversal, Excel imports, Project/Supplier/Location administration and Archive/Trash lifecycle outside the Storekeeper profile. Read-only supplier/location/project surfaces remain available only where the profile grants their view permission.
+- Makes Inventory navigation and action controls consume the server-issued effective permission snapshot, so Storekeepers do not receive manager-only controls while backend services remain the final authority.
+- Adds `accounts.0009_storekeeper_scoped_authority`, which reconciles existing system Storekeeper profiles to the exact operational grant set without changing any user's existing Project/Location scope selections.
+- Adds Storekeeper scope regressions, `merge/inventory-storekeeper-scope.json` and a mandatory release gate. No Inventory quantity formula, Payroll formula, settlement calculation or document snapshot change.
+- Binds this release to the exact 1.0.92 predecessor archive SHA-256 `ec1388afc1833098292fc59fd9b93b3d92734f4be4e087584690943d39be2763`.
+
+# 1.0.92 — Rental Supervisor / Foreman Scoped Access
+
+- Adds a built-in **Rental Supervisor / Foreman** Access Profile with exactly nine operational permissions: scoped Rental overview, worker/assignment visibility, timesheet view/edit/submit and overtime view/edit/submit. It does not inherit supplier, settlement, payment, approval, lifecycle, document, report, archive or trash authority.
+- Enforces Project scope on Rental project, worker, assignment and timesheet selectors/services/APIs. `all`, `selected` and `none` scope modes fail closed consistently, and selected supervisors cannot enumerate the supplier-wide unassigned worker pool.
+- Allows Foremen to enter attendance/timesheet values and overtime for assigned projects and **Submit for Review**, while approval, locking and return-to-draft remain separate `rental.timesheets.approve` authority. The `submit_for_review` alias now resolves to the submit permission at the API boundary.
+- Removes direct-data bypasses around scoped UI: Supplier, settlement/payment, adjustment/lifecycle, document finalization/report and Archive/Delete recovery endpoints require their exact granular permissions rather than broad Rental workspace access.
+- Suppresses assignment and overtime commercial rates from Foreman worker, assignment-activity, timesheet-roster and overtime payloads; Foremen can enter operational OT hours but cannot view or override the commercial OT rate. Hourly assignment OT rates are derived server-side, while Daily/Monthly OT requires a manager-configured rate before supervisor entry. Financial settlement metrics and supplier directories are not built for the Foreman bootstrap.
+- Prunes Rental navigation, Quick Add, notification content and overview data fetches from the server-issued permission snapshot. The scoped Supervisor overview never loads the settlement/payables context.
+- Adds `accounts.0008_rental_supervisor_profile`, which extends the membership classification constraint and creates one exact system Foreman profile per existing company without changing any existing user's access assignment.
+- Adds focused Project-scope/permission regressions, `merge/rental-supervisor-scope.json`, and a mandatory release gate. No Payroll formula, supplier-settlement formula, document snapshot or Inventory quantity logic changes.
+- Binds this release to the exact 1.0.91 predecessor archive SHA-256 `8d565a1567ad41c50c8a27815b0ee67bffdf56f6ccc2ae11c0473fbf1a3e3cdb`.
+
+# 1.0.91 — Administration / Users UI
+
+- Adds **Administration** as a third authorized SESCCO MS module beside Inventory Management and Payroll Management. The module appears only when the active Access Profile has `access.users.view`; direct `/app/administration/` access is protected by the same backend permission.
+- Adds the production **Administration → Users** workspace over the 1.0.90 company-scoped User Management APIs, without introducing a second authorization path or browser-side role authority.
+- Adds a bounded 25/50/100-row Users register with two-character server search, Active/Inactive filtering, page-size-plus-one navigation, stale-request cancellation, and no full company user hydration.
+- Adds Add/View/Edit User drawers with company identity fields, Access Profile assignment, effective profile summaries, and explicit Project / Branch & Office / Inventory Location scope controls using bounded server-backed lookup.
+- Adds administrator security flows for temporary password reset, activate/deactivate and guarded unused-account deletion. Self-access changes and non-owner modifications of Owner accounts remain blocked by the backend and are reflected as disabled UI actions.
+- Keeps temporary passwords transient: creation/reset fields never persist to browser storage, and the backend continues to store only the Django password hash while setting `must_change_password`.
+- Keeps Django administration separate from SESCCO application administration; Access Administrators remain non-staff application users.
+- Adds responsive Administration shell styling, module-switcher integration, focused Django regressions, `merge/user-management-ui.json`, and a mandatory static release gate.
+- Carries the 1.0.90 backend authority, 1.0.89 profile-only runtime authorization and all Payroll/Inventory scale/lifecycle contracts forward unchanged. No database migration, Payroll formula, settlement, document snapshot or Inventory quantity change.
+- Binds this release to the exact 1.0.90 predecessor archive SHA-256 `e583e7ce5d459171665463906a6672bc05e2bf1870e07357d1fa28f274980289`.
+
+# 1.0.90 — User Management backend CRUD
+
+- Adds production company-scoped User Management APIs for bounded user search/listing, user creation, identity/profile/scope updates, activation/deactivation, guarded unused-account deletion and administrator password reset.
+- Keeps `CompanyMembership + AccessProfile + EffectiveAccess` as the only application authorization authority; the new `custom` membership classification is metadata for administrator-defined profiles and never grants permissions by itself.
+- Adds forced-change credential state (`must_change_password`, `credentials_updated_at`). New users and administrator password resets set a temporary password through Django password validation and invalidate existing sessions through the changed authentication hash; password values are never written to audit payloads.
+- Enforces owner and administrator safety at the service boundary: non-owners cannot assign/modify/reset Owner accounts, administrators cannot change their own access profile/scopes or deactivate themselves, and the existing final-owner protection remains authoritative.
+- Adds atomic Project, Branch/Office and Inventory Location scope replacement with same-company validation and explicit All / Selected / None semantics; Selected requires at least one valid scope record.
+- Adds active Access Profile discovery plus bounded 25-row scope lookup for the upcoming Administration UI. User directories use 25/50/100-row server pages and two-character server search rather than hydrating all company users or scope masters.
+- Hard deletion is limited to never-signed-in, single-company identities with no actor audit history and exact username confirmation; established identities must be deactivated so historical attribution remains intact.
+- Extends immutable Access audit coverage with create/update/activate/deactivate/password-reset/delete-unused events and adds focused backend/API regressions plus a mandatory release gate.
+- Adds migration `accounts.0007_user_management_backend`; no Payroll formula, settlement calculation, document snapshot, Inventory quantity or lifecycle-retention behavior changes.
+- Binds this release to the exact 1.0.89 predecessor archive SHA-256 `9ada5322a3a2768534356d50b184c62f6a003b7b1ff2b2b34f86c64b174908bd`.
+
+# 1.0.89 — Single authorization authority cutover
+
+- Retires `accounts.User.role` and the old Inventory `is_inventory_admin` compatibility authority. SESCCO application authorization now lives only on `CompanyMembership` + `AccessProfile` + request-cached `EffectiveAccess`.
+- Makes `CompanyMembership.access_profile` required. Migration `accounts.0006_single_access_authority` fills any residual profile gaps from frozen system-profile templates before applying the NOT NULL boundary, then removes `User.role`.
+- Rewrites legacy workspace/edit/capability compatibility helpers to derive exclusively from granular Access Profile permissions. No request path can gain Inventory, Internal Payroll, Rental Manpower, approval, payment, settings or access-management authority from `CompanyMembership.role`.
+- Keeps `CompanyMembership.role` temporarily as non-authoritative classification/provisioning metadata so existing records and the pre-Administration UI remain readable; changing the label alone cannot expand a member’s effective permissions.
+- Moves last-owner protection from the role string to the active system owner Access Profile (`role-owner`) for user deactivation, membership deactivation and system-profile changes.
+- Separates Django administration from SESCCO administration: non-superusers are forced out of `is_staff`, and `merge_access_report --fail-on-errors` now rejects any non-superuser Django staff account.
+- Updates Payroll browser authorization controls so workspace visibility, edit state, approval, payment, settings and access visibility consume the server’s profile-derived workspace/capability snapshot instead of the role matrix.
+- Adds production reconciliation, regressions, `merge/single-access-authority.json` and a mandatory single-authority release gate. No Payroll formula, settlement calculation, document snapshot or Inventory quantity logic changes.
+- Binds this release to the exact 1.0.88 predecessor archive SHA-256 `9e4df9abef2a0417fd6f79f6cfbb70b333ee99b235fc2ec6e76efc420baaf565`.
+
+# 1.0.88 — Granular access authority foundation
+
+- Adds company-scoped `AccessProfile` and `AccessProfilePermission` authority with an explicit 86-key permission catalog covering Administration, Inventory, Internal Payroll, Rental Manpower and shared document/report/lifecycle surfaces.
+- Adds an **Access Administrator** compatibility role for user/access administration without automatic Inventory or Payroll operational authority.
+- Adds explicit membership scope modes (`all`, `selected`, `none`) plus normalized Project, Branch/Office and Inventory Location scope tables; every scope record validates the same company boundary as its membership.
+- Backfills every existing company with system access profiles derived from the current role matrix and assigns every existing membership to its equivalent profile with all three scopes defaulting to `all`, preserving current production access during migration.
+- Adds a request-level `EffectiveAccess` snapshot and membership-instance permission cache. Frontend bootstrap receives permission keys and scope modes only; large project/branch/location master lists are not injected into the shell.
+- Adds granular page/API permission decorators and reusable scope guards/queryset restrictors for the later User Management, Foreman and Storekeeper cutovers while leaving existing workspace/capability enforcement intact in this compatibility release.
+- Keeps membership creation and legacy role-change services synchronized with their system Access Profile and extends `merge_access_report --fail-on-errors` to reject missing profiles, cross-company profile assignments, missing system profiles and permission drift.
+- Adds `accounts.0005_granular_access_authority`, focused regressions, `merge/granular-access-authority.json` and a mandatory production release gate. No Payroll formula, settlement calculation, document snapshot or Inventory quantity logic changes.
+- Binds this release to the exact 1.0.87 predecessor archive SHA-256 `e6f162cf550d92101ed761831c582e501a801c9116d0a156e40433182a09f1d6`.
+
 # 1.0.87 — Contextual document finalization hotfix
 
 - Fixes Internal Employee → Documents → Finalize Salary Slip so the drawer preserves the selected employee and working period instead of falling back to the company-wide document-source search.

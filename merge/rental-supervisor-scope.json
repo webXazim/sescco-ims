@@ -1,0 +1,99 @@
+{
+  "release": "1.0.111",
+  "feature": "Rental Supervisor / Foreman scoped access",
+  "schema_change": true,
+  "migration": "apps/accounts/migrations/0008_rental_supervisor_profile.py",
+  "payroll_formula_change": false,
+  "settlement_formula_change": false,
+  "profile": {
+    "classification": "rental-supervisor",
+    "system_profile_key": "role-rental-supervisor",
+    "name": "Rental Supervisor / Foreman",
+    "permissions": [
+      "rental.overview.view",
+      "rental.workers.view",
+      "rental.assignments.view",
+      "rental.timesheets.view",
+      "rental.timesheets.edit",
+      "rental.timesheets.submit",
+      "rental.overtime.view",
+      "rental.overtime.edit",
+      "rental.overtime.submit"
+    ],
+    "prohibited_by_default": [
+      "rental.suppliers.view",
+      "rental.suppliers.manage",
+      "rental.workers.manage",
+      "rental.assignments.manage",
+      "rental.timesheets.approve",
+      "rental.overtime.approve",
+      "rental.adjustments.view",
+      "rental.adjustments.manage",
+      "rental.adjustments.approve",
+      "rental.settlements.view",
+      "rental.settlements.prepare",
+      "rental.settlements.approve",
+      "rental.payments.view",
+      "rental.payments.prepare",
+      "rental.payments.execute",
+      "rental.documents.view",
+      "rental.documents.finalize",
+      "rental.reports.view",
+      "rental.reports.export",
+      "shared.archive.view",
+      "shared.archive.manage",
+      "shared.trash.view",
+      "shared.trash.manage"
+    ]
+  },
+  "project_scope": {
+    "authority": "accounts.CompanyMembership.project_scope_mode + MembershipProjectScope",
+    "modes": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "enforced_surfaces": [
+      "Rental project directory",
+      "Rental workforce directory/detail",
+      "Assignment register/activity",
+      "Timesheet roster/entry/overtime/workflow",
+      "Document source lookup when separately authorized"
+    ],
+    "selected_scope_exposes_unassigned_supplier_pool": false
+  },
+  "workflow": {
+    "timesheet_edit": true,
+    "overtime_edit": true,
+    "submit_for_review": true,
+    "approve": false,
+    "lock": false,
+    "return_to_draft": false
+  },
+  "commercial_data": {
+    "supplier_directory": false,
+    "settlement_metrics": false,
+    "payment_data": false,
+    "assignment_rate_in_worker_payload": false,
+    "assignment_rate_in_activity_payload": false,
+    "assignment_rate_in_timesheet_roster": false,
+    "overtime_rate_visible": false,
+    "overtime_rate_override": false
+  },
+  "frontend": {
+    "authority": "server-issued effective access permissions and scope modes",
+    "settlement_context_loaded": false,
+    "navigation_pruned_by_exact_permissions": true,
+    "quick_add_pruned_by_exact_permissions": true
+  },
+  "direct_api_security": {
+    "exact_permission_checks": true,
+    "out_of_scope_project_returns_forbidden": true,
+    "supplier_finance_routes_forbidden": true,
+    "archive_trash_routes_require_shared_permissions": true
+  },
+  "predecessor": {
+    "release": "1.0.91-administration-users-ui",
+    "archive_sha256": "8d565a1567ad41c50c8a27815b0ee67bffdf56f6ccc2ae11c0473fbf1a3e3cdb"
+  }
+}

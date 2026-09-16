@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from apps.accounts.api_permissions import api_workspace_required
-from apps.accounts.permissions import membership_has_capability
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.api_permissions import api_method_access_required, api_workspace_required
+from apps.accounts.access_policy import membership_has_permission
+from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import handle_api_error, json_body
 from apps.internal_payroll.models import BankExportTemplate, EmployeePaymentProfile, SalaryPaymentBatch
 from apps.internal_payroll.selectors.payment import (
@@ -41,6 +42,11 @@ from apps.internal_payroll.services.payment import (
 )
 
 
+def _require_action_permission(request: HttpRequest, permission: AccessPermission) -> None:
+    if not membership_has_permission(request.company_membership, permission):
+        raise PermissionDenied("Your access profile does not allow this salary-payment workflow action.")
+
+
 def _period_start(value: object) -> date:
     if not isinstance(value, str):
         raise ValidationError({"period": "Period must use YYYY-MM format."})
@@ -64,6 +70,7 @@ def _request_period(request: HttpRequest, body: dict[str, object] | None = None)
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_PAYMENTS_VIEW)
 def salary_payments_api(request: HttpRequest) -> JsonResponse:
     try:
         period_start = _request_period(request)
@@ -83,6 +90,7 @@ def salary_payments_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=(AccessPermission.INTERNAL_PAYMENTS_VIEW, AccessPermission.INTERNAL_WPS_VIEW))
 def salary_payment_readiness_api(request: HttpRequest) -> JsonResponse:
     try:
         period_start = _request_period(request)
@@ -108,6 +116,7 @@ def salary_payment_readiness_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_PAYMENTS_VIEW)
 def salary_payment_batch_rows_api(request: HttpRequest, batch_id) -> JsonResponse:
     try:
         return JsonResponse({
@@ -128,6 +137,7 @@ def salary_payment_batch_rows_api(request: HttpRequest, batch_id) -> JsonRespons
 
 @require_http_methods(["GET", "PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=(AccessPermission.INTERNAL_PAYMENTS_VIEW, AccessPermission.INTERNAL_WPS_VIEW), PATCH=AccessPermission.INTERNAL_PAYMENTS_PREPARE, DELETE=AccessPermission.INTERNAL_PAYMENTS_PREPARE)
 def employee_payment_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -163,6 +173,7 @@ def employee_payment_profile_api(request: HttpRequest, employee_id) -> JsonRespo
 
 @require_http_methods(["PATCH"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_PAYMENTS_PREPARE)
 def salary_payment_settings_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
@@ -174,6 +185,7 @@ def salary_payment_settings_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_WPS_VIEW, POST=AccessPermission.INTERNAL_WPS_EXPORT)
 def bank_export_templates_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -210,6 +222,7 @@ def bank_export_templates_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_WPS_EXPORT, DELETE=AccessPermission.INTERNAL_WPS_EXPORT)
 def bank_export_template_detail_api(request: HttpRequest, template_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -249,6 +262,7 @@ def bank_export_template_detail_api(request: HttpRequest, template_id) -> JsonRe
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_WPS_EXPORT)
 def bank_export_template_lifecycle_api(request: HttpRequest, template_id) -> JsonResponse:
     try:
         body = json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
@@ -265,6 +279,7 @@ def bank_export_template_lifecycle_api(request: HttpRequest, template_id) -> Jso
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_PAYMENTS_PREPARE)
 def prepare_salary_payment_batch_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
@@ -284,6 +299,7 @@ def prepare_salary_payment_batch_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_WPS_EXPORT)
 def salary_payment_batch_export_api(request: HttpRequest, batch_id) -> HttpResponse:
     try:
         _body = json_body(request)
@@ -299,6 +315,7 @@ def salary_payment_batch_export_api(request: HttpRequest, batch_id) -> HttpRespo
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=(AccessPermission.INTERNAL_PAYMENTS_PREPARE, AccessPermission.INTERNAL_PAYMENTS_EXECUTE))
 def salary_payment_batch_workflow_api(request: HttpRequest, batch_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -310,12 +327,16 @@ def salary_payment_batch_workflow_api(request: HttpRequest, batch_id) -> JsonRes
             "reopen_payroll": "reopen",
         }.get(action, action)
         if action == "start":
+            _require_action_permission(request, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)
             batch = start_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, request=request)
         elif action == "cancel":
+            _require_action_permission(request, AccessPermission.INTERNAL_PAYMENTS_PREPARE)
             batch = cancel_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, reason=str(body.get("reason") or ""), request=request)
         elif action == "close":
+            _require_action_permission(request, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)
             batch = close_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, request=request)
         elif action == "reopen":
+            _require_action_permission(request, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)
             batch = reopen_salary_payment_batch(actor_membership=request.company_membership, batch_id=batch_id, reason=str(body.get("reason") or ""), request=request)
         else:
             raise ValidationError({"action": "Unsupported salary payment batch action."})
@@ -326,6 +347,7 @@ def salary_payment_batch_workflow_api(request: HttpRequest, batch_id) -> JsonRes
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_PAYMENTS_EXECUTE)
 def salary_payment_results_api(request: HttpRequest, batch_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -357,6 +379,7 @@ def salary_payment_results_api(request: HttpRequest, batch_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_PAYMENTS_EXECUTE)
 def salary_payment_row_retry_api(request: HttpRequest, row_id) -> JsonResponse:
     try:
         _body = json_body(request)

@@ -1,0 +1,33 @@
+{
+  "release": "1.0.111",
+  "feature": "sourcing-security-tenant-cross-module-isolation-certification",
+  "predecessor": {
+    "release": "1.0.109-sourcing-scale-hardening-benchmarking",
+    "archive_sha256": "4de083b4bf99c38672548b9ccbe7b0ef2a66f9d0a461af34ffde21b295d0c1a2"
+  },
+  "schema_change": false,
+  "business_feature_change": false,
+  "permission_catalog_change": false,
+  "certifies": [
+    "vendor_vs_manpower_permission_isolation",
+    "company_a_vs_company_b_tenant_isolation",
+    "view_only_direct_mutation_denial",
+    "archived_and_trash_finder_exclusion",
+    "immutable_vendor_and_workforce_verification_history",
+    "stale_session_revocation_after_sourcing_access_change",
+    "zero_operational_app_mutation_from_sourcing_create_and_verify_paths",
+    "database_relation_isolation_from_operational_apps"
+  ],
+  "operational_app_labels": [
+    "inventory",
+    "projects",
+    "internal_payroll",
+    "rental_manpower",
+    "documents",
+    "data_exchange"
+  ],
+  "future_accounting_behavior": "If an apps.accounting application is introduced, runtime certification automatically includes its managed models in zero-mutation row-count evidence.",
+  "runtime_test": "apps.sourcing.tests.test_security_certification",
+  "release_gate": "scripts/verify-sourcing-security-certification.py",
+  "operator_guide": "docs/SOURCING_SECURITY_CERTIFICATION.md"
+}

@@ -1,0 +1,41 @@
+{
+  "release": "1.0.111",
+  "feature": "Page-level View Only and Custom Access Profiles",
+  "schema_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "profile_authority": {
+    "custom_profiles_company_scoped": true,
+    "system_profiles_immutable": true,
+    "exact_permission_catalog": true,
+    "action_requires_page_view": true,
+    "self_profile_escalation_blocked": true,
+    "assigned_profile_delete_blocked": true,
+    "immutable_access_audit": true
+  },
+  "view_only_contract": {
+    "navigation_exact_page_permissions": true,
+    "direct_api_exact_page_permissions": true,
+    "mutations_require_action_permissions": true,
+    "internal_bootstrap_exact_page_permissions": true,
+    "unauthorized_routes_fail_closed": true,
+    "first_authorized_route_fallback": true,
+    "custom_profile_editor_view_only_mode": true
+  },
+  "covered_internal_pages": [
+    "employees",
+    "organization",
+    "attendance",
+    "salary-setup",
+    "payroll-runs",
+    "adjustments",
+    "payments",
+    "wps",
+    "documents",
+    "reports"
+  ],
+  "predecessor": {
+    "release": "1.0.93-inventory-storekeeper-scoped-authority",
+    "archive_sha256": "a202be1a77f796734822d4356abc3a681c7850cc3e3a74ac4f9aab1cfc94e2cb"
+  }
+}

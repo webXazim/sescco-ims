@@ -14,8 +14,8 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.permissions import membership_can_workspace
-from apps.accounts.roles import Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import branch_scope_ids, membership_allows_project, membership_has_permission
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.numbering import allocate_number
@@ -460,6 +460,37 @@ def _brand_asset_snapshot(field) -> dict[str, str] | None:
 
 
 @transaction.atomic
+
+def _assert_source_scope(*, membership, document_type: str, source) -> None:
+    """Fail closed when a finalized document source sits outside the actor scope."""
+    if document_type == DocumentType.SALARY_SLIP:
+        branch_ids = branch_scope_ids(membership)
+        if branch_ids is not None and source.branch_id_snapshot not in set(branch_ids):
+            raise PermissionDenied("The salary-slip source is outside your Branch/Office scope.")
+        return
+    if document_type == DocumentType.INTERNAL_TIMESHEET:
+        if membership.branch_scope_mode != "all":
+            raise PermissionDenied("Whole-company Internal Timesheet documents require company-wide Branch/Office scope.")
+        return
+    if document_type == DocumentType.SALARY_PAYMENT_RECEIPT:
+        branch_ids = branch_scope_ids(membership)
+        if branch_ids is not None and source.run_line.branch_id_snapshot not in set(branch_ids):
+            raise PermissionDenied("The salary-payment source is outside your Branch/Office scope.")
+        return
+    if document_type == DocumentType.RENTAL_TIMESHEET:
+        if not membership_allows_project(membership, source.project):
+            raise PermissionDenied("The Rental Timesheet source is outside your Project scope.")
+        return
+    if document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
+        if not membership_allows_project(membership, source.project):
+            raise PermissionDenied("The supplier-settlement source is outside your Project scope.")
+        return
+    if document_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
+        allocations = list(source.allocations.select_related("settlement__project"))
+        if not allocations or any(not membership_allows_project(membership, item.settlement.project) for item in allocations):
+            raise PermissionDenied("Supplier payment receipts are available only when every allocation is inside your Project scope.")
+
+
 def finalize_business_document(
     *,
     actor_membership,
@@ -475,8 +506,10 @@ def finalize_business_document(
         raise ValidationError({"document_type": "Unsupported document type."}) from exc
 
     workspace, source, payload = _load_source(company=company, document_type=normalized_type, source_id=source_id, invoice=invoice)
-    if not membership_can_workspace(actor_membership, Workspace(workspace)):
-        raise PermissionDenied("Your role cannot create documents for this workspace.")
+    required = AccessPermission.INTERNAL_DOCUMENTS_FINALIZE if workspace == DocumentWorkspace.INTERNAL else AccessPermission.RENTAL_DOCUMENTS_FINALIZE
+    if not (membership_has_permission(actor_membership, required) or membership_has_permission(actor_membership, AccessPermission.SHARED_DOCUMENTS_FINALIZE)):
+        raise PermissionDenied("Your access profile cannot create documents for this workspace.")
+    _assert_source_scope(membership=actor_membership, document_type=normalized_type, source=source)
 
     snapshot, entity_ref, entity_name, period_start, source_reference = payload
     source_model = source._meta.label_lower

@@ -1,0 +1,236 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>User Management · {{ APP_NAME }}</title>
+  <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}">
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/access-management.css' %}?v=1.0.111">
+</head>
+<body class="inventory-shell-v2 access-shell-v1" data-page="administration-users">
+<div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
+  <aside class="sidebar inventory-sidebar access-sidebar" id="inventorySidebar" aria-label="Administration navigation">
+    <div class="brand inventory-sidebar__brand">
+      <a class="brand-mark inventory-brand-mark" href="{% url 'accounts:administration' %}" aria-label="SESCCO MS administration"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="" aria-hidden="true"></a>
+      <a class="brand-copy inventory-brand-copy" href="{% url 'accounts:administration' %}">
+        <div class="brand-name">{{ APP_NAME }}</div>
+        <div class="brand-sub">{{ APP_SUBTITLE }}</div>
+      </a>
+      <button class="inventory-sidebar__collapse" type="button" data-inventory-sidebar-collapse aria-label="Collapse navigation" title="Collapse navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="inventory-sidebar__switchers">
+      {% include "partials/platform_switchers.html" %}
+    </div>
+
+    <nav class="nav inventory-sidebar__nav" aria-label="Administration sections">
+      <div class="nav-group inventory-nav-group">
+        <div class="nav-label">Access control</div>
+        <a class="nav-link active" href="#users" aria-current="page">
+          <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM18 8v6m3-3h-6"/></svg>
+          <span>Users</span>
+        </a>
+        {% if 'access.profiles.view' in ACCESS_CONTEXT.effective_access.permissions or 'access.profiles.manage' in ACCESS_CONTEXT.effective_access.permissions %}
+        <a class="nav-link" href="#profiles">
+          <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 4v5c0 4.4-2.9 7.8-7 9-4.1-1.2-7-4.6-7-9V7l7-4zM9 12l2 2 4-4"/></svg>
+          <span>Access Profiles</span>
+        </a>
+        {% endif %}
+        {% if 'access.audit.view' in ACCESS_CONTEXT.effective_access.permissions %}
+        <a class="nav-link" href="#history">
+          <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2M4.9 4.9A10 10 0 1 1 2 12m0-5v5h5"/></svg>
+          <span>Access History</span>
+        </a>
+        {% endif %}
+      </div>
+      <div class="nav-group inventory-nav-group access-nav-note">
+        <div class="nav-label">Authority</div>
+        <div class="access-sidebar-note">
+          <strong>Profile + scope</strong>
+          <span>Operational access is enforced by the backend, not by hidden controls.</span>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot inventory-sidebar__footer">
+      <details class="platform-account" data-platform-switcher>
+        <summary class="platform-account__trigger" aria-label="Open account menu" title="Account">
+          <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
+          <span class="platform-account__copy">
+            <strong>{{ request.user.display_name }}</strong>
+            <small>{{ ACCESS_CONTEXT.role_label }}</small>
+          </span>
+          <svg class="platform-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5-5 5 5"/></svg>
+        </summary>
+        <div class="platform-account__menu" role="menu" aria-label="Account menu">
+          <div class="platform-account__identity">
+            <span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span>
+            <span><strong>{{ request.user.display_name }}</strong><small>{{ ACCESS_CONTEXT.role_label }}</small></span>
+          </div>
+          <div class="platform-account__separator" aria-hidden="true"></div>
+          <form method="post" action="{% url 'accounts:logout' %}" class="platform-account__form">
+            {% csrf_token %}
+            <button class="platform-account__item" type="submit" role="menuitem">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9"/></svg>
+              <span><strong>Sign out</strong><small>End this authenticated session</small></span>
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
+    <button class="inventory-sidebar-resize-handle" type="button" data-inventory-sidebar-resize aria-label="Resize navigation sidebar" aria-valuemin="210" aria-valuemax="360" aria-valuenow="236" title="Drag to resize · Arrow keys adjust · Home resets"></button>
+  </aside>
+
+  <main class="main access-main">
+    <header class="topbar inventory-topbar access-topbar">
+      <button class="menu-button" data-sidebar-toggle aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <nav class="access-breadcrumb" aria-label="Breadcrumb"><span>Administration</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><strong>Users</strong></nav>
+      <div class="top-actions access-top-actions">
+        {% if 'access.profiles.manage' in ACCESS_CONTEXT.effective_access.permissions %}
+        <button class="btn btn-sm" type="button" data-access-add-profile>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 4v5c0 4.4-2.9 7.8-7 9-4.1-1.2-7-4.6-7-9V7l7-4zM12 8v8m-4-4h8"/></svg><span>Add Profile</span>
+        </button>
+        {% endif %}
+        {% if 'access.users.manage' in ACCESS_CONTEXT.effective_access.permissions %}
+        <button class="btn btn-primary btn-sm" type="button" data-access-add-user>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add User</span>
+        </button>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="content access-content">
+      <section class="access-page-head">
+        <div>
+          <span class="access-eyebrow">Administration</span>
+          <h1>User Management</h1>
+          <p>Manage company sign-in identities, Access Profiles and operational scopes. Every permission is revalidated by the backend.</p>
+        </div>
+        <div class="access-authority-chip" title="Application access is independent from Django administrator access.">
+          <span class="access-authority-chip__icon">AC</span>
+          <span><small>Authority</small><strong>Access Profile + Scope</strong></span>
+        </div>
+      </section>
+
+      <section class="access-panel" id="users" aria-labelledby="userRegisterHeading">
+        <header class="access-panel__head">
+          <div><span>Company access</span><h2 id="userRegisterHeading">Users</h2><p>Server-paged register. Search never loads the complete company user directory.</p></div>
+          <div class="access-panel__head-meta" id="accessRegisterMeta">Loading…</div>
+        </header>
+
+        <div class="access-toolbar">
+          <label class="access-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="accessUserSearch" placeholder="Search name, username, email or profile" autocomplete="off" aria-label="Search users">
+            <span id="accessSearchState" aria-live="polite"></span>
+          </label>
+          <div class="access-toolbar__filters">
+            <label class="access-filter"><span>Status</span><select id="accessUserStatus" class="select"><option value="all">All users</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+            <label class="access-filter"><span>Rows</span><select id="accessUserPageSize" class="select"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>
+          </div>
+        </div>
+
+        <div class="access-table-wrap" id="accessUserTableWrap" aria-busy="true">
+          <table class="access-table">
+            <thead><tr><th>User</th><th>Access Profile</th><th>Operational Scope</th><th>Status</th><th>Last sign-in</th><th class="access-actions-col"><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="accessUserRows"><tr><td colspan="6"><div class="access-loading">Loading company users…</div></td></tr></tbody>
+          </table>
+        </div>
+        <footer class="access-table-footer">
+          <span id="accessPageLabel">Page 1</span>
+          <div class="access-pagination">
+            <button class="btn btn-sm" type="button" id="accessPrevPage" disabled>Previous</button>
+            <button class="btn btn-sm" type="button" id="accessNextPage" disabled>Next</button>
+          </div>
+        </footer>
+      </section>
+
+      {% if 'access.profiles.view' in ACCESS_CONTEXT.effective_access.permissions or 'access.profiles.manage' in ACCESS_CONTEXT.effective_access.permissions %}
+      <section class="access-panel" id="profiles" aria-labelledby="profileRegisterHeading">
+        <header class="access-panel__head">
+          <div><span>Authorization policy</span><h2 id="profileRegisterHeading">Access Profiles</h2><p>Choose exactly which pages and actions a user can access. Vendor Sourcing, Manpower Sourcing and their reference masters are independently assignable as view-only or edit authority.</p></div>
+          <div class="access-panel__head-meta" id="accessProfileMeta">Loading…</div>
+        </header>
+        <div class="access-table-wrap" id="accessProfileTableWrap" aria-busy="true">
+          <table class="access-table access-profile-table">
+            <thead><tr><th>Profile</th><th>Coverage</th><th>Permissions</th><th>Assigned users</th><th>Type</th><th class="access-actions-col"><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody id="accessProfileRows"><tr><td colspan="6"><div class="access-loading">Loading Access Profiles…</div></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if 'access.audit.view' in ACCESS_CONTEXT.effective_access.permissions %}
+      <section class="access-panel" id="history" aria-labelledby="accessHistoryHeading">
+        <header class="access-panel__head">
+          <div><span>Immutable access ledger</span><h2 id="accessHistoryHeading">Access History</h2><p>Review user, profile and credential-security changes. Recovery always creates a new audit event; history itself is never rewritten.</p></div>
+          <div class="access-panel__head-meta" id="accessHistoryMeta">Loading…</div>
+        </header>
+        <div class="access-toolbar">
+          <label class="access-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="accessHistorySearch" placeholder="Search action, target or administrator" autocomplete="off" aria-label="Search Access History">
+            <span id="accessHistorySearchState" aria-live="polite"></span>
+          </label>
+          <div class="access-toolbar__filters">
+            <label class="access-filter"><span>Target</span><select id="accessHistoryTarget" class="select"><option value="all">All access</option><option value="users">Users</option><option value="profiles">Profiles</option></select></label>
+            <label class="access-filter"><span>Rows</span><select id="accessHistoryPageSize" class="select"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>
+          </div>
+        </div>
+        <div class="access-table-wrap" id="accessHistoryTableWrap" aria-busy="true">
+          <table class="access-table access-history-table">
+            <thead><tr><th>When</th><th>Administrator</th><th>Action</th><th>Target</th><th>Change</th></tr></thead>
+            <tbody id="accessHistoryRows"><tr><td colspan="5"><div class="access-loading">Loading Access History…</div></td></tr></tbody>
+          </table>
+        </div>
+        <footer class="access-table-footer">
+          <span id="accessHistoryPageLabel">Page 1</span>
+          <div class="access-pagination">
+            <button class="btn btn-sm" type="button" id="accessHistoryPrevPage" disabled>Previous</button>
+            <button class="btn btn-sm" type="button" id="accessHistoryNextPage" disabled>Next</button>
+          </div>
+        </footer>
+      </section>
+      {% endif %}
+
+      <aside class="access-footnote">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>
+        <span><strong>Django administration is separate.</strong> SESCCO Access Administrators remain normal application users and do not receive Django staff access.</span>
+      </aside>
+    </div>
+  </main>
+  <button class="inventory-collapsed-rail-toggle" type="button" data-inventory-sidebar-rail-toggle aria-label="Expand navigation" title="Expand navigation">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
+</div>
+
+<div class="access-drawer-scrim" id="accessDrawerScrim" hidden></div>
+<aside class="access-drawer" id="accessDrawer" aria-hidden="true" aria-label="User access editor" hidden>
+  <header class="access-drawer__header">
+    <div><span class="access-eyebrow" id="accessDrawerEyebrow">User access</span><h2 id="accessDrawerTitle">User</h2><p id="accessDrawerSubtitle">Company identity and operational authority.</p></div>
+    <button class="access-icon-btn" type="button" id="accessDrawerClose" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </header>
+  <div class="access-drawer__body" id="accessDrawerBody"></div>
+  <footer class="access-drawer__footer" id="accessDrawerFooter"></footer>
+</aside>
+
+<div class="toast-stack" id="toastStack" aria-live="polite"></div>
+{{ ACCESS_CONTEXT|json_script:"administration-access-context" }}
+<meta id="administration-csrf-token" data-token="{{ csrf_token }}">
+<script src="{% static 'platform/js/form-validation.js' %}"></script>
+<script src="{% static 'platform/js/shell-switchers.js' %}"></script>
+<script src="{% static 'platform/js/inventory-shell.js' %}"></script>
+<script src="{% static 'platform/js/access-management.js' %}?v=1.0.111"></script>
+</body>
+</html>

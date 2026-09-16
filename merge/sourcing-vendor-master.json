@@ -1,0 +1,67 @@
+{
+  "release": "1.0.111",
+  "purpose": "Promote Vendor Sourcing from a permission-only shell into a production reference Vendor master with scalable directory search, company-scoped CRUD, contact persons, reversible lifecycle controls and immutable audit evidence while remaining fully isolated from Inventory, Payroll and Accounting.",
+  "predecessor": {
+    "release": "1.0.100-sourcing-access-control-authority",
+    "archive_sha256": "4fba174a74f472ef419b62a05082ceb12625a439d925c6006e3f1582d388db88"
+  },
+  "schema_change": true,
+  "schema_change_scope": "Adds sourcing.SourcingVendorContact only; existing SourcingVendor identity is preserved.",
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "operational_integration": false,
+  "permissions": {
+    "read": "sourcing.vendors.view",
+    "write": "sourcing.vendors.manage"
+  },
+  "directory": {
+    "default_page_size": 50,
+    "allowed_page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "server_search": true,
+    "server_status_filters": [
+      "active",
+      "inactive",
+      "archived",
+      "trash",
+      "all"
+    ],
+    "server_sorting": true,
+    "company_scoped": true
+  },
+  "lifecycle": {
+    "status": [
+      "active",
+      "inactive"
+    ],
+    "archive_reversible": true,
+    "trash_retention_days": 30,
+    "trash_restore": true,
+    "hard_delete_from_ui": false
+  },
+  "audit_actions": [
+    "sourcing.vendor.created",
+    "sourcing.vendor.updated",
+    "sourcing.vendor.status_changed",
+    "sourcing.vendor.archived",
+    "sourcing.vendor.archive_restored",
+    "sourcing.vendor.trashed",
+    "sourcing.vendor.trash_restored",
+    "sourcing.vendor.contact_created",
+    "sourcing.vendor.contact_updated",
+    "sourcing.vendor.contact_deactivated"
+  ],
+  "isolation": [
+    "Vendor records remain sourcing.SourcingVendor and never inventory.Supplier",
+    "No Vendor action creates stock, purchase, payable, payroll, worker or accounting records",
+    "Vendor contacts are sourcing-owned children only",
+    "all reads and mutations are scoped to request.company and explicit sourcing.vendors permissions"
+  ],
+  "migration": "apps/sourcing/migrations/0002_vendor_directory_master.py",
+  "runtime_test_label": "apps.sourcing.tests.test_vendor_master",
+  "release_gate": "scripts/verify-sourcing-vendor-master.py",
+  "operator_guide": "docs/SOURCING_VENDOR_MASTER.md"
+}

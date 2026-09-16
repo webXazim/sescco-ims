@@ -19,8 +19,8 @@ def text(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 version = text("VERSION").strip()
-if version != "1.0.87":
-    fail(f"VERSION must be 1.0.87, found {version!r}")
+if version != "1.0.111":
+    fail(f"VERSION must be 1.0.111, found {version!r}")
 contract = json.loads(text("merge/payroll-rental-adjustment-selector-scale.json"))
 if contract.get("release") != version:
     fail("selector-scale contract release does not match VERSION")
@@ -71,7 +71,7 @@ for needle in (
     "effective_from__lte=transaction_date",
     "project__status=ProjectStatus.ACTIVE",
     "project__deleted_at__isnull=True",
-    'project = rental_project_for_company(company=request.company, identifier=project_id)',
+    'project = _scoped_project(request, project_id)',
 ):
     if needle not in api:
         fail(f"bounded lookup API protection missing: {needle}")
@@ -137,4 +137,4 @@ for name in (
     if name not in tests:
         fail(f"Django regression missing: {name}")
 
-print("Verified SESCCO MS 1.0.87 rental adjustment selector UX/scale safety: embedded search, bounded dropdown paging, clean aligned fields, assignment-aware projects and no full-master hydration.")
+print("Verified SESCCO MS 1.0.111 rental adjustment selector UX/scale safety: embedded search, bounded dropdown paging, clean aligned fields, assignment-aware projects and no full-master hydration.")

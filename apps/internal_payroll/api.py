@@ -8,7 +8,9 @@ from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from apps.accounts.api_permissions import api_workspace_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission, restrict_branches, restrict_current_employee_branches
+from apps.accounts.api_permissions import api_method_access_required, api_workspace_required
 from apps.accounts.roles import Workspace
 from apps.core.query_controls import apply_ordering, parse_list_controls, serialize_list
 from apps.internal_payroll.api_utils import (
@@ -173,10 +175,12 @@ def _employee_page_financial_context(*, company, employee_ids, period_value: str
     return profiles, statuses
 
 
-def _employee_scope_summary(*, company, branch_id=None, department_id=None, period_value: str = "") -> dict[str, object]:
+def _employee_scope_summary(*, company, membership=None, branch_id=None, department_id=None, period_value: str = "") -> dict[str, object]:
     current = employees_for_company(
         company=company, branch_id=branch_id, department_id=department_id, archived=False
     )
+    if membership is not None:
+        current = restrict_current_employee_branches(current, membership)
     ids = current.values("pk")
     aggregate = current.aggregate(
         employee_count=Count("pk"),
@@ -241,19 +245,21 @@ def _employee_scope_summary(*, company, branch_id=None, department_id=None, peri
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_EMPLOYEES_VIEW)
 def employee_summary_api(request: HttpRequest) -> JsonResponse:
     try:
         branch_id = request.GET.get("branch") or None
         department_id = request.GET.get("department") or None
         summary = _employee_scope_summary(
             company=request.company,
+            membership=request.company_membership,
             branch_id=branch_id,
             department_id=department_id,
             period_value=str(request.GET.get("period", "")).strip(),
         )
         if branch_id is None and department_id is None:
-            summary["archivedEmployeeCount"] = employees_for_company(
-                company=request.company, archived=True
+            summary["archivedEmployeeCount"] = restrict_current_employee_branches(
+                employees_for_company(company=request.company, archived=True), request.company_membership
             ).count()
         return JsonResponse({"ok": True, "summary": summary})
     except Exception as exc:
@@ -297,6 +303,7 @@ def _lookup_page(request: HttpRequest, rows, *, serializer, min_query: int = 2) 
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=(AccessPermission.INTERNAL_ORGANIZATION_VIEW, AccessPermission.INTERNAL_EMPLOYEES_MANAGE))
 def organization_lookup_api(request: HttpRequest) -> JsonResponse:
     """Bounded Branch/Department selector lookup for editing drawers."""
     try:
@@ -304,6 +311,7 @@ def organization_lookup_api(request: HttpRequest) -> JsonResponse:
         query = str(request.GET.get("q", "") or "").strip()
         if kind == "branch":
             rows = Branch.objects.for_company(request.company).filter(deleted_at__isnull=True, archived_at__isnull=True, is_active=True)
+            rows = restrict_branches(rows, request.company_membership)
             if query:
                 rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(location__icontains=query))
             rows = rows.order_by("code", "name")
@@ -321,11 +329,13 @@ def organization_lookup_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=(AccessPermission.INTERNAL_EMPLOYEES_VIEW, AccessPermission.INTERNAL_ATTENDANCE_VIEW, AccessPermission.INTERNAL_SALARY_SETUP_VIEW, AccessPermission.INTERNAL_ADJUSTMENTS_VIEW, AccessPermission.INTERNAL_PAYMENTS_VIEW, AccessPermission.INTERNAL_WPS_VIEW))
 def employee_lookup_api(request: HttpRequest) -> JsonResponse:
     """Thin employee lookup for salary-structure and other bounded selectors."""
     try:
         query = str(request.GET.get("q", "") or "").strip()
         rows = employees_for_company(company=request.company, query=query, archived=False, deleted=False)
+        rows = restrict_current_employee_branches(rows, request.company_membership)
         return _lookup_page(
             request, rows,
             serializer=lambda item: {
@@ -339,6 +349,7 @@ def employee_lookup_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_ORGANIZATION_VIEW, POST=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def branches_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -355,6 +366,7 @@ def branches_api(request: HttpRequest) -> JsonResponse:
             rows = branches_for_company(
                 company=request.company, query=request.GET.get("q", ""), active=active, archived=archived,
             )
+            rows = restrict_branches(rows, request.company_membership)
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_branch)
             return JsonResponse({"ok": True, "results": results, "meta": meta})
@@ -377,6 +389,7 @@ def branches_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_ORGANIZATION_MANAGE, DELETE=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def branch_detail_api(request: HttpRequest, branch_id) -> JsonResponse:
     try:
         body = _json_body(request)
@@ -406,6 +419,7 @@ def branch_detail_api(request: HttpRequest, branch_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def branch_lifecycle_api(request: HttpRequest, branch_id) -> JsonResponse:
     try:
         body = _json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
@@ -424,6 +438,7 @@ def branch_lifecycle_api(request: HttpRequest, branch_id) -> JsonResponse:
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_ORGANIZATION_VIEW, POST=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def departments_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -432,6 +447,7 @@ def departments_api(request: HttpRequest) -> JsonResponse:
             active, archived = _organization_master_filter(request.GET.get("status", ""))
             rows = departments_for_company(
                 company=request.company, query=request.GET.get("q", ""), active=active, archived=archived,
+                membership=request.company_membership,
             )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_department)
@@ -452,6 +468,7 @@ def departments_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_ORGANIZATION_MANAGE, DELETE=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def department_detail_api(request: HttpRequest, department_id) -> JsonResponse:
     try:
         body = _json_body(request)
@@ -478,6 +495,7 @@ def department_detail_api(request: HttpRequest, department_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_ORGANIZATION_MANAGE)
 def department_lifecycle_api(request: HttpRequest, department_id) -> JsonResponse:
     try:
         body = _json_body(request); action = str(body.get("action", "")).strip().lower().replace("-", "_")
@@ -496,6 +514,7 @@ def department_lifecycle_api(request: HttpRequest, department_id) -> JsonRespons
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_EMPLOYEES_VIEW, POST=AccessPermission.INTERNAL_EMPLOYEES_MANAGE)
 def employees_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -514,6 +533,7 @@ def employees_api(request: HttpRequest) -> JsonResponse:
                 department_id=request.GET.get("department") or None,
                 archived=_employee_archived_query(request.GET.get("archived", "")),
             )
+            rows = restrict_current_employee_branches(rows, request.company_membership)
             employee_id = str(request.GET.get("employee_id", "")).strip()
             if employee_id:
                 rows = rows.filter(pk=employee_id)
@@ -525,6 +545,8 @@ def employees_api(request: HttpRequest) -> JsonResponse:
             # classification explicit, but no longer constructs the full salary-payment
             # shell (all profiles + all batches + all batch rows) merely to filter employees.
             if wps_filter and wps_filter != "all":
+                if not membership_has_permission(request.company_membership, AccessPermission.INTERNAL_WPS_VIEW):
+                    raise ValidationError({"wps": "WPS filtering requires WPS view access."})
                 if wps_filter not in {"ready", "needs_setup"}:
                     raise ValidationError({"wps": "WPS filter must be ready, needs_setup, or all."})
                 if not period_value:
@@ -560,42 +582,53 @@ def employees_api(request: HttpRequest) -> JsonResponse:
 
             results, meta = serialize_list(rows, controls=controls, serializer=serialize_employee)
             page_ids = [row.get("id") for row in results if row.get("id")]
-            basic_salary_by_employee, salary_configured_ids = _employee_basic_salary_map(
-                company=request.company, employee_ids=page_ids
-            )
 
-            profile_models, page_readiness = _employee_page_financial_context(
-                company=request.company, employee_ids=page_ids, period_value=period_value
-            )
-            profiles = {
-                employee_id: serialize_payment_profile(profile)
-                for employee_id, profile in profile_models.items()
-            }
-            readiness_by_employee = {
-                employee_id: (wps_readiness_by_employee or {}).get(employee_id, status)
-                for employee_id, status in page_readiness.items()
-            }
-            if wps_readiness_by_employee is not None:
-                for employee_id in page_ids:
-                    readiness_by_employee.setdefault(
-                        employee_id, wps_readiness_by_employee.get(employee_id, "Needs setup")
-                    )
+            can_salary = membership_has_permission(request.company_membership, AccessPermission.INTERNAL_SALARY_SETUP_VIEW) or membership_has_permission(request.company_membership, AccessPermission.INTERNAL_PAYROLL_RUNS_VIEW)
+            can_payment = membership_has_permission(request.company_membership, AccessPermission.INTERNAL_PAYMENTS_VIEW) or membership_has_permission(request.company_membership, AccessPermission.INTERNAL_WPS_VIEW)
+            basic_salary_by_employee, salary_configured_ids = ({}, set())
+            if can_salary:
+                basic_salary_by_employee, salary_configured_ids = _employee_basic_salary_map(
+                    company=request.company, employee_ids=page_ids
+                )
+
+            profiles = {}
+            readiness_by_employee = {}
+            if can_payment:
+                profile_models, page_readiness = _employee_page_financial_context(
+                    company=request.company, employee_ids=page_ids, period_value=period_value
+                )
+                profiles = {
+                    employee_id: serialize_payment_profile(profile)
+                    for employee_id, profile in profile_models.items()
+                }
+                readiness_by_employee = {
+                    employee_id: (wps_readiness_by_employee or {}).get(employee_id, status)
+                    for employee_id, status in page_readiness.items()
+                }
+                if wps_readiness_by_employee is not None:
+                    for employee_id in page_ids:
+                        readiness_by_employee.setdefault(
+                            employee_id, wps_readiness_by_employee.get(employee_id, "Needs setup")
+                        )
 
             for result in results:
                 employee_id = str(result.get("id"))
-                profile = profiles.get(employee_id)
-                result["paymentProfile"] = profile
-                result["bank"] = profile.get("bankName", "") if profile else ""
-                result["account"] = profile.get("destinationMasked", "") if profile else ""
-                result["paymentMethod"] = profile.get("destinationLabel", "") if profile else "Not set"
-                if employee_id in readiness_by_employee:
-                    result["wps"] = readiness_by_employee[employee_id]
-                elif profile:
-                    result["wps"] = "Pending" if profile.get("active") and profile.get("wpsEnabled") else "Not configured"
-                else:
-                    result["wps"] = "Needs setup"
-                result["basicSalary"] = basic_salary_by_employee.get(employee_id)
-                result["salaryConfigured"] = employee_id in salary_configured_ids
+                if can_payment:
+                    profile = profiles.get(employee_id)
+                    result["paymentProfile"] = profile
+                    result["bank"] = profile.get("bankName", "") if profile else ""
+                    result["account"] = profile.get("destinationMasked", "") if profile else ""
+                    result["paymentMethod"] = profile.get("destinationLabel", "") if profile else "Not set"
+                    if employee_id in readiness_by_employee:
+                        result["wps"] = readiness_by_employee[employee_id]
+                    elif profile:
+                        result["wps"] = "Pending" if profile.get("active") and profile.get("wpsEnabled") else "Not configured"
+                    else:
+                        result["wps"] = "Needs setup"
+                if can_salary:
+                    result["basicSalary"] = basic_salary_by_employee.get(employee_id)
+                    result["salaryConfigured"] = employee_id in salary_configured_ids
+
 
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = _json_body(request)
@@ -638,9 +671,12 @@ def employees_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_EMPLOYEES_VIEW)
 def employee_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
-        employee = employees_for_company(company=request.company, archived=None).get(pk=employee_id)
+        employee = restrict_current_employee_branches(
+            employees_for_company(company=request.company, archived=None), request.company_membership
+        ).get(pk=employee_id)
         period_start = _employee_profile_period(request.GET.get("period", ""))
         return JsonResponse({
             "ok": True,
@@ -649,6 +685,7 @@ def employee_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
                 company=request.company,
                 employee=employee,
                 period_start=period_start,
+                membership=request.company_membership,
             ),
         })
     except Exception as exc:
@@ -657,6 +694,7 @@ def employee_profile_api(request: HttpRequest, employee_id) -> JsonResponse:
 
 @require_http_methods(["PATCH", "DELETE"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_EMPLOYEES_MANAGE, DELETE=AccessPermission.INTERNAL_EMPLOYEES_MANAGE)
 def employee_detail_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
         body = _json_body(request)
@@ -700,6 +738,7 @@ def employee_detail_api(request: HttpRequest, employee_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_EMPLOYEES_MANAGE)
 def employee_lifecycle_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
         body = _json_body(request)
@@ -737,6 +776,7 @@ def employee_lifecycle_api(request: HttpRequest, employee_id) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=(AccessPermission.INTERNAL_EMPLOYEES_MANAGE, AccessPermission.INTERNAL_ORGANIZATION_MANAGE))
 def employee_organization_api(request: HttpRequest, employee_id) -> JsonResponse:
     try:
         body = _json_body(request)

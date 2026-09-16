@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.accounts.access_policy import branch_scope_ids, project_scope_ids
 from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_count, active_cascade_child_ids, active_trash
 from apps.internal_payroll.models import Branch, Department, InternalEmployee
 from apps.projects.models import Project
@@ -82,7 +83,7 @@ def _record_page_number(value: object) -> int:
         return 1
 
 
-def _record_groups(*, company, workspace: str, bucket: str, query: str):
+def _record_groups(*, company, workspace: str, bucket: str, query: str, membership=None):
     groups = []
     q = str(query or "").strip()
     if workspace == "internal":
@@ -95,6 +96,19 @@ def _record_groups(*, company, workspace: str, bucket: str, query: str):
             branch_qs = active_trash(Branch.objects.for_company(company)).order_by("name")
             dept_qs = active_trash(Department.objects.for_company(company)).order_by("name")
             emp_qs = active_trash(InternalEmployee.objects.for_company(company)).exclude(pk__in=cascade_ids).order_by("full_name")
+        branch_ids = branch_scope_ids(membership) if membership is not None else None
+        if branch_ids is not None:
+            if not branch_ids:
+                branch_qs = branch_qs.none(); dept_qs = dept_qs.none(); emp_qs = emp_qs.none()
+            else:
+                branch_qs = branch_qs.filter(pk__in=branch_ids)
+                # Departments are company-wide masters rather than Branch-owned records;
+                # branch-restricted recovery views fail closed instead of leaking names/counts.
+                dept_qs = dept_qs.none()
+                emp_qs = emp_qs.filter(
+                    organization_assignments__effective_to__isnull=True,
+                    organization_assignments__branch_id__in=branch_ids,
+                ).distinct()
         if q:
             branch_qs = branch_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
             dept_qs = dept_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
@@ -112,6 +126,16 @@ def _record_groups(*, company, workspace: str, bucket: str, query: str):
             supplier_qs = active_trash(ManpowerSupplier.objects.for_company(company)).order_by("name")
             worker_qs = active_trash(RentalWorker.objects.for_company(company)).exclude(pk__in=cascade_ids).select_related("supplier").order_by("full_name")
             project_qs = active_trash(Project.objects.for_company(company)).order_by("code")
+        project_ids = project_scope_ids(membership) if membership is not None else None
+        if project_ids is not None:
+            if not project_ids:
+                supplier_qs = supplier_qs.none(); worker_qs = worker_qs.none(); project_qs = project_qs.none()
+            else:
+                project_qs = project_qs.filter(pk__in=project_ids)
+                worker_qs = worker_qs.filter(rental_assignments__project_id__in=project_ids).distinct()
+                # Supplier lifecycle is cross-project. A project-scoped actor must not infer
+                # the company supplier master through Archive/Delete recovery.
+                supplier_qs = supplier_qs.none()
         if q:
             supplier_qs = supplier_qs.filter(Q(code__icontains=q) | Q(name__icontains=q))
             worker_qs = worker_qs.filter(Q(worker_number__icontains=q) | Q(full_name__icontains=q) | Q(supplier__name__icontains=q))
@@ -142,11 +166,11 @@ def _record_entry(*, workspace: str, bucket: str, kind: str, row):
     raise ValueError("Unknown record-management kind.")
 
 
-def record_management_page_context(*, company, workspace: str, bucket: str, page: object = 1, page_size: object = 50, query: str = "") -> dict[str, object]:
+def record_management_page_context(*, company, workspace: str, bucket: str, page: object = 1, page_size: object = 50, query: str = "", membership=None) -> dict[str, object]:
     bucket = str(bucket or "archive").strip().lower()
     if bucket not in {"archive", "trash"}:
         raise ValueError("Record bucket must be archive or trash.")
-    groups = _record_groups(company=company, workspace=workspace, bucket=bucket, query=query)
+    groups = _record_groups(company=company, workspace=workspace, bucket=bucket, query=query, membership=membership)
     counts = [(kind, qs, qs.count()) for kind, qs in groups]
     count = sum(item[2] for item in counts)
     size = _record_page_size(page_size)

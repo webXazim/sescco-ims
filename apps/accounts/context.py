@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from .roles import role_definition, role_matrix_for_frontend
+from .access_policy import effective_access_for_membership
+from .permissions import membership_can_edit, membership_can_workspace, membership_has_capability
+from .roles import Capability, Workspace, role_matrix_for_frontend
 
 
 def access_context_for_request(request) -> dict[str, object]:
@@ -9,16 +11,25 @@ def access_context_for_request(request) -> dict[str, object]:
     if membership is None or company is None:
         return {}
 
-    definition = role_definition(membership.role)
+    effective_access = getattr(request, "effective_access", None) or effective_access_for_membership(membership)
+    workspaces = [workspace.value for workspace in Workspace if membership_can_workspace(membership, workspace)]
+    edit_workspaces = [workspace.value for workspace in Workspace if membership_can_edit(membership, workspace)]
+    capabilities = [capability.value for capability in Capability if membership_has_capability(membership, capability)]
+    profile_name = effective_access.profile_name if effective_access else "No access profile"
     return {
         "company_id": str(company.id),
         "company_name": company.name,
         "membership_id": str(membership.id),
+        # Compatibility classification only. Browser/backend authorization must use
+        # workspaces/capabilities/effective_access below, all derived from AccessProfile.
         "role": membership.role,
-        "role_label": definition.label,
+        "role_label": profile_name,
         "role_matrix": role_matrix_for_frontend(),
-        "workspaces": [item.value for item in definition.workspaces],
-        "capabilities": sorted(item.value for item in definition.capabilities),
+        "workspaces": workspaces,
+        "edit_workspaces": edit_workspaces,
+        "capabilities": sorted(capabilities),
+        "effective_access": effective_access.as_frontend_dict() if effective_access else {},
+        "must_change_password": bool(membership.user.must_change_password),
     }
 
 
@@ -50,6 +61,26 @@ def platform_context_for_request(request) -> dict[str, object]:
             "available": True,
             "active": current_module is PlatformModule.PAYROLL,
             "code": "PM",
+        })
+    if membership_can_module(membership, PlatformModule.SOURCING):
+        modules.append({
+            "key": PlatformModule.SOURCING.value,
+            "label": "Sourcing Directory",
+            "description": "Reference-only vendor and manpower sourcing",
+            "url": reverse("sourcing:home"),
+            "available": True,
+            "active": current_module is PlatformModule.SOURCING,
+            "code": "SD",
+        })
+    if membership_can_module(membership, PlatformModule.ADMINISTRATION):
+        modules.append({
+            "key": PlatformModule.ADMINISTRATION.value,
+            "label": "Administration",
+            "description": "Users, access profiles and permissions",
+            "url": reverse("accounts:administration"),
+            "available": True,
+            "active": current_module is PlatformModule.ADMINISTRATION,
+            "code": "AD",
         })
     return {
         "current_module": current_module.value if current_module else None,

@@ -9,8 +9,8 @@ from django.core.paginator import Paginator
 from django.db.models import Count, DecimalField, F, Max, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce
 
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.core.models import AuditArea, AuditEvent, Company
 from apps.internal_payroll.models import (
     AttendancePeriodStatus,
@@ -359,7 +359,7 @@ def _run_queryset(company: Company):
     )
     return (
         PayrollRun.objects.for_company(company)
-        .select_related("attendance_period", "calculated_by", "submitted_by", "approved_by")
+        .select_related("attendance_period", "calculated_by", "submitted_by", "reviewed_by", "approved_by")
         .prefetch_related(Prefetch("lines", queryset=lines, to_attr="payroll_lines"))
     )
 
@@ -450,6 +450,7 @@ def _audit_history(run: PayrollRun | None) -> list[dict[str, object]]:
         "internal.payroll_run.reset_to_draft": "Reset to Draft",
         "internal.payroll_run.submitted_for_review": "Submitted for review",
         "internal.payroll_run.returned_for_changes": "Returned for changes",
+        "internal.payroll_run.reviewed": "Finance review signed off",
         "internal.payroll_run.approved": "Payroll approved",
     }
     return [
@@ -465,12 +466,9 @@ def _audit_history(run: PayrollRun | None) -> list[dict[str, object]]:
 
 def _run_payload(run: PayrollRun | None, *, period_start: date, membership=None) -> dict[str, object]:
     status = run.status if run else PayrollRunStatus.DRAFT
-    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL))
-    can_approve = bool(
-        membership
-        and membership_can_workspace(membership, Workspace.INTERNAL)
-        and membership_has_capability(membership, Capability.APPROVE)
-    )
+    can_prepare = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE))
+    can_review = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW))
+    can_approve = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE))
     return {
         "id": str(run.pk) if run else None,
         "exists": run is not None,
@@ -485,10 +483,14 @@ def _run_payload(run: PayrollRun | None, *, period_start: date, membership=None)
         "calculatedBy": _user_label(run.calculated_by) if run else None,
         "submittedAt": run.submitted_at.isoformat() if run and run.submitted_at else None,
         "submittedBy": _user_label(run.submitted_by) if run else None,
+        "reviewedAt": run.reviewed_at.isoformat() if run and run.reviewed_at else None,
+        "reviewedBy": _user_label(run.reviewed_by) if run else None,
         "approvedAt": run.approved_at.isoformat() if run and run.approved_at else None,
         "approvedBy": _user_label(run.approved_by) if run else None,
         "reviewerNote": run.reviewer_note if run else "",
-        "canEdit": can_edit,
+        "canEdit": can_prepare,
+        "canPrepare": can_prepare,
+        "canReview": can_review,
         "canApprove": can_approve,
         "totals": {
             "employeeCount": run.employee_count if run else 0,
@@ -533,7 +535,7 @@ def _run_header_for_period(*, company: Company, period_start: date) -> PayrollRu
     start, _end = month_bounds(period_start)
     return (
         PayrollRun.objects.for_company(company)
-        .select_related("attendance_period", "calculated_by", "submitted_by", "approved_by")
+        .select_related("attendance_period", "calculated_by", "submitted_by", "reviewed_by", "approved_by")
         .filter(period_start=start)
         .first()
     )
@@ -807,21 +809,25 @@ def payroll_run_page_context(
     attendance_calculable = attendance_status in {AttendancePeriodStatus.APPROVED.label, AttendancePeriodStatus.LOCKED.label}
     attendance_locked = attendance_status == AttendancePeriodStatus.LOCKED.label
     run_status = run.status if run else PayrollRunStatus.DRAFT
-    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL))
-    can_approve = bool(membership and membership_can_workspace(membership, Workspace.INTERNAL) and membership_has_capability(membership, Capability.APPROVE))
+    can_prepare = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE))
+    can_review = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW))
+    can_approve = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE))
     source_clear = not source_errors and int(summary.get("blocked") or 0) == 0
+    review_signed_off = bool(run and run.reviewed_at and run.reviewed_by_id)
     allowed_actions: list[str] = []
-    if can_edit and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
+    if can_prepare and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
         allowed_actions.append("calculate")
-    if can_edit and run_status == PayrollRunStatus.CALCULATED:
+    if can_prepare and run_status == PayrollRunStatus.CALCULATED:
         allowed_actions.append("reset")
         if attendance_locked and source_clear:
             allowed_actions.append("submit_review")
-    if can_approve and run_status == PayrollRunStatus.REVIEW:
+    if can_review and run_status == PayrollRunStatus.REVIEW:
         allowed_actions.append("return_for_changes")
-        if attendance_locked and source_clear:
-            allowed_actions.append("approve")
-    next_action = next((item for item in ("calculate", "submit_review", "approve") if item in allowed_actions), None)
+        if attendance_locked and source_clear and not review_signed_off:
+            allowed_actions.append("review")
+    if can_approve and run_status == PayrollRunStatus.REVIEW and review_signed_off and attendance_locked and source_clear:
+        allowed_actions.append("approve")
+    next_action = next((item for item in ("calculate", "submit_review", "review", "approve") if item in allowed_actions), None)
 
     review_summary = _review_summary(
         rows=all_review_rows,
@@ -854,7 +860,8 @@ def payroll_run_page_context(
         "workflow": {
             "statusValue": run_status, "allowedActions": allowed_actions, "nextAction": next_action,
             "canCalculate": "calculate" in allowed_actions, "canReset": "reset" in allowed_actions,
-            "canSubmitReview": "submit_review" in allowed_actions, "canReturnForChanges": "return_for_changes" in allowed_actions,
+            "canSubmitReview": "submit_review" in allowed_actions, "canReview": "review" in allowed_actions,
+            "reviewSignedOff": review_signed_off, "canReturnForChanges": "return_for_changes" in allowed_actions,
             "canApprove": "approve" in allowed_actions, "sourceClear": source_clear,
             "attendanceCalculable": attendance_calculable, "attendanceLocked": attendance_locked,
         },
@@ -930,27 +937,27 @@ def payroll_period_context(*, company: Company, period_start: date, membership=N
         attendance_status = attendance.get_status_display() if attendance else "Not created"
 
     run_status = run.status if run else PayrollRunStatus.DRAFT
-    can_edit = bool(membership and membership_can_edit(membership, Workspace.INTERNAL))
-    can_approve = bool(
-        membership
-        and membership_can_workspace(membership, Workspace.INTERNAL)
-        and membership_has_capability(membership, Capability.APPROVE)
-    )
+    can_prepare = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE))
+    can_review = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW))
+    can_approve = bool(membership and membership_has_permission(membership, AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE))
     attendance_calculable = attendance_status in {AttendancePeriodStatus.APPROVED.label, AttendancePeriodStatus.LOCKED.label}
     attendance_locked = attendance_status == AttendancePeriodStatus.LOCKED.label
     source_clear = not source_errors and not any(row.get("blockers") for row in rows)
+    review_signed_off = bool(run and run.reviewed_at and run.reviewed_by_id)
     allowed_actions: list[str] = []
-    if can_edit and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
+    if can_prepare and run_status in {PayrollRunStatus.DRAFT, PayrollRunStatus.CALCULATED} and attendance_calculable and source_clear:
         allowed_actions.append("calculate")
-    if can_edit and run_status == PayrollRunStatus.CALCULATED:
+    if can_prepare and run_status == PayrollRunStatus.CALCULATED:
         allowed_actions.append("reset")
         if attendance_locked and source_clear:
             allowed_actions.append("submit_review")
-    if can_approve and run_status == PayrollRunStatus.REVIEW:
+    if can_review and run_status == PayrollRunStatus.REVIEW:
         allowed_actions.append("return_for_changes")
-        if attendance_locked and source_clear:
-            allowed_actions.append("approve")
-    next_action = next((item for item in ("calculate", "submit_review", "approve") if item in allowed_actions), None)
+        if attendance_locked and source_clear and not review_signed_off:
+            allowed_actions.append("review")
+    if can_approve and run_status == PayrollRunStatus.REVIEW and review_signed_off and attendance_locked and source_clear:
+        allowed_actions.append("approve")
+    next_action = next((item for item in ("calculate", "submit_review", "review", "approve") if item in allowed_actions), None)
 
     return {
         "run": _run_payload(run, period_start=start, membership=membership),
@@ -969,6 +976,8 @@ def payroll_period_context(*, company: Company, period_start: date, membership=N
             "canCalculate": "calculate" in allowed_actions,
             "canReset": "reset" in allowed_actions,
             "canSubmitReview": "submit_review" in allowed_actions,
+            "canReview": "review" in allowed_actions,
+            "reviewSignedOff": review_signed_off,
             "canReturnForChanges": "return_for_changes" in allowed_actions,
             "canApprove": "approve" in allowed_actions,
             "sourceClear": source_clear,

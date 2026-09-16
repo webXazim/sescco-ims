@@ -126,6 +126,7 @@ def serialize_assignment(
     *,
     as_of: date | None = None,
     audit_event: AuditEvent | None = None,
+    include_commercial: bool = True,
 ) -> dict[str, object]:
     today = as_of or timezone.localdate()
     if assignment.cancelled_at:
@@ -154,8 +155,8 @@ def serialize_assignment(
         "trade": assignment.trade,
         "rateType": assignment.get_rate_type_display(),
         "rateTypeValue": assignment.rate_type,
-        "rateValue": _rate_number(assignment.rate),
-        "rateLabel": _rate_label(assignment, assignment.company.settings.currency_code),
+        "rateValue": _rate_number(assignment.rate) if include_commercial else None,
+        "rateLabel": _rate_label(assignment, assignment.company.settings.currency_code) if include_commercial else "Restricted",
         "start": assignment.effective_from.isoformat(),
         "end": assignment.effective_to.isoformat() if assignment.effective_to else None,
         "status": status,
@@ -178,6 +179,7 @@ def serialize_release_event(
     assignment: WorkerAssignment,
     *,
     audit_event: AuditEvent | None = None,
+    include_commercial: bool = True,
 ) -> dict[str, object] | None:
     if assignment.cancelled_at or not assignment.release_disposition or not assignment.effective_to:
         return None
@@ -191,8 +193,8 @@ def serialize_release_event(
         "trade": assignment.trade,
         "rateType": assignment.get_rate_type_display(),
         "rateTypeValue": assignment.rate_type,
-        "rateValue": _rate_number(assignment.rate),
-        "rateLabel": _rate_label(assignment, assignment.company.settings.currency_code),
+        "rateValue": _rate_number(assignment.rate) if include_commercial else None,
+        "rateLabel": _rate_label(assignment, assignment.company.settings.currency_code) if include_commercial else "Restricted",
         "start": start.isoformat(),
         "end": None,
         "status": status,
@@ -207,7 +209,7 @@ def serialize_release_event(
     }
 
 
-def serialized_assignment_history(*, company, assignments: list[WorkerAssignment], as_of: date | None = None):
+def serialized_assignment_history(*, company, assignments: list[WorkerAssignment], as_of: date | None = None, include_commercial: bool = True):
     created_audits, release_audits, cancelled_audits = _audit_maps(company=company, assignments=assignments)
     result: list[dict[str, object]] = []
     for assignment in assignments:
@@ -216,8 +218,9 @@ def serialized_assignment_history(*, company, assignments: list[WorkerAssignment
             assignment,
             as_of=as_of,
             audit_event=cancelled_audits.get(key) if assignment.cancelled_at else created_audits.get(key),
+            include_commercial=include_commercial,
         ))
-        release = serialize_release_event(assignment, audit_event=release_audits.get(key))
+        release = serialize_release_event(assignment, audit_event=release_audits.get(key), include_commercial=include_commercial)
         if release:
             result.append(release)
     return result
@@ -251,7 +254,7 @@ def assignment_context(*, company, as_of: date | None = None) -> dict[str, objec
 
 
 
-def serialized_assignment_activity(*, company, assignments: list[WorkerAssignment], event_filter: str = "") -> list[dict[str, object]]:
+def serialized_assignment_activity(*, company, assignments: list[WorkerAssignment], event_filter: str = "", include_commercial: bool = True) -> list[dict[str, object]]:
     """Serialize a bounded page of assignment segments into UI activity events.
 
     Assignment Lifecycle used to rebuild every worker's full history in the browser.  This
@@ -285,6 +288,7 @@ def serialized_assignment_activity(*, company, assignments: list[WorkerAssignmen
         assignment_event = serialize_assignment(
             assignment,
             audit_event=cancelled_audits.get(key) if assignment.cancelled_at else created_audits.get(key),
+            include_commercial=include_commercial,
         )
         event_type = assignment.get_change_type_display()
         include_assignment = normalized not in {"release"}
@@ -304,7 +308,8 @@ def serialized_assignment_activity(*, company, assignments: list[WorkerAssignmen
             previous_project_id = project_public_id(previous.project) if previous else None
             from_label = "Supplier pool" if previous is None else "Previous assignment"
             to_label = assignment.project.name
-            detail = f"{assignment.trade} · {_rate_label(assignment, assignment.company.settings.currency_code)}"
+            rate_label = _rate_label(assignment, assignment.company.settings.currency_code) if include_commercial else "Commercial rate restricted"
+            detail = f"{assignment.trade} · {rate_label}"
             if assignment.change_type == "transfer":
                 from_label = previous.project.name if previous else "Previous project"
                 to_label = assignment.project.name
@@ -313,8 +318,8 @@ def serialized_assignment_activity(*, company, assignments: list[WorkerAssignmen
                 to_label = assignment.trade
                 detail = assignment.project.name
             elif assignment.change_type == "rate_change":
-                from_label = _rate_label(previous, assignment.company.settings.currency_code) if previous else "Previous rate"
-                to_label = _rate_label(assignment, assignment.company.settings.currency_code)
+                from_label = (_rate_label(previous, assignment.company.settings.currency_code) if previous else "Previous rate") if include_commercial else "Restricted"
+                to_label = _rate_label(assignment, assignment.company.settings.currency_code) if include_commercial else "Restricted"
                 detail = f"{assignment.project.name} · {assignment.trade}"
 
             result.append({
@@ -339,7 +344,7 @@ def serialized_assignment_activity(*, company, assignments: list[WorkerAssignmen
             })
 
         if assignment.release_disposition and assignment.effective_to and normalized in {"", "all", "all_activity", "release"}:
-            release_event = serialize_release_event(assignment, audit_event=release_audits.get(key))
+            release_event = serialize_release_event(assignment, audit_event=release_audits.get(key), include_commercial=include_commercial)
             if release_event:
                 result.append({
                     "id": str(release_event["id"]),
@@ -356,7 +361,7 @@ def serialized_assignment_activity(*, company, assignments: list[WorkerAssignmen
                     "effective": (assignment.effective_to + timedelta(days=1)).isoformat(),
                     "from": assignment.project.name,
                     "to": "Inactive" if assignment.release_disposition == ReleaseDisposition.INACTIVE else "Available with supplier",
-                    "detail": f"{assignment.trade} · {_rate_label(assignment, assignment.company.settings.currency_code)}",
+                    "detail": f"{assignment.trade} · {(_rate_label(assignment, assignment.company.settings.currency_code) if include_commercial else 'Commercial rate restricted')}",
                     "reason": assignment.end_reason or assignment.reason or "Released from project",
                     "audit": release_event.get("actor") or "Audit trail",
                     "recordedAt": release_event.get("createdAt"),

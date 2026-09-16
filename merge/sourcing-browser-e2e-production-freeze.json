@@ -1,0 +1,44 @@
+{
+  "release": "1.0.111",
+  "purpose": "Final live-browser E2E and production-freeze authority for the reference-only Sourcing Directory.",
+  "previous_release": "1.0.110-sourcing-security-tenant-cross-module-isolation-certification",
+  "previous_archive_sha256": "bf498e6af3405b279cb42fbbf769c5baeb14d8940d59b3f732e89950dd503b2b",
+  "schema_change": false,
+  "permission_catalog_size": 94,
+  "persisted_model_retention_count": 75,
+  "required_seed_profile": "benchmark",
+  "required_seed_contract": {
+    "vendor": "SDEMO-V00001",
+    "material_query": "SDEMO Material 0001",
+    "manpower_supplier": "SDEMO-P00001",
+    "trade_query": "SDEMO Trade 001"
+  },
+  "browser_scenarios": [
+    "login",
+    "vendor-directory",
+    "vendor-supply-catalog",
+    "material-finder",
+    "vendor-verification-history-before",
+    "vendor-quick-verification",
+    "vendor-verification-history-after",
+    "manpower-directory",
+    "manpower-workforce-catalog",
+    "workforce-finder",
+    "workforce-verification-history-before",
+    "workforce-quick-verification",
+    "workforce-verification-history-after"
+  ],
+  "browser_limits": {
+    "max_rendered_business_rows": 100,
+    "max_settle_ms": 10000,
+    "finder_search_debounce_ms": 350,
+    "stale_request_abort_required": true
+  },
+  "live_browser_runner": "python scripts/certify-sourcing-browser-e2e.py --base-url <release-url> --username <sourcing-benchmark-user> --password-env IMS_SOURCING_BROWSER_PASSWORD",
+  "live_browser_evidence": "sourcing-browser-certification.json",
+  "runtime_security_test": "apps.sourcing.tests.test_security_certification",
+  "runtime_contract_test": "apps.sourcing.tests.test_browser_e2e_freeze",
+  "static_gate": "scripts/verify-sourcing-browser-e2e.py",
+  "operational_mutation_allowed": false,
+  "final_sourcing_feature_freeze": true
+}

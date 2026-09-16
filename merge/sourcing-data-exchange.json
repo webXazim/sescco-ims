@@ -1,0 +1,51 @@
+{
+  "release": "1.0.111",
+  "feature": "sourcing-import-export-bulk-maintenance",
+  "predecessor": {
+    "release": "1.0.107-workforce-finder-verification-history",
+    "archive_sha256": "ca590378d85bf74bbad4c6fb0b77ea7265be4bff53d2ce2593c47ce027fa0c4c"
+  },
+  "schema_change": false,
+  "operational_integration": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "datasets": [
+    "vendors",
+    "materials",
+    "vendor_catalog",
+    "manpower_suppliers",
+    "trades",
+    "workforce_catalog"
+  ],
+  "formats": [
+    "csv",
+    "xlsx"
+  ],
+  "limits": {
+    "max_bytes": 2097152,
+    "max_rows": 5000
+  },
+  "import_authority": {
+    "vendors": "sourcing.vendors.manage",
+    "vendor_catalog": "sourcing.vendors.manage",
+    "manpower_suppliers": "sourcing.manpower.manage",
+    "workforce_catalog": "sourcing.manpower.manage",
+    "materials": "sourcing.masters.manage",
+    "trades": "sourcing.masters.manage"
+  },
+  "export_authority": "sourcing.export.execute plus matching dataset view permission",
+  "safety": [
+    "dry-run uses rollback-only database transaction",
+    "commit is all-or-nothing when any row fails",
+    "unknown catalog references are rejected instead of auto-created",
+    "duplicate identities inside one import are rejected",
+    "CSV/XLSX export text is neutralized against spreadsheet formula injection",
+    "bulk verification reuses immutable Vendor/Workforce revision services",
+    "no Inventory, Rental Payroll, Projects or Accounting mutation"
+  ],
+  "audit_actions": [
+    "sourcing.data_import.completed",
+    "sourcing.data_exported"
+  ],
+  "runtime_test": "apps.sourcing.tests.test_data_exchange"
+}

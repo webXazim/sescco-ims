@@ -1,0 +1,87 @@
+{
+  "release": "1.0.111",
+  "purpose": "Preserve the 1.0.88 granular Access Profile/permission/scope foundation while promoting AccessProfile to the sole runtime authorization authority.",
+  "authority": {
+    "company_boundary": "accounts.CompanyMembership",
+    "profile_model": "accounts.AccessProfile",
+    "permission_model": "accounts.AccessProfilePermission",
+    "permission_catalog": "apps.accounts.access_catalog.AccessPermission",
+    "request_snapshot": "apps.accounts.access_policy.EffectiveAccess",
+    "legacy_role_bridge": false,
+    "legacy_role_retirement_target": "completed in 1.0.89"
+  },
+  "permission_catalog_size": 94,
+  "scope_authority": {
+    "modes": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "project": "accounts.MembershipProjectScope",
+    "branch": "accounts.MembershipBranchScope",
+    "inventory_location": "accounts.MembershipInventoryLocationScope",
+    "same_company_validation": true
+  },
+  "system_profiles": [
+    "owner",
+    "operations-admin",
+    "access-admin",
+    "inventory-manager",
+    "storekeeper",
+    "finance",
+    "internal-officer",
+    "rental-officer",
+    "rental-supervisor",
+    "reviewer",
+    "auditor"
+  ],
+  "migration": {
+    "file": "apps/accounts/migrations/0005_granular_access_authority.py",
+    "creates_system_profiles_per_company": true,
+    "backfills_all_existing_memberships": true,
+    "existing_scope_default": "all",
+    "existing_role_access_preserved": true,
+    "payroll_formula_change": false,
+    "cutover_file": "apps/accounts/migrations/0006_single_access_authority.py",
+    "user_role_removed": true,
+    "membership_access_profile_required": true,
+    "rental_supervisor_profile_file": "apps/accounts/migrations/0008_rental_supervisor_profile.py"
+  },
+  "runtime": {
+    "middleware_effective_access_snapshot": true,
+    "membership_instance_cache": true,
+    "frontend_snapshot_exposes_permission_keys_not_scope_master_lists": true,
+    "new_company_membership_service_assigns_system_profile": true,
+    "legacy_role_change_service_keeps_system_profile_in_sync": true,
+    "role_is_runtime_authority": false,
+    "missing_profile_fails_closed": true,
+    "access_profile_required_after_migration": true
+  },
+  "reconciliation": {
+    "command": "python manage.py merge_access_report --fail-on-errors",
+    "fails_for_missing_membership_profile": true,
+    "fails_for_profile_company_mismatch": true,
+    "fails_for_missing_system_profile": true,
+    "fails_for_system_permission_drift": true
+  },
+  "schema_change": true,
+  "payroll_formula_change": false,
+  "regressions": [
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_legacy_membership_fallback_preserves_existing_role_permissions",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_profile_permissions_are_authoritative_for_granular_policy",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_inactive_assigned_profile_fails_closed_instead_of_falling_back_to_role",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_create_membership_assigns_system_profile_with_equivalent_permissions",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_role_change_keeps_compatibility_profile_in_sync",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_selected_scopes_allow_only_explicit_company_records",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_scope_record_rejects_cross_company_assignment",
+    "apps.accounts.tests.test_granular_access.GranularAccessFoundationTests.test_request_exposes_effective_access_snapshot"
+  ],
+  "sourcing_permission_cutover": {
+    "permissions": 7,
+    "automatic_builtin_grants": [
+      "owner"
+    ],
+    "operational_roles_inherit_sourcing": false,
+    "migration": "apps/accounts/migrations/0012_sourcing_access_control_authority.py"
+  }
+}

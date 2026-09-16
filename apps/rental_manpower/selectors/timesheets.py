@@ -4,11 +4,12 @@ from calendar import month_name
 from datetime import date
 from decimal import Decimal
 
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Q, Sum
 
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_allows_project, membership_has_permission
 from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
 from apps.rental_manpower.models import (
     RentalTimesheetPeriod,
@@ -29,10 +30,12 @@ def _display(entry):
 
 
 def _period_payload(*, period, project, start: date, end: date, membership=None):
-    can_edit = bool(membership and membership_can_edit(membership, Workspace.RENTAL) and (period is None or period.status == RentalTimesheetStatus.DRAFT))
-    can_approve = bool(membership and membership_can_workspace(membership, Workspace.RENTAL) and membership_has_capability(membership, Capability.APPROVE))
+    can_edit = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_EDIT) and (period is None or period.status == RentalTimesheetStatus.DRAFT))
+    can_submit = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_SUBMIT))
+    can_overtime = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_OVERTIME_EDIT) and (period is None or period.status == RentalTimesheetStatus.DRAFT))
+    can_approve = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_APPROVE))
     status = period.status if period else RentalTimesheetStatus.DRAFT
-    next_action = "submit" if status == RentalTimesheetStatus.DRAFT and can_edit else ("approve" if status == RentalTimesheetStatus.SUBMITTED and can_approve else ("lock" if status == RentalTimesheetStatus.APPROVED and can_approve else None))
+    next_action = "submit" if status == RentalTimesheetStatus.DRAFT and can_submit else ("approve" if status == RentalTimesheetStatus.SUBMITTED and can_approve else ("lock" if status == RentalTimesheetStatus.APPROVED and can_approve else None))
     return {
         "id": str(period.pk) if period else None,
         "exists": period is not None,
@@ -45,6 +48,8 @@ def _period_payload(*, period, project, start: date, end: date, membership=None)
         "statusValue": status,
         "revision": period.revision if period else 0,
         "canEdit": can_edit,
+        "canSubmit": can_submit,
+        "canEditOvertime": can_overtime,
         "canApprove": can_approve,
         "nextAction": next_action,
     }
@@ -139,6 +144,8 @@ def rental_timesheet_context(
 ):
     start, end = month_bounds(period_start)
     project = rental_project_for_company(company=company, identifier=project_id) if project_id else None
+    if project is not None and membership is not None and not membership_allows_project(membership, project):
+        raise PermissionDenied("This Rental project is outside your assigned access scope.")
     period = (
         RentalTimesheetPeriod.objects.for_company(company).select_related("project").filter(project=project, period_start=start).first()
         if project else None
@@ -194,8 +201,18 @@ def rental_timesheet_context(
     records: dict[str, dict[str, str]] = {}
     for entry in entries:
         records.setdefault(str(entry.worker_id), {})[str(entry.work_date.day)] = _display(entry)
+    include_commercial = bool(
+        membership is None
+        or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+        or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+    )
     ot = {
-        str(row.worker_id): {"hours": str(row.hours), "rate": str(row.rate), "trade": row.trade, "rateType": row.rate_type}
+        str(row.worker_id): {
+            "hours": str(row.hours),
+            "rate": str(row.rate) if include_commercial else None,
+            "trade": row.trade,
+            "rateType": row.rate_type,
+        }
         for row in overtime
     }
     roster = []
@@ -207,7 +224,8 @@ def rental_timesheet_context(
                 "id": str(assignment.pk), "kind": "assignment", "projectId": project_public_id(assignment.project),
                 "start": assignment.effective_from.isoformat(), "end": assignment.effective_to.isoformat() if assignment.effective_to else None,
                 "trade": assignment.trade, "rateType": assignment.get_rate_type_display(), "rateTypeValue": assignment.rate_type,
-                "rate": str(assignment.rate), "rateValue": float(assignment.rate),
+                "rate": str(assignment.rate) if include_commercial else "Restricted",
+                "rateValue": float(assignment.rate) if include_commercial else None,
                 "supplierId": str(worker.supplier_id), "supplierName": worker.supplier.name,
             })
         roster.append({

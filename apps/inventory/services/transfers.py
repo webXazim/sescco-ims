@@ -9,9 +9,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounts.permissions import user_has_capability_for_company
-from apps.accounts.roles import Capability
+from apps.accounts.access_catalog import AccessPermission
 
+from ..access import location_in_inventory_scope
 from ..models import (
     InventoryLocation,
     StockItem,
@@ -24,7 +24,7 @@ from .stock import (
     InsufficientStockError,
     InventoryOperationError,
     _create_movement,
-    _require_inventory_edit,
+    _require_inventory_permission,
     _save_balance,
     _validate_operation_date,
     _validate_positive_quantity,
@@ -117,7 +117,9 @@ def transfer_stock(
     if source_location.company_id != destination_location.company_id:
         raise InventoryOperationError("Source and destination must belong to the same company.")
     company = source_location.company
-    _require_inventory_edit(user, company)
+    membership = _require_inventory_permission(user, company, AccessPermission.INVENTORY_STOCK_TRANSFER)
+    if not location_in_inventory_scope(membership, source_location) or not location_in_inventory_scope(membership, destination_location):
+        raise InventoryOperationError("Both transfer locations must be inside your assigned Inventory scope.")
     existing = StockTransfer.objects.for_company(company).filter(idempotency_key=idempotency_key).first()
     if existing:
         return TransferResult(existing, duplicate_submission=True)
@@ -273,8 +275,9 @@ def transfer_stock(
 def reverse_transfer(
     *, transfer: StockTransfer, user, idempotency_key: UUID, reason: str
 ) -> TransferResult:
-    if not user_has_capability_for_company(user, transfer.company, Capability.MANAGE_INVENTORY):
-        raise InventoryOperationError("Only an inventory manager can reverse transfers.")
+    membership = _require_inventory_permission(user, transfer.company, AccessPermission.INVENTORY_MOVEMENTS_REVERSE)
+    if not location_in_inventory_scope(membership, transfer.source_location) or not location_in_inventory_scope(membership, transfer.destination_location):
+        raise InventoryOperationError("Both transfer locations must be inside your assigned Inventory scope.")
     if not reason.strip():
         raise InventoryOperationError("A reversal reason is required.")
     duplicate = StockTransfer.objects.for_company(transfer.company).filter(reversal_idempotency_key=idempotency_key).first()

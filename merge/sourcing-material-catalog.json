@@ -1,0 +1,90 @@
+{
+  "release": "1.0.111",
+  "title": "Material Master & Vendor Supply Catalog",
+  "predecessor": {
+    "release": "1.0.101-vendor-sourcing-master",
+    "archive_sha256": "52ac1adef10a90e066908b21dac78599b0cadd9d8551a4b7c7c8113bc92ad008"
+  },
+  "schema_change": true,
+  "schema_change_scope": "Adds normalized_aliases to sourcing.SourcingMaterial for controlled alias search; no operational foreign keys or stock/accounting relationships",
+  "operational_integration": false,
+  "inventory_stock_effect": false,
+  "accounting_posting": false,
+  "payroll_formula_change": false,
+  "permissions": {
+    "material_read": "sourcing.masters.view",
+    "material_write": "sourcing.masters.manage",
+    "catalog_read": "sourcing.vendors.view",
+    "catalog_write": "sourcing.vendors.manage"
+  },
+  "material_master": {
+    "fields": [
+      "code",
+      "name",
+      "category",
+      "default_unit",
+      "aliases",
+      "notes",
+      "is_active"
+    ],
+    "controlled_exact_alias_collision": true,
+    "server_search": true,
+    "server_pagination": [
+      25,
+      50,
+      100
+    ],
+    "inventory_item_relationship": false
+  },
+  "vendor_supply_catalog": {
+    "fields": [
+      "material",
+      "specification",
+      "brand",
+      "model",
+      "available_quantity",
+      "unit",
+      "minimum_quantity",
+      "availability",
+      "rate",
+      "currency",
+      "rate_valid_until",
+      "lead_time",
+      "last_verified_at",
+      "verified_by",
+      "verification_note",
+      "notes",
+      "is_active"
+    ],
+    "nullable_quantity": true,
+    "nullable_rate": true,
+    "availability_values": [
+      "available",
+      "limited",
+      "unavailable",
+      "unknown"
+    ],
+    "immutable_revision_evidence": true,
+    "updates_vendor_last_verified_at_when_confirmed": true
+  },
+  "audit_actions": [
+    "sourcing.material.created",
+    "sourcing.material.updated",
+    "sourcing.material.activated",
+    "sourcing.material.deactivated",
+    "sourcing.vendor_offer.created",
+    "sourcing.vendor_offer.updated",
+    "sourcing.vendor_offer.activated",
+    "sourcing.vendor_offer.deactivated"
+  ],
+  "isolation": [
+    "SourcingMaterial is independent from Inventory item/stock masters",
+    "SourcingVendorOffer quantity is a last-known reference quantity and never Inventory on-hand",
+    "SourcingVendorOffer rate is a reference quote and never a purchase/accounting posting",
+    "all Material and Vendor Offer reads/writes remain company-scoped and permission-gated"
+  ],
+  "migration": "apps/sourcing/migrations/0003_material_alias_search.py",
+  "runtime_test_label": "apps.sourcing.tests.test_material_catalog",
+  "release_gate": "scripts/verify-sourcing-material-catalog.py",
+  "operator_guide": "docs/SOURCING_MATERIAL_CATALOG.md"
+}

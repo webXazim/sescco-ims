@@ -1,5 +1,5 @@
 {
-  "release": "1.0.87",
+  "release": "1.0.111",
   "purpose": "Keep Internal Attendance/Overtime and Rental Project Timesheets responsive at the 2,000/5,000 benchmark scale by bounding roster/month payloads, using project-period server rosters, and returning mutation deltas instead of full monthly snapshots.",
   "internal_endpoint": "/api/internal/attendance/",
   "rental_endpoint": "/api/rental/timesheets/",

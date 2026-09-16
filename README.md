@@ -4,13 +4,13 @@ Private Management System for SESCCO. Production runs in single-company mode whi
 
 # IMS + Payroll Operations Platform
 
-Private Django operations platform combining Inventory Management and Payroll Management for a contracting company. The
+Private Django operations platform combining Inventory Management, Payroll Management, company Administration, and an independently permissioned reference-only Sourcing Directory for a contracting company. The
 custom responsive workspace is the main product for storekeepers; Django admin
-is reserved for administrator accounts and protected corrections.
+is reserved for Django superusers and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.87 — Contextual document finalization hotfix**.
+Current packaged release: **SESCCO MS 1.0.111 — Sourcing Browser E2E + Production Freeze**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
@@ -50,14 +50,33 @@ Open:
 - Storekeeper workspace: `http://127.0.0.1:8000/app/`
 - Inventory Explorer: `http://127.0.0.1:8000/app/inventory/`
 - Payroll workspace: `http://127.0.0.1:8000/app/payroll/`
+- Administration / Users: `http://127.0.0.1:8000/app/administration/`
+- Sourcing Directory: `http://127.0.0.1:8000/app/sourcing/`
 - Stock activity: `http://127.0.0.1:8000/app/activity/`
 - Stock transfers: `http://127.0.0.1:8000/app/transfers/`
 - Office inventory: `http://127.0.0.1:8000/app/office/`
 - Imports: `http://127.0.0.1:8000/app/imports/`
 - Administrator: `http://127.0.0.1:8000/admin/`
 
-Create operational users in Django admin with `role=Storekeeper`. Their staff
-status remains disabled automatically.
+Django admin is reserved for real Django superusers. SESCCO application users are
+authorized through company-scoped `CompanyMembership` + `AccessProfile`; ordinary
+Access Administrators never receive Django staff access. Production User Management CRUD is available through the normal Administration module and remains enforced by the company-scoped backend authority.
+Backend security/API contract: `docs/USER_MANAGEMENT_BACKEND.md`. UI contract: `docs/USER_MANAGEMENT_UI.md`.
+Rental Supervisor / Foreman production scope contract: `docs/RENTAL_SUPERVISOR_ACCESS.md`.
+Internal Payroll / Finance duty-separation contract: `docs/INTERNAL_FINANCE_PERMISSIONS.md`.
+Cross-module authorization leak-closure contract: `docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md`.
+Credential/session revocation contract: `docs/CREDENTIAL_SESSION_REVOCATION.md`.
+Access History and guarded recovery contract: `docs/ACCESS_HISTORY_RECOVERY.md`.
+Sourcing Directory domain/isolation contract: `docs/SOURCING_DOMAIN_FOUNDATION.md`.
+Sourcing permission and User Management contract: `docs/SOURCING_ACCESS_CONTROL.md`.
+Vendor Sourcing Master contract: `docs/SOURCING_VENDOR_MASTER.md`.
+Material Master & Vendor Supply Catalog contract: `docs/SOURCING_MATERIAL_CATALOG.md`.
+Sourcing Material Finder contract: `docs/SOURCING_MATERIAL_FINDER.md`.
+Sourcing Manpower Supplier Master contract: `docs/SOURCING_MANPOWER_MASTER.md`.
+Sourcing Worker Trade & Workforce Catalog contract: `docs/SOURCING_TRADE_WORKFORCE_CATALOG.md`.
+Sourcing scale hardening contract: `docs/SOURCING_SCALE_HARDENING.md`.
+Sourcing security certification contract: `docs/SOURCING_SECURITY_CERTIFICATION.md`.
+Final Sourcing browser E2E + production freeze contract: `docs/SOURCING_BROWSER_E2E.md`.
 
 ## Production deployment for ims.sescco.com
 
@@ -78,7 +97,7 @@ For a testing deployment, `--seed` creates deterministic **DEMO-only** Payroll f
 ./scripts/deploy-production.sh --seed --seed-profile benchmark
 ```
 
-`functional` remains the default. `realistic` adds 250 Internal employees + 750 Rental workers across six historical months. `benchmark` expands the same synthetic population to 2,000 Internal employees + 5,000 Rental workers across 12 months, including daily attendance/timesheets, payroll/WPS rows, settlements and supplier payments. Large profiles are restart-safe and idempotent. By default they refuse to run when non-DEMO Internal or Rental worker masters exist; on a disposable/test installation you can explicitly add the namespaced DEMO/RDEMO scale population beside existing test masters with `--allow-mixed-scale-seed`, subject to the historical collision guard. See `docs/PAYROLL_SCALE_SEED.md`.
+`functional` remains the default. `realistic` adds 250 Internal employees + 750 Rental workers across six historical months and also seeds bounded Sourcing reference fixtures. `benchmark` expands Payroll to 2,000 Internal employees + 5,000 Rental workers across 12 months and Sourcing to 10,000 Vendors, 2,000 Materials, 50,000 Vendor offers, 5,000 Manpower Suppliers, 250 Trades and 25,000 Workforce offers. Large profiles are restart-safe and namespaced. By default the Sourcing benchmark refuses mixed non-SDEMO masters; on a disposable/test installation use `--allow-mixed-scale-seed` explicitly. See `docs/PAYROLL_SCALE_SEED.md` and `docs/SOURCING_SCALE_HARDENING.md`.
 
 After loading `realistic` or `benchmark`, measure the high-cardinality Payroll paths with the packaged query-budget report:
 
@@ -89,6 +108,26 @@ python manage.py payroll_performance_report --period 2026-07 --fail-on-query-bud
 ```
 
 The report measures Internal Attendance context, Internal Payroll preflight, the largest Rental project timesheet context, and Rental settlement context. The default release guard is 40 SQL queries per measured Internal/Rental path; elapsed milliseconds are reported for environment comparison but are not treated as a portable pass/fail threshold.
+
+For Sourcing benchmark certification:
+
+```bash
+python manage.py sourcing_scale_report --require-benchmark-volume --fail-on-limits
+```
+
+This measures bounded Vendor/Material/Manpower/Trade directories, Material Finder, Workforce Finder, profile catalogs and the 5,000-row import parser.
+
+For the final live Chromium Sourcing certification after deploying the benchmark rehearsal image:
+
+```bash
+export IMS_SOURCING_BROWSER_PASSWORD='REDACTED'
+python scripts/certify-sourcing-browser-e2e.py \
+  --base-url https://<release-host> \
+  --username <sourcing-benchmark-user> \
+  --password-env IMS_SOURCING_BROWSER_PASSWORD
+```
+
+The benchmark user must have Vendor Sourcing edit and Manpower Sourcing edit authority. The runner uses only deterministic `SDEMO-*` fixtures, verifies both Finder workflows in Chromium, and writes `sourcing-browser-certification.json`.
 
 The functional seed intentionally creates visible DEMO/RDEMO records and chooses a collision-safe historical month before non-DEMO employment for its finalized synthetic payroll; if that cannot be proven safe, the seed aborts instead of mixing real employees into DEMO payroll history. Use seeding only where test records are wanted.
 

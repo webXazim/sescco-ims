@@ -1,0 +1,82 @@
+{
+  "release": "1.0.111",
+  "feature": "Inventory Storekeeper scoped authority",
+  "schema_change": true,
+  "migration": "apps/accounts/migrations/0009_storekeeper_scoped_authority.py",
+  "inventory_quantity_formula_change": false,
+  "payroll_formula_change": false,
+  "profile": {
+    "classification": "storekeeper",
+    "system_profile_key": "role-storekeeper",
+    "name": "Storekeeper",
+    "permissions": [
+      "inventory.dashboard.view",
+      "inventory.stock.view",
+      "inventory.stock.receive",
+      "inventory.stock.issue",
+      "inventory.stock.transfer",
+      "inventory.movements.view",
+      "inventory.projects.view",
+      "inventory.suppliers.view",
+      "inventory.locations.view",
+      "inventory.export.execute",
+      "shared.search.use"
+    ],
+    "prohibited_by_default": [
+      "inventory.stock.adjust",
+      "inventory.movements.reverse",
+      "inventory.projects.manage",
+      "inventory.suppliers.manage",
+      "inventory.locations.manage",
+      "inventory.import.execute",
+      "shared.archive.view",
+      "shared.archive.manage",
+      "shared.trash.view",
+      "shared.trash.manage"
+    ]
+  },
+  "scope_contract": {
+    "project_scope_modes": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "inventory_location_scope_modes": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "project_backed_location_requires_both_scopes": true,
+    "office_location_requires_location_scope": true,
+    "transfer_requires_source_and_destination_in_scope": true,
+    "stock_queries_scoped": true,
+    "movement_queries_scoped": true,
+    "dashboard_scoped": true,
+    "exports_scoped": true
+  },
+  "allowed_operations": [
+    "receive",
+    "issue",
+    "transfer",
+    "view-stock",
+    "view-movements",
+    "view-projects",
+    "view-suppliers",
+    "view-locations",
+    "export"
+  ],
+  "manager_only_operations": [
+    "adjust",
+    "reverse",
+    "import",
+    "project-management",
+    "supplier-management",
+    "location-management",
+    "archive",
+    "trash"
+  ],
+  "predecessor": {
+    "release": "1.0.92-rental-supervisor-foreman-scoped-access",
+    "archive_sha256": "ec1388afc1833098292fc59fd9b93b3d92734f4be4e087584690943d39be2763"
+  }
+}

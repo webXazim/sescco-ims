@@ -1,14 +1,15 @@
 {
-  "version": 4,
+  "version": 6,
   "product": "SESCCO MS",
   "principles": {
     "archive": "Archive is a reversible lifecycle boundary. For parent masters, operational child scope may inherit the archive state without rewriting permanent child/history rows.",
     "delete_unused": "For selected operational masters, Delete means a 30-day reversible soft-delete. Parent masters soft-delete their owned/current child masters into the same recovery window while protected workflow/audit history remains immutable.",
     "workflow": "Operational transactions are closed, cancelled, reversed, released or superseded through their workflow; they are not archived/deleted as masters.",
     "immutable": "Audit, movement and finalized-document evidence is append-only or reversal-based and must never expose ordinary delete/archive actions.",
-    "access": "System users and memberships are deactivated/reactivated so audit actor history remains resolvable.",
+    "access": "System users/memberships and reusable Access Profiles are deactivated/reactivated so audit actor and policy history remain resolvable; profile permission grants and membership scope assignments are replaceable policy configuration audited by the access authority.",
     "trash": "Delete recovery is distinct from Archive. Deleted masters and cascade-owned child masters are hidden from active selectors and recoverable for 30 days. Cascade recovery metadata ensures parent restore revives only children deleted by that parent operation.",
-    "cascade": "Branch/Office and Department soft-delete their current employee masters; Manpower Supplier soft-deletes its worker masters; Project soft-deletes its project inventory location/stock masters. All cascade-owned children share the parent 30-day window and restore atomically with the parent. Independently deleted children are not resurrected."
+    "cascade": "Branch/Office and Department soft-delete their current employee masters; Manpower Supplier soft-deletes its worker masters; Project soft-deletes its project inventory location/stock masters. All cascade-owned children share the parent 30-day window and restore atomically with the parent. Independently deleted children are not resurrected.",
+    "sourcing": "Sourcing is an independent reference directory. Vendor/manpower source masters may use reversible Archive/30-day Trash; material/trade and current offer masters are deactivated rather than treated as operational transactions; verification revisions are immutable reference history."
   },
   "models": {
     "accounts.User": {
@@ -16,6 +17,21 @@
     },
     "accounts.CompanyMembership": {
       "mode": "access_deactivate_only"
+    },
+    "accounts.AccessProfile": {
+      "mode": "access_deactivate_only"
+    },
+    "accounts.AccessProfilePermission": {
+      "mode": "access_policy_child_replaceable"
+    },
+    "accounts.MembershipProjectScope": {
+      "mode": "access_scope_assignment"
+    },
+    "accounts.MembershipBranchScope": {
+      "mode": "access_scope_assignment"
+    },
+    "accounts.MembershipInventoryLocationScope": {
+      "mode": "access_scope_assignment"
     },
     "core.AuditEvent": {
       "mode": "immutable_ledger"
@@ -187,6 +203,41 @@
     },
     "documents.BusinessDocument": {
       "mode": "immutable_finalized_document"
+    },
+    "sourcing.SourcingVendor": {
+      "mode": "reference_master_archive_trash_30d"
+    },
+    "sourcing.SourcingManpowerSupplier": {
+      "mode": "reference_master_archive_trash_30d"
+    },
+    "sourcing.SourcingMaterial": {
+      "mode": "reference_master_deactivate_only"
+    },
+    "sourcing.SourcingTrade": {
+      "mode": "reference_master_deactivate_only"
+    },
+    "sourcing.SourcingVendorOffer": {
+      "mode": "reference_offer_deactivate_only"
+    },
+    "sourcing.SourcingWorkforceOffer": {
+      "mode": "reference_offer_deactivate_only"
+    },
+    "sourcing.SourcingVendorOfferRevision": {
+      "mode": "immutable_reference_history"
+    },
+    "sourcing.SourcingWorkforceOfferRevision": {
+      "mode": "immutable_reference_history"
+    },
+    "sourcing.SourcingSettings": {
+      "mode": "system_singleton_no_delete"
+    },
+    "sourcing.SourcingVendorContact": {
+      "mode": "reference_master_deactivate_only",
+      "notes": "Sourcing-only Vendor contact person; application deactivates rather than destructively deleting contact evidence."
+    },
+    "sourcing.SourcingManpowerContact": {
+      "mode": "reference_master_deactivate_only",
+      "notes": "Sourcing-only Manpower Supplier contact person; application deactivates rather than destructively deleting contact evidence."
     }
   }
 }

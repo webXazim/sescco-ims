@@ -36,6 +36,32 @@ require_environment
 info "Verifying final SESCCO MS release-candidate contract"
 python3 "${PROJECT_ROOT}/scripts/verify-release-candidate.py"
 
+info "Verifying granular access authority foundation"
+python3 "${PROJECT_ROOT}/scripts/verify-granular-access-authority.py"
+python3 "${PROJECT_ROOT}/scripts/verify-single-access-authority.py"
+python3 "${PROJECT_ROOT}/scripts/verify-user-management-backend.py"
+python3 "${PROJECT_ROOT}/scripts/verify-user-management-ui.py"
+python3 "${PROJECT_ROOT}/scripts/verify-rental-supervisor-scope.py"
+python3 "${PROJECT_ROOT}/scripts/verify-inventory-storekeeper-scope.py"
+python3 "${PROJECT_ROOT}/scripts/verify-page-level-view-only.py"
+python3 "${PROJECT_ROOT}/scripts/verify-internal-finance-permissions.py"
+python3 "${PROJECT_ROOT}/scripts/verify-cross-module-access-leaks.py"
+python3 "${PROJECT_ROOT}/scripts/verify-credential-session-revocation.py"
+python3 "${PROJECT_ROOT}/scripts/verify-access-history-recovery.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-domain-foundation.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-access-control.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-vendor-master.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-material-catalog.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-material-finder.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-vendor-verification.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-manpower-master.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-trade-workforce-catalog.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-workforce-finder.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-data-exchange.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-scale-hardening.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-security-certification.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-browser-e2e.py"
+
 info "Verifying frozen Payroll production-E2E certification contract"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-timesheet-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-bootstrap-search.py"
@@ -87,6 +113,28 @@ if (( seed_requested )); then
     seed_args+=(--seed-batch-size "${IMS_SEED_BATCH_SIZE}")
   fi
   run_manage seed_payroll_test_data "${seed_args[@]}"
+
+  info "Seeding deterministic Sourcing reference fixtures for ${seed_profile} profile"
+  sourcing_seed_args=(--profile "${seed_profile}")
+  if [[ -n "${IMS_SEED_COMPANY_SLUG:-}" ]]; then
+    sourcing_seed_args+=(--company-slug "${IMS_SEED_COMPANY_SLUG}")
+  fi
+  if [[ "${allow_mixed_scale_seed}" == "1" ]]; then
+    sourcing_seed_args+=(--allow-mixed-scale-seed)
+  fi
+  if [[ -n "${IMS_SEED_BATCH_SIZE:-}" ]]; then
+    sourcing_seed_args+=(--batch-size "${IMS_SEED_BATCH_SIZE}")
+  fi
+  run_manage seed_sourcing_test_data "${sourcing_seed_args[@]}"
+
+  if [[ "${seed_profile}" == "benchmark" ]]; then
+    info "Certifying benchmark-volume Sourcing directory/Finder performance"
+    scale_args=(--require-benchmark-volume --fail-on-limits)
+    if [[ -n "${IMS_SEED_COMPANY_SLUG:-}" ]]; then
+      scale_args+=(--company-slug "${IMS_SEED_COMPANY_SLUG}")
+    fi
+    run_manage sourcing_scale_report "${scale_args[@]}"
+  fi
 fi
 
 info "Verifying merged company/access boundaries"
@@ -97,6 +145,21 @@ run_manage merge_internal_payroll_report --fail-on-errors >/dev/null
 run_manage merge_rental_manpower_report --fail-on-errors >/dev/null
 run_manage merge_documents_management_report --fail-on-errors >/dev/null
 run_manage migrate --check
+
+info "Running focused Sourcing domain/isolation regression"
+run_manage test apps.sourcing.tests.test_domain_foundation --noinput
+run_manage test apps.sourcing.tests.test_access_control --noinput
+run_manage test apps.sourcing.tests.test_vendor_master --noinput
+run_manage test apps.sourcing.tests.test_material_catalog --noinput
+run_manage test apps.sourcing.tests.test_material_finder --noinput
+run_manage test apps.sourcing.tests.test_vendor_verification --noinput
+run_manage test apps.sourcing.tests.test_manpower_master --noinput
+run_manage test apps.sourcing.tests.test_trade_workforce_catalog --noinput
+run_manage test apps.sourcing.tests.test_workforce_finder --noinput
+run_manage test apps.sourcing.tests.test_data_exchange --noinput
+run_manage test apps.sourcing.tests.test_scale_hardening --noinput
+run_manage test apps.sourcing.tests.test_security_certification --noinput
+run_manage test apps.sourcing.tests.test_browser_e2e_freeze --noinput
 
 info "Collecting static assets without deleting the previous release assets"
 run_manage collectstatic --noinput

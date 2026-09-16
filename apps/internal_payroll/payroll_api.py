@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from apps.accounts.api_permissions import api_workspace_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.api_permissions import api_method_access_required, api_workspace_required
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.roles import Workspace
 from apps.internal_payroll.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
 from apps.internal_payroll.models import PayrollAdjustment
@@ -46,6 +48,11 @@ def _request_period(request: HttpRequest, body: dict[str, object] | None = None)
     return _period_start(raw)
 
 
+def _require_action_permission(request: HttpRequest, permission: AccessPermission) -> None:
+    if not membership_has_permission(request.company_membership, permission):
+        raise PermissionDenied("Your access profile does not allow this workflow action.")
+
+
 def _decimal(value: object, field: str, *, optional: bool = False) -> Decimal | None:
     if optional and value in (None, ""):
         return None
@@ -60,6 +67,7 @@ def _decimal(value: object, field: str, *, optional: bool = False) -> Decimal | 
 
 @require_http_methods(["GET"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_PAYROLL_RUNS_VIEW)
 def payroll_api(request: HttpRequest) -> JsonResponse:
     try:
         period_start = _request_period(request)
@@ -88,6 +96,7 @@ def payroll_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET", "PATCH"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_PAYROLL_RUNS_VIEW, PATCH=AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE)
 def payroll_policy_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -107,6 +116,7 @@ def payroll_policy_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE)
 def payroll_calculate_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
@@ -133,12 +143,23 @@ def payroll_calculate_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=(AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE, AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW, AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE))
 def payroll_workflow_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
         period_start = _request_period(request, body)
         action = str(body.get("action") or "")
-        if action.strip().lower().replace("-", "_") == "reset":
+        normalized_action = action.strip().lower().replace("-", "_").replace(" ", "_")
+        normalized_action = {
+            "submit": "submit_review",
+            "submit_for_review": "submit_review",
+            "mark_reviewed": "review",
+            "review_complete": "review",
+            "return": "return_for_changes",
+            "return_to_draft": "return_for_changes",
+        }.get(normalized_action, normalized_action)
+        if normalized_action == "reset":
+            _require_action_permission(request, AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE)
             reset_payroll_run(
                 actor_membership=request.company_membership,
                 period_start=period_start,
@@ -146,10 +167,19 @@ def payroll_workflow_api(request: HttpRequest) -> JsonResponse:
                 request=request,
             )
         else:
+            required_permission = {
+                "submit_review": AccessPermission.INTERNAL_PAYROLL_RUNS_PREPARE,
+                "review": AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW,
+                "return_for_changes": AccessPermission.INTERNAL_PAYROLL_RUNS_REVIEW,
+                "approve": AccessPermission.INTERNAL_PAYROLL_RUNS_APPROVE,
+            }.get(normalized_action)
+            if required_permission is None:
+                raise ValidationError({"action": "Unsupported payroll workflow action."})
+            _require_action_permission(request, required_permission)
             transition_payroll_run(
                 actor_membership=request.company_membership,
                 period_start=period_start,
-                action=action,
+                action=normalized_action,
                 note=str(body.get("note") or ""),
                 confirmed=body.get("confirmed") is True,
                 request=request,
@@ -171,6 +201,7 @@ def payroll_workflow_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["GET", "POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(GET=AccessPermission.INTERNAL_ADJUSTMENTS_VIEW, POST=AccessPermission.INTERNAL_ADJUSTMENTS_MANAGE)
 def payroll_adjustments_api(request: HttpRequest) -> JsonResponse:
     try:
         if request.method == "GET":
@@ -222,6 +253,7 @@ def payroll_adjustments_api(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["PATCH"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(PATCH=AccessPermission.INTERNAL_ADJUSTMENTS_MANAGE)
 def payroll_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonResponse:
     try:
         body = json_body(request)
@@ -261,13 +293,26 @@ def payroll_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonRe
 
 @require_http_methods(["POST"])
 @api_workspace_required(Workspace.INTERNAL)
+@api_method_access_required(POST=(AccessPermission.INTERNAL_ADJUSTMENTS_MANAGE, AccessPermission.INTERNAL_ADJUSTMENTS_APPROVE))
 def payroll_adjustment_workflow_api(request: HttpRequest, adjustment_id) -> JsonResponse:
     try:
         body = json_body(request)
+        action = str(body.get("action") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        action = {"submit_for_review": "submit", "return": "return_to_draft", "reject": "return_to_draft"}.get(action, action)
+        required_permission = (
+            AccessPermission.INTERNAL_ADJUSTMENTS_MANAGE
+            if action == "submit"
+            else AccessPermission.INTERNAL_ADJUSTMENTS_APPROVE
+            if action in {"approve", "return_to_draft"}
+            else None
+        )
+        if required_permission is None:
+            raise ValidationError({"action": "Unsupported payroll adjustment workflow action."})
+        _require_action_permission(request, required_permission)
         adjustment = transition_payroll_adjustment(
             actor_membership=request.company_membership,
             adjustment_id=adjustment_id,
-            action=str(body.get("action") or ""),
+            action=action,
             reason=str(body.get("reason") or ""),
             request=request,
         )

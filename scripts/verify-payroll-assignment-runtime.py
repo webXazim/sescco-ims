@@ -19,8 +19,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.87":
-    fail(f"VERSION must be 1.0.87, found {version!r}")
+if version != "1.0.111":
+    fail(f"VERSION must be 1.0.111, found {version!r}")
 
 contract = json.loads(text("merge/payroll-assignment-runtime.json"))
 if contract.get("release") != version:
@@ -47,7 +47,7 @@ for needle in (
     'max_page_size=100',
     'operational_status="assigned" if view == "deployment" else "pool"',
     'Paginator(rows, controls.page_size)',
-    'serialized_assignment_activity(company=request.company, assignments=segments, event_filter=event_type)',
+    'serialized_assignment_activity(company=request.company, assignments=segments, event_filter=event_type, include_commercial=_commercial_visible(request))',
 ):
     if needle not in api:
         fail(f"bounded assignment API protection missing: {needle}")

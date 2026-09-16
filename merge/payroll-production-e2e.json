@@ -1,5 +1,5 @@
 {
-  "release": "1.0.87",
+  "release": "1.0.111",
   "purpose": "Curated production Payroll E2E certification spanning server-authoritative Internal and Rental workflows, permissions, lifecycle recovery, outputs, tenant boundaries, scale and deployment safety.",
   "runtime_runner": "scripts/certify-payroll-production-e2e.sh",
   "runtime_test_labels": [
@@ -20,7 +20,15 @@
     "apps.documents.tests.test_merge_access",
     "apps.core.tests.test_management_reporting",
     "apps.core.tests.test_merge_management_access",
-    "apps.core.tests.test_payroll_final_browser_certification"
+    "apps.core.tests.test_payroll_final_browser_certification",
+    "apps.accounts.tests.test_granular_access",
+    "apps.accounts.tests.test_user_management",
+    "apps.accounts.tests.test_user_management_ui",
+    "apps.inventory.tests.test_storekeeper_scope.StorekeeperScopedAuthorityTests",
+    "apps.accounts.tests.test_custom_access_profiles",
+    "apps.accounts.tests.test_finance_permissions",
+    "apps.accounts.tests.test_cross_module_access_leaks",
+    "apps.accounts.tests.test_session_security"
   ],
   "static_verifiers": [
     "scripts/verify_payroll_frontend_contract.py",
@@ -51,7 +59,17 @@
     "scripts/verify-lifecycle-authority.py",
     "scripts/verify-lifecycle-retention-contract.py",
     "scripts/verify-payroll-document-finalization-context.py",
-    "scripts/verify-payroll-document-production.py"
+    "scripts/verify-payroll-document-production.py",
+    "scripts/verify-granular-access-authority.py",
+    "scripts/verify-single-access-authority.py",
+    "scripts/verify-user-management-backend.py",
+    "scripts/verify-user-management-ui.py",
+    "scripts/verify-rental-supervisor-scope.py",
+    "scripts/verify-inventory-storekeeper-scope.py",
+    "scripts/verify-page-level-view-only.py",
+    "scripts/verify-internal-finance-permissions.py",
+    "scripts/verify-cross-module-access-leaks.py",
+    "scripts/verify-credential-session-revocation.py"
   ],
   "scenarios": [
     {
@@ -112,7 +130,7 @@
       "id": "internal-wps-payment-reconciliation",
       "evidence": {
         "apps/internal_payroll/tests/test_payment.py": [
-          "test_payment_execution_requires_pay_capability",
+          "test_wps_export_permission_is_independent_from_payment_execution",
           "test_failed_payment_can_retry_and_close_without_recalculating_payroll",
           "test_payment_batch_actions_and_payroll_revision_follow_server_lifecycle",
           "test_export_uses_exact_configured_header_labels",
@@ -375,6 +393,176 @@
         "apps/documents/tests/test_merge_access.py": [
           "test_employee_scoped_salary_slip_sources_do_not_require_global_search",
           "test_employee_scope_cannot_be_applied_to_non_employee_document_type"
+        ]
+      }
+    },
+    {
+      "id": "granular-access-authority-foundation",
+      "description": "Granular Access Profiles remain company-bound, scoped and request-cached while system profile provisioning preserves legacy preset behavior without runtime role fallback.",
+      "evidence": {
+        "apps/accounts/tests/test_granular_access.py": [
+          "test_system_profile_provisioning_preserves_existing_role_permissions",
+          "test_profile_permissions_are_authoritative_for_granular_policy",
+          "test_inactive_assigned_profile_fails_closed_instead_of_falling_back_to_role",
+          "test_effective_access_is_cached_on_membership_instance",
+          "test_create_membership_assigns_system_profile_with_equivalent_permissions",
+          "test_role_change_keeps_compatibility_profile_in_sync",
+          "test_profile_must_belong_to_membership_company",
+          "test_unknown_permission_is_rejected",
+          "test_selected_scopes_allow_only_explicit_company_records",
+          "test_scope_record_rejects_cross_company_assignment",
+          "test_request_exposes_effective_access_snapshot"
+        ]
+      }
+    },
+    {
+      "id": "single-access-authority-cutover",
+      "description": "Runtime workspace/action authorization cannot be elevated by legacy role metadata; missing profiles fail closed and the persisted Access Profile is the sole application permission authority.",
+      "evidence": {
+        "apps/accounts/tests/test_granular_access.py": [
+          "test_role_classification_cannot_override_assigned_profile",
+          "test_missing_profile_fails_closed_without_role_fallback",
+          "test_request_exposes_effective_access_snapshot"
+        ],
+        "apps/accounts/tests/test_company_access.py": [
+          "test_storekeeper_can_edit_inventory_but_not_manage_or_import",
+          "test_owner_has_cross_module_authority"
+        ]
+      }
+    },
+    {
+      "id": "user-management-backend-crud",
+      "evidence": {
+        "apps/accounts/tests/test_user_management.py": [
+          "test_access_admin_can_create_operational_user_without_receiving_operational_permissions",
+          "test_access_admin_cannot_assign_owner_profile",
+          "test_owner_can_create_second_owner",
+          "test_selected_scopes_are_company_validated_and_persisted",
+          "test_selected_scope_requires_rows",
+          "test_user_identity_must_be_unique_case_insensitively",
+          "test_access_admin_cannot_modify_owner",
+          "test_actor_cannot_change_own_access_profile_or_scopes",
+          "test_password_reset_sets_forced_change_and_changes_hash",
+          "test_access_admin_cannot_reset_owner_password",
+          "test_deactivation_disables_identity_when_no_other_active_company_access",
+          "test_actor_cannot_deactivate_self",
+          "test_unused_never_signed_in_user_can_be_guardedly_deleted",
+          "test_used_account_must_be_deactivated_not_deleted",
+          "test_custom_profile_uses_custom_classification_without_role_authority",
+          "test_user_api_is_company_scoped_paginated_and_permission_guarded",
+          "test_scope_lookup_is_bounded",
+          "test_reactivation_requires_active_profile",
+          "test_cross_company_scope_assignment_is_rejected"
+        ]
+      }
+    },
+    {
+      "id": "administration-user-management-ui",
+      "description": "Administration is an Access-Profile-gated top-level module whose bounded Users register and drawers operate only through the company-scoped User Management APIs.",
+      "evidence": {
+        "apps/accounts/tests/test_user_management_ui.py": [
+          "test_administration_module_is_profile_authorized",
+          "test_administration_path_resolves_before_inventory_prefix",
+          "test_owner_user_management_page_renders_production_shell_and_api_hooks",
+          "test_access_admin_can_open_administration_without_django_staff",
+          "test_storekeeper_cannot_open_administration_and_does_not_see_module",
+          "test_module_switcher_marks_administration_current"
+        ]
+      }
+    },
+    {
+      "id": "rental-supervisor-foreman-scoped-access",
+      "description": "Rental Supervisor/Foreman authority is Project-scoped, can edit/submit operational timesheets, cannot approve or access supplier finance, and cannot bypass scope through direct APIs.",
+      "evidence": {
+        "apps/rental_manpower/tests/test_supervisor_access.py": [
+          "test_foreman_profile_is_narrow_and_excludes_finance_permissions",
+          "test_foreman_project_scope_filters_workers_and_projects",
+          "test_foreman_can_edit_overtime_and_submit_scoped_timesheet",
+          "test_foreman_cannot_approve_timesheet",
+          "test_foreman_cannot_open_supplier_settlement_or_payment_apis",
+          "test_foreman_cannot_access_out_of_scope_project_timesheet",
+          "test_foreman_timesheet_roster_does_not_expose_assignment_commercial_rate",
+          "test_foreman_overtime_payload_hides_commercial_rate",
+          "test_foreman_cannot_override_overtime_commercial_rate"
+        ]
+      }
+    },
+    {
+      "id": "inventory-storekeeper-scoped-authority",
+      "description": "Inventory Storekeeper authority is the Project+Inventory Location scope intersection, permits receive/issue/transfer only inside assigned scope, scopes dashboards/exports, and blocks corrective/master/import/lifecycle actions.",
+      "evidence": {
+        "apps/inventory/tests/test_storekeeper_scope.py": [
+          "test_storekeeper_profile_is_exact_and_excludes_high_risk_permissions",
+          "test_project_location_and_stock_queries_apply_both_scopes",
+          "test_direct_stock_page_cannot_open_out_of_scope_record",
+          "test_storekeeper_can_issue_in_scope_but_not_out_of_scope",
+          "test_storekeeper_transfer_requires_both_locations_in_scope",
+          "test_storekeeper_cannot_adjust_stock_or_open_imports",
+          "test_storekeeper_cannot_manage_projects_suppliers_or_units",
+          "test_dashboard_and_exports_do_not_leak_blocked_project"
+        ]
+      }
+    },
+    {
+      "id": "page-level-view-only-custom-profiles",
+      "evidence": {
+        "apps/accounts/tests/test_custom_access_profiles.py": [
+          "test_owner_can_create_custom_profile_with_exact_permissions_and_audit",
+          "test_profile_api_creates_custom_view_only_profile",
+          "test_built_in_profile_cannot_be_modified",
+          "test_page_level_viewer_can_read_only_selected_internal_pages",
+          "test_view_only_profile_cannot_mutate_a_page_it_can_read",
+          "test_employee_only_viewer_bootstrap_does_not_receive_attendance_roster"
+        ]
+      }
+    },
+    {
+      "id": "internal-payroll-finance-permission-decomposition",
+      "description": "Internal Payroll preparation, independent Finance Review, final approval, Bank/WPS export, and payment execution are separate authorities; review and final approval require different actors from the payroll submitter and from each other.",
+      "evidence": {
+        "apps/accounts/tests/test_finance_permissions.py": [
+          "test_internal_payroll_officer_prepares_but_cannot_review_or_final_approve",
+          "test_finance_reviewer_can_review_but_not_final_approve",
+          "test_finance_manager_can_final_approve_and_execute_without_payroll_preparation"
+        ],
+        "apps/internal_payroll/tests/test_payroll.py": [
+          "test_final_approval_requires_independent_review_signoff",
+          "test_finance_reviewer_cannot_final_approve_after_signoff",
+          "test_finance_review_must_be_by_different_user_from_submitter",
+          "test_final_approver_must_differ_from_finance_reviewer",
+          "test_final_approver_must_differ_from_payroll_submitter"
+        ],
+        "apps/internal_payroll/tests/test_payment.py": [
+          "test_wps_export_permission_is_independent_from_payment_execution"
+        ]
+      }
+    },
+    {
+      "id": "cross-module-access-leak-closure",
+      "description": "Indirect data surfaces enforce the same exact page permissions and Branch/Project/Location scopes as primary pages, including search, deep links, reports, management aggregates, documents and recovery registers.",
+      "evidence": {
+        "apps/accounts/tests/test_cross_module_access_leaks.py": [
+          "test_employee_only_profile_does_not_receive_attendance_payroll_payment_or_audit_profile_data",
+          "test_branch_scoped_employee_list_hides_other_branch",
+          "test_branch_scoped_employee_deep_link_hides_other_branch",
+          "test_generic_reports_permission_does_not_unlock_wps_data",
+          "test_generic_reports_permission_does_not_unlock_payments_data",
+          "test_access_administrator_cannot_infer_management_financial_overview",
+          "test_scoped_management_audit_fails_closed",
+          "test_department_counts_are_limited_to_assigned_branch"
+        ]
+      }
+    },
+    {
+      "id": "credential-session-revocation-hardening",
+      "evidence": {
+        "apps/accounts/tests/test_session_security.py": [
+          "test_pre_upgrade_session_is_stamped_on_first_request",
+          "test_access_profile_change_revokes_existing_session_on_next_request",
+          "test_scope_change_revokes_api_session_with_explicit_401",
+          "test_custom_profile_permission_edit_revokes_every_assigned_user_session",
+          "test_deactivate_then_reactivate_before_next_request_still_revokes_old_session",
+          "test_temporary_password_blocks_operations_until_changed"
         ]
       }
     }

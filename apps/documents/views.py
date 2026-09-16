@@ -7,19 +7,30 @@ from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, render
 
-from apps.accounts.permissions import company_access_required, membership_can_workspace
-from apps.accounts.roles import Workspace
+from apps.accounts.permissions import company_access_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 
 from .models import BusinessDocument
 from .services import verify_document_snapshot
 import hashlib
 
 
+def _can_view_document(membership, document) -> bool:
+    if document.workspace == "internal":
+        required = AccessPermission.INTERNAL_DOCUMENTS_VIEW
+    elif document.workspace == "rental":
+        required = AccessPermission.RENTAL_DOCUMENTS_VIEW
+    else:
+        return False
+    return membership_has_permission(membership, required) or membership_has_permission(membership, AccessPermission.SHARED_DOCUMENTS_VIEW)
+
+
 @login_required
 @company_access_required
 def print_document(request, document_id):
     document = get_object_or_404(BusinessDocument.objects.for_company(request.company), pk=document_id)
-    if not membership_can_workspace(request.company_membership, Workspace(document.workspace)):
+    if not _can_view_document(request.company_membership, document):
         raise PermissionDenied("Your role cannot access this document.")
     if not verify_document_snapshot(document):
         raise PermissionDenied("Document integrity verification failed.")
@@ -30,7 +41,7 @@ def print_document(request, document_id):
 @company_access_required
 def document_brand_asset(request, document_id, kind: str):
     document = get_object_or_404(BusinessDocument.objects.for_company(request.company), pk=document_id)
-    if not membership_can_workspace(request.company_membership, Workspace(document.workspace)):
+    if not _can_view_document(request.company_membership, document):
         raise PermissionDenied("Your role cannot access this document.")
     if not verify_document_snapshot(document):
         raise PermissionDenied("Document integrity verification failed.")

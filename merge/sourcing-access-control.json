@@ -1,0 +1,48 @@
+{
+  "release": "1.0.111",
+  "purpose": "Enable the reference-only Sourcing Directory through explicit persisted Access Profile permissions while preserving complete separation from Inventory, Payroll, Rental Manpower and other operational authorities.",
+  "predecessor": {
+    "release": "1.0.99-sourcing-domain-foundation",
+    "archive_sha256": "3de0aa62e4045695764b4deb6378d8ea32b708afdd541612b8c2a7fb5e906326"
+  },
+  "schema_change": true,
+  "schema_change_scope": "Accounts AccessProfilePermission validation constraint plus owner-profile Sourcing grants; no Sourcing operational schema change",
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "module_access_enabled": true,
+  "permissions": [
+    "sourcing.vendors.view",
+    "sourcing.vendors.manage",
+    "sourcing.manpower.view",
+    "sourcing.manpower.manage",
+    "sourcing.masters.view",
+    "sourcing.masters.manage",
+    "sourcing.export.execute"
+  ],
+  "dependencies": {
+    "sourcing.vendors.manage": "sourcing.vendors.view",
+    "sourcing.manpower.manage": "sourcing.manpower.view",
+    "sourcing.masters.manage": "sourcing.masters.view",
+    "sourcing.export.execute": "at least one Sourcing view permission"
+  },
+  "automatic_builtin_grants": [
+    "role-owner"
+  ],
+  "builtin_profiles_without_automatic_sourcing": [
+    "role-operations-admin",
+    "role-access-admin",
+    "role-inventory-manager",
+    "role-storekeeper",
+    "role-finance",
+    "role-internal-officer",
+    "role-rental-officer",
+    "role-rental-supervisor",
+    "role-reviewer",
+    "role-auditor"
+  ],
+  "migration": "apps/accounts/migrations/0012_sourcing_access_control_authority.py",
+  "runtime_test_label": "apps.sourcing.tests.test_access_control",
+  "foundation_test_label": "apps.sourcing.tests.test_domain_foundation",
+  "release_gate": "scripts/verify-sourcing-access-control.py",
+  "operator_guide": "docs/SOURCING_ACCESS_CONTROL.md"
+}

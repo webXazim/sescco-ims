@@ -8,7 +8,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView
 
-from apps.core.access import InventoryAdminRequiredMixin, InventoryWorkspaceMixin
+from apps.accounts.access_catalog import AccessPermission
+from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
+from apps.inventory.access import restrict_inventory_projects, restrict_inventory_stock
 from apps.inventory.selectors import stock_items
 from apps.projects.models import Project
 
@@ -35,17 +37,18 @@ from .services.importing import (
 )
 
 
-class FilteredExportView(InventoryWorkspaceMixin, View):
+class FilteredExportView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_EXPORT_EXECUTE
     dataset_name = ""
 
     def get(self, request, file_format):
         try:
             if self.dataset_name == "inventory":
-                dataset = inventory_dataset(request.GET, company=request.company)
+                dataset = inventory_dataset(request.GET, company=request.company, membership=request.company_membership)
             elif self.dataset_name == "low-stock":
-                dataset = inventory_dataset(request.GET, company=request.company, low_stock=True)
+                dataset = inventory_dataset(request.GET, company=request.company, membership=request.company_membership, low_stock=True)
             elif self.dataset_name == "activity":
-                dataset = activity_dataset(request.GET, company=request.company)
+                dataset = activity_dataset(request.GET, company=request.company, membership=request.company_membership)
             else:
                 raise Http404("Unsupported export dataset.")
             return export_response(
@@ -76,9 +79,10 @@ class ActivityExportView(FilteredExportView):
     dataset_name = "activity"
 
 
-class StockHistoryExportView(InventoryWorkspaceMixin, View):
+class StockHistoryExportView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_EXPORT_EXECUTE
     def get(self, request, reference, file_format):
-        stock_item = get_object_or_404(stock_items(request.company), reference=reference)
+        stock_item = get_object_or_404(restrict_inventory_stock(stock_items(request.company), request.company_membership), reference=reference)
         try:
             dataset = stock_history_dataset(stock_item, request.GET)
             return export_response(
@@ -92,9 +96,10 @@ class StockHistoryExportView(InventoryWorkspaceMixin, View):
             return redirect("inventory:detail", reference=stock_item.reference)
 
 
-class ProjectInventoryExportView(InventoryWorkspaceMixin, View):
+class ProjectInventoryExportView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_EXPORT_EXECUTE
     def get(self, request, code, file_format):
-        project = get_object_or_404(Project.objects.for_company(request.company), code=code)
+        project = get_object_or_404(restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership), code=code)
         try:
             dataset = project_inventory_dataset(project, request.GET)
             return export_response(
@@ -108,7 +113,8 @@ class ProjectInventoryExportView(InventoryWorkspaceMixin, View):
             return redirect("projects:detail", code=project.code)
 
 
-class ImportJobListView(InventoryAdminRequiredMixin, ListView):
+class ImportJobListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     model = ImportJob
     template_name = "data_exchange/import_job_list.html"
     context_object_name = "import_jobs"
@@ -145,14 +151,15 @@ class ImportJobListView(InventoryAdminRequiredMixin, ListView):
         return context
 
 
-class LegacyImportCreateView(InventoryAdminRequiredMixin, View):
+class LegacyImportCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     template_name = "data_exchange/import_upload.html"
 
     def get(self, request):
-        return render(request, self.template_name, self._context(LegacyImportUploadForm(company=request.company)))
+        return render(request, self.template_name, self._context(LegacyImportUploadForm(company=request.company, membership=request.company_membership)))
 
     def post(self, request):
-        form = LegacyImportUploadForm(request.POST, request.FILES, company=request.company)
+        form = LegacyImportUploadForm(request.POST, request.FILES, company=request.company, membership=request.company_membership)
         if form.is_valid():
             file = form.cleaned_data["source_file"]
             job = ImportJob.objects.create(
@@ -191,7 +198,8 @@ class LegacyImportCreateView(InventoryAdminRequiredMixin, View):
         }
 
 
-class OpeningImportCreateView(InventoryAdminRequiredMixin, View):
+class OpeningImportCreateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     template_name = "data_exchange/import_upload.html"
 
     def get(self, request):
@@ -236,7 +244,8 @@ class OpeningImportCreateView(InventoryAdminRequiredMixin, View):
         }
 
 
-class ImportJobDetailView(InventoryAdminRequiredMixin, View):
+class ImportJobDetailView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     template_name = "data_exchange/import_job_detail.html"
 
     def get_job(self, request, reference):
@@ -275,7 +284,8 @@ class ImportJobDetailView(InventoryAdminRequiredMixin, View):
         )
 
 
-class ImportJobConfirmView(InventoryAdminRequiredMixin, View):
+class ImportJobConfirmView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     def post(self, request, reference):
         job = get_object_or_404(ImportJob.objects.for_company(request.company), reference=reference)
         form = ImportConfirmForm(request.POST)
@@ -299,12 +309,14 @@ class ImportJobConfirmView(InventoryAdminRequiredMixin, View):
         return redirect("data_exchange:import_detail", reference=job.reference)
 
 
-class OpeningTemplateView(InventoryAdminRequiredMixin, View):
+class OpeningTemplateView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     def get(self, request):
         return opening_stock_template_response(user=request.user, company=request.company)
 
 
-class ImportSourceFileView(InventoryAdminRequiredMixin, View):
+class ImportSourceFileView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_IMPORT_EXECUTE
     def get(self, request, reference):
         job = get_object_or_404(ImportJob.objects.for_company(request.company), reference=reference)
         if not job.source_file:

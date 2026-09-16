@@ -9,10 +9,12 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.accounts.permissions import user_has_capability_for_company
-from apps.accounts.roles import Capability
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
+from apps.accounts.permissions import user_membership_for_company
 from apps.projects.models import Project
 
+from ..access import location_in_inventory_scope, project_in_inventory_scope
 from ..models import StockItem, StockMovement, StockTransferLine, Supplier, Unit
 from ..normalization import clean_display_text, normalize_phone, normalize_text
 
@@ -52,9 +54,27 @@ def _validate_positive_quantity(quantity: Decimal) -> Decimal:
     return value
 
 
+def _require_inventory_permission(user, company, permission: AccessPermission):
+    membership = user_membership_for_company(user, company)
+    if membership is None or not membership_has_permission(membership, permission):
+        raise InventoryOperationError("Your access profile does not allow this Inventory action.")
+    return membership
+
+
 def _require_inventory_edit(user, company) -> None:
-    if not user_has_capability_for_company(user, company, Capability.EDIT_INVENTORY):
-        raise InventoryOperationError("Active Inventory edit access is required for this company.")
+    # Compatibility seam retained for older import callers. Ordinary stock operations
+    # use their exact granular permission below.
+    _require_inventory_permission(user, company, AccessPermission.INVENTORY_STOCK_RECEIVE)
+
+
+def _require_stock_scope(membership, stock_item: StockItem) -> None:
+    if not location_in_inventory_scope(membership, stock_item.location):
+        raise InventoryOperationError("This stock record is outside your assigned Inventory scope.")
+
+
+def _require_project_scope(membership, project: Project) -> None:
+    if not project_in_inventory_scope(membership, project):
+        raise InventoryOperationError("This project is outside your assigned Inventory scope.")
 
 
 def _existing_idempotent_result(company, idempotency_key: UUID) -> MovementResult | None:
@@ -172,7 +192,8 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
-    _require_inventory_edit(user, project.company)
+    membership = _require_inventory_permission(user, project.company, AccessPermission.INVENTORY_STOCK_RECEIVE)
+    _require_project_scope(membership, project)
     if project.deleted_at or unit.deleted_at:
         raise InactiveStockError("Deleted projects and units cannot receive new stock.")
     if unit.archived_at or not unit.is_active:
@@ -326,9 +347,8 @@ def add_opening_stock(
 ) -> MovementResult:
     """Create an opening movement for imports and administrator setup."""
 
-    if not user_has_capability_for_company(user, stock_item.company, Capability.MANAGE_INVENTORY):
-        raise InventoryOperationError("Only an inventory manager can create opening stock.")
-    _require_inventory_edit(user, stock_item.company)
+    membership = _require_inventory_permission(user, stock_item.company, AccessPermission.INVENTORY_IMPORT_EXECUTE)
+    _require_stock_scope(membership, stock_item)
     duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
@@ -394,7 +414,8 @@ def use_stock(
     notes: str = "",
     attachment=None,
 ) -> MovementResult:
-    _require_inventory_edit(user, stock_item.company)
+    membership = _require_inventory_permission(user, stock_item.company, AccessPermission.INVENTORY_STOCK_ISSUE)
+    _require_stock_scope(membership, stock_item)
     duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
@@ -452,7 +473,8 @@ def adjust_stock(
     invoice_reference: str = "",
     notes: str = "",
 ) -> MovementResult:
-    _require_inventory_edit(user, stock_item.company)
+    membership = _require_inventory_permission(user, stock_item.company, AccessPermission.INVENTORY_STOCK_ADJUST)
+    _require_stock_scope(membership, stock_item)
     duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
@@ -535,8 +557,8 @@ def reverse_movement(
     movement_date: date,
     reason: str,
 ) -> MovementResult:
-    if not user_has_capability_for_company(user, movement.company, Capability.MANAGE_INVENTORY):
-        raise InventoryOperationError("Only an inventory manager can reverse stock movements.")
+    membership = _require_inventory_permission(user, movement.company, AccessPermission.INVENTORY_MOVEMENTS_REVERSE)
+    _require_stock_scope(membership, movement.stock_item)
     duplicate = _existing_idempotent_result(movement.company, idempotency_key)
     if duplicate:
         return duplicate
@@ -624,6 +646,8 @@ def reverse_movement(
 
 
 def set_stock_item_status(*, stock_item: StockItem, user, status: str) -> StockItem:
+    membership = _require_inventory_permission(user, stock_item.company, AccessPermission.INVENTORY_STOCK_ADJUST)
+    _require_stock_scope(membership, stock_item)
     """Archive/reactivate a zero-balance stock identity without touching movement history."""
     _require_inventory_edit(user, stock_item.company)
     if status not in StockItem.Status.values:

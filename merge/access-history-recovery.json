@@ -1,0 +1,23 @@
+{
+  "release": "1.0.111",
+  "purpose": "Expose immutable company-scoped Access History and provide guarded prior-access recovery without creating a second authorization or audit authority.",
+  "predecessor": {
+    "release": "1.0.97-credential-session-revocation-hardening",
+    "archive_sha256": "801d25b6f65a898f7f0dc96044df1e868949ff84db8547aff1ccc42788453ca4"
+  },
+  "schema_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "security_boundaries": [
+    "Access History requires access.audit.view and is company-scoped",
+    "access recovery requires access.audit.view plus access.users.manage",
+    "self-recovery is forbidden and Company Owner protections remain authoritative",
+    "only a supported immutable event before-snapshot can be recovered",
+    "historical Access Profile and every selected scope record are revalidated against current company/lifecycle state",
+    "identity fields and credentials are never restored from audit JSON",
+    "successful recovery increments security_version and appends a new immutable access.user.access_restored event"
+  ],
+  "release_gate": "scripts/verify-access-history-recovery.py",
+  "runtime_test_label": "apps.accounts.tests.test_access_history",
+  "operator_guide": "docs/ACCESS_HISTORY_RECOVERY.md"
+}

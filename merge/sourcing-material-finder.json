@@ -1,0 +1,75 @@
+{
+  "release": "1.0.111",
+  "title": "Material Finder",
+  "predecessor": {
+    "release": "1.0.102-material-master-vendor-supply-catalog",
+    "archive_sha256": "b96eb8585a20f52337871b8c04916976399cc3f59604a7ad33d5afe0745270ce"
+  },
+  "schema_change": false,
+  "operational_integration": false,
+  "inventory_stock_effect": false,
+  "accounting_posting": false,
+  "payroll_formula_change": false,
+  "permission": "sourcing.vendors.view",
+  "edit_action_permission": "sourcing.vendors.manage",
+  "finder": {
+    "source_model": "sourcing.SourcingVendorOffer",
+    "server_pagination": [
+      25,
+      50,
+      100
+    ],
+    "searches": [
+      "material_code",
+      "material_name",
+      "material_alias",
+      "specification",
+      "brand",
+      "model",
+      "vendor_code",
+      "vendor_name"
+    ],
+    "filters": [
+      "availability",
+      "freshness",
+      "category",
+      "vendor",
+      "location",
+      "rate_min",
+      "rate_max"
+    ],
+    "sorts": [
+      "material",
+      "vendor",
+      "rate",
+      "quantity",
+      "verified",
+      "updated"
+    ],
+    "active_offer_only": true,
+    "active_material_only": true,
+    "active_current_vendor_only": true,
+    "company_scoped": true
+  },
+  "freshness": {
+    "source": "sourcing.SourcingSettings",
+    "default_fresh_for_days": 7,
+    "default_stale_after_days": 30,
+    "states": [
+      "fresh",
+      "needs-verification",
+      "stale",
+      "never"
+    ]
+  },
+  "isolation": [
+    "Finder is a read-side projection over SourcingVendorOffer only",
+    "Finder has no Inventory, Payroll, Rental Manpower or Accounting write path",
+    "searching does not create verification history or audit mutations",
+    "Vendor edit links are rendered only for sourcing.vendors.manage"
+  ],
+  "migration": null,
+  "runtime_test_label": "apps.sourcing.tests.test_material_finder",
+  "release_gate": "scripts/verify-sourcing-material-finder.py",
+  "operator_guide": "docs/SOURCING_MATERIAL_FINDER.md"
+}

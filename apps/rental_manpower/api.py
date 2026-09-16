@@ -8,15 +8,19 @@ from apps.projects.models import Project
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from django.core.exceptions import ValidationError
-from django.db.models import DecimalField, Exists, F, OuterRef, Q, Sum, Value
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 from django.db.models.functions import Coalesce
 
 from apps.accounts.api_permissions import api_workspace_required
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_allows_project, membership_has_permission, project_scope_ids, restrict_projects
 from apps.accounts.roles import Workspace
 from apps.core.query_controls import ListControls, apply_ordering, parse_list_controls, serialize_list
+from apps.core.payroll_attendance_contract import normalize_attendance_workflow_action
 from apps.rental_manpower.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
 from apps.rental_manpower.models import (
     ManpowerSupplier,
@@ -119,6 +123,30 @@ def _archived_query(value: str) -> bool | None:
     raise ValidationError({"archived":"Archived filter must be current, archived, or all."})
 
 
+def _require_permission(request: HttpRequest, permission: AccessPermission, message: str | None = None) -> None:
+    if not membership_has_permission(request.company_membership, permission):
+        raise PermissionDenied(message or "Your access profile does not allow this Rental Manpower action.")
+
+
+def _require_any_permission(request: HttpRequest, *permissions: AccessPermission) -> None:
+    if not any(membership_has_permission(request.company_membership, permission) for permission in permissions):
+        raise PermissionDenied("Your access profile does not allow this Rental Manpower action.")
+
+
+def _scoped_project(request: HttpRequest, identifier, *, require_active: bool = False):
+    project = rental_project_for_company(company=request.company, identifier=identifier, require_active=require_active)
+    if not membership_allows_project(request.company_membership, project):
+        raise PermissionDenied("This Rental project is outside your assigned access scope.")
+    return project
+
+
+def _commercial_visible(request: HttpRequest) -> bool:
+    return any(
+        membership_has_permission(request.company_membership, permission)
+        for permission in (AccessPermission.RENTAL_SETTLEMENTS_VIEW, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+    )
+
+
 def _bounded_lookup_page(request: HttpRequest, rows, *, serializer, min_query: int = 2, allow_empty: bool = False) -> JsonResponse:
     query = str(request.GET.get("q", "") or "").strip()
     exact_id = str(request.GET.get("id", "") or "").strip()
@@ -146,10 +174,17 @@ def _bounded_lookup_page(request: HttpRequest, rows, *, serializer, min_query: i
 @api_workspace_required(Workspace.RENTAL)
 def supplier_lookup_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_any_permission(request, AccessPermission.RENTAL_SUPPLIERS_VIEW, AccessPermission.RENTAL_WORKERS_MANAGE)
         query = str(request.GET.get("q", "") or "").strip()
         rows = ManpowerSupplier.objects.for_company(request.company).filter(
             status=SupplierStatus.ACTIVE, archived_at__isnull=True, deleted_at__isnull=True
         )
+        scoped_project_ids = project_scope_ids(request.company_membership)
+        if scoped_project_ids is not None:
+            if not scoped_project_ids:
+                rows = rows.none()
+            else:
+                rows = rows.filter(workers__rental_assignments__project_id__in=scoped_project_ids).distinct()
         if query:
             rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(contact_person__icontains=query) | Q(phone__icontains=query))
         rows = rows.order_by("code", "name")
@@ -166,10 +201,15 @@ def supplier_lookup_api(request: HttpRequest) -> JsonResponse:
 def supplier_payment_settlement_lookup_api(request: HttpRequest) -> JsonResponse:
     """Return only settlements that can accept a new supplier payment allocation."""
     try:
+        _require_permission(request, AccessPermission.RENTAL_PAYMENTS_PREPARE)
         query = str(request.GET.get("q", "") or "").strip()
         period_raw = str(request.GET.get("period", "") or "").strip()
         statuses = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID]
-        rows = SupplierSettlement.objects.for_company(request.company).filter(status__in=statuses)
+        rows = restrict_projects(
+            SupplierSettlement.objects.for_company(request.company).filter(status__in=statuses),
+            request.company_membership,
+            field="project_id",
+        )
         if period_raw:
             rows = rows.filter(period_start=_period_start(period_raw))
         if query:
@@ -209,6 +249,7 @@ def supplier_payment_settlement_lookup_api(request: HttpRequest) -> JsonResponse
 @api_workspace_required(Workspace.RENTAL)
 def suppliers_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_SUPPLIERS_VIEW if request.method == "GET" else AccessPermission.RENTAL_SUPPLIERS_MANAGE)
         if request.method == "GET":
             status = _status_query(request.GET.get("status", ""), {item.value for item in SupplierStatus})
             allowed_sorts = {
@@ -224,7 +265,7 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
             project_id = request.GET.get("project_id") or None
             project_pk = None
             if project_id:
-                project_pk = rental_project_for_company(company=request.company, identifier=project_id).pk
+                project_pk = _scoped_project(request, project_id).pk
             payment_terms_raw = request.GET.get("payment_terms")
             payment_terms = "" if payment_terms_raw is None else str(payment_terms_raw).strip()
             payment_terms_blank = payment_terms == "__blank__"
@@ -238,10 +279,32 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
                 archived=_archived_query(request.GET.get("archived", "")), project_id=project_pk,
                 payment_terms=payment_terms, workforce=workforce,
             )
+            scoped_project_ids = project_scope_ids(request.company_membership)
+            if scoped_project_ids is not None:
+                if not scoped_project_ids:
+                    rows = rows.none()
+                else:
+                    today = timezone.localdate()
+                    current_assignment = (
+                        Q(workers__rental_assignments__cancelled_at__isnull=True)
+                        & Q(workers__rental_assignments__effective_from__lte=today)
+                        & (Q(workers__rental_assignments__effective_to__isnull=True) | Q(workers__rental_assignments__effective_to__gte=today))
+                        & Q(workers__rental_assignments__project_id__in=scoped_project_ids)
+                    )
+                    rows = rows.filter(workers__rental_assignments__project_id__in=scoped_project_ids).annotate(
+                        total_worker_count=Count("workers", filter=Q(workers__rental_assignments__project_id__in=scoped_project_ids), distinct=True),
+                        active_worker_count=Count("workers", filter=Q(workers__status=RentalWorkerStatus.ACTIVE, workers__rental_assignments__project_id__in=scoped_project_ids), distinct=True),
+                        assigned_worker_count=Count("workers", filter=Q(workers__status=RentalWorkerStatus.ACTIVE) & current_assignment, distinct=True),
+                        active_project_count=Count("workers__rental_assignments__project", filter=Q(workers__status=RentalWorkerStatus.ACTIVE) & current_assignment, distinct=True),
+                    ).distinct()
             if payment_terms_blank:
                 rows = rows.filter(payment_terms="")
             period_raw = str(request.GET.get("period", "")).strip()
-            metrics = rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw)) if period_raw else {"suppliers": {}}
+            metrics = (
+                rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw))
+                if period_raw and scoped_project_ids is None
+                else {"suppliers": {}}
+            )
             outstanding_filter = str(request.GET.get("outstanding", "")).strip().lower()
             if outstanding_filter not in {"", "open", "cleared"}:
                 raise ValidationError({"outstanding": "Outstanding filter must be open, cleared, or blank."})
@@ -293,6 +356,7 @@ def suppliers_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def supplier_detail_api(request: HttpRequest, supplier_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_SUPPLIERS_MANAGE)
         body = json_body(request)
         if request.method == "DELETE":
             deleted_id=delete_unused_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, confirmation=str(body.get("confirmation", "")), reason=str(body.get("reason", "")), request=request)
@@ -324,6 +388,7 @@ def supplier_detail_api(request: HttpRequest, supplier_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def supplier_lifecycle_api(request: HttpRequest, supplier_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_SUPPLIERS_MANAGE)
         body=json_body(request); action=str(body.get("action","")).strip().lower().replace("-","_")
         effective=parse_optional_date(body.get("effective_date"), "effective_date")
         if action == "archive": supplier=archive_supplier(actor_membership=request.company_membership, supplier_id=supplier_id, reason=str(body.get("reason", "")), request=request)
@@ -340,6 +405,7 @@ def supplier_lifecycle_api(request: HttpRequest, supplier_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def projects_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_any_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_VIEW, AccessPermission.RENTAL_TIMESHEETS_VIEW) if request.method == "GET" else _require_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
         if request.method == "GET":
             status = _status_query(request.GET.get("status", ""), {item.value for item in ProjectStatus})
             allowed_sorts = {
@@ -363,10 +429,14 @@ def projects_api(request: HttpRequest) -> JsonResponse:
             supplier_id = request.GET.get("supplier_id") or None
             rows = projects_for_company(
                 company=request.company, query=request.GET.get("q", ""), status=status,
-                client=client, manager=manager, supplier_id=supplier_id,
+                client=client, manager=manager, supplier_id=supplier_id, membership=request.company_membership,
             )
             period_raw = str(request.GET.get("period", "")).strip()
-            metrics = rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw)) if period_raw else {"projects": {}}
+            metrics = (
+                rental_financial_metrics_for_period(company=request.company, period_start=_period_start(period_raw))
+                if period_raw and membership_has_permission(request.company_membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+                else {"projects": {}}
+            )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             project_metrics = metrics.get("projects", {})
             results, meta = serialize_list(
@@ -374,6 +444,8 @@ def projects_api(request: HttpRequest) -> JsonResponse:
                 serializer=lambda item: serialize_project(item, project_metrics.get(str(item.reference))),
             )
             return JsonResponse({"ok": True, "results": results, "meta": meta})
+        if request.company_membership.project_scope_mode != "all":
+            raise PermissionDenied("Project-scoped users cannot create Rental projects outside their assigned scope.")
         body = json_body(request)
         project = create_project(
             actor_membership=request.company_membership,
@@ -397,6 +469,8 @@ def projects_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def project_detail_api(request: HttpRequest, project_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+        _scoped_project(request, project_id)
         body = json_body(request)
         if request.method == "DELETE":
             project = trash_unused_project(
@@ -428,6 +502,8 @@ def project_detail_api(request: HttpRequest, project_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def project_lifecycle_api(request: HttpRequest, project_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+        _scoped_project(request, project_id)
         body = json_body(request)
         action = str(body.get("action", "")).strip().lower().replace("-", "_")
         if action == "archive":
@@ -447,6 +523,7 @@ def project_lifecycle_api(request: HttpRequest, project_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def workers_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_WORKERS_VIEW if request.method == "GET" else AccessPermission.RENTAL_WORKERS_MANAGE)
         if request.method == "GET":
             view_status = str(request.GET.get("view_status", "")).strip().lower().replace(" ", "_")
             archived_raw = request.GET.get("archived", "")
@@ -468,7 +545,7 @@ def workers_api(request: HttpRequest) -> JsonResponse:
             if project_raw == "unassigned":
                 project_pk = "unassigned"
             elif project_raw:
-                project_pk = rental_project_for_company(company=request.company, identifier=project_raw).pk
+                project_pk = _scoped_project(request, project_raw).pk
             rate_type = str(request.GET.get("rate_type", "")).strip().lower()
             if rate_type and rate_type not in {"hourly", "daily", "monthly"}:
                 raise ValidationError({"rate_type": "Rate type must be hourly, daily, monthly, or blank."})
@@ -482,9 +559,10 @@ def workers_api(request: HttpRequest) -> JsonResponse:
                 project_id=project_pk,
                 trade=str(request.GET.get("trade", "")).strip(),
                 rate_type=rate_type,
+                membership=request.company_membership,
             )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
-            results, meta = serialize_list(rows, controls=controls, serializer=serialize_worker)
+            results, meta = serialize_list(rows, controls=controls, serializer=lambda item: serialize_worker(item, include_commercial=_commercial_visible(request)))
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         worker = create_worker(
@@ -508,13 +586,15 @@ def workers_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_WORKERS_VIEW if request.method == "GET" else AccessPermission.RENTAL_WORKERS_MANAGE)
         if request.method == "GET":
-            worker = workers_for_company(company=request.company, archived=None).get(pk=worker_id)
-            assignments = list(assignments_for_company(company=request.company, worker_id=worker_id))
+            worker = workers_for_company(company=request.company, archived=None, membership=request.company_membership).get(pk=worker_id)
+            assignments = restrict_projects(assignments_for_company(company=request.company, worker_id=worker_id), request.company_membership, field="project_id")
+            assignments = list(assignments)
             return JsonResponse({
                 "ok": True,
-                "worker": serialize_worker(worker),
-                "assignments": serialized_assignment_history(company=request.company, assignments=assignments),
+                "worker": serialize_worker(worker, include_commercial=_commercial_visible(request)),
+                "assignments": serialized_assignment_history(company=request.company, assignments=assignments, include_commercial=_commercial_visible(request)),
             })
         body = json_body(request)
         if request.method == "DELETE":
@@ -543,6 +623,7 @@ def worker_detail_api(request: HttpRequest, worker_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def worker_lifecycle_api(request: HttpRequest, worker_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_WORKERS_MANAGE)
         body=json_body(request); action=str(body.get("action", "")).strip().lower().replace("-", "_")
         effective=parse_optional_date(body.get("effective_date"), "effective_date")
         if action == "restore_trash":
@@ -562,6 +643,7 @@ def worker_lifecycle_api(request: HttpRequest, worker_id) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def workers_import_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_WORKERS_MANAGE)
         body = json_body(request)
         rows = body.get("rows")
         if not isinstance(rows, list):
@@ -589,12 +671,16 @@ def workers_import_api(request: HttpRequest) -> JsonResponse:
 
 
 
-def _assignment_worker_payload(*, company, worker_id):
-    worker = workers_for_company(company=company).get(pk=worker_id)
-    assignments = list(assignments_for_company(company=company, worker_id=worker_id))
+def _assignment_worker_payload(*, company, worker_id, membership=None):
+    worker = workers_for_company(company=company, membership=membership).get(pk=worker_id)
+    assignments_qs = assignments_for_company(company=company, worker_id=worker_id)
+    if membership is not None:
+        assignments_qs = restrict_projects(assignments_qs, membership, field="project_id")
+    assignments = list(assignments_qs)
+    include_commercial = bool(membership is None or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE))
     return {
-        "worker": serialize_worker(worker),
-        "assignments": serialized_assignment_history(company=company, assignments=assignments),
+        "worker": serialize_worker(worker, include_commercial=include_commercial),
+        "assignments": serialized_assignment_history(company=company, assignments=assignments, include_commercial=include_commercial),
     }
 
 
@@ -611,11 +697,13 @@ def _bounded_list_controls(request: HttpRequest, *, allowed_sorts: dict[str, str
     return controls
 
 
-def _assignment_summary_payload(*, company) -> dict[str, int]:
+def _assignment_summary_payload(*, company, membership=None) -> dict[str, int]:
     assignments = WorkerAssignment.objects.for_company(company)
+    if membership is not None:
+        assignments = restrict_projects(assignments, membership, field="project_id")
     return {
-        "assigned": workers_for_company(company=company, operational_status="assigned").count(),
-        "available": workers_for_company(company=company, operational_status="available").count(),
+        "assigned": workers_for_company(company=company, operational_status="assigned", membership=membership).count(),
+        "available": workers_for_company(company=company, operational_status="available", membership=membership).count() if membership is None or membership.project_scope_mode == "all" else 0,
         "transfers": assignments.filter(change_type=AssignmentChangeType.TRANSFER).count(),
         "changes": assignments.filter(change_type__in=[AssignmentChangeType.TRADE_CHANGE, AssignmentChangeType.RATE_CHANGE]).count(),
         "releases": assignments.exclude(release_disposition="").count(),
@@ -627,8 +715,8 @@ def _assignment_summary_payload(*, company) -> dict[str, int]:
     }
 
 
-def _serialize_pool_worker(worker) -> dict[str, object]:
-    payload = serialize_worker(worker)
+def _serialize_pool_worker(worker, *, include_commercial: bool = True) -> dict[str, object]:
+    payload = serialize_worker(worker, include_commercial=include_commercial)
     history = [item for item in worker.rental_assignments.all() if item.cancelled_at is None]
     last = next((item for item in reversed(history) if item.effective_from <= date.today()), None)
     if last:
@@ -650,6 +738,7 @@ def assignment_project_lookup_api(request: HttpRequest) -> JsonResponse:
     authority for company, lifecycle, effective-date, and current-project rules.
     """
     try:
+        _require_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
         effective_date = parse_date(request.GET.get("effective_date"), "effective_date")
         query = str(request.GET.get("q", "")).strip()
         exclude_project_id = str(request.GET.get("exclude_project_id", "")).strip()
@@ -668,13 +757,13 @@ def assignment_project_lookup_api(request: HttpRequest) -> JsonResponse:
                 "meta": {"page": 1, "pageSize": page_size, "hasNext": False, "hasPrevious": False},
             })
 
-        rows = (
+        rows = restrict_projects((
             rental_projects_for_company(company=request.company, query=query, status=ProjectStatus.ACTIVE)
             .filter(archived_at__isnull=True, deleted_at__isnull=True)
             .filter(Q(start_date__isnull=True) | Q(start_date__lte=effective_date))
             .filter(Q(end_date__isnull=True) | Q(end_date__gte=effective_date))
             .order_by("code", "name")
-        )
+        ), request.company_membership)
         if exclude_project_id:
             try:
                 excluded = rental_project_for_company(company=request.company, identifier=exclude_project_id)
@@ -713,6 +802,7 @@ def assignment_project_lookup_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def assignments_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_ASSIGNMENTS_VIEW if request.method == "GET" else AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
         if request.method == "GET":
             view = str(request.GET.get("view") or "history").strip().lower().replace("-", "_")
             worker_id = request.GET.get("worker_id") or None
@@ -720,7 +810,7 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
             supplier_id = request.GET.get("supplier_id") or None
 
             if view == "summary":
-                return JsonResponse({"ok": True, "summary": _assignment_summary_payload(company=request.company)})
+                return JsonResponse({"ok": True, "summary": _assignment_summary_payload(company=request.company, membership=request.company_membership)})
 
             if view in {"deployment", "pool"}:
                 allowed_sorts = {"worker": "worker_number", "name": "full_name", "supplier": "supplier__name", "status": "status"}
@@ -730,23 +820,29 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
                     query=request.GET.get("q", ""),
                     supplier_id=supplier_id,
                     operational_status="assigned" if view == "deployment" else "pool",
-                    project_id=(rental_project_for_company(company=request.company, identifier=project_id).pk if project_id and view == "deployment" else None),
+                    project_id=(_scoped_project(request, project_id).pk if project_id and view == "deployment" else None),
+                    membership=request.company_membership,
                 )
                 rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
+                include_commercial = _commercial_visible(request)
                 results, meta = serialize_list(
                     rows,
                     controls=controls,
-                    serializer=serialize_worker if view == "deployment" else _serialize_pool_worker,
+                    serializer=lambda worker: (
+                        serialize_worker(worker, include_commercial=include_commercial)
+                        if view == "deployment"
+                        else _serialize_pool_worker(worker, include_commercial=include_commercial)
+                    ),
                 )
                 return JsonResponse({"ok": True, "view": view, "results": results, "meta": meta})
 
-            rows = assignments_for_company(
+            rows = restrict_projects(assignments_for_company(
                 company=request.company,
                 worker_id=worker_id,
                 project_id=project_id,
                 supplier_id=supplier_id,
                 query=request.GET.get("q", ""),
-            )
+            ), request.company_membership, field="project_id")
             if view == "activity":
                 event_type = str(request.GET.get("event_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
                 if event_type in {"project_assignment", "assignment"}:
@@ -773,7 +869,7 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
                 paginator = Paginator(rows, controls.page_size)
                 page_obj = paginator.get_page(controls.page)
                 segments = list(page_obj.object_list)
-                results = serialized_assignment_activity(company=request.company, assignments=segments, event_filter=event_type)
+                results = serialized_assignment_activity(company=request.company, assignments=segments, event_filter=event_type, include_commercial=_commercial_visible(request))
                 return JsonResponse({
                     "ok": True,
                     "view": "activity",
@@ -792,7 +888,7 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
             rows = list(rows)
             return JsonResponse({
                 "ok": True,
-                "results": serialized_assignment_history(company=request.company, assignments=rows),
+                "results": serialized_assignment_history(company=request.company, assignments=rows, include_commercial=_commercial_visible(request)),
             })
 
         body = json_body(request)
@@ -872,7 +968,7 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
         else:
             raise ValidationError({"action": "Action must be assign, transfer, trade, rate, release, or cancel."})
 
-        payload = _assignment_worker_payload(company=request.company, worker_id=worker_id)
+        payload = _assignment_worker_payload(company=request.company, worker_id=worker_id, membership=request.company_membership)
         payload.update({"ok": True, "assignmentId": str(assignment.pk)})
         return JsonResponse(payload, status=201 if action == "assign" else 200)
     except Exception as exc:
@@ -944,10 +1040,11 @@ def _rental_entry_delta(*, request: HttpRequest, period, raw_rows: list[dict[str
 def _rental_overtime_delta(*, request: HttpRequest, period, worker_id: str) -> dict[str, object]:
     row = RentalTimesheetOvertime.objects.for_company(request.company).filter(period=period, worker_id=worker_id).first()
     payload = _rental_header_delta(request=request, period=period)
+    include_commercial = _commercial_visible(request)
     payload["overtime"] = {
         worker_id: (
-            {"hours": str(row.hours), "rate": str(row.rate), "trade": row.trade, "rateType": row.rate_type}
-            if row else {"hours": "0", "rate": "0", "trade": "", "rateType": ""}
+            {"hours": str(row.hours), "rate": str(row.rate) if include_commercial else None, "trade": row.trade, "rateType": row.rate_type}
+            if row else {"hours": "0", "rate": None if not include_commercial else "0", "trade": "", "rateType": ""}
         )
     }
     return payload
@@ -957,6 +1054,7 @@ def _rental_overtime_delta(*, request: HttpRequest, period, worker_id: str) -> d
 @api_workspace_required(Workspace.RENTAL)
 def rental_timesheets_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_TIMESHEETS_VIEW if request.method == "GET" else AccessPermission.RENTAL_TIMESHEETS_EDIT)
         if request.method == "GET":
             project_id = request.GET.get("project_id")
             if not project_id:
@@ -1011,6 +1109,7 @@ def rental_timesheets_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def rental_timesheet_overtime_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_OVERTIME_EDIT)
         body = json_body(request)
         project_id = body.get("project_id")
         worker_id = str(body.get("worker_id") or "")
@@ -1036,6 +1135,11 @@ def rental_timesheet_overtime_api(request: HttpRequest) -> JsonResponse:
 def rental_timesheet_workflow_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
+        action_name = normalize_attendance_workflow_action(body.get("action"))
+        _require_permission(
+            request,
+            AccessPermission.RENTAL_TIMESHEETS_SUBMIT if action_name == "submit" else AccessPermission.RENTAL_TIMESHEETS_APPROVE,
+        )
         project_id = body.get("project_id")
         if not project_id:
             raise ValidationError({"project_id": "project_id is required."})
@@ -1057,6 +1161,7 @@ def rental_timesheet_workflow_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def rental_settlements_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
         period_start = _request_period(request)
         return JsonResponse({
             "ok": True,
@@ -1076,6 +1181,7 @@ def rental_settlements_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def rental_settlements_calculate_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_SETTLEMENTS_PREPARE)
         body = json_body(request)
         period_start = _request_period(request, body)
         project_id = body.get("project_id")
@@ -1100,6 +1206,11 @@ def rental_settlements_calculate_api(request: HttpRequest) -> JsonResponse:
 def rental_settlements_workflow_api(request: HttpRequest) -> JsonResponse:
     try:
         body = json_body(request)
+        settlement_action = str(body.get("action") or "").strip().lower().replace("-", "_")
+        _require_permission(
+            request,
+            AccessPermission.RENTAL_SETTLEMENTS_APPROVE if settlement_action in {"approve", "return_to_draft", "lock"} else AccessPermission.RENTAL_SETTLEMENTS_PREPARE,
+        )
         period_start = _request_period(request, body)
         project_id = body.get("project_id")
         if not project_id:
@@ -1135,6 +1246,7 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
     validation.
     """
     try:
+        _require_permission(request, AccessPermission.RENTAL_ADJUSTMENTS_MANAGE)
         mode = str(request.GET.get("mode", "workers")).strip().lower()
         if mode not in {"workers", "projects"}:
             raise ValidationError({"mode": "mode must be workers or projects."})
@@ -1167,14 +1279,14 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
             }
 
         if mode == "workers":
-            assignments = (
+            assignments = restrict_projects((
                 WorkerAssignment.objects.for_company(request.company)
                 .filter(worker_id=OuterRef("pk"), cancelled_at__isnull=True, effective_from__lte=transaction_date)
                 .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
                 .filter(project__status=ProjectStatus.ACTIVE, project__deleted_at__isnull=True)
                 .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
                 .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
-            )
+            ), request.company_membership, field="project_id")
             rows = (
                 RentalWorker.objects.for_company(request.company)
                 .select_related("supplier")
@@ -1228,7 +1340,7 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
                 "requiresWorker": True,
                 "meta": {"page": 1, "pageSize": page_size, "hasNext": False, "hasPrevious": False},
             })
-        assignments = (
+        assignments = restrict_projects((
             WorkerAssignment.objects.for_company(request.company)
             .select_related("project", "worker", "worker__supplier")
             .filter(
@@ -1245,9 +1357,9 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
             .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=transaction_date))
             .filter(Q(project__start_date__isnull=True) | Q(project__start_date__lte=transaction_date))
             .filter(Q(project__end_date__isnull=True) | Q(project__end_date__gte=transaction_date))
-        )
+        ), request.company_membership, field="project_id")
         if project_id:
-            project = rental_project_for_company(company=request.company, identifier=project_id)
+            project = _scoped_project(request, project_id)
             assignments = assignments.filter(project_id=project.pk)
             page = 1
         if query:
@@ -1282,6 +1394,7 @@ def rental_adjustment_lookup_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def rental_adjustments_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_ADJUSTMENTS_VIEW if request.method == "GET" else AccessPermission.RENTAL_ADJUSTMENTS_MANAGE)
         if request.method == "GET":
             period_start = _request_period(request)
             return JsonResponse({
@@ -1333,6 +1446,7 @@ def rental_adjustments_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def rental_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_ADJUSTMENTS_MANAGE)
         body = json_body(request)
         current = RentalAdjustment.objects.for_company(request.company).get(pk=adjustment_id)
         changes = {}
@@ -1364,6 +1478,11 @@ def rental_adjustment_detail_api(request: HttpRequest, adjustment_id) -> JsonRes
 def rental_adjustment_workflow_api(request: HttpRequest, adjustment_id) -> JsonResponse:
     try:
         body = json_body(request)
+        adjustment_action = str(body.get("action") or "").strip().lower().replace("-", "_")
+        _require_permission(
+            request,
+            AccessPermission.RENTAL_ADJUSTMENTS_APPROVE if adjustment_action in {"approve", "reject"} else AccessPermission.RENTAL_ADJUSTMENTS_MANAGE,
+        )
         current = RentalAdjustment.objects.for_company(request.company).get(pk=adjustment_id)
         adjustment = transition_rental_adjustment(
             actor_membership=request.company_membership,
@@ -1390,6 +1509,7 @@ def rental_adjustment_workflow_api(request: HttpRequest, adjustment_id) -> JsonR
 @api_workspace_required(Workspace.RENTAL)
 def supplier_payments_api(request: HttpRequest) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_PAYMENTS_VIEW if request.method == "GET" else AccessPermission.RENTAL_PAYMENTS_EXECUTE)
         if request.method == "GET":
             period_start = _request_period(request)
             return JsonResponse({
@@ -1424,6 +1544,7 @@ def supplier_payments_api(request: HttpRequest) -> JsonResponse:
 @api_workspace_required(Workspace.RENTAL)
 def supplier_payment_result_api(request: HttpRequest, payment_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_PAYMENTS_EXECUTE)
         body = json_body(request)
         payment = transition_supplier_payment(
             actor_membership=request.company_membership,
@@ -1446,6 +1567,7 @@ def supplier_payment_result_api(request: HttpRequest, payment_id) -> JsonRespons
 @api_workspace_required(Workspace.RENTAL)
 def supplier_payment_retry_api(request: HttpRequest, payment_id) -> JsonResponse:
     try:
+        _require_permission(request, AccessPermission.RENTAL_PAYMENTS_EXECUTE)
         body = json_body(request)
         retry = retry_supplier_payment(
             actor_membership=request.company_membership,

@@ -1,0 +1,75 @@
+{
+  "release": "1.0.111",
+  "purpose": "Separate Internal Payroll preparation, independent finance review, final approval, Bank/WPS export and payment execution into exact backend-authoritative permissions with enforced actor separation.",
+  "predecessor": {
+    "release": "1.0.94-page-level-view-only-custom-access-profiles",
+    "archive_sha256": "9920b4009f29fdf1dd09db51bb5fdf5c29eb4ecc32c937961c5537e0fa20e6d3"
+  },
+  "schema_change": true,
+  "payroll_formula_change": false,
+  "permissions": {
+    "prepare": "internal.payroll_runs.prepare",
+    "review": "internal.payroll_runs.review",
+    "approve": "internal.payroll_runs.approve",
+    "attendance_edit": "internal.attendance.edit",
+    "attendance_submit": "internal.attendance.submit",
+    "attendance_approve": "internal.attendance.approve",
+    "salary_setup": "internal.salary_setup.manage",
+    "payment_prepare": "internal.payments.prepare",
+    "wps_export": "internal.wps.export",
+    "payment_execute": "internal.payments.execute"
+  },
+  "built_in_separation": {
+    "internal-payroll-officer": {
+      "may": [
+        "prepare payroll",
+        "edit and submit attendance",
+        "manage salary setup",
+        "prepare payment setup and Bank/WPS export"
+      ],
+      "must_not": [
+        "finance-review payroll",
+        "final-approve payroll",
+        "execute/reconcile payments"
+      ]
+    },
+    "finance-reviewer": {
+      "may": [
+        "approve attendance",
+        "approve adjustments",
+        "independently review payroll",
+        "return payroll for changes"
+      ],
+      "must_not": [
+        "prepare payroll",
+        "final-approve payroll",
+        "execute payments"
+      ]
+    },
+    "finance-manager": {
+      "may": [
+        "final-approve payroll after independent review",
+        "prepare/export Bank/WPS",
+        "execute/reconcile payments"
+      ],
+      "must_not": [
+        "manage employee master",
+        "manage salary setup",
+        "calculate/prepare payroll",
+        "perform the Finance Review sign-off"
+      ]
+    }
+  },
+  "workflow": [
+    "Payroll Officer calculates and submits a locked-attendance payroll snapshot",
+    "Finance Reviewer independently signs off review or returns the run for changes; the reviewer cannot be the payroll submitter",
+    "Finance Manager can final-approve only after recorded finance-review sign-off and cannot be the submitter or reviewer",
+    "Bank/WPS export authority is independent from payment execution authority"
+  ],
+  "migrations": [
+    "apps/accounts/migrations/0010_internal_finance_permission_decomposition.py",
+    "apps/internal_payroll/migrations/0014_payroll_review_signoff.py"
+  ],
+  "release_gate": "scripts/verify-internal-finance-permissions.py",
+  "operator_guide": "docs/INTERNAL_FINANCE_PERMISSIONS.md"
+}

@@ -1,7 +1,10 @@
 {
-  "release": "1.0.87",
+  "release": "1.0.111",
   "surface": "rental-assignment-project-selector",
-  "applies_to": ["assign", "transfer"],
+  "applies_to": [
+    "assign",
+    "transfer"
+  ],
   "server_lookup": {
     "endpoint": "/api/rental/assignments/project-lookup/",
     "minimum_query_chars": 2,

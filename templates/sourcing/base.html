@@ -1,0 +1,42 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{{ page_title|default:'Sourcing Directory' }} · {{ APP_NAME }}{% endblock %}</title>
+  <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}">
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
+  <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
+  <link rel="stylesheet" href="{% static 'sourcing/css/directory.css' %}?v=1.0.111">
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="inventory-shell-v2 sourcing-shell-v1" data-page="{{ page_key }}">
+<div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
+  {% include "sourcing/sidebar.html" %}
+  <main class="main">
+    <header class="topbar inventory-topbar">
+      <button class="menu-button" data-sidebar-toggle aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="topbar-context"><strong>Sourcing Directory</strong><span>Reference-only supplier intelligence</span></div>
+      <div class="top-actions">
+        {% if SOURCING_ACCESS.export %}<span class="sourcing-access-chip">Export permitted</span>{% endif %}
+      </div>
+    </header>
+    <div class="content">
+      {% if messages %}<div class="message-stack">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'success' }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  <button class="inventory-collapsed-rail-toggle" type="button" data-inventory-sidebar-rail-toggle aria-label="Expand navigation" title="Expand navigation">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
+</div>
+<script src="{% static 'platform/js/shell-switchers.js' %}"></script>
+<script src="{% static 'platform/js/inventory-shell.js' %}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

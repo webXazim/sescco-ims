@@ -1,0 +1,5 @@
+{% extends "sourcing/base.html" %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb"><a href="{% url 'sourcing:manpower_supplier_list' %}">Manpower Suppliers</a><span>/</span><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">{{ supplier.code }}</a><span>/</span><strong>Edit Contact</strong></nav><h1>Edit Contact</h1><p>{{ page_subtitle }}</p></div></section>
+<form class="sourcing-form-shell" method="post">{% csrf_token %}<section class="sourcing-form-section"><header><h2>Contact Person</h2></header><div class="sourcing-form-grid">{% for field in form %}{% include "sourcing/vendors/field.html" with field=field %}{% endfor %}</div></section><footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">Save Contact</button></footer></form>
+{% endblock %}

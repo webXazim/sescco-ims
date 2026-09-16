@@ -15,9 +15,9 @@ from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest
 from django.utils import timezone
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_has_permission
 from apps.accounts.models import CompanyMembership
-from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
-from apps.accounts.roles import Capability, Workspace
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
@@ -51,14 +51,19 @@ def _money(value: Decimal | int | str) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"))
 
 
-def _require_internal_edit(membership: CompanyMembership) -> None:
-    if not membership_can_edit(membership, Workspace.INTERNAL):
-        raise PermissionDenied("Your role cannot edit Internal Company payroll data.")
+def _require_payment_prepare(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_PREPARE):
+        raise PermissionDenied("Your access profile cannot prepare salary-payment settings or batches.")
 
 
-def _require_pay(membership: CompanyMembership) -> None:
-    if not membership_can_workspace(membership, Workspace.INTERNAL) or not membership_has_capability(membership, Capability.PAY):
-        raise PermissionDenied("Your role cannot execute or reconcile salary payments.")
+def _require_wps_export(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_WPS_EXPORT):
+        raise PermissionDenied("Your access profile cannot manage or export Bank/WPS files.")
+
+
+def _require_payment_execute(membership: CompanyMembership) -> None:
+    if not membership_has_permission(membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE):
+        raise PermissionDenied("Your access profile cannot execute or reconcile salary payments.")
 
 
 def _masked(value: str, *, visible: int = 4) -> str:
@@ -107,7 +112,7 @@ def upsert_employee_payment_profile(
     Omitted fields are preserved on an existing profile. Sensitive destination
     values are never accepted as masked placeholders.
     """
-    _require_internal_edit(actor_membership)
+    _require_payment_prepare(actor_membership)
     company = actor_membership.company
     employee = InternalEmployee.objects.select_for_update().for_company(company).get(pk=employee_id)
     profile = EmployeePaymentProfile.objects.select_for_update().for_company(company).filter(employee=employee).first()
@@ -160,7 +165,7 @@ def upsert_employee_payment_profile(
 def update_company_salary_payment_settings(
     *, actor_membership: CompanyMembership, values: dict[str, object], request: HttpRequest | None = None
 ) -> CompanySalaryPaymentSettings:
-    _require_internal_edit(actor_membership)
+    _require_payment_prepare(actor_membership)
     company = actor_membership.company
     settings_row = CompanySalaryPaymentSettings.objects.select_for_update().for_company(company).first()
     if settings_row is None:
@@ -214,7 +219,7 @@ def create_bank_export_template(
     is_active: bool = True,
     request: HttpRequest | None = None,
 ) -> BankExportTemplate:
-    _require_internal_edit(actor_membership)
+    _require_wps_export(actor_membership)
     template = BankExportTemplate(
         company=actor_membership.company,
         code=code,
@@ -247,7 +252,7 @@ def create_bank_export_template(
 def update_bank_export_template(
     *, actor_membership: CompanyMembership, template_id, values: dict[str, object], request: HttpRequest | None = None
 ) -> BankExportTemplate:
-    _require_internal_edit(actor_membership)
+    _require_wps_export(actor_membership)
     company = actor_membership.company
     template = BankExportTemplate.objects.select_for_update().for_company(company).get(pk=template_id)
     if template.archived_at:
@@ -326,7 +331,7 @@ def _wps_breakdown(line: PayrollRunLine) -> tuple[dict[str, Decimal], list[str]]
 
 @transaction.atomic
 def archive_bank_export_template(*, actor_membership: CompanyMembership, template_id, reason: str, request: HttpRequest | None = None) -> BankExportTemplate:
-    _require_internal_edit(actor_membership)
+    _require_wps_export(actor_membership)
     template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
     if template.archived_at:
         return template
@@ -342,7 +347,7 @@ def archive_bank_export_template(*, actor_membership: CompanyMembership, templat
 
 @transaction.atomic
 def restore_bank_export_template_archive(*, actor_membership: CompanyMembership, template_id, reason: str = "", request: HttpRequest | None = None) -> BankExportTemplate:
-    _require_internal_edit(actor_membership)
+    _require_wps_export(actor_membership)
     template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
     if not template.archived_at:
         return template
@@ -358,7 +363,7 @@ def restore_bank_export_template_archive(*, actor_membership: CompanyMembership,
 
 @transaction.atomic
 def delete_unused_bank_export_template(*, actor_membership: CompanyMembership, template_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
-    _require_internal_edit(actor_membership)
+    _require_wps_export(actor_membership)
     template = BankExportTemplate.objects.select_for_update().for_company(actor_membership.company).get(pk=template_id)
     decision = require_lifecycle_action(template, LifecycleAction.DELETE, confirmation=confirmation)
     before = _template_audit(template); object_id = str(template.pk); object_label = str(template)
@@ -372,7 +377,7 @@ def delete_unused_bank_export_template(*, actor_membership: CompanyMembership, t
 
 @transaction.atomic
 def delete_unused_employee_payment_profile(*, actor_membership: CompanyMembership, employee_id, confirmation: str, reason: str = "", request: HttpRequest | None = None) -> str:
-    _require_internal_edit(actor_membership)
+    _require_payment_prepare(actor_membership)
     profile = EmployeePaymentProfile.objects.select_for_update().select_related("employee").for_company(actor_membership.company).get(employee_id=employee_id)
     decision = require_lifecycle_action(profile, LifecycleAction.DELETE, confirmation=confirmation)
     before = _profile_audit(profile); object_id = str(profile.pk); object_label = f"{profile.employee.employee_number} · salary payment profile"
@@ -563,7 +568,7 @@ def prepare_salary_payment_batch(
     note: str = "",
     request: HttpRequest | None = None,
 ) -> SalaryPaymentBatch:
-    _require_internal_edit(actor_membership)
+    _require_payment_prepare(actor_membership)
     company = actor_membership.company
     run = verify_payroll_run_integrity(company=company, period_start=period_start, verify_source=False)
     run = PayrollRun.objects.select_for_update().for_company(company).get(pk=run.pk)
@@ -706,7 +711,7 @@ def _export_value(batch: SalaryPaymentBatch, row: SalaryPaymentRow, key: str) ->
 def export_salary_payment_batch(
     *, actor_membership: CompanyMembership, batch_id, request: HttpRequest | None = None
 ) -> tuple[SalaryPaymentBatch, bytes, str, str]:
-    _require_pay(actor_membership)
+    _require_wps_export(actor_membership)
     company = actor_membership.company
     batch = SalaryPaymentBatch.objects.select_for_update().for_company(company).select_related("run").get(pk=batch_id)
     if batch.status in {SalaryPaymentBatchStatus.CANCELLED, SalaryPaymentBatchStatus.CLOSED}:
@@ -785,7 +790,7 @@ def _refresh_batch_locked(batch: SalaryPaymentBatch) -> SalaryPaymentBatch:
 def start_salary_payment_batch(
     *, actor_membership: CompanyMembership, batch_id, request: HttpRequest | None = None
 ) -> SalaryPaymentBatch:
-    _require_pay(actor_membership)
+    _require_payment_execute(actor_membership)
     company = actor_membership.company
     batch = SalaryPaymentBatch.objects.select_for_update().for_company(company).select_related("run").get(pk=batch_id)
     if batch.status not in {SalaryPaymentBatchStatus.PREPARED, SalaryPaymentBatchStatus.EXPORTED}:
@@ -913,7 +918,7 @@ def import_salary_payment_results(
     content: str,
     request: HttpRequest | None = None,
 ) -> tuple[SalaryPaymentBatch, SalaryPaymentResultImport, list[str]]:
-    _require_pay(actor_membership)
+    _require_payment_execute(actor_membership)
     if len(content.encode("utf-8")) > 2 * 1024 * 1024:
         raise ValidationError({"file": "Bank result file exceeds the 2 MiB reconciliation limit."})
     company = actor_membership.company
@@ -1012,7 +1017,7 @@ def import_salary_payment_results(
 def retry_salary_payment_row(
     *, actor_membership: CompanyMembership, row_id, request: HttpRequest | None = None
 ) -> SalaryPaymentRow:
-    _require_pay(actor_membership)
+    _require_payment_execute(actor_membership)
     company = actor_membership.company
     row = SalaryPaymentRow.objects.select_for_update().for_company(company).select_related("batch").get(pk=row_id)
     batch = SalaryPaymentBatch.objects.select_for_update().for_company(company).get(pk=row.batch_id)
@@ -1056,7 +1061,7 @@ def retry_salary_payment_row(
 def cancel_salary_payment_batch(
     *, actor_membership: CompanyMembership, batch_id, reason: str, request: HttpRequest | None = None
 ) -> SalaryPaymentBatch:
-    _require_pay(actor_membership)
+    _require_payment_prepare(actor_membership)
     company = actor_membership.company
     reason = reason.strip()
     if not reason:
@@ -1093,7 +1098,7 @@ def cancel_salary_payment_batch(
 def close_salary_payment_batch(
     *, actor_membership: CompanyMembership, batch_id, request: HttpRequest | None = None
 ) -> SalaryPaymentBatch:
-    _require_pay(actor_membership)
+    _require_payment_execute(actor_membership)
     company = actor_membership.company
     batch = SalaryPaymentBatch.objects.select_for_update().for_company(company).get(pk=batch_id)
     _refresh_batch_locked(batch)
@@ -1127,7 +1132,7 @@ def close_salary_payment_batch(
 def reopen_salary_payment_batch(
     *, actor_membership: CompanyMembership, batch_id, reason: str, request: HttpRequest | None = None
 ) -> SalaryPaymentBatch:
-    _require_pay(actor_membership)
+    _require_payment_execute(actor_membership)
     company = actor_membership.company
     reason = reason.strip()
     if not reason:

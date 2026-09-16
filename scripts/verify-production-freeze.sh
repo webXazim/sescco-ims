@@ -13,6 +13,31 @@ require_text() {
 sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
+python3 scripts/verify-granular-access-authority.py
+python3 scripts/verify-single-access-authority.py
+python3 scripts/verify-user-management-backend.py
+python3 scripts/verify-user-management-ui.py
+python3 scripts/verify-rental-supervisor-scope.py
+python3 scripts/verify-inventory-storekeeper-scope.py
+python3 scripts/verify-page-level-view-only.py
+python3 scripts/verify-internal-finance-permissions.py
+python3 scripts/verify-cross-module-access-leaks.py
+python3 scripts/verify-credential-session-revocation.py
+python3 scripts/verify-access-history-recovery.py
+python3 scripts/verify-sourcing-domain-foundation.py
+python3 scripts/verify-sourcing-access-control.py
+python3 scripts/verify-sourcing-vendor-master.py
+python3 scripts/verify-sourcing-material-catalog.py
+python3 scripts/verify-sourcing-material-finder.py
+python3 scripts/verify-sourcing-vendor-verification.py
+python3 scripts/verify-sourcing-manpower-master.py
+python3 scripts/verify-sourcing-trade-workforce-catalog.py
+python3 scripts/verify-sourcing-workforce-finder.py
+python3 scripts/verify-sourcing-data-exchange.py
+python3 scripts/verify-sourcing-scale-hardening.py
+python3 scripts/verify-sourcing-security-certification.py
+python3 scripts/verify-sourcing-browser-e2e.py
+
 bash scripts/verify-payroll-frontend.sh
 
 bash scripts/verify-select-timesheet-ux.sh

@@ -17,6 +17,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.accounts.access_catalog import system_profile_key_for_role
 from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company, DocumentBrandingMode
@@ -441,7 +442,9 @@ class Command(BaseCommand):
         qs = Company.objects.filter(
             is_active=True,
             memberships__is_active=True,
-            memberships__role=AccessRole.OWNER,
+            memberships__access_profile__key=system_profile_key_for_role(AccessRole.OWNER),
+            memberships__access_profile__is_system=True,
+            memberships__access_profile__is_active=True,
             memberships__user__is_active=True,
         ).distinct()
         if slug:
@@ -459,7 +462,13 @@ class Command(BaseCommand):
     def _owner(self, company: Company) -> CompanyMembership:
         membership = (
             CompanyMembership.objects.select_related("company", "user")
-            .filter(company=company, role=AccessRole.OWNER, is_active=True, user__is_active=True)
+            .filter(
+                company=company,
+                access_profile__key=system_profile_key_for_role(AccessRole.OWNER),
+                access_profile__is_system=True,
+                access_profile__is_active=True,
+                is_active=True, user__is_active=True,
+            )
             .order_by("joined_at")
             .first()
         )

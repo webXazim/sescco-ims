@@ -1,0 +1,22 @@
+{
+  "release": "1.0.111",
+  "purpose": "Close indirect authorization leaks across search, deep links, employee profiles, Documents, Reports, Management aggregates, Archive/Trash, selectors and scoped supplier/organization directories.",
+  "predecessor": {
+    "release": "1.0.95-internal-payroll-finance-permission-decomposition",
+    "archive_sha256": "1591e72505ceb6b3c9720dc62c53568eaf00ed9f624be255cb270af3ddb45425"
+  },
+  "schema_change": false,
+  "payroll_formula_change": false,
+  "security_boundaries": [
+    "employee deep links and profile subsections follow page permission plus Branch scope",
+    "finalized Documents and source lookups follow Branch/Project scope",
+    "Reports require both report permission and the underlying sensitive page permission",
+    "Management aggregate/audit surfaces fail closed for narrowed scopes and unrelated access administrators",
+    "Archive/Trash registers follow Branch/Project scope",
+    "global search only queries exact permitted entity endpoints and requires shared.search.use",
+    "supplier and department indirect metrics cannot reveal out-of-scope workforce or financial totals"
+  ],
+  "release_gate": "scripts/verify-cross-module-access-leaks.py",
+  "runtime_test_label": "apps.accounts.tests.test_cross_module_access_leaks",
+  "operator_guide": "docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md"
+}

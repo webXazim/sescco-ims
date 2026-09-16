@@ -1,0 +1,74 @@
+{
+  "release": "1.0.111",
+  "purpose": "Production User Management backend CRUD on the profile-only authorization authority, before exposing the Administration UI.",
+  "schema_change": true,
+  "payroll_formula_change": false,
+  "authority": {
+    "company_boundary": "accounts.CompanyMembership",
+    "runtime_profile": "accounts.AccessProfile",
+    "manage_permission": "access.users.manage",
+    "view_permission": "access.users.view",
+    "owner_profile_key": "role-owner",
+    "membership_role_authority": false,
+    "custom_profile_classification": "custom",
+    "django_staff_reserved_for_superusers": true
+  },
+  "user_api": {
+    "list_create": "/api/access/users/",
+    "detail_update_delete": "/api/access/users/<membership_id>/",
+    "activation": "/api/access/users/<membership_id>/status/",
+    "password_reset": "/api/access/users/<membership_id>/reset-password/",
+    "profiles": "/api/access/profiles/",
+    "scope_lookup": "/api/access/scopes/lookup/",
+    "page_sizes": [
+      25,
+      50,
+      100
+    ],
+    "scope_lookup_max_rows": 25,
+    "search_min_chars": 2
+  },
+  "security": {
+    "temporary_password_validated": true,
+    "temporary_password_never_audited": true,
+    "must_change_password_state": true,
+    "password_reset_invalidates_sessions_via_auth_hash": true,
+    "non_owner_cannot_assign_owner": true,
+    "non_owner_cannot_modify_owner": true,
+    "administrator_cannot_change_own_access": true,
+    "administrator_cannot_deactivate_self": true,
+    "last_owner_protection_retained": true,
+    "cross_company_profile_assignment_blocked": true,
+    "cross_company_scope_assignment_blocked": true,
+    "hard_delete_only_unused_never_signed_in_identity": true,
+    "established_identity_deactivation_required": true
+  },
+  "scopes": {
+    "projects": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "branches": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "inventory_locations": [
+      "all",
+      "selected",
+      "none"
+    ],
+    "selected_requires_rows": true,
+    "assignment_replaced_atomically": true
+  },
+  "audit_actions": [
+    "access.user.created",
+    "access.user.updated",
+    "access.user.activated",
+    "access.user.deactivated",
+    "access.user.password_reset",
+    "access.user.deleted_unused"
+  ],
+  "migration": "apps/accounts/migrations/0007_user_management_backend.py"
+}

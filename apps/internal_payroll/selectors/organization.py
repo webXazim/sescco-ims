@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q, QuerySet
 
+from apps.accounts.access_policy import branch_scope_ids
 from apps.core.models import Company
 from apps.core.services.lifecycle import lifecycle_capabilities
 from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, EmploymentStatus, InternalEmployee
@@ -24,30 +25,28 @@ def branches_for_company(*, company: Company, query: str = "", active: bool | No
             | Q(address__icontains=query)
             | Q(manager_name__icontains=query)
         )
+    scoped_branch_ids = branch_scope_ids(membership) if membership is not None else None
+    employee_filter = Q(
+        employee_assignments__effective_to__isnull=True,
+        employee_assignments__employee__deleted_at__isnull=True,
+        employee_assignments__employee__archived_at__isnull=True,
+    )
+    if scoped_branch_ids is not None:
+        if not scoped_branch_ids:
+            employee_filter &= Q(pk__isnull=True)
+        else:
+            employee_filter &= Q(employee_assignments__branch_id__in=scoped_branch_ids)
     return rows.annotate(
-        employee_count=Count(
-            "employee_assignments__employee",
-            filter=Q(
-                employee_assignments__effective_to__isnull=True,
-                employee_assignments__employee__deleted_at__isnull=True,
-                employee_assignments__employee__archived_at__isnull=True,
-            ),
-            distinct=True,
-        ),
+        employee_count=Count("employee_assignments__employee", filter=employee_filter, distinct=True),
         active_employee_count=Count(
             "employee_assignments__employee",
-            filter=Q(
-                employee_assignments__effective_to__isnull=True,
-                employee_assignments__employee__deleted_at__isnull=True,
-                employee_assignments__employee__archived_at__isnull=True,
-                employee_assignments__employee__status=EmploymentStatus.ACTIVE,
-            ),
+            filter=employee_filter & Q(employee_assignments__employee__status=EmploymentStatus.ACTIVE),
             distinct=True,
         ),
     ).order_by("code", "name")
 
 
-def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Department]:
+def departments_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False, membership=None) -> QuerySet[Department]:
     rows = Department.objects.for_company(company)
     if deleted is not None:
         rows = rows.filter(deleted_at__isnull=not deleted)

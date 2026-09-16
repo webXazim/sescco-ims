@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
-  <div class="head-actions"><a class="btn btn-primary" href="{% url 'projects:create' %}">＋ Add project</a></div>
+  <div class="head-actions">{% if "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'projects:create' %}">＋ Add project</a>{% endif %}</div>
 </div>
 <section class="card">
   <form class="explorer-toolbar" method="get" data-live-filter-form>
@@ -35,7 +35,7 @@
 </div>
 {% include "partials/pagination.html" %}
 {% else %}
-<section class="card section-gap"><div class="empty-state"><div class="empty-icon">◇</div><h2>No projects found</h2><p>Create the first contracting project or clear the current filters.</p><a class="btn btn-primary" href="{% url 'projects:create' %}">Add project</a></div></section>
+<section class="card section-gap"><div class="empty-state"><div class="empty-icon">◇</div><h2>No projects found</h2><p>Create the first contracting project or clear the current filters.</p>{% if "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'projects:create' %}">Add project</a>{% endif %}</div></section>
 {% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,55 @@
+{% extends "sourcing/base.html" %}
+{% load static %}
+{% block title %}Sourcing Materials · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Materials</strong></nav>
+    <h1>Sourcing Materials</h1>
+    <p>Controlled reference items and search aliases. These records are not Inventory items and carry no stock balance.</p>
+  </div>
+  {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:material_create' %}">+ New Material</a>{% endif %}
+  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% url 'sourcing:data_export' 'materials' %}?format=xlsx&{{ request.GET.urlencode }}">Export current view</a>{% endif %}
+</section>
+
+<section class="sourcing-panel">
+  <form class="sourcing-toolbar" method="get">
+    <div class="sourcing-status-strip" aria-label="Material status filters">
+      <a class="{% if directory.status == 'active' %}active{% endif %}" href="?status=active&q={{ directory.query|urlencode }}">Active <span>{{ counts.active }}</span></a>
+      <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?status=inactive&q={{ directory.query|urlencode }}">Inactive <span>{{ counts.inactive }}</span></a>
+      <a class="{% if directory.status == 'all' %}active{% endif %}" href="?status=all&q={{ directory.query|urlencode }}">All <span>{{ counts.active|add:counts.inactive }}</span></a>
+    </div>
+    <div class="sourcing-toolbar__actions">
+      <label class="sourcing-search"><span class="sr-only">Search materials</span><input class="sourcing-input" type="search" name="q" value="{{ directory.query }}" placeholder="Search code, material, category or alias"></label>
+      <input type="hidden" name="status" value="{{ directory.status }}">
+      <select class="sourcing-select" name="page_size" aria-label="Rows per page" onchange="this.form.submit()">{% for size in page_sizes %}<option value="{{ size }}"{% if size == directory.page_size %} selected{% endif %}>{{ size }} rows</option>{% endfor %}</select>
+      <button class="sourcing-btn" type="submit">Search</button>
+    </div>
+  </form>
+  <div class="sourcing-table-wrap">
+    <table class="sourcing-table sourcing-table--materials">
+      <thead><tr><th>Material</th><th>Category</th><th>Aliases</th><th>Default Unit</th><th class="num">Vendors</th><th class="num">Offers</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for material in materials %}
+        <tr>
+          <td><strong>{{ material.name }}</strong><small class="cell-note">{{ material.code }}</small></td>
+          <td>{{ material.category|default:'—' }}</td>
+          <td>{% if material.aliases %}{{ material.aliases|join:", " }}{% else %}—{% endif %}</td>
+          <td>{{ material.default_unit|default:'—' }}</td>
+          <td class="num">{{ material.vendor_count }}</td>
+          <td class="num">{{ material.active_offer_count }}</td>
+          <td>{% if material.is_active %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
+          <td>{{ material.updated_at|date:"d M Y" }}</td>
+          <td class="row-menu-col">
+            {% if can_manage %}<details class="sourcing-row-menu"><summary aria-label="Material actions">⋯</summary><div><a href="{% url 'sourcing:material_edit' material.id %}">Edit</a><form method="post" action="{% url 'sourcing:material_status' material.id %}">{% csrf_token %}<input type="hidden" name="active" value="{% if material.is_active %}0{% else %}1{% endif %}"><button class="sourcing-row-action" type="submit">Mark {% if material.is_active %}Inactive{% else %}Active{% endif %}</button></form></div></details>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9"><div class="sourcing-empty"><strong>No Sourcing Materials found</strong><p>Create controlled reference items before adding Vendor Supply Catalog rows.</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:material_create' %}">New Material</a>{% endif %}</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav>{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
+</section>
+{% endblock %}

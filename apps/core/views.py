@@ -11,6 +11,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from apps.accounts.access_catalog import AccessPermission
+from apps.inventory.access import restrict_inventory_movements, restrict_inventory_projects, restrict_inventory_stock
 from apps.inventory.models import StockItem, StockMovement, Unit
 from apps.inventory.selectors import (
     LOW_STOCK_CONDITION,
@@ -19,7 +21,7 @@ from apps.inventory.selectors import (
 )
 from apps.projects.models import Project
 
-from .access import InventoryWorkspaceMixin
+from .access import InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 
 
 def _compact_value(value: Decimal) -> str:
@@ -38,7 +40,7 @@ def _compact_value(value: Decimal) -> str:
     return f"{value:,.2f}"
 
 
-class WorkspaceTemplateView(InventoryWorkspaceMixin, TemplateView):
+class WorkspaceTemplateView(InventoryPermissionRequiredMixin, TemplateView):
     page_key = ""
     page_title = ""
     page_subtitle = ""
@@ -54,6 +56,7 @@ class WorkspaceTemplateView(InventoryWorkspaceMixin, TemplateView):
 
 
 class DashboardView(WorkspaceTemplateView):
+    inventory_permission = AccessPermission.INVENTORY_DASHBOARD_VIEW
     template_name = "core/dashboard.html"
     page_key = "dashboard"
     page_title = "Inventory overview"
@@ -62,9 +65,9 @@ class DashboardView(WorkspaceTemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         selected_project = self.request.GET.get("project", "").strip()
-        items = stock_items(self.request.company).filter(status=StockItem.Status.ACTIVE)
-        movements = stock_movements(self.request.company)
-        projects = Project.objects.for_company(self.request.company).filter(deleted_at__isnull=True).order_by("code")
+        items = restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership).filter(status=StockItem.Status.ACTIVE)
+        movements = restrict_inventory_movements(stock_movements(self.request.company), self.request.company_membership)
+        projects = restrict_inventory_projects(Project.objects.for_company(self.request.company), self.request.company_membership).filter(deleted_at__isnull=True).order_by("code")
         selected_project_object = None
         if selected_project:
             selected_project_object = projects.filter(code=selected_project).first()
@@ -74,9 +77,9 @@ class DashboardView(WorkspaceTemplateView):
             else:
                 selected_project = ""
 
-        project_summaries = Project.objects.for_company(self.request.company).filter(
-            status=Project.Status.ACTIVE, deleted_at__isnull=True
-        )
+        project_summaries = restrict_inventory_projects(
+            Project.objects.for_company(self.request.company), self.request.company_membership
+        ).filter(status=Project.Status.ACTIVE, deleted_at__isnull=True)
         if selected_project_object:
             project_summaries = project_summaries.filter(pk=selected_project_object.pk)
 
@@ -119,9 +122,9 @@ class DashboardView(WorkspaceTemplateView):
             projects=projects,
             selected_project=selected_project,
             selected_project_object=selected_project_object,
-            active_project_count=Project.objects.for_company(self.request.company).filter(
-                status=Project.Status.ACTIVE, deleted_at__isnull=True
-            ).count(),
+            active_project_count=restrict_inventory_projects(
+                Project.objects.for_company(self.request.company), self.request.company_membership
+            ).filter(status=Project.Status.ACTIVE, deleted_at__isnull=True).count(),
             stock_record_count=items.count(),
             low_stock_count=items.filter(status=StockItem.Status.ACTIVE)
             .filter(LOW_STOCK_CONDITION)

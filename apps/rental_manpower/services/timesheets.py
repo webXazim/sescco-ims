@@ -11,8 +11,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounts.permissions import membership_can_edit, membership_has_capability, membership_can_workspace
-from apps.accounts.roles import Capability, Workspace
+from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_allows_project, membership_has_permission
 from apps.core.models import AuditArea
 from apps.core.payroll_attendance_contract import (
     ATTENDANCE_WORKSPACE_RENTAL,
@@ -33,14 +33,14 @@ def month_bounds(period_start: date):
     return start, start.replace(day=monthrange(start.year, start.month)[1])
 
 
-def _edit(membership):
-    if not membership_can_edit(membership, Workspace.RENTAL):
-        raise PermissionDenied("Your role cannot edit rental timesheets.")
+def _require(membership, permission: AccessPermission, message: str):
+    if not membership_has_permission(membership, permission):
+        raise PermissionDenied(message)
 
 
-def _approve(membership):
-    if not membership_can_workspace(membership, Workspace.RENTAL) or not membership_has_capability(membership, Capability.APPROVE):
-        raise PermissionDenied("Your role cannot approve rental timesheets.")
+def _project_scope(membership, project):
+    if not membership_allows_project(membership, project):
+        raise PermissionDenied("This Rental project is outside your assigned access scope.")
 
 
 def _decimal(value, field, *, maximum=None):
@@ -107,8 +107,10 @@ def _entry_snapshot(a):
 
 @transaction.atomic
 def save_entries(*, actor_membership, project_id, period_start, entries, request=None):
-    _edit(actor_membership); company=actor_membership.company
+    _require(actor_membership, AccessPermission.RENTAL_TIMESHEETS_EDIT, "Your access profile cannot edit Rental timesheets.")
+    company=actor_membership.company
     project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True, require_active=True)
+    _project_scope(actor_membership, project)
     if period.status != RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft rental timesheets can be edited.")
     changed=0
     for row in entries:
@@ -133,8 +135,10 @@ def save_entries(*, actor_membership, project_id, period_start, entries, request
 
 @transaction.atomic
 def save_overtime(*, actor_membership, project_id, period_start, worker_id, hours, rate=None, request=None):
-    _edit(actor_membership); company=actor_membership.company
+    _require(actor_membership, AccessPermission.RENTAL_OVERTIME_EDIT, "Your access profile cannot edit Rental overtime.")
+    company=actor_membership.company
     project,period=_period(company=company, project_id=project_id, period_start=period_start, create=True, require_active=True)
+    _project_scope(actor_membership, project)
     if period.status != RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft rental timesheets can be edited.")
     h=_decimal(hours,'hours',maximum=744)
     if h == 0:
@@ -146,9 +150,32 @@ def save_overtime(*, actor_membership, project_id, period_start, worker_id, hour
         commercial={(a.rate_type,a.rate,a.trade) for a in assignments}
         if len(commercial)!=1: raise ValidationError({"hours":"Overtime cannot be entered as one monthly value when trade/rate changes inside the period. Split/correct the assignment or use daily overtime in a future adjustment workflow."})
         a=assignments[0]
-        if rate in (None, '') and a.rate_type != RentalRateType.HOURLY:
-            raise ValidationError({"rate": "An explicit hourly OT rate is required for Daily or Monthly rental assignments."})
-        overtime_rate=_decimal(rate if rate not in (None,'') else a.rate,'rate')
+        can_manage_commercial_rate = (
+            membership_has_permission(actor_membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+            or membership_has_permission(actor_membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+        )
+        existing_overtime = (
+            RentalTimesheetOvertime.objects.select_for_update()
+            .filter(company=company, period=period, worker_id=worker_id)
+            .first()
+        )
+        if not can_manage_commercial_rate:
+            if rate not in (None, ''):
+                raise PermissionDenied("Your access profile cannot set or override Rental commercial OT rates.")
+            if a.rate_type == RentalRateType.HOURLY:
+                overtime_rate = _decimal(a.rate, 'rate')
+            elif existing_overtime is not None:
+                # Supervisors may change operational OT hours without being given
+                # visibility or authority over the manager-controlled commercial rate.
+                overtime_rate = existing_overtime.rate
+            else:
+                raise ValidationError({
+                    "rate": "An authorized Rental manager must configure the OT hourly rate before a supervisor can enter overtime for Daily or Monthly assignments."
+                })
+        else:
+            if rate in (None, '') and a.rate_type != RentalRateType.HOURLY:
+                raise ValidationError({"rate": "An explicit hourly OT rate is required for Daily or Monthly rental assignments."})
+            overtime_rate=_decimal(rate if rate not in (None,'') else a.rate,'rate')
         if overtime_rate <= 0:
             raise ValidationError({"rate": "OT rate must be greater than zero."})
         obj,_=RentalTimesheetOvertime.objects.update_or_create(period=period,worker_id=worker_id,defaults={"company":company,"assignment":a,"hours":h,"rate":overtime_rate,**{k:v for k,v in _entry_snapshot(a).items() if k!='rate'}})
@@ -198,25 +225,26 @@ def validate_timesheet_for_submission(*, period: RentalTimesheetPeriod) -> None:
 @transaction.atomic
 def transition_timesheet(*, actor_membership, project_id, period_start, action, reason='', request=None):
     company=actor_membership.company; project,period=_period(company=company,project_id=project_id,period_start=period_start,create=False)
+    _project_scope(actor_membership, project)
     if period is None: raise ValidationError("Timesheet does not exist.")
     action=normalize_attendance_workflow_action(action); now=timezone.now(); before=period.status
     if action=='submit':
-        _edit(actor_membership)
+        _require(actor_membership, AccessPermission.RENTAL_TIMESHEETS_SUBMIT, "Your access profile cannot submit Rental timesheets for review.")
         if period.status!=RentalTimesheetStatus.DRAFT: raise ValidationError("Only Draft timesheets can be submitted.")
         validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.SUBMITTED; period.submitted_at=now; period.submitted_by=actor_membership.user
     elif action=='approve':
-        _approve(actor_membership)
+        _require(actor_membership, AccessPermission.RENTAL_TIMESHEETS_APPROVE, "Your access profile cannot approve Rental timesheets.")
         if period.status!=RentalTimesheetStatus.SUBMITTED: raise ValidationError("Only Submitted timesheets can be approved.")
         validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.APPROVED; period.approved_at=now; period.approved_by=actor_membership.user
     elif action=='lock':
-        _approve(actor_membership)
+        _require(actor_membership, AccessPermission.RENTAL_TIMESHEETS_APPROVE, "Your access profile cannot lock Rental timesheets.")
         if period.status!=RentalTimesheetStatus.APPROVED: raise ValidationError("Only Approved timesheets can be locked.")
         validate_timesheet_for_submission(period=period)
         period.status=RentalTimesheetStatus.LOCKED; period.locked_at=now; period.locked_by=actor_membership.user
     elif action=='return_to_draft':
-        _approve(actor_membership)
+        _require(actor_membership, AccessPermission.RENTAL_TIMESHEETS_APPROVE, "Your access profile cannot return Rental timesheets to Draft.")
         if period.status not in {RentalTimesheetStatus.SUBMITTED,RentalTimesheetStatus.APPROVED}: raise ValidationError("Only Submitted or Approved timesheets can be returned.")
         if not reason.strip(): raise ValidationError({"reason":"A correction reason is required."})
         period.status=RentalTimesheetStatus.DRAFT; period.approved_at=None; period.approved_by=None; period.submitted_at=None; period.submitted_by=None; period.revision += 1
