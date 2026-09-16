@@ -1,4 +1,4 @@
-> Release 1.0.113 is a deployment-only Sourcing migration-state hotfix over 1.0.112. It aligns abstract `company` / `deleted_by` ForeignKey migration state through forward `AlterField` operations and changes no database data, columns, indexes, permissions, Payroll/Inventory formulas, or Sourcing business behavior.
+> Release 1.0.114 is a deployment-only Accounts migration-code hotfix over 1.0.113. It corrects the historical Rental Supervisor data migration to resolve `core.Company` instead of the nonexistent `accounts.Company`; no model/schema, Payroll/Inventory formula, permission, or Sourcing business behavior changes are introduced.
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 

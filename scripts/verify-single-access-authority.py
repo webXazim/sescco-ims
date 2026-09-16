@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.113"
+VERSION = "1.0.114"
 
 
 def fail(message: str) -> None:
@@ -26,7 +26,7 @@ contract = json.loads(text("merge/single-access-authority.json"))
 if contract.get("release") != VERSION:
     fail("single-access-authority contract release mismatch")
 if contract.get("schema_change") is not True or contract.get("payroll_formula_change") is not False:
-    fail("1.0.113 must declare the Accounts authorization schema change and no Payroll formula change")
+    fail("1.0.114 must declare the Accounts authorization schema change and no Payroll formula change")
 authority = contract.get("authority") or {}
 for key in (
     "user_role_removed", "access_profile_required", "missing_profile_fails_closed",
@@ -54,7 +54,7 @@ for marker in (
         fail(f"model authority marker missing: {marker}")
 access_field = models.split("access_profile = models.ForeignKey(", 1)[-1].split(")\n", 1)[0]
 if "null=True" in access_field or "blank=True" in access_field:
-    fail("CompanyMembership.access_profile must be required in 1.0.113")
+    fail("CompanyMembership.access_profile must be required in 1.0.114")
 
 policy = text("apps/accounts/access_policy.py")
 if "permissions_for_legacy_role" in policy or "membership.role" in policy:
@@ -123,7 +123,7 @@ for marker in (
     "Missing system access profile", "Authoritative SESCCO application access profile",
 ):
     if marker not in migration:
-        fail(f"1.0.113 migration marker missing: {marker}")
+        fail(f"1.0.114 migration marker missing: {marker}")
 
 report = text("apps/core/management/commands/merge_access_report.py")
 for marker in (
@@ -154,4 +154,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "merge_access_report --fail-on-errors" not in text("scripts/rehearse-production-freeze.sh"):
     fail("production rehearsal lost access reconciliation")
 
-print("Verified SESCCO MS 1.0.113 single authorization authority: User.role retired, profile-only runtime decisions, owner/profile protection, Django-admin separation and fail-closed reconciliation.")
+print("Verified SESCCO MS 1.0.114 single authorization authority: User.role retired, profile-only runtime decisions, owner/profile protection, Django-admin separation and fail-closed reconciliation.")

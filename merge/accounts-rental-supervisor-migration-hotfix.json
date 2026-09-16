@@ -1,0 +1,18 @@
+{
+  "release": "1.0.114",
+  "scope": "accounts-rental-supervisor-migration-hotfix",
+  "previous_release": "1.0.113-sourcing-migration-state-drift-hotfix",
+  "previous_archive_sha256": "aa870514601cb796a1f58bd569acd0c527082c411494b07dbcba830ba25a6a41",
+  "historical_migration": "apps/accounts/migrations/0008_rental_supervisor_profile.py",
+  "broken_lookup": "apps.get_model(\"accounts\", \"Company\")",
+  "correct_lookup": "apps.get_model(\"core\", \"Company\")",
+  "uses_schema_editor_database_alias": true,
+  "new_schema_migration": false,
+  "database_schema_change": false,
+  "database_data_change_by_hotfix": false,
+  "permission_catalog_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_change": false,
+  "sourcing_business_rule_change": false,
+  "authoritative_runtime_gate": "python manage.py migrate --plan && python manage.py migrate --noinput"
+}

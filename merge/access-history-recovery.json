@@ -1,5 +1,5 @@
 {
-  "release": "1.0.113",
+  "release": "1.0.114",
   "purpose": "Expose immutable company-scoped Access History and provide guarded prior-access recovery without creating a second authorization or audit authority.",
   "predecessor": {
     "release": "1.0.97-credential-session-revocation-hardening",

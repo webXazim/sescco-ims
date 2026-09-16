@@ -1,5 +1,5 @@
 {
-  "release": "1.0.113",
+  "release": "1.0.114",
   "purpose": "Bound the remaining Payroll Documents, Reports, Record Management and Management governance surfaces without changing payroll formulas, lifecycle semantics or schema.",
   "documents": {
     "bootstrap": "deferred",

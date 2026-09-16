@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.113":
-    fail(f"VERSION must be 1.0.113, found {version!r}")
+if version != "1.0.114":
+    fail(f"VERSION must be 1.0.114, found {version!r}")
 contract = json.loads(text("merge/payroll-payment-scale.json"))
 if contract.get("release") != version:
     fail("payment scale contract does not match VERSION")
@@ -133,4 +133,4 @@ for name in (
     if name not in tests:
         fail(f"Django regression missing: {name}")
 
-print("Verified SESCCO MS 1.0.113 Salary Payments + Bank/WPS scale cutover: compact shell, bounded readiness/batch rows, lazy profiles and compact mutations.")
+print("Verified SESCCO MS 1.0.114 Salary Payments + Bank/WPS scale cutover: compact shell, bounded readiness/batch rows, lazy profiles and compact mutations.")

@@ -1,6 +1,6 @@
 # Sourcing Security, Tenant & Cross-module Isolation Certification
 
-Release: **1.0.113**
+Release: **1.0.114**
 
 This certification freezes the security boundary for the independent SESCCO MS Sourcing Directory. Sourcing answers who SESCCO can call and what that source most recently said it can provide. It does not become an operational supplier, stock, worker, payroll, project, document, or accounting authority.
 
@@ -37,4 +37,4 @@ The static gate verifies this document, the runtime suite, the domain isolation 
 
 ## Production rule
 
-A 1.0.113 deployment is not certified until the full Django runtime suite and this focused certification suite pass against the release image/database during rehearsal. Static verification alone is not runtime evidence.
+A 1.0.114 deployment is not certified until the full Django runtime suite and this focused certification suite pass against the release image/database during rehearsal. Static verification alone is not runtime evidence.

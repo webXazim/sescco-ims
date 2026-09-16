@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(text("merge/payroll-production-e2e.json"))
-if contract.get("release") != "1.0.113":
-    fail("certification contract release must be 1.0.113")
+if contract.get("release") != "1.0.114":
+    fail("certification contract release must be 1.0.114")
 
 runner_rel = contract.get("runtime_runner")
 if runner_rel != "scripts/certify-payroll-production-e2e.sh":

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.113"
+VERSION = "1.0.114"
 PREDECESSOR_SHA = "3be72bcc9edc38b95cab475d31d5b4b1e500685f579b62c88d9f82d1df642365"
 
 
@@ -27,7 +27,7 @@ contract = json.loads(text("merge/sourcing-workforce-finder.json"))
 if contract.get("release") != VERSION:
     fail("Workforce Finder contract release mismatch")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
-    fail("1.0.113 predecessor checksum changed")
+    fail("1.0.114 predecessor checksum changed")
 if contract.get("schema_change") is not False:
     fail("Workforce Finder must not introduce a database migration")
 if contract.get("operational_integration") is not False:
@@ -161,4 +161,4 @@ for marker in ("verify-sourcing-workforce-finder.py", "apps.sourcing.tests.test_
 if VERSION not in text("docs/SOURCING_WORKFORCE_FINDER.md"):
     fail("Workforce Finder operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.113 Workforce Finder & Verification History verified: trade-first cross-supplier search, freshness/rate filters, view-only history, editor quick verification, immutable revisions and zero Rental Payroll/Inventory/Accounting integration.")
+print("PASS: SESCCO MS 1.0.114 Workforce Finder & Verification History verified: trade-first cross-supplier search, freshness/rate filters, view-only history, editor quick verification, immutable revisions and zero Rental Payroll/Inventory/Accounting integration.")

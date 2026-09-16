@@ -40,4 +40,4 @@ Upgrade 1.0.97 adds `accounts.User.security_version` through `apps/accounts/migr
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.113.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.114.

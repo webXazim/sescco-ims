@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.113"
+VERSION = "1.0.114"
 PREDECESSOR_SHA = "ee87fc1253b800e1f4a336cae00283160d3379b3d73f1b6efd6678014cf56e38"
 FORBIDDEN = ("inventory", "projects", "internal_payroll", "rental_manpower", "documents", "data_exchange")
 
@@ -30,11 +30,11 @@ if contract.get("release") != VERSION:
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
     fail("1.0.98 predecessor checksum changed")
 if contract.get("schema_change") is not True:
-    fail("1.0.113 must preserve the Sourcing schema foundation")
+    fail("1.0.114 must preserve the Sourcing schema foundation")
 if contract.get("module_access_enabled") is not True:
-    fail("1.0.113 must enable Sourcing only through the explicit permission cutover")
+    fail("1.0.114 must enable Sourcing only through the explicit permission cutover")
 if contract.get("permission_cutover_contract") != "merge/sourcing-access-control.json":
-    fail("Sourcing foundation is not bound to the 1.0.113 permission cutover contract")
+    fail("Sourcing foundation is not bound to the 1.0.114 permission cutover contract")
 if contract.get("payroll_formula_change") is not False or contract.get("inventory_quantity_formula_change") is not False:
     fail("Sourcing foundation must not alter Payroll or Inventory formulas")
 
@@ -130,7 +130,7 @@ for marker in (
     if marker not in models_manpower:
         fail(f"Workforce reference-history immutability missing: {marker}")
 
-if "1.0.113" not in text("docs/SOURCING_DOMAIN_FOUNDATION.md"):
+if "1.0.114" not in text("docs/SOURCING_DOMAIN_FOUNDATION.md"):
     fail("Sourcing foundation guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.113 independent Sourcing Directory foundation remains operationally isolated and is exposed only through explicit persisted permissions.")
+print("PASS: SESCCO MS 1.0.114 independent Sourcing Directory foundation remains operationally isolated and is exposed only through explicit persisted permissions.")

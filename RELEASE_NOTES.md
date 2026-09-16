@@ -1,3 +1,13 @@
+# 1.0.114 — Accounts Rental Supervisor Migration Hotfix
+
+- Fixes the production migration failure in `accounts.0008_rental_supervisor_profile` where historical migration code incorrectly requested `accounts.Company`; the authoritative Company model is `core.Company`.
+- Corrects the historical `RunPython` migration to resolve `Company` from the `core` app and to use `schema_editor.connection.alias` for all migration-time reads/writes.
+- Does not fake, skip, or replace `accounts.0008`; the failed PostgreSQL migration can be rerun normally after deploying this release.
+- Adds a dedicated static verifier that rejects the invalid `accounts.Company` lookup and requires the historical Core Company dependency to remain present through the Accounts migration chain.
+- Carries forward the 1.0.112 index-name fix and 1.0.113 Sourcing migration-state alignment unchanged.
+- Makes no model/schema, Payroll formula, Inventory quantity, permission-catalog, Sourcing business-rule, or operational-integration change in this release.
+- Binds this hotfix to exact 1.0.113 SHA-256 `aa870514601cb796a1f58bd569acd0c527082c411494b07dbcba830ba25a6a41`.
+
 # 1.0.113 — Sourcing Migration State Drift Hotfix
 
 - Fixes the production `makemigrations --check --dry-run` failure where Django proposed `sourcing.0008` with 13 pending `AlterField` operations.

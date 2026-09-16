@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.113"
+VERSION = "1.0.114"
 EXPECTED_PERMISSION_COUNT = 94
 EXPECTED_ROLES = {
     "owner", "operations-admin", "access-admin", "inventory-manager", "storekeeper",
@@ -35,7 +35,7 @@ if contract.get("permission_catalog_size") != EXPECTED_PERMISSION_COUNT:
 if set(contract.get("system_profiles") or []) != EXPECTED_ROLES:
     fail("built-in access profile set changed")
 if (contract.get("authority") or {}).get("legacy_role_bridge") is not False:
-    fail("1.0.113 must keep the legacy runtime role bridge retired")
+    fail("1.0.114 must keep the legacy runtime role bridge retired")
 
 catalog = text("apps/accounts/access_catalog.py")
 class_block = catalog.split("class AccessPermission(StrEnum):", 1)[-1].split("_PERMISSION_LABELS", 1)[0]
@@ -108,10 +108,10 @@ cutover = text("apps/accounts/migrations/0006_single_access_authority.py")
 rental_supervisor = text("apps/accounts/migrations/0008_rental_supervisor_profile.py")
 for marker in ('("rental-supervisor", "Rental Supervisor / Foreman")', 'key="role-rental-supervisor"'):
     if marker not in rental_supervisor:
-        fail(f"1.0.113 Rental Supervisor profile migration marker missing: {marker}")
+        fail(f"1.0.114 Rental Supervisor profile migration marker missing: {marker}")
 for marker in ("def enforce_profile_authority", 'name="access_profile"', 'name="role"'):
     if marker not in cutover:
-        fail(f"1.0.113 authority cutover migration marker missing: {marker}")
+        fail(f"1.0.114 authority cutover migration marker missing: {marker}")
 
 report = text("apps/core/management/commands/merge_access_report.py")
 for marker in (
@@ -128,4 +128,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "merge_access_report --fail-on-errors" not in text("scripts/rehearse-production-freeze.sh"):
     fail("production rehearsal lost company/access reconciliation")
 
-print("Verified SESCCO MS 1.0.113 granular access authority: 94 permissions including independent Sourcing grants, system profiles, explicit scopes, request cache and profile-only runtime authority.")
+print("Verified SESCCO MS 1.0.114 granular access authority: 94 permissions including independent Sourcing grants, system profiles, explicit scopes, request cache and profile-only runtime authority.")

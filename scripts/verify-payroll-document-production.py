@@ -21,8 +21,8 @@ def text(rel: str) -> str:
 
 
 contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-if contract.get("release") != "1.0.113":
-    fail("document production contract is not frozen at 1.0.113")
+if contract.get("release") != "1.0.114":
+    fail("document production contract is not frozen at 1.0.114")
 if len(contract.get("document_types") or []) != 7:
     fail("all seven Payroll document types must remain covered")
 

@@ -10,9 +10,9 @@ def text(rel: str) -> str:
     if not p.is_file(): fail(f"missing file: {rel}")
     return p.read_text(encoding="utf-8")
 
-if text("VERSION").strip() != "1.0.113": fail("VERSION must be 1.0.113")
+if text("VERSION").strip() != "1.0.114": fail("VERSION must be 1.0.114")
 contract=json.loads(text("merge/payroll-drawer-selector-scale.json"))
-if contract.get("release") != "1.0.113": fail("drawer selector contract release must be 1.0.113")
+if contract.get("release") != "1.0.114": fail("drawer selector contract release must be 1.0.114")
 lookup=contract.get("lookup_contract") or {}
 for key,expected in {
     "dropdown_page_size":10,"max_results_per_request":25,"master_minimum_query_chars":2,
@@ -86,4 +86,4 @@ for needle in ("page_size = min(25","start + page_size + 1","hasNext","requires_
 doc_block=doc_api[doc_api.index("def document_sources_api"):doc_api.index("def document_detail_api")]
 if "Paginator(" in doc_block or ".count()" in doc_block: fail("document source lookup must remain count-free")
 
-print("Verified SESCCO MS 1.0.113 cross-workspace drawer selector scale hardening: bounded search-in-dropdown selectors, count-free pages, cancellable requests, financial availability filtering and corrected assignment initializer placement.")
+print("Verified SESCCO MS 1.0.114 cross-workspace drawer selector scale hardening: bounded search-in-dropdown selectors, count-free pages, cancellable requests, financial availability filtering and corrected assignment initializer placement.")

@@ -32,11 +32,12 @@ FOREMAN_PERMISSIONS = (
 
 
 def create_foreman_profiles(apps, schema_editor):
-    Company = apps.get_model("accounts", "Company")
+    Company = apps.get_model("core", "Company")
     AccessProfile = apps.get_model("accounts", "AccessProfile")
     AccessProfilePermission = apps.get_model("accounts", "AccessProfilePermission")
-    for company in Company.objects.all().iterator():
-        profile, _created = AccessProfile.objects.update_or_create(
+    db = schema_editor.connection.alias
+    for company in Company.objects.using(db).all().iterator():
+        profile, _created = AccessProfile.objects.using(db).update_or_create(
             company=company,
             key="role-rental-supervisor",
             defaults={
@@ -49,17 +50,18 @@ def create_foreman_profiles(apps, schema_editor):
                 "is_active": True,
             },
         )
-        AccessProfilePermission.objects.filter(profile=profile).exclude(permission__in=FOREMAN_PERMISSIONS).delete()
-        existing = set(AccessProfilePermission.objects.filter(profile=profile).values_list("permission", flat=True))
-        AccessProfilePermission.objects.bulk_create(
+        AccessProfilePermission.objects.using(db).filter(profile=profile).exclude(permission__in=FOREMAN_PERMISSIONS).delete()
+        existing = set(AccessProfilePermission.objects.using(db).filter(profile=profile).values_list("permission", flat=True))
+        AccessProfilePermission.objects.using(db).bulk_create(
             [AccessProfilePermission(profile=profile, permission=permission) for permission in FOREMAN_PERMISSIONS if permission not in existing],
             ignore_conflicts=True,
         )
 
 
 def remove_foreman_profiles(apps, schema_editor):
+    db = schema_editor.connection.alias
     AccessProfile = apps.get_model("accounts", "AccessProfile")
-    AccessProfile.objects.filter(key="role-rental-supervisor", is_system=True).delete()
+    AccessProfile.objects.using(db).filter(key="role-rental-supervisor", is_system=True).delete()
 
 
 class Migration(migrations.Migration):

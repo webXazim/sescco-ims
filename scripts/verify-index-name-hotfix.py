@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.113"
+VERSION = "1.0.114"
 MAX_INDEX_NAME = 30
 EXPECTED = {
     "apps/accounts/models.py": "acct_prof_company_active_idx",
@@ -78,11 +78,11 @@ for rel in ("apps/accounts/models.py", "apps/sourcing/models/manpower.py"):
 release = json.loads(read("merge/release-candidate.json"))
 if release.get("release") != VERSION:
     fail("release candidate does not match current VERSION")
-if release.get("schema_change_in_release") is not True:
-    fail("hotfix must declare its RenameIndex schema change")
+if contract.get("schema_change") is not True:
+    fail("carried index hotfix contract must retain its RenameIndex schema-change declaration")
 if "scripts/verify-index-name-hotfix.py" not in set(release.get("required_static_gates") or []):
     fail("release candidate does not require this hotfix verifier")
 if "python manage.py check --deploy --fail-level ERROR" not in set(release.get("required_runtime_gates") or []):
     fail("authoritative Django deployment check is not required")
 
-print("Verified SESCCO MS 1.0.113 Django index-name deployment hotfix.")
+print("Verified SESCCO MS 1.0.114 Django index-name deployment hotfix.")
