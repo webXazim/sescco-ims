@@ -1,0 +1,28 @@
+{
+  "release": "1.0.116",
+  "scope": "sourcing-https-test-transport-hotfix",
+  "previous_release": "1.0.115-inventory-manager-permission-reconciliation-hotfix",
+  "previous_archive_sha256": "023a01ec01f2c9d9101dbfa56a9dc8e60f0b46748e3d10542f8477ad9d260438",
+  "affected_test_modules": [
+    "apps.sourcing.tests.test_access_control",
+    "apps.sourcing.tests.test_vendor_master",
+    "apps.sourcing.tests.test_material_catalog",
+    "apps.sourcing.tests.test_material_finder",
+    "apps.sourcing.tests.test_vendor_verification",
+    "apps.sourcing.tests.test_manpower_master",
+    "apps.sourcing.tests.test_trade_workforce_catalog",
+    "apps.sourcing.tests.test_workforce_finder",
+    "apps.sourcing.tests.test_data_exchange",
+    "apps.sourcing.tests.test_security_certification"
+  ],
+  "test_only_setting_override": "SECURE_SSL_REDIRECT=False",
+  "production_secure_ssl_redirect_default_preserved": true,
+  "database_schema_change": false,
+  "database_data_change": false,
+  "permission_catalog_change": false,
+  "permission_behavior_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_change": false,
+  "sourcing_business_rule_change": false,
+  "authoritative_runtime_gate": "python manage.py test apps.sourcing.tests.test_access_control --noinput"
+}

@@ -1,3 +1,13 @@
+# 1.0.116 — Sourcing HTTPS Test Transport Hotfix
+
+- Fixes production-image Sourcing Django tests that were receiving HTTP 301 redirects from `SecurityMiddleware` because `SECURE_SSL_REDIRECT=True` in production while Django `Client` requests default to HTTP.
+- Applies `@override_settings(SECURE_SSL_REDIRECT=False)` only to the ten Sourcing test classes that exercise HTTP view behavior; production `config/settings/production.py` remains unchanged and continues to default `DJANGO_SECURE_SSL_REDIRECT=true`.
+- Restores the intended authorization assertions, including Vendor-viewer 200 responses and Storekeeper 403 denial, without weakening the underlying Sourcing permission checks.
+- Covers Vendor, Material, Material Finder, Vendor Verification, Manpower, Trade/Workforce Catalog, Workforce Finder, Data Exchange, Access Control, and Sourcing Security Certification HTTP tests consistently so later focused tests do not fail on the same transport redirect.
+- Adds no migration, schema/data change, permission-catalog change, Payroll formula change, Inventory quantity change, Sourcing business-rule change, or production HTTPS-policy change.
+- Carries forward the 1.0.112 index-name, 1.0.113 Sourcing migration-state, 1.0.114 Accounts historical migration, and 1.0.115 Inventory Manager permission reconciliation fixes unchanged.
+- Binds this hotfix to exact 1.0.115 SHA-256 `023a01ec01f2c9d9101dbfa56a9dc8e60f0b46748e3d10542f8477ad9d260438`.
+
 # 1.0.115 — Inventory Manager Permission Reconciliation Hotfix
 
 - Fixes the production `merge_access_report --fail-on-errors` stop where the built-in system `role-inventory-manager` profile was missing the already-authoritative `inventory.import.execute` grant.

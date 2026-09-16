@@ -14,11 +14,11 @@ def text(rel: str) -> str:
         fail(f"missing file: {rel}")
     return path.read_text(encoding="utf-8")
 
-if text("VERSION").strip() != "1.0.115":
-    fail("VERSION must be 1.0.115")
+if text("VERSION").strip() != "1.0.116":
+    fail("VERSION must be 1.0.116")
 contract = json.loads(text("merge/payroll-document-finalization-context.json"))
-if contract.get("release") != "1.0.115":
-    fail("document finalization context contract release must be 1.0.115")
+if contract.get("release") != "1.0.116":
+    fail("document finalization context contract release must be 1.0.116")
 
 employee = contract.get("employee_salary_slip") or {}
 for key in (
@@ -86,4 +86,4 @@ for method in (
     if f"def {method}" not in tests:
         fail(f"missing Django regression: {method}")
 
-print("Verified SESCCO MS 1.0.115 contextual Payroll document finalization: employee-locked Salary Slip sources and type-only Supplier Invoice fields.")
+print("Verified SESCCO MS 1.0.116 contextual Payroll document finalization: employee-locked Salary Slip sources and type-only Supplier Invoice fields.")

@@ -4,7 +4,7 @@ import io
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -24,6 +24,7 @@ from apps.sourcing.models import (
 )
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class SourcingDataExchangeTests(TestCase):
     def setUp(self):
         User = get_user_model()

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 PREDECESSOR_SHA = "9920b4009f29fdf1dd09db51bb5fdf5c29eb4ecc32c937961c5537e0fa20e6d3"
 
 def fail(message: str) -> None:
@@ -16,11 +16,11 @@ def text(rel: str) -> str:
     if not path.is_file(): fail(f"missing file: {rel}")
     return path.read_text(encoding="utf-8")
 
-if text("VERSION").strip() != VERSION: fail("VERSION must be 1.0.115")
+if text("VERSION").strip() != VERSION: fail("VERSION must be 1.0.116")
 contract = json.loads(text("merge/internal-finance-permission-decomposition.json"))
 if contract.get("release") != VERSION: fail("contract release mismatch")
-if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA: fail("1.0.115 predecessor checksum changed")
-if contract.get("schema_change") is not True: fail("1.0.115 must declare its permission/review-signoff schema change")
+if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA: fail("1.0.116 predecessor checksum changed")
+if contract.get("schema_change") is not True: fail("1.0.116 must declare its permission/review-signoff schema change")
 if contract.get("payroll_formula_change") is not False: fail("permission decomposition must not change Payroll formulas")
 if contract.get("operator_guide") != "docs/INTERNAL_FINANCE_PERMISSIONS.md": fail("operator guide binding changed")
 if "Finance Manager" not in text("docs/INTERNAL_FINANCE_PERMISSIONS.md") or "final approver cannot be the payroll submitter or the Finance Reviewer" not in text("docs/INTERNAL_FINANCE_PERMISSIONS.md"):
@@ -123,4 +123,4 @@ for rel, methods in {
     for method in methods:
         if f"def {method}(" not in body: fail(f"regression missing: {rel}::{method}")
 
-print("PASS: SESCCO MS 1.0.115 Internal Payroll + Finance permission decomposition verified.")
+print("PASS: SESCCO MS 1.0.116 Internal Payroll + Finance permission decomposition verified.")

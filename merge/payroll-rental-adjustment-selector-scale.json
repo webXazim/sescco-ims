@@ -1,5 +1,5 @@
 {
-  "release": "1.0.115",
+  "release": "1.0.116",
   "surface": "rental-adjustment-drawer",
   "worker_lookup": {
     "server_backed": true,

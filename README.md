@@ -10,7 +10,7 @@ is reserved for Django superusers and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.115 — Inventory Manager Permission Reconciliation Hotfix**.
+Current packaged release: **SESCCO MS 1.0.116 — Sourcing HTTPS Test Transport Hotfix**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 

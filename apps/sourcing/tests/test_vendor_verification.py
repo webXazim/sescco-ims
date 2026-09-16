@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -16,6 +16,7 @@ from apps.inventory.models import Supplier as InventorySupplier
 from apps.sourcing.models import SourcingMaterial, SourcingVendor, SourcingVendorOffer, SourcingVendorOfferRevision
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class VendorVerificationTests(TestCase):
     def setUp(self):
         User = get_user_model()

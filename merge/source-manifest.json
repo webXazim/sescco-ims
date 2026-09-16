@@ -125,7 +125,7 @@
     "sourcing_app": "apps.sourcing",
     "sourcing_route": "/app/sourcing/",
     "sourcing_authority": "independent reference-only SourcingVendor/SourcingManpowerSupplier + material/trade offer history; no operational FKs; explicit persisted sourcing.* Access Profile permission cutover",
-    "sourcing_release": "1.0.115-sourcing-browser-e2e-production-freeze",
+    "sourcing_release": "1.0.116-sourcing-browser-e2e-production-freeze",
     "sourcing_access_contract": "merge/sourcing-access-control.json",
     "sourcing_access_verifier": "scripts/verify-sourcing-access-control.py",
     "sourcing_access_migration": "apps/accounts/migrations/0012_sourcing_access_control_authority.py",
@@ -150,14 +150,16 @@
     "sourcing_browser_e2e_runtime": "apps.sourcing.tests.test_browser_e2e_freeze",
     "sourcing_browser_e2e_evidence": "sourcing-browser-certification.json",
     "sourcing_final_feature_freeze": true,
-    "production_release": "1.0.115-inventory-manager-permission-reconciliation-hotfix",
+    "production_release": "1.0.116-sourcing-https-test-transport-hotfix",
     "index_name_hotfix_contract": "merge/index-name-deployment-hotfix.json",
     "sourcing_migration_state_hotfix_contract": "merge/sourcing-migration-state-hotfix.json",
-    "sourcing_migration_state_hotfix_migration": "apps/sourcing/migrations/0008_align_abstract_relation_state.py"
+    "sourcing_migration_state_hotfix_migration": "apps/sourcing/migrations/0008_align_abstract_relation_state.py",
+    "sourcing_https_test_transport_hotfix_contract": "merge/sourcing-https-test-transport-hotfix.json",
+    "sourcing_https_test_transport_hotfix_verifier": "scripts/verify-sourcing-https-test-transport-hotfix.py"
   },
   "authority": {
     "platform_shell": "SESCCO MS single-company shell + authorized module switching across Inventory, Payroll, Administration and independently permissioned Sourcing Directory",
-    "sourcing_release": "1.0.115-sourcing-browser-e2e-production-freeze",
+    "sourcing_release": "1.0.116-sourcing-browser-e2e-production-freeze",
     "sourcing_vendor_master": "apps.sourcing SourcingVendor + SourcingVendorContact; server-paged/searchable reference directory with reversible lifecycle and AuditArea.SOURCING evidence",
     "sourcing_vendor_master_contract": "merge/sourcing-vendor-master.json",
     "sourcing_vendor_master_verifier": "scripts/verify-sourcing-vendor-master.py",
@@ -184,7 +186,8 @@
     "sourcing_browser_e2e_verifier": "scripts/verify-sourcing-browser-e2e.py",
     "accounts_rental_supervisor_migration_hotfix_contract": "merge/accounts-rental-supervisor-migration-hotfix.json",
     "accounts_rental_supervisor_migration_hotfix_verifier": "scripts/verify-accounts-rental-supervisor-migration-hotfix.py",
-    "accounts_rental_supervisor_migration_hotfix_target": "apps/accounts/migrations/0008_rental_supervisor_profile.py"
+    "accounts_rental_supervisor_migration_hotfix_target": "apps/accounts/migrations/0008_rental_supervisor_profile.py",
+    "sourcing_https_test_transport_hotfix": "Sourcing HTTP authorization/business-flow Django tests disable SECURE_SSL_REDIRECT only inside test classes; production HTTPS redirect remains enabled."
   },
   "sourcing_data_exchange_contract": "merge/sourcing-data-exchange.json",
   "sourcing_data_exchange_verifier": "scripts/verify-sourcing-data-exchange.py"

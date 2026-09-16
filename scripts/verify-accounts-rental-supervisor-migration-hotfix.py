@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 MIGRATION = "apps/accounts/migrations/0008_rental_supervisor_profile.py"
 CONTRACT = "merge/accounts-rental-supervisor-migration-hotfix.json"
 PREDECESSOR_SHA = "aa870514601cb796a1f58bd569acd0c527082c411494b07dbcba830ba25a6a41"
@@ -93,9 +93,9 @@ for runtime_gate in (
     if runtime_gate not in set(release.get("required_runtime_gates") or []):
         fail(f"required runtime gate missing: {runtime_gate}")
 
-if "1.0.115" not in read("docs/ACCOUNTS_RENTAL_SUPERVISOR_MIGRATION_HOTFIX.md"):
-    fail("historical hotfix guide is not carried forward to 1.0.115")
+if "1.0.116" not in read("docs/ACCOUNTS_RENTAL_SUPERVISOR_MIGRATION_HOTFIX.md"):
+    fail("historical hotfix guide is not carried forward to 1.0.116")
 if "do not fake it" not in read("docs/ACCOUNTS_RENTAL_SUPERVISOR_MIGRATION_HOTFIX.md").lower():
     fail("operator guide must explicitly prohibit faking accounts.0008")
 
-print("Verified SESCCO MS 1.0.115 Accounts Rental Supervisor historical migration hotfix: core.Company lookup, database-alias-safe RunPython, no new schema migration, and no remaining accounts.Company migration lookup.")
+print("Verified SESCCO MS 1.0.116 Accounts Rental Supervisor historical migration hotfix: core.Company lookup, database-alias-safe RunPython, no new schema migration, and no remaining accounts.Company migration lookup.")

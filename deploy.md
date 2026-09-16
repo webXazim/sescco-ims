@@ -1,4 +1,4 @@
-> Release 1.0.115 is a data-reconciliation hotfix over 1.0.114. It adds the already-authoritative `inventory.import.execute` grant to active system Inventory Manager access profiles through forward migration `accounts.0014_inventory_manager_import_permission`; Storekeeper, Payroll, Inventory quantities, Sourcing rules and the permission catalog are unchanged.
+> Release 1.0.116 is a test-transport hotfix over 1.0.115. It keeps production HTTPS enforcement unchanged, but disables SECURE_SSL_REDIRECT only inside Sourcing authorization/business-flow Django test classes so the production-image test client reaches the intended 200/403/404 view assertions instead of being intercepted by an HTTP→HTTPS 301. No database, permission, Payroll, Inventory, Sourcing business-rule or runtime security-setting change is introduced.
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 

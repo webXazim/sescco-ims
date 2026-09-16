@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -20,6 +20,7 @@ from apps.sourcing.models import (
 )
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class MaterialFinderTests(TestCase):
     def setUp(self):
         User = get_user_model()

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 PREDECESSOR_SHA = "88220df5d3896cb626a36bfa49ffba25becd1a3ab1c161e158535b149b8fc9cf"
 
 
@@ -27,7 +27,7 @@ contract = json.loads(text("merge/sourcing-manpower-master.json"))
 if contract.get("release") != VERSION:
     fail("Manpower master contract release mismatch")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
-    fail("1.0.115 predecessor checksum changed")
+    fail("1.0.116 predecessor checksum changed")
 if contract.get("schema_change") is not True:
     fail("Manpower contact schema change must be declared")
 if contract.get("operational_integration") is not False:
@@ -148,7 +148,7 @@ retention = json.loads(text("merge/lifecycle-retention-contract.json"))
 if retention.get("models", {}).get("sourcing.SourcingManpowerContact", {}).get("mode") != "reference_master_deactivate_only":
     fail("Manpower contact retention classification is missing")
 
-if "1.0.115" not in text("docs/SOURCING_MANPOWER_MASTER.md"):
+if "1.0.116" not in text("docs/SOURCING_MANPOWER_MASTER.md"):
     fail("Manpower master operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.115 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and Rental Payroll isolation.")
+print("PASS: SESCCO MS 1.0.116 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and Rental Payroll isolation.")

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 PREDECESSOR_SHA = "801d25b6f65a898f7f0dc96044df1e868949ff84db8547aff1ccc42788453ca4"
 
 
@@ -29,7 +29,7 @@ if contract.get("release") != VERSION:
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
     fail("predecessor checksum changed")
 if contract.get("schema_change") is not False:
-    fail("1.0.115 must remain schema-neutral")
+    fail("1.0.116 must remain schema-neutral")
 if contract.get("payroll_formula_change") is not False or contract.get("inventory_quantity_formula_change") is not False:
     fail("Access History must not change Payroll or Inventory formulas")
 
@@ -82,7 +82,7 @@ for marker in (
         fail(f"Access History URL missing: {marker}")
 
 template = text("templates/accounts/administration.html")
-for marker in ("Access History", 'id="history"', 'id="accessHistoryRows"', "?v=1.0.115"):
+for marker in ("Access History", 'id="history"', 'id="accessHistoryRows"', "?v=1.0.116"):
     if marker not in template:
         fail(f"Administration Access History UI missing: {marker}")
 js = text("static/platform/js/access-management.js")
@@ -112,7 +112,7 @@ required = {
 }
 if not required.issubset(methods):
     fail(f"runtime regressions missing: {sorted(required - methods)}")
-if "1.0.115" not in text("docs/ACCESS_HISTORY_RECOVERY.md"):
+if "1.0.116" not in text("docs/ACCESS_HISTORY_RECOVERY.md"):
     fail("operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.115 immutable Access History and guarded prior-access recovery are release-bound.")
+print("PASS: SESCCO MS 1.0.116 immutable Access History and guarded prior-access recovery are release-bound.")

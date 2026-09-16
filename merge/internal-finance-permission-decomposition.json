@@ -1,5 +1,5 @@
 {
-  "release": "1.0.115",
+  "release": "1.0.116",
   "purpose": "Separate Internal Payroll preparation, independent finance review, final approval, Bank/WPS export and payment execution into exact backend-authoritative permissions with enforced actor separation.",
   "predecessor": {
     "release": "1.0.94-page-level-view-only-custom-access-profiles",

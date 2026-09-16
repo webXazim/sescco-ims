@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 PREDECESSOR_SHA = "b96eb8585a20f52337871b8c04916976399cc3f59604a7ad33d5afe0745270ce"
 
 
@@ -121,9 +121,9 @@ for rel in (
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
 
-if "1.0.115" not in text("docs/SOURCING_MATERIAL_FINDER.md"):
+if "1.0.116" not in text("docs/SOURCING_MATERIAL_FINDER.md"):
     fail("Material Finder operator guide is not version-bound")
 
 print(
-    "PASS: SESCCO MS 1.0.115 Material Finder verified: company-scoped Vendor offer search, controlled aliases, freshness policy, bounded server pagination, Vendor view/edit separation and zero operational Inventory/Payroll/Accounting integration."
+    "PASS: SESCCO MS 1.0.116 Material Finder verified: company-scoped Vendor offer search, controlled aliases, freshness policy, bounded server pagination, Vendor view/edit separation and zero operational Inventory/Payroll/Accounting integration."
 )

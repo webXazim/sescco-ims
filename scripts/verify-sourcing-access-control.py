@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.115"
+VERSION = "1.0.116"
 PREDECESSOR_SHA = "3de0aa62e4045695764b4deb6378d8ea32b708afdd541612b8c2a7fb5e906326"
 EXPECTED = {
     "sourcing.vendors.view",
@@ -39,7 +39,7 @@ if contract.get("release") != VERSION:
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
     fail("1.0.99 predecessor checksum changed")
 if contract.get("schema_change") is not True:
-    fail("1.0.115 must declare the Accounts permission-constraint schema change")
+    fail("1.0.116 must declare the Accounts permission-constraint schema change")
 if contract.get("module_access_enabled") is not True:
     fail("Sourcing module permission cutover is not enabled")
 if set(contract.get("permissions") or []) != EXPECTED:
@@ -168,7 +168,7 @@ for rel in (
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
 
-if "1.0.115" not in text("docs/SOURCING_ACCESS_CONTROL.md"):
+if "1.0.116" not in text("docs/SOURCING_ACCESS_CONTROL.md"):
     fail("Sourcing access-control guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.115 Sourcing Access-Control Authority verified: Vendor/Manpower/Master view-edit separation, owner-only builtin grant, permission-aware module visibility and backend enforcement.")
+print("PASS: SESCCO MS 1.0.116 Sourcing Access-Control Authority verified: Vendor/Manpower/Master view-edit separation, owner-only builtin grant, permission-aware module visibility and backend enforcement.")

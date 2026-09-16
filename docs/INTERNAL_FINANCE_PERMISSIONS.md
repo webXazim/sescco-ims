@@ -31,4 +31,4 @@ Custom profiles may use the same granular permissions, but service-level actor s
 
 For production deployment of 1.0.97, run the packaged PostgreSQL/Docker rehearsal because migrations `accounts.0010_internal_finance_permission_decomposition` and `internal_payroll.0014_payroll_review_signoff` change the database schema and built-in Finance grants.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.115.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.116.

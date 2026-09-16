@@ -36,7 +36,7 @@ from apps.sourcing.services.vendors import archive_vendor, create_vendor, trash_
 from apps.sourcing.services.workforce import create_trade, create_workforce_offer, verify_workforce_offer
 
 
-@override_settings(SINGLE_COMPANY_MODE=False)
+@override_settings(SINGLE_COMPANY_MODE=False, SECURE_SSL_REDIRECT=False)
 class SourcingSecurityCertificationTests(TestCase):
     def setUp(self):
         User = get_user_model()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission, permissions_for_legacy_role
@@ -19,6 +19,7 @@ from apps.sourcing.access import (
 )
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class SourcingAccessControlTests(TestCase):
     def setUp(self):
         User = get_user_model()

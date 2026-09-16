@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission
@@ -11,6 +11,7 @@ from apps.core.models import AuditArea, AuditEvent, Company
 from apps.sourcing.models import SourcingEntityStatus, SourcingVendor, SourcingVendorContact
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class VendorSourcingMasterTests(TestCase):
     def setUp(self):
         User = get_user_model()

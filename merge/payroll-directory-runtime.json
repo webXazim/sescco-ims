@@ -1,5 +1,5 @@
 {
-  "release": "1.0.115",
+  "release": "1.0.116",
   "purpose": "Keep server-backed Payroll directories responsive and bounded under realistic/benchmark workforce sizes while preventing stale or completed requests from leaving the UI stuck in a loading state.",
   "search_debounce_ms": 320,
   "directories": [

@@ -68,4 +68,4 @@ Material Finder freshness is derived from the new verification timestamp, so a n
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.115.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.116.
