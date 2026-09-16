@@ -1,4 +1,4 @@
-# Sourcing Scale Hardening & Benchmarking — 1.0.111
+# Sourcing Scale Hardening & Benchmarking — 1.0.112
 
 This release certifies the independent Sourcing Directory for large reference datasets without changing its reference-only business meaning.
 

@@ -1,3 +1,13 @@
+# 1.0.112 — Django Index Name Deployment Hotfix
+
+- Fixes the production `SystemCheckError` / `models.E034` raised by two explicit Django model index names longer than 30 characters.
+- Renames `acct_profile_company_active_idx` to `acct_prof_company_active_idx` on `accounts.AccessProfile`.
+- Renames `src_mpcontact_supplier_active_idx` to `src_mpc_supplier_active_idx` on `sourcing.SourcingManpowerContact`.
+- Preserves historical migrations and adds forward `RenameIndex` migrations `accounts.0013` and `sourcing.0007`, making the hotfix safe for both fresh and already-migrated databases.
+- Adds a dedicated static index-name verifier and keeps `python manage.py check --deploy --fail-level ERROR` as the authoritative runtime deployment gate.
+- Makes no Payroll formula, Inventory quantity, Sourcing permission/business-rule, tenant-isolation, or operational-module integration change.
+- Binds this hotfix to exact 1.0.111 SHA-256 `7662aaf89be46014b077bdd7e0178679dfbd1559cf901b262b6c2989386fbb53`.
+
 # 1.0.111 — Sourcing Browser E2E + Production Freeze
 
 - Finalizes the Sourcing Directory feature set with a live Chromium certification runner covering the complete Vendor and Manpower sourcing journeys; no schema, permission-catalog, Payroll formula or Inventory quantity formula change is introduced.

@@ -1,0 +1,26 @@
+{
+  "release": "1.0.112",
+  "scope": "django-index-name-deployment-hotfix",
+  "previous_release": "1.0.111-sourcing-browser-e2e-production-freeze",
+  "previous_archive_sha256": "7662aaf89be46014b077bdd7e0178679dfbd1559cf901b262b6c2989386fbb53",
+  "schema_change": true,
+  "data_change": false,
+  "permission_catalog_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_formula_change": false,
+  "renames": [
+    {
+      "model": "accounts.AccessProfile",
+      "old_name": "acct_profile_company_active_idx",
+      "new_name": "acct_prof_company_active_idx",
+      "migration": "accounts.0013_rename_access_profile_index"
+    },
+    {
+      "model": "sourcing.SourcingManpowerContact",
+      "old_name": "src_mpcontact_supplier_active_idx",
+      "new_name": "src_mpc_supplier_active_idx",
+      "migration": "sourcing.0007_rename_manpower_contact_index"
+    }
+  ],
+  "runtime_release_gate": "python manage.py check --deploy --fail-level ERROR"
+}

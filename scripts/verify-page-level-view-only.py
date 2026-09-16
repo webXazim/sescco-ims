@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.111"
+VERSION = "1.0.112"
 PREDECESSOR_SHA = "a202be1a77f796734822d4356abc3a681c7850cc3e3a74ac4f9aab1cfc94e2cb"
 
 def fail(message: str) -> None:
@@ -16,8 +16,8 @@ def text(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 contract = json.loads(text("merge/page-level-view-only.json"))
-if contract.get("release") != VERSION: fail("contract release must be 1.0.111")
-if contract.get("schema_change") is not False: fail("1.0.111 must not introduce a schema migration")
+if contract.get("release") != VERSION: fail("contract release must be 1.0.112")
+if contract.get("schema_change") is not False: fail("1.0.112 must not introduce a schema migration")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA: fail("predecessor checksum changed")
 
 profiles = text("apps/accounts/access_profiles.py")
@@ -72,5 +72,5 @@ for marker in (
 ):
     if marker not in checks: fail(f"custom-profile regression missing: {marker}")
 
-if "1.0.111" not in text("docs/PAGE_LEVEL_VIEW_ONLY.md"): fail("operator/security documentation missing")
-print("PASS: SESCCO MS 1.0.111 page-level View Only and custom Access Profile contract verified.")
+if "1.0.112" not in text("docs/PAGE_LEVEL_VIEW_ONLY.md"): fail("operator/security documentation missing")
+print("PASS: SESCCO MS 1.0.112 page-level View Only and custom Access Profile contract verified.")

@@ -1,5 +1,5 @@
 {
-  "release": "1.0.111",
+  "release": "1.0.112",
   "feature": "sourcing-trade-workforce-catalog",
   "predecessor": {
     "release": "1.0.105-manpower-sourcing-master",

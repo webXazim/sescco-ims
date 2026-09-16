@@ -98,7 +98,7 @@ class AccessProfile(UUIDTimeStampedModel):
             models.UniqueConstraint(fields=("company", "key"), name="accounts_profile_company_key_uniq"),
         ]
         indexes = [
-            models.Index(fields=("company", "is_active", "name"), name="acct_profile_company_active_idx"),
+            models.Index(fields=("company", "is_active", "name"), name="acct_prof_company_active_idx"),
         ]
 
     def clean(self) -> None:

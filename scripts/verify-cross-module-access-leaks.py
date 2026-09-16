@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.111"
+VERSION = "1.0.112"
 PREDECESSOR_SHA = "1591e72505ceb6b3c9720dc62c53568eaf00ed9f624be255cb270af3ddb45425"
 
 
@@ -18,12 +18,12 @@ def text(rel: str) -> str:
     if not path.is_file(): fail(f"missing file: {rel}")
     return path.read_text(encoding="utf-8")
 
-if text("VERSION").strip() != VERSION: fail("VERSION must be 1.0.111")
+if text("VERSION").strip() != VERSION: fail("VERSION must be 1.0.112")
 contract = json.loads(text("merge/cross-module-access-leak-closure.json"))
 if contract.get("release") != VERSION: fail("contract release mismatch")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA: fail("predecessor checksum changed")
-if contract.get("schema_change") is not False: fail("1.0.111 must not introduce a database migration")
-if contract.get("payroll_formula_change") is not False: fail("1.0.111 must not change Payroll formulas")
+if contract.get("schema_change") is not False: fail("1.0.112 must not introduce a database migration")
+if contract.get("payroll_formula_change") is not False: fail("1.0.112 must not change Payroll formulas")
 
 policy=text("apps/accounts/access_policy.py")
 for marker in ('def branch_scope_ids(', 'def project_scope_ids(', 'def restrict_branch_snapshots(', 'def restrict_current_employee_branches(', 'def membership_has_company_wide_scopes('):
@@ -77,5 +77,5 @@ required={
     'test_department_counts_are_limited_to_assigned_branch',
 }
 if not required.issubset(methods): fail(f"runtime regressions missing: {sorted(required-methods)}")
-if "1.0.111" not in text("docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md"): fail("operator/security guide not version-bound")
-print("PASS: SESCCO MS 1.0.111 cross-module access leak closure verified across search, profiles, Documents, Reports, Management, Archive/Trash and scoped selectors.")
+if "1.0.112" not in text("docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md"): fail("operator/security guide not version-bound")
+print("PASS: SESCCO MS 1.0.112 cross-module access leak closure verified across search, profiles, Documents, Reports, Management, Archive/Trash and scoped selectors.")

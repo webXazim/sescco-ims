@@ -1,5 +1,5 @@
 {
-  "release": "1.0.111",
+  "release": "1.0.112",
   "purpose": "Promote Vendor Sourcing from a permission-only shell into a production reference Vendor master with scalable directory search, company-scoped CRUD, contact persons, reversible lifecycle controls and immutable audit evidence while remaining fully isolated from Inventory, Payroll and Accounting.",
   "predecessor": {
     "release": "1.0.100-sourcing-access-control-authority",

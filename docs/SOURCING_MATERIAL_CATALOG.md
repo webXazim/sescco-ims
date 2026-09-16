@@ -67,4 +67,4 @@ The Django runtime test remains part of the production release runner and migrat
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.111.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.112.

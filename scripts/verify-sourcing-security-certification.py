@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.111"
+VERSION = "1.0.112"
 PREDECESSOR_SHA = "4de083b4bf99c38672548b9ccbe7b0ef2a66f9d0a461af34ffde21b295d0c1a2"
 
 
@@ -29,9 +29,9 @@ if contract.get("release") != VERSION:
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
     fail("1.0.109 predecessor checksum changed")
 if contract.get("schema_change") is not False or contract.get("business_feature_change") is not False:
-    fail("1.0.111 must remain certification-only with no schema/business feature change")
+    fail("1.0.112 must remain certification-only with no schema/business feature change")
 if contract.get("permission_catalog_change") is not False:
-    fail("1.0.111 must not change the permission catalog")
+    fail("1.0.112 must not change the permission catalog")
 
 required_certifications = {
     "vendor_vs_manpower_permission_isolation",
@@ -153,4 +153,4 @@ if "verify-sourcing-security-certification.py" not in freeze:
 if "docs/SOURCING_SECURITY_CERTIFICATION.md" not in text("README.md"):
     fail("README does not expose the Sourcing security certification contract")
 
-print("PASS: SESCCO MS 1.0.111 Sourcing security/tenant/cross-module certification verified: permission isolation, tenant boundaries, view-only denial, Finder lifecycle exclusion, immutable history, session revocation and zero operational mutation evidence.")
+print("PASS: SESCCO MS 1.0.112 Sourcing security/tenant/cross-module certification verified: permission isolation, tenant boundaries, view-only denial, Finder lifecycle exclusion, immutable history, session revocation and zero operational mutation evidence.")

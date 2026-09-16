@@ -1,6 +1,6 @@
-# Sourcing Browser E2E + Production Freeze — 1.0.111
+# Sourcing Browser E2E + Production Freeze — 1.0.112
 
-1.0.111 is the final Sourcing Directory feature freeze. It adds no schema and no new business authority. The release turns the completed Vendor and Manpower workflows into an explicit live-Chromium deployment gate.
+1.0.112 is the final Sourcing Directory feature freeze. It adds no schema and no new business authority. The release turns the completed Vendor and Manpower workflows into an explicit live-Chromium deployment gate.
 
 ## Required browser journey
 

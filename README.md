@@ -10,7 +10,7 @@ is reserved for Django superusers and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.111 — Sourcing Browser E2E + Production Freeze**.
+Current packaged release: **SESCCO MS 1.0.112 — Django Index Name Deployment Hotfix**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 

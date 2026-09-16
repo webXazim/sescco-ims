@@ -51,4 +51,4 @@ The production rehearsal must still run the complete Django regression suite bef
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.111.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.112.

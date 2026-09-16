@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.111"
+VERSION = "1.0.112"
 PREDECESSOR_SHA = "88220df5d3896cb626a36bfa49ffba25becd1a3ab1c161e158535b149b8fc9cf"
 
 
@@ -27,7 +27,7 @@ contract = json.loads(text("merge/sourcing-manpower-master.json"))
 if contract.get("release") != VERSION:
     fail("Manpower master contract release mismatch")
 if contract.get("predecessor", {}).get("archive_sha256") != PREDECESSOR_SHA:
-    fail("1.0.111 predecessor checksum changed")
+    fail("1.0.112 predecessor checksum changed")
 if contract.get("schema_change") is not True:
     fail("Manpower contact schema change must be declared")
 if contract.get("operational_integration") is not False:
@@ -56,6 +56,11 @@ for marker in ('name="SourcingManpowerContact"', 'name="src_mps_one_primary_cont
 for forbidden in ('to="inventory.', 'to="rental_manpower.', 'to="internal_payroll.'):
     if forbidden in migration:
         fail(f"Manpower migration contains operational FK: {forbidden}")
+
+rename_migration = text("apps/sourcing/migrations/0007_rename_manpower_contact_index.py")
+for marker in ('old_name="src_mpcontact_supplier_active_idx"', 'new_name="src_mpc_supplier_active_idx"'):
+    if marker not in rename_migration:
+        fail(f"Manpower contact index rename migration missing: {marker}")
 
 selectors = text("apps/sourcing/selectors/manpower.py")
 for marker in (
@@ -132,6 +137,7 @@ for rel in (
     "apps/sourcing/urls.py",
     "apps/sourcing/tests/test_manpower_master.py",
     "apps/sourcing/migrations/0004_manpower_supplier_contacts.py",
+    "apps/sourcing/migrations/0007_rename_manpower_contact_index.py",
 ):
     try:
         ast.parse(text(rel))
@@ -142,7 +148,7 @@ retention = json.loads(text("merge/lifecycle-retention-contract.json"))
 if retention.get("models", {}).get("sourcing.SourcingManpowerContact", {}).get("mode") != "reference_master_deactivate_only":
     fail("Manpower contact retention classification is missing")
 
-if "1.0.111" not in text("docs/SOURCING_MANPOWER_MASTER.md"):
+if "1.0.112" not in text("docs/SOURCING_MANPOWER_MASTER.md"):
     fail("Manpower master operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.111 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and Rental Payroll isolation.")
+print("PASS: SESCCO MS 1.0.112 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and Rental Payroll isolation.")

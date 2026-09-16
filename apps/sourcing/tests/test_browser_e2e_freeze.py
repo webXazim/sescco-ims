@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 class SourcingBrowserE2EFreezeContractTests(SimpleTestCase):
     def test_final_sourcing_browser_contract_is_frozen(self):
         contract = json.loads((ROOT / "merge/sourcing-browser-e2e-production-freeze.json").read_text(encoding="utf-8"))
-        self.assertEqual(contract["release"], "1.0.111")
+        self.assertEqual(contract["release"], "1.0.112")
         self.assertFalse(contract["schema_change"])
         self.assertEqual(contract["permission_catalog_size"], 94)
         self.assertEqual(contract["persisted_model_retention_count"], 75)

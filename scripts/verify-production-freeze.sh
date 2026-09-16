@@ -24,6 +24,7 @@ python3 scripts/verify-internal-finance-permissions.py
 python3 scripts/verify-cross-module-access-leaks.py
 python3 scripts/verify-credential-session-revocation.py
 python3 scripts/verify-access-history-recovery.py
+python3 scripts/verify-index-name-hotfix.py
 python3 scripts/verify-sourcing-domain-foundation.py
 python3 scripts/verify-sourcing-access-control.py
 python3 scripts/verify-sourcing-vendor-master.py

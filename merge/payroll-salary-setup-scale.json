@@ -1,5 +1,5 @@
 {
-  "release": "1.0.111",
+  "release": "1.0.112",
   "purpose": "Remove complete employee-master and all-history hydration from Salary Setup while preserving effective-dated salary semantics.",
   "salary_structure_directory": {
     "endpoint": "/api/internal/salary/structures/",

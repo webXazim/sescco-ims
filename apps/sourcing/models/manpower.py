@@ -126,7 +126,7 @@ class SourcingManpowerContact(CompanyOwnedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=("company", "supplier", "is_active"), name="src_mpcontact_supplier_active_idx"),
+            models.Index(fields=("company", "supplier", "is_active"), name="src_mpc_supplier_active_idx"),
             models.Index(fields=("company", "email"), name="src_mpcontact_email_idx"),
             models.Index(fields=("company", "mobile"), name="src_mpcontact_mobile_idx"),
         ]

@@ -1,4 +1,4 @@
-> Release 1.0.111 is the final Sourcing Browser E2E + Production Freeze. It adds no schema or operational business behavior change and requires live Chromium certification on the benchmark rehearsal image before cutover.
+> Release 1.0.112 is a deployment-only Django index-name hotfix over the frozen 1.0.111 Sourcing production release. It renames two overlength model indexes through forward migrations and changes no business behavior.
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 
