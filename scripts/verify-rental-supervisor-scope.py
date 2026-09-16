@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.112"
+VERSION = "1.0.113"
 PREDECESSOR = "1.0.91-administration-users-ui"
 PREDECESSOR_SHA256 = "8d565a1567ad41c50c8a27815b0ee67bffdf56f6ccc2ae11c0473fbf1a3e3cdb"
 FOREMAN_PERMISSIONS = {
@@ -232,4 +232,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "scripts/verify-rental-supervisor-scope.py" not in (json.loads(text("merge/payroll-production-e2e.json")).get("static_verifiers") or []):
     fail("Payroll production E2E contract does not register the Foreman scope verifier")
 
-print("Verified SESCCO MS 1.0.112 Rental Supervisor / Foreman scoped access: exact nine-permission profile, Project scope, timesheet/overtime submission, finance/approval denial, assignment/OT commercial-data suppression, manager-controlled OT rates and direct-API enforcement.")
+print("Verified SESCCO MS 1.0.113 Rental Supervisor / Foreman scoped access: exact nine-permission profile, Project scope, timesheet/overtime submission, finance/approval denial, assignment/OT commercial-data suppression, manager-controlled OT rates and direct-API enforcement.")

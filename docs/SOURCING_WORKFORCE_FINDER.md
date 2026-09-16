@@ -12,4 +12,4 @@ This module has **no operational integration**. Workforce quantities are not Ren
 
 Production deployment must run `scripts/verify-sourcing-workforce-finder.py` plus `python manage.py test apps.sourcing.tests.test_workforce_finder --noinput` in the normal release rehearsal.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.112.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.113.

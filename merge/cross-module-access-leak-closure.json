@@ -1,5 +1,5 @@
 {
-  "release": "1.0.112",
+  "release": "1.0.113",
   "purpose": "Close indirect authorization leaks across search, deep links, employee profiles, Documents, Reports, Management aggregates, Archive/Trash, selectors and scoped supplier/organization directories.",
   "predecessor": {
     "release": "1.0.95-internal-payroll-finance-permission-decomposition",

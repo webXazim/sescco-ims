@@ -1,4 +1,4 @@
-# SESCCO MS 1.0.112 — Sourcing Data Exchange
+# SESCCO MS 1.0.113 — Sourcing Data Exchange
 
 This release adds controlled bulk import/export for the independent Sourcing Directory only.
 

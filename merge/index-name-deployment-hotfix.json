@@ -1,5 +1,5 @@
 {
-  "release": "1.0.112",
+  "release": "1.0.113",
   "scope": "django-index-name-deployment-hotfix",
   "previous_release": "1.0.111-sourcing-browser-e2e-production-freeze",
   "previous_archive_sha256": "7662aaf89be46014b077bdd7e0178679dfbd1559cf901b262b6c2989386fbb53",

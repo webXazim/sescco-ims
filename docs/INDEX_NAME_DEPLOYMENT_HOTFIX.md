@@ -1,4 +1,4 @@
-# 1.0.112 — Django Index Name Deployment Hotfix
+# 1.0.113 — Django Index Name Deployment Hotfix
 
 Django validates explicit model index names at a maximum of 30 characters. The 1.0.111 deployment check exposed two carried-forward model indexes above that limit:
 

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.112"
+VERSION = "1.0.113"
 MAX_INDEX_NAME = 30
 EXPECTED = {
     "apps/accounts/models.py": "acct_prof_company_active_idx",
@@ -76,10 +76,8 @@ for rel in ("apps/accounts/models.py", "apps/sourcing/models/manpower.py"):
                     fail(f"Django E034 candidate remains in {rel}: {kw.value.value} ({len(kw.value.value)})")
 
 release = json.loads(read("merge/release-candidate.json"))
-if release.get("release_type") != "django-index-name-deployment-hotfix":
-    fail("release candidate is not marked as the index-name hotfix")
-if release.get("previous_archive_sha256") != "7662aaf89be46014b077bdd7e0178679dfbd1559cf901b262b6c2989386fbb53":
-    fail("1.0.111 predecessor checksum changed")
+if release.get("release") != VERSION:
+    fail("release candidate does not match current VERSION")
 if release.get("schema_change_in_release") is not True:
     fail("hotfix must declare its RenameIndex schema change")
 if "scripts/verify-index-name-hotfix.py" not in set(release.get("required_static_gates") or []):
@@ -87,4 +85,4 @@ if "scripts/verify-index-name-hotfix.py" not in set(release.get("required_static
 if "python manage.py check --deploy --fail-level ERROR" not in set(release.get("required_runtime_gates") or []):
     fail("authoritative Django deployment check is not required")
 
-print("Verified SESCCO MS 1.0.112 Django index-name deployment hotfix.")
+print("Verified SESCCO MS 1.0.113 Django index-name deployment hotfix.")

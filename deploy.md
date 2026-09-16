@@ -1,4 +1,4 @@
-> Release 1.0.112 is a deployment-only Django index-name hotfix over the frozen 1.0.111 Sourcing production release. It renames two overlength model indexes through forward migrations and changes no business behavior.
+> Release 1.0.113 is a deployment-only Sourcing migration-state hotfix over 1.0.112. It aligns abstract `company` / `deleted_by` ForeignKey migration state through forward `AlterField` operations and changes no database data, columns, indexes, permissions, Payroll/Inventory formulas, or Sourcing business behavior.
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 

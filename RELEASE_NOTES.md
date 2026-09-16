@@ -1,3 +1,13 @@
+# 1.0.113 — Sourcing Migration State Drift Hotfix
+
+- Fixes the production `makemigrations --check --dry-run` failure where Django proposed `sourcing.0008` with 13 pending `AlterField` operations.
+- Aligns the migration state of 11 Sourcing `company` ForeignKeys with the inherited `CompanyOwnedModel` placeholder `related_name="%(app_label)s_%(class)s_records"`.
+- Aligns the migration state of `deleted_by` on `SourcingVendor` and `SourcingManpowerSupplier` with `related_name="%(app_label)s_%(class)s_deleted_records"`.
+- Adds forward migration `sourcing.0008_align_abstract_relation_state`; the operations are migration-state alignment only and do not change database data, columns, indexes, Payroll formulas, Inventory quantities, permissions, or Sourcing business rules.
+- Keeps the 1.0.112 index-name deployment hotfix intact and adds a dedicated migration-state verifier.
+- Keeps `python manage.py makemigrations --check --dry-run` as the authoritative runtime drift gate.
+- Binds this hotfix to exact 1.0.112 SHA-256 `5a3c71f2b0fb1cc065beaadc5ec6eb8846d8834bf12389de55e78f37dc7d9fdb`.
+
 # 1.0.112 — Django Index Name Deployment Hotfix
 
 - Fixes the production `SystemCheckError` / `models.E034` raised by two explicit Django model index names longer than 30 characters.

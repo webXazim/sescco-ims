@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.112"
+VERSION = "1.0.113"
 PREDECESSOR = "1.0.92-rental-supervisor-foreman-scoped-access"
 PREDECESSOR_SHA256 = "ec1388afc1833098292fc59fd9b93b3d92734f4be4e087584690943d39be2763"
 STOREKEEPER_PERMISSIONS = {
@@ -195,4 +195,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
     if "verify-inventory-storekeeper-scope.py" not in text(rel):
         fail(f"{rel} does not enforce the Storekeeper scope gate")
 
-print("Verified SESCCO MS 1.0.112 Inventory Storekeeper scoped authority: exact operational profile, Project+Location intersection, scoped stock/movements/dashboard/exports, two-end transfer validation, and manager-only corrective/master/import/lifecycle controls.")
+print("Verified SESCCO MS 1.0.113 Inventory Storekeeper scoped authority: exact operational profile, Project+Location intersection, scoped stock/movements/dashboard/exports, two-end transfer validation, and manager-only corrective/master/import/lifecycle controls.")

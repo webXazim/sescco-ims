@@ -15,11 +15,11 @@ def text(rel: str) -> str:
         fail(f"missing file: {rel}")
     return path.read_text(encoding="utf-8")
 
-if text("VERSION").strip() != "1.0.112":
-    fail("VERSION must be 1.0.112")
+if text("VERSION").strip() != "1.0.113":
+    fail("VERSION must be 1.0.113")
 contract = json.loads(text("merge/payroll-assignment-project-selector-scale.json"))
-if contract.get("release") != "1.0.112":
-    fail("assignment-project selector contract release must be 1.0.112")
+if contract.get("release") != "1.0.113":
+    fail("assignment-project selector contract release must be 1.0.113")
 lookup = contract.get("server_lookup") or {}
 for key, expected in {
     "minimum_query_chars": 2,
@@ -92,4 +92,4 @@ for method in (
     if f"def {method}" not in tests:
         fail(f"missing Django regression: {method}")
 
-print("Verified SESCCO MS 1.0.112 assignment project selector scale safety: embedded search, bounded count-free paging, date-valid active projects, current-project exclusion and no directory-cache save dependency.")
+print("Verified SESCCO MS 1.0.113 assignment project selector scale safety: embedded search, bounded count-free paging, date-valid active projects, current-project exclusion and no directory-cache save dependency.")

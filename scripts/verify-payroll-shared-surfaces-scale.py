@@ -27,17 +27,17 @@ def require(rel: str, *needles: str) -> str:
     return value
 
 
-if text("VERSION").strip() != "1.0.112":
-    fail("VERSION must be 1.0.112")
+if text("VERSION").strip() != "1.0.113":
+    fail("VERSION must be 1.0.113")
 
 contract = json.loads(text("merge/payroll-shared-surfaces-scale.json"))
-if contract.get("release") != "1.0.112":
-    fail("shared-surface contract release must be 1.0.112")
+if contract.get("release") != "1.0.113":
+    fail("shared-surface contract release must be 1.0.113")
 for key in ("documents", "reports", "record_management", "management", "browser"):
     if not isinstance(contract.get(key), dict):
         fail(f"missing {key} contract")
 if contract.get("schema_change") is not False or contract.get("payroll_formula_change") is not False:
-    fail("1.0.112 must not claim a schema or Payroll formula change")
+    fail("1.0.113 must not claim a schema or Payroll formula change")
 for key in ("page_sizes",):
     if contract["documents"].get(key) != [25, 50, 100]:
         fail("document page sizes changed")

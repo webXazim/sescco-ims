@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.112"
-PREDECESSOR = "1.0.111-sourcing-browser-e2e-production-freeze"
-PREDECESSOR_SHA256 = "7662aaf89be46014b077bdd7e0178679dfbd1559cf901b262b6c2989386fbb53"
-TITLE = "1.0.112 — Django Index Name Deployment Hotfix"
+VERSION = "1.0.113"
+PREDECESSOR = "1.0.112-django-index-name-deployment-hotfix"
+PREDECESSOR_SHA256 = "5a3c71f2b0fb1cc065beaadc5ec6eb8846d8834bf12389de55e78f37dc7d9fdb"
+TITLE = "1.0.113 — Sourcing Migration State Drift Hotfix"
 
 
 def fail(message: str) -> None:
@@ -29,23 +29,24 @@ if version != VERSION:
 contract = json.loads(text("merge/release-candidate.json"))
 if contract.get("release") != VERSION:
     fail("release-candidate contract does not match VERSION")
-if contract.get("release_type") != "django-index-name-deployment-hotfix":
-    fail("1.0.112 release type must be django-index-name-deployment-hotfix")
+if contract.get("release_type") != "sourcing-migration-state-drift-hotfix":
+    fail("1.0.113 release type must be sourcing-migration-state-drift-hotfix")
 if contract.get("previous_release") != PREDECESSOR or contract.get("previous_archive_sha256") != PREDECESSOR_SHA256:
-    fail("1.0.112 predecessor identity/checksum changed")
+    fail("1.0.113 predecessor identity/checksum changed")
 if contract.get("feature_freeze") is not True:
-    fail("1.0.112 packaged feature set must remain frozen")
+    fail("1.0.113 packaged feature set must remain frozen")
 if contract.get("schema_change_in_release") is not True:
-    fail("1.0.112 must declare its two RenameIndex schema changes")
-expected_scope = "Deployment hotfix only: rename two Django model indexes to <=30-character names through forward RenameIndex migrations; no table/data, Payroll formula, Inventory quantity, Sourcing business-rule, permission-catalog or operational integration change"
+    fail("1.0.113 must declare its migration-state alignment operations")
+expected_scope = "Deployment hotfix only: align Sourcing abstract ForeignKey migration state through 13 forward AlterField operations (11 company + 2 deleted_by); related_name state only, with no database data/column/index, Payroll formula, Inventory quantity, permission-catalog, Sourcing business-rule or operational integration change"
 if contract.get("schema_change_scope") != expected_scope:
-    fail("1.0.112 schema-change scope changed")
+    fail("1.0.113 schema-change scope changed")
 if contract.get("payroll_formula_change_in_release") is not False or contract.get("inventory_quantity_formula_change_in_release") is not False:
-    fail("1.0.112 must not change Payroll or Inventory formulas")
+    fail("1.0.113 must not change Payroll or Inventory formulas")
 if set(contract.get("required_seed_profiles") or []) != {"functional", "realistic", "benchmark"}:
     fail("required seed profiles changed")
 
 required_gates = {
+    "scripts/verify-sourcing-migration-state-hotfix.py",
     "scripts/verify-index-name-hotfix.py",
     "scripts/verify-granular-access-authority.py",
     "scripts/verify-single-access-authority.py",
@@ -107,10 +108,10 @@ for gate in (
 
 notes=text("RELEASE_NOTES.md")
 if not notes.startswith(f"# {TITLE}\n"):
-    fail("1.0.112 release notes must be the first release entry")
+    fail("1.0.113 release notes must be the first release entry")
 readme=text("README.md")
 if f"SESCCO MS {TITLE}" not in readme:
-    fail("README does not identify the 1.0.112 packaged release")
+    fail("README does not identify the 1.0.113 packaged release")
 
 for template, assets in {
     "templates/payroll/app.html": ("payroll/css/v2/payroll-controls.css", "payroll/js/app.js"),
@@ -118,11 +119,12 @@ for template, assets in {
 }.items():
     content=text(template)
     for asset in assets:
-        pattern=re.escape(asset)+r"' %\}\?v=1\.0\.112"
+        pattern=re.escape(asset)+r"' %\}\?v=1\.0\.113"
         if not re.search(pattern,content):
-            fail(f"asset cache buster is not frozen at 1.0.112 for {asset}")
+            fail(f"asset cache buster is not frozen at 1.0.113 for {asset}")
 
 release_contracts=(
+    "merge/sourcing-migration-state-hotfix.json",
     "merge/index-name-deployment-hotfix.json",
     "merge/payroll-production-e2e.json","merge/payroll-directory-runtime.json","merge/payroll-assignment-runtime.json",
     "merge/payroll-timesheet-scale.json","merge/payroll-bootstrap-search.json","merge/payroll-query-hardening.json",
@@ -159,6 +161,7 @@ for rel in (
     "apps/sourcing/migrations/0006_scale_finder_indexes.py",
     "apps/accounts/migrations/0013_rename_access_profile_index.py",
     "apps/sourcing/migrations/0007_rename_manpower_contact_index.py",
+    "apps/sourcing/migrations/0008_align_abstract_relation_state.py",
 ):
     if not (ROOT/rel).is_file():
         fail(f"required migration lineage missing: {rel}")
@@ -191,12 +194,12 @@ for needle in (
 
 benchmarks=set(contract.get("required_benchmark_gates") or [])
 if not any("certify-sourcing-browser-e2e.py" in gate for gate in benchmarks):
-    fail("1.0.112 carry-forward release candidate must retain live Sourcing Chromium E2E")
+    fail("1.0.113 carry-forward release candidate must retain live Sourcing Chromium E2E")
 if contract.get("sourcing_live_browser_evidence") != "sourcing-browser-certification.json":
-    fail("1.0.112 carry-forward release candidate must retain the Sourcing browser evidence filename")
+    fail("1.0.113 carry-forward release candidate must retain the Sourcing browser evidence filename")
 
 deploy=text(contract["deployment_entrypoint"])
 if "scripts/verify-production-freeze.sh" not in deploy:
     fail("canonical production deployment no longer verifies the packaged freeze")
 
-print("Verified SESCCO MS 1.0.112 Django Index Name Deployment Hotfix release contract.")
+print("Verified SESCCO MS 1.0.113 Sourcing Migration State Drift Hotfix release contract.")
