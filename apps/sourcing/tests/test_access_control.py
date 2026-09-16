@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
+from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission, permissions_for_legacy_role
@@ -19,7 +20,7 @@ from apps.sourcing.access import (
 )
 
 
-@override_settings(SECURE_SSL_REDIRECT=False)
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class SourcingAccessControlTests(TestCase):
     def setUp(self):
         User = get_user_model()

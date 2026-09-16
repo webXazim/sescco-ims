@@ -63,4 +63,4 @@
 
 <section data-sourcing-panel="activity" hidden><article class="sourcing-card"><header><h2>Activity</h2><p>Immutable Sourcing audit events for this Vendor.</p></header><div class="sourcing-timeline">{% for event in history %}<div><time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|date:"d M Y H:i" }}</time><span><strong>{{ event.action }}</strong><small>{{ event.actor_display_name|default:event.actor_username|default:'System' }}</small></span></div>{% empty %}<div class="sourcing-empty"><p>No Vendor activity recorded yet.</p></div>{% endfor %}</div></article></section>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.116"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117"></script>{% endblock %}

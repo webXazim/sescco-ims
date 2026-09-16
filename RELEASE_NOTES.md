@@ -1,3 +1,13 @@
+# 1.0.117 — Sourcing Static Manifest Deployment Hotfix
+
+- Fixes the production Sourcing 500 / focused-test failure where `ManifestStaticFilesStorage` raised `Missing staticfiles manifest entry for 'sourcing/css/directory.css'` before the deployment reached `collectstatic`.
+- Keeps the safe deployment order intact: focused application tests still run before the shared production static volume is mutated; production `collectstatic` still runs only after those tests pass.
+- Makes the ten Sourcing HTTP test classes use `StaticFilesStorage` only inside their test setting override, while production continues to use `ManifestStaticFilesStorage` and `SECURE_SSL_REDIRECT=True` by default.
+- Adds `verify_sourcing_static_manifest` immediately after production `collectstatic`; it fails deployment unless the collected manifest resolves the Sourcing directory stylesheet and all three Sourcing JavaScript assets.
+- Preserves the 1.0.116 HTTPS test-transport fix and every 1.0.112–1.0.115 deployment/data reconciliation hotfix unchanged.
+- Adds no database migration, schema/data change, permission-catalog change, Payroll formula change, Inventory quantity change, Sourcing business-rule change, or production HTTPS/static-storage weakening.
+- Binds this hotfix to exact 1.0.116 SHA-256 `b556f03f6d499862eeb9dd5f9527c3dc14a706a28c64cb8ea3e48b0688bdd94c`.
+
 # 1.0.116 — Sourcing HTTPS Test Transport Hotfix
 
 - Fixes production-image Sourcing Django tests that were receiving HTTP 301 redirects from `SecurityMiddleware` because `SECURE_SSL_REDIRECT=True` in production while Django `Client` requests default to HTTP.

@@ -1,0 +1,24 @@
+{
+  "release": "1.0.117",
+  "scope": "sourcing-static-manifest-deployment-hotfix",
+  "previous_release": "1.0.116-sourcing-https-test-transport-hotfix",
+  "previous_archive_sha256": "b556f03f6d499862eeb9dd5f9527c3dc14a706a28c64cb8ea3e48b0688bdd94c",
+  "test_static_backend": "django.contrib.staticfiles.storage.StaticFilesStorage",
+  "production_static_backend": "django.contrib.staticfiles.storage.ManifestStaticFilesStorage",
+  "production_collectstatic_order_preserved": true,
+  "post_collectstatic_manifest_gate": "python manage.py verify_sourcing_static_manifest",
+  "required_manifest_assets": [
+    "sourcing/css/directory.css",
+    "sourcing/js/finder-scale.js",
+    "sourcing/js/manpower-directory.js",
+    "sourcing/js/vendor-directory.js"
+  ],
+  "database_schema_change": false,
+  "database_data_change": false,
+  "permission_catalog_change": false,
+  "permission_behavior_change": false,
+  "payroll_formula_change": false,
+  "inventory_quantity_change": false,
+  "sourcing_business_rule_change": false,
+  "production_https_policy_change": false
+}

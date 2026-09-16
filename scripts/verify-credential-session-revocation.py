@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 PREDECESSOR_SHA = "a94d4a289abac628d6305db7def2c41e4255ae6def8bab1dad89f13f667b4751"
 
 
@@ -97,7 +97,7 @@ required = {
 }
 if not required.issubset(methods):
     fail(f"runtime regressions missing: {sorted(required - methods)}")
-if "1.0.116" not in text("docs/CREDENTIAL_SESSION_REVOCATION.md"):
+if "1.0.117" not in text("docs/CREDENTIAL_SESSION_REVOCATION.md"):
     fail("operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.116 credential/session revocation and mandatory temporary-password change are release-bound.")
+print("PASS: SESCCO MS 1.0.117 credential/session revocation and mandatory temporary-password change are release-bound.")

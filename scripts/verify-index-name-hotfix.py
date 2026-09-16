@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 MAX_INDEX_NAME = 30
 EXPECTED = {
     "apps/accounts/models.py": "acct_prof_company_active_idx",
@@ -85,4 +85,4 @@ if "scripts/verify-index-name-hotfix.py" not in set(release.get("required_static
 if "python manage.py check --deploy --fail-level ERROR" not in set(release.get("required_runtime_gates") or []):
     fail("authoritative Django deployment check is not required")
 
-print("Verified SESCCO MS 1.0.116 Django index-name deployment hotfix.")
+print("Verified SESCCO MS 1.0.117 Django index-name deployment hotfix.")

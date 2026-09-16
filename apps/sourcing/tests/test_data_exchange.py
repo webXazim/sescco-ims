@@ -5,6 +5,7 @@ import io
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -24,7 +25,7 @@ from apps.sourcing.models import (
 )
 
 
-@override_settings(SECURE_SSL_REDIRECT=False)
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class SourcingDataExchangeTests(TestCase):
     def setUp(self):
         User = get_user_model()

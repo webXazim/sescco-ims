@@ -1,14 +1,15 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "product": "SESCCO MS \u2014 Management System",
-  "release_type": "sourcing-https-test-transport-hotfix",
-  "previous_release": "1.0.115-inventory-manager-permission-reconciliation-hotfix",
-  "previous_archive_sha256": "023a01ec01f2c9d9101dbfa56a9dc8e60f0b46748e3d10542f8477ad9d260438",
+  "release_type": "sourcing-static-manifest-deployment-hotfix",
+  "previous_release": "1.0.116-sourcing-https-test-transport-hotfix",
+  "previous_archive_sha256": "b556f03f6d499862eeb9dd5f9527c3dc14a706a28c64cb8ea3e48b0688bdd94c",
   "feature_freeze": true,
   "schema_change_in_release": false,
-  "schema_change_scope": "Test-transport-only hotfix: disable SECURE_SSL_REDIRECT inside Sourcing HTTP test classes so production-image Django Client requests reach application authorization assertions; no production security setting, database schema/data, permission, Payroll, Inventory, Sourcing business-rule or operational integration change",
+  "schema_change_scope": "Static-manifest deployment hotfix: Sourcing HTTP tests use non-manifest test static storage before collectstatic; production ManifestStaticFilesStorage remains authoritative; release tasks verify all Sourcing manifest entries immediately after collectstatic; no database, permission, Payroll, Inventory, Sourcing business-rule or production HTTPS-policy change",
   "payroll_formula_change_in_release": false,
   "required_static_gates": [
+    "scripts/verify-sourcing-static-manifest-deployment-hotfix.py",
     "scripts/verify-sourcing-https-test-transport-hotfix.py",
     "scripts/verify-inventory-manager-permission-reconciliation-hotfix.py",
     "scripts/verify-accounts-rental-supervisor-migration-hotfix.py",
@@ -87,7 +88,9 @@
     "python manage.py test apps.sourcing.tests.test_scale_hardening --noinput",
     "python manage.py test apps.sourcing.tests.test_security_certification --noinput",
     "python manage.py test apps.sourcing.tests.test_browser_e2e_freeze --noinput",
-    "python manage.py test --noinput"
+    "python manage.py test --noinput",
+    "python manage.py collectstatic --noinput",
+    "python manage.py verify_sourcing_static_manifest"
   ],
   "required_benchmark_gates": [
     "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
@@ -110,5 +113,7 @@
   "inventory_manager_permission_reconciliation_migration": "apps/accounts/migrations/0014_inventory_manager_import_permission.py",
   "inventory_manager_permission_reconciliation_runtime_gate": "python manage.py merge_access_report --fail-on-errors",
   "sourcing_https_test_transport_contract": "merge/sourcing-https-test-transport-hotfix.json",
-  "sourcing_https_test_transport_runtime_gate": "python manage.py test apps.sourcing.tests.test_access_control --noinput"
+  "sourcing_https_test_transport_runtime_gate": "python manage.py test apps.sourcing.tests.test_access_control --noinput",
+  "sourcing_static_manifest_contract": "merge/sourcing-static-manifest-deployment-hotfix.json",
+  "sourcing_static_manifest_runtime_gate": "python manage.py verify_sourcing_static_manifest"
 }

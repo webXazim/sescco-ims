@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
 from django.utils import timezone
 
@@ -20,7 +21,7 @@ from apps.sourcing.models import (
 )
 
 
-@override_settings(SECURE_SSL_REDIRECT=False)
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class MaterialFinderTests(TestCase):
     def setUp(self):
         User = get_user_model()

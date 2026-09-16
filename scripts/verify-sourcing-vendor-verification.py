@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 PREDECESSOR_SHA = "490c83bdcaab2f4586b973ca5ac78f11051df2429babd5a6c9683c3610516214"
 
 
@@ -128,9 +128,9 @@ for rel in (
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
 
-if "1.0.116" not in text("docs/SOURCING_VENDOR_VERIFICATION.md"):
+if "1.0.117" not in text("docs/SOURCING_VENDOR_VERIFICATION.md"):
     fail("Vendor verification operator guide is not version-bound")
 
 print(
-    "PASS: SESCCO MS 1.0.116 Vendor Verification & History UX verified: manage-only quick confirmation, view-only immutable history, before/after revision evidence, bounded history pagination, Material Finder freshness renewal and zero Inventory/Payroll/Accounting integration."
+    "PASS: SESCCO MS 1.0.117 Vendor Verification & History UX verified: manage-only quick confirmation, view-only immutable history, before/after revision evidence, bounded history pagination, Material Finder freshness renewal and zero Inventory/Payroll/Accounting integration."
 )

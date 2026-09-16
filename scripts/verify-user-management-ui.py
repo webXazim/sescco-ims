@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 
 
 def fail(message: str) -> None:
@@ -106,4 +106,4 @@ for marker in (
     if marker not in tests:
         fail(f"UI regression missing: {marker}")
 
-print("Verified SESCCO MS 1.0.116 Administration/User Management UI: permission-gated module, bounded register, production drawers, Access Profile assignment, explicit scopes and backend-authoritative security actions.")
+print("Verified SESCCO MS 1.0.117 Administration/User Management UI: permission-gated module, bounded register, production drawers, Access Profile assignment, explicit scopes and backend-authoritative security actions.")

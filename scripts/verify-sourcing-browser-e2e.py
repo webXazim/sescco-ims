@@ -20,8 +20,8 @@ def text(rel: str) -> str:
 
 
 version = text("VERSION").strip()
-if version != "1.0.116":
-    fail(f"VERSION must be 1.0.116, found {version!r}")
+if version != "1.0.117":
+    fail(f"VERSION must be 1.0.117, found {version!r}")
 
 contract = json.loads(text("merge/sourcing-browser-e2e-production-freeze.json"))
 if contract.get("release") != version:
@@ -81,7 +81,7 @@ try:
 except SyntaxError as exc:
     fail(f"live browser runner is invalid Python: {exc}")
 for needle in (
-    'RELEASE = "1.0.116"',
+    'RELEASE = "1.0.117"',
     'VENDOR_CODE = "SDEMO-V00001"',
     'MATERIAL_QUERY = "SDEMO Material 0001"',
     'MANPOWER_CODE = "SDEMO-P00001"',
@@ -141,4 +141,4 @@ if not any("certify-sourcing-browser-e2e.py" in item for item in (candidate.get(
 if candidate.get("sourcing_live_browser_evidence") != "sourcing-browser-certification.json":
     fail("release candidate lost Sourcing browser evidence filename")
 
-print("Verified SESCCO MS 1.0.116 final Sourcing live-browser E2E and production-freeze contract across 13 real UI scenarios.")
+print("Verified SESCCO MS 1.0.117 final Sourcing live-browser E2E and production-freeze contract across 13 real UI scenarios.")

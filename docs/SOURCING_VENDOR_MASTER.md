@@ -38,4 +38,4 @@ Run `python3 scripts/verify-sourcing-vendor-master.py`, `python3 scripts/verify-
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
-> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.116.
+> Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.

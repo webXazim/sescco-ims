@@ -1,5 +1,5 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "scope": "sourcing-migration-state-drift-hotfix",
   "previous_release": "1.0.112-django-index-name-deployment-hotfix",
   "previous_archive_sha256": "5a3c71f2b0fb1cc065beaadc5ec6eb8846d8834bf12389de55e78f37dc7d9fdb",

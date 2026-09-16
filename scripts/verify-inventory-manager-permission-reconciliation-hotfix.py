@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 MIGRATION = "apps/accounts/migrations/0014_inventory_manager_import_permission.py"
 CONTRACT = "merge/inventory-manager-permission-reconciliation-hotfix.json"
 PREDECESSOR_SHA = "2a3d174556821454f1f55013fba26247d2a0dc594f4276fe6aecdb3b7b07ecfb"
@@ -96,4 +96,4 @@ notes = read("RELEASE_NOTES.md")
 if "# 1.0.115 — Inventory Manager Permission Reconciliation Hotfix\n" not in notes:
     fail("historical 1.0.115 hotfix release notes were lost")
 
-print("Verified SESCCO MS 1.0.116 Inventory Manager permission reconciliation: exact import grant, database-alias-safe forward migration, Storekeeper unchanged, and runtime merge_access_report gate retained.")
+print("Verified SESCCO MS 1.0.117 Inventory Manager permission reconciliation: exact import grant, database-alias-safe forward migration, Storekeeper unchanged, and runtime merge_access_report gate retained.")

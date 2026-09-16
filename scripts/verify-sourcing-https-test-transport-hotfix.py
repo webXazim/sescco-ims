@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 PREDECESSOR = "1.0.115-inventory-manager-permission-reconciliation-hotfix"
 PREDECESSOR_SHA = "023a01ec01f2c9d9101dbfa56a9dc8e60f0b46748e3d10542f8477ad9d260438"
 CONTRACT = "merge/sourcing-https-test-transport-hotfix.json"
@@ -75,12 +75,10 @@ for marker in (
         fail(f"access-control assertion lost: {marker}")
 
 release = json.loads(read("merge/release-candidate.json"))
-if release.get("release") != VERSION or release.get("release_type") != "sourcing-https-test-transport-hotfix":
-    fail("release candidate identity mismatch")
-if release.get("previous_release") != PREDECESSOR or release.get("previous_archive_sha256") != PREDECESSOR_SHA:
-    fail("release candidate predecessor mismatch")
+if release.get("release") != VERSION:
+    fail("release candidate version mismatch")
 if "scripts/verify-sourcing-https-test-transport-hotfix.py" not in set(release.get("required_static_gates") or []):
-    fail("release candidate does not require HTTPS test transport verifier")
+    fail("release candidate does not retain HTTPS test transport verifier")
 if "python manage.py test apps.sourcing.tests.test_access_control --noinput" not in set(release.get("required_runtime_gates") or []):
     fail("focused Sourcing access runtime test is no longer mandatory")
 
@@ -88,9 +86,7 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
     if "verify-sourcing-https-test-transport-hotfix.py" not in read(rel):
         fail(f"{rel} does not execute the hotfix verifier")
 
-if not read("RELEASE_NOTES.md").startswith("# 1.0.116 — Sourcing HTTPS Test Transport Hotfix\n"):
-    fail("release notes do not lead with the hotfix")
-if "SESCCO MS 1.0.116 — Sourcing HTTPS Test Transport Hotfix" not in read("README.md"):
-    fail("README current release identity mismatch")
+if "# 1.0.116 — Sourcing HTTPS Test Transport Hotfix\n" not in read("RELEASE_NOTES.md"):
+    fail("historical 1.0.116 HTTPS test transport release notes were lost")
 
-print("Verified SESCCO MS 1.0.116 Sourcing HTTPS test transport hotfix: production HTTPS unchanged, Sourcing HTTP tests reach application authorization, and no business/data authority changed.")
+print("Verified SESCCO MS 1.0.117 Sourcing HTTPS test transport hotfix: production HTTPS unchanged, Sourcing HTTP tests reach application authorization, and no business/data authority changed.")

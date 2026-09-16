@@ -48,6 +48,7 @@ python3 "${PROJECT_ROOT}/scripts/verify-internal-finance-permissions.py"
 python3 "${PROJECT_ROOT}/scripts/verify-cross-module-access-leaks.py"
 python3 "${PROJECT_ROOT}/scripts/verify-credential-session-revocation.py"
 python3 "${PROJECT_ROOT}/scripts/verify-access-history-recovery.py"
+python3 "${PROJECT_ROOT}/scripts/verify-sourcing-static-manifest-deployment-hotfix.py"
 python3 "${PROJECT_ROOT}/scripts/verify-sourcing-https-test-transport-hotfix.py"
 python3 "${PROJECT_ROOT}/scripts/verify-inventory-manager-permission-reconciliation-hotfix.py"
 python3 "${PROJECT_ROOT}/scripts/verify-accounts-rental-supervisor-migration-hotfix.py"
@@ -168,6 +169,9 @@ run_manage test apps.sourcing.tests.test_browser_e2e_freeze --noinput
 
 info "Collecting static assets without deleting the previous release assets"
 run_manage collectstatic --noinput
+
+info "Verifying collected Sourcing static manifest"
+run_manage verify_sourcing_static_manifest
 
 info "Rendering the production Payroll bootstrap before live cutover"
 run_manage payroll_bootstrap_report --fail-on-errors

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission
@@ -11,7 +12,7 @@ from apps.core.models import AuditArea, AuditEvent, Company
 from apps.sourcing.models import SourcingEntityStatus, SourcingManpowerContact, SourcingManpowerSupplier
 
 
-@override_settings(SECURE_SSL_REDIRECT=False)
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class ManpowerSourcingMasterTests(TestCase):
     def setUp(self):
         User = get_user_model()

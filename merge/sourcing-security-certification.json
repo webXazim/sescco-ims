@@ -1,5 +1,5 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "feature": "sourcing-security-tenant-cross-module-isolation-certification",
   "predecessor": {
     "release": "1.0.109-sourcing-scale-hardening-benchmarking",

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.116"
+VERSION = "1.0.117"
 
 
 def fail(message: str) -> None:
@@ -23,7 +23,7 @@ if text("VERSION").strip() != VERSION:
     fail(f"VERSION must be {VERSION}")
 contract = json.loads(text("merge/user-management-backend.json"))
 if contract.get("release") != VERSION or contract.get("schema_change") is not True:
-    fail("1.0.116 contract must declare the user-management schema release")
+    fail("1.0.117 contract must declare the user-management schema release")
 if contract.get("payroll_formula_change") is not False:
     fail("User Management release must not change Payroll formulas")
 
@@ -86,7 +86,7 @@ for marker in (
     'name="accounts_membership_role_valid"',
 ):
     if marker not in migration:
-        fail(f"1.0.116 migration marker missing: {marker}")
+        fail(f"1.0.117 migration marker missing: {marker}")
 
 report = text("apps/core/management/commands/merge_access_report.py")
 if "if role == AccessRole.CUSTOM" not in report:
@@ -115,4 +115,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "merge_access_report --fail-on-errors" not in text("scripts/rehearse-production-freeze.sh"):
     fail("production rehearsal lost access reconciliation")
 
-print("Verified SESCCO MS 1.0.116 User Management backend: company-scoped CRUD, owner/self protection, password-reset state, atomic scopes, bounded APIs and immutable access audit.")
+print("Verified SESCCO MS 1.0.117 User Management backend: company-scoped CRUD, owner/self protection, password-reset state, atomic scopes, bounded APIs and immutable access audit.")

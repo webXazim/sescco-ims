@@ -4,6 +4,7 @@ from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.db.utils import NotSupportedError
 from django.test import Client, TestCase, override_settings
+from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
 from django.utils import timezone
 
@@ -36,7 +37,11 @@ from apps.sourcing.services.vendors import archive_vendor, create_vendor, trash_
 from apps.sourcing.services.workforce import create_trade, create_workforce_offer, verify_workforce_offer
 
 
-@override_settings(SINGLE_COMPANY_MODE=False, SECURE_SSL_REDIRECT=False)
+@override_settings(
+    SINGLE_COMPANY_MODE=False,
+    SECURE_SSL_REDIRECT=False,
+    STORAGES=SOURCING_HTTP_TEST_STORAGES,
+)
 class SourcingSecurityCertificationTests(TestCase):
     def setUp(self):
         User = get_user_model()

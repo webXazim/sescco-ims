@@ -1,6 +1,6 @@
 # Sourcing HTTPS Test Transport Hotfix
 
-Release 1.0.116 fixes a production-image test transport mismatch. Production enables `SECURE_SSL_REDIRECT`, while Django's test client issues HTTP requests by default. SecurityMiddleware therefore returned HTTP 301 before Sourcing view authorization ran.
+Release 1.0.117 fixes a production-image test transport mismatch. Production enables `SECURE_SSL_REDIRECT`, while Django's test client issues HTTP requests by default. SecurityMiddleware therefore returned HTTP 301 before Sourcing view authorization ran.
 
 The hotfix does not change production HTTPS behavior. It applies `@override_settings(SECURE_SSL_REDIRECT=False)` only to Sourcing test classes whose purpose is to validate application permissions, tenant isolation, CRUD behavior, lifecycle behavior, finders, verification, and data exchange.
 

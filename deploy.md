@@ -1,4 +1,5 @@
-> Release 1.0.116 is a test-transport hotfix over 1.0.115. It keeps production HTTPS enforcement unchanged, but disables SECURE_SSL_REDIRECT only inside Sourcing authorization/business-flow Django test classes so the production-image test client reaches the intended 200/403/404 view assertions instead of being intercepted by an HTTP→HTTPS 301. No database, permission, Payroll, Inventory, Sourcing business-rule or runtime security-setting change is introduced.
+> Release 1.0.117 is a production static-manifest deployment hotfix over 1.0.116. It keeps production ManifestStaticFilesStorage and HTTPS enforcement unchanged, makes Sourcing HTTP tests independent of the not-yet-collected production manifest, and adds a post-collectstatic manifest check for every Sourcing CSS/JS asset before live cutover. No database, permission, Payroll, Inventory, Sourcing business-rule or production security-setting change is introduced.
+
 
 The merged IMS + Payroll platform is isolated from SESCCO and keeps the existing IMS deployment identity:
 
@@ -490,4 +491,3 @@ Use `./scripts/deploy-production.sh --seed` when this installation is intended t
 For load testing, `./scripts/deploy-production.sh --seed --seed-profile realistic` creates 250 Internal employees and 750 Rental workers over six scale-history months. `--seed-profile benchmark` expands the same restart-safe population to 2,000 Internal employees and 5,000 Rental workers over 12 months, with daily attendance/timesheet rows plus payroll/WPS and supplier-settlement/payment history. `IMS_SEED_BATCH_SIZE` may tune the default 5,000-row bulk insert chunks. Large profiles are allowed only on a DEMO-only tenant; the command refuses to mix them with non-DEMO Internal or Rental worker masters.
 
 The functional finalized synthetic payroll uses a collision-safe historical month that excludes non-DEMO employment. If no safe month can be proven, deployment stops at the seed step instead of inserting real employees into a DEMO payroll run. Do not use any seed option on an installation where visible DEMO test records are not wanted. See `docs/PAYROLL_SCALE_SEED.md` for scale-profile behavior and restart rules.
-

@@ -1,5 +1,5 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "purpose": "Preserve the 1.0.88 granular Access Profile/permission/scope foundation while promoting AccessProfile to the sole runtime authorization authority.",
   "authority": {
     "company_boundary": "accounts.CompanyMembership",

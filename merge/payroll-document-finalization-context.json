@@ -1,5 +1,5 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "purpose": "Keep Payroll document finalization type-aware and preserve employee context when Salary Slip is finalized from an Internal Employee profile.",
   "employee_salary_slip": {
     "document_type_locked": true,

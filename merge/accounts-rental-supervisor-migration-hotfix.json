@@ -1,5 +1,5 @@
 {
-  "release": "1.0.116",
+  "release": "1.0.117",
   "scope": "accounts-rental-supervisor-migration-hotfix",
   "previous_release": "1.0.113-sourcing-migration-state-drift-hotfix",
   "previous_archive_sha256": "aa870514601cb796a1f58bd569acd0c527082c411494b07dbcba830ba25a6a41",
