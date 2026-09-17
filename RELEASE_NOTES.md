@@ -7,6 +7,8 @@
 - Rental settlement hour totals now use explicit half-up normalization.
 - Added regression coverage for server-authoritative rental worker summaries and half-up monetary/rate rounding.
 - Deployment source-freeze verification now requires the historical Sourcing static-manifest hotfix section to remain present without incorrectly requiring it to be the first release-note heading, so later 1.0.117 hotfix notes can lead the file safely.
+- Payroll query-hardening verification now scopes the no-`DISTINCT` fan-out assertion to the live `workers_for_company()` search path, so legitimate aggregate `distinct()` usage in `worker_directory_summary()` does not create a false release failure.
+- The frozen release-candidate gate now accepts any leading 1.0.117 hotfix heading while still requiring the original Sourcing static-manifest base-release section, preventing later 1.0.117 production hotfix notes from being rejected as stale.
 
 # 1.0.117 — Sourcing Static Manifest Deployment Hotfix
 

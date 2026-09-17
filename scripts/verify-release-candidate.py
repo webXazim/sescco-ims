@@ -80,8 +80,11 @@ if contract.get("inventory_manager_permission_reconciliation_migration") != "app
 if contract.get("inventory_manager_permission_reconciliation_runtime_gate") != "python manage.py merge_access_report --fail-on-errors":
     fail("runtime reconciliation authority changed")
 
-if not text("RELEASE_NOTES.md").startswith(f"# {TITLE}\n"):
-    fail("release notes do not lead with current hotfix")
+release_notes = text("RELEASE_NOTES.md")
+if not re.match(r"^\s*#{1,2}\s+1\.0\.117(?:\s|\u2014|-)" , release_notes):
+    fail("release notes do not lead with a 1.0.117 hotfix/release heading")
+if f"# {TITLE}\n" not in release_notes:
+    fail("release notes lost the frozen Sourcing static-manifest base release section")
 if f"SESCCO MS {TITLE}" not in text("README.md"):
     fail("README does not identify current packaged release")
 
