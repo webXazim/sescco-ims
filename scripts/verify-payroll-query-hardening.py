@@ -82,7 +82,7 @@ for needle in (
 if ".distinct()" in attendance_search:
     fail("Attendance search reintroduced DISTINCT over assignment joins")
 
-rental_worker_search = block(files["rental_selector"], "def workers_for_company(", "\ndef _assignment_rate_label")
+rental_worker_search = block(files["rental_selector"], "def workers_for_company(", "\ndef worker_directory_summary")
 for needle in (
     'worker_id=OuterRef("pk")',
     '_assignment_search_match=Exists(assignment_search)',
