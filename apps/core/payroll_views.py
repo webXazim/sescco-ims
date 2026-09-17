@@ -114,7 +114,7 @@ def payroll_app(request):
     # directories and heavy Payroll configuration/period contexts are loaded from
     # their server APIs only when the relevant route needs them.
     internal_context = (
-        internal_master_context(company=request.company, include_histories=False, employee_limit=50)
+        internal_master_context(company=request.company, include_histories=False, employee_limit=50, membership=membership)
         if can_internal_master
         else {
             "branches": [], "departments": [], "employees": [], "employeeOrganizationHistory": {},

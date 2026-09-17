@@ -32,6 +32,12 @@ for marker in ('def branch_scope_ids(', 'def project_scope_ids(', 'def restrict_
 internal=text("apps/internal_payroll/api.py")
 for marker in ('restrict_current_employee_branches(', 'membership=request.company_membership', 'INTERNAL_WPS_VIEW', 'can_salary =', 'can_payment ='):
     if marker not in internal: fail(f"Internal directory/profile leak closure missing: {marker}")
+organization=text("apps/internal_payroll/selectors/organization.py")
+for marker in ('def branches_for_company(', 'membership=None', 'scoped_branch_ids = branch_scope_ids(membership)', '_bootstrap_branch_scope=Exists(scoped_assignment)', 'departments_for_company(company=company, archived=None, membership=membership)'):
+    if marker not in organization: fail(f"Internal bootstrap/organization Branch scope missing: {marker}")
+payroll_view=text("apps/core/payroll_views.py")
+if 'internal_master_context(company=request.company, include_histories=False, employee_limit=50, membership=membership)' not in payroll_view:
+    fail("Payroll shell bootstrap does not pass the active membership into Internal scope projection")
 profile=text("apps/internal_payroll/selectors/employee_profile.py")
 for marker in ('can_attendance =', 'can_adjustments =', 'can_payroll =', 'can_payments =', 'can_audit =', '"visibility": {'):
     if marker not in profile: fail(f"employee profile section authority missing: {marker}")
@@ -75,6 +81,7 @@ required={
     'test_access_administrator_cannot_infer_management_financial_overview',
     'test_scoped_management_audit_fails_closed',
     'test_department_counts_are_limited_to_assigned_branch',
+    'test_branch_scoped_payroll_bootstrap_hides_other_branch',
 }
 if not required.issubset(methods): fail(f"runtime regressions missing: {sorted(required-methods)}")
 if "1.0.117" not in text("docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md"): fail("operator/security guide not version-bound")

@@ -8,7 +8,7 @@ from apps.core.services.lifecycle import lifecycle_capabilities
 from apps.internal_payroll.models import Branch, Department, EmployeeOrganizationAssignment, EmploymentStatus, InternalEmployee
 
 
-def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False) -> QuerySet[Branch]:
+def branches_for_company(*, company: Company, query: str = "", active: bool | None = None, archived: bool | None = False, deleted: bool | None = False, membership=None) -> QuerySet[Branch]:
     rows = Branch.objects.for_company(company)
     if deleted is not None:
         rows = rows.filter(deleted_at__isnull=not deleted)
@@ -57,24 +57,26 @@ def departments_for_company(*, company: Company, query: str = "", active: bool |
     query = query.strip()
     if query:
         rows = rows.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(notes__icontains=query))
+    scoped_branch_ids = branch_scope_ids(membership) if membership is not None else None
+    employee_filter = Q(
+        employee_assignments__effective_to__isnull=True,
+        employee_assignments__employee__deleted_at__isnull=True,
+        employee_assignments__employee__archived_at__isnull=True,
+    )
+    if scoped_branch_ids is not None:
+        if not scoped_branch_ids:
+            employee_filter &= Q(pk__isnull=True)
+        else:
+            employee_filter &= Q(employee_assignments__branch_id__in=scoped_branch_ids)
     return rows.annotate(
         employee_count=Count(
             "employee_assignments__employee",
-            filter=Q(
-                employee_assignments__effective_to__isnull=True,
-                employee_assignments__employee__deleted_at__isnull=True,
-                employee_assignments__employee__archived_at__isnull=True,
-            ),
+            filter=employee_filter,
             distinct=True,
         ),
         active_employee_count=Count(
             "employee_assignments__employee",
-            filter=Q(
-                employee_assignments__effective_to__isnull=True,
-                employee_assignments__employee__deleted_at__isnull=True,
-                employee_assignments__employee__archived_at__isnull=True,
-                employee_assignments__employee__status=EmploymentStatus.ACTIVE,
-            ),
+            filter=employee_filter & Q(employee_assignments__employee__status=EmploymentStatus.ACTIVE),
             distinct=True,
         ),
     ).order_by("code", "name")
@@ -300,6 +302,7 @@ def internal_master_context(
     company: Company,
     include_histories: bool = True,
     employee_limit: int | None = None,
+    membership=None,
 ) -> dict[str, object]:
     """Return the Internal master bootstrap.
 
@@ -307,9 +310,25 @@ def internal_master_context(
     authority for complete employee lists; keeping the shell bootstrap bounded prevents a
     2,000-employee benchmark tenant from embedding every employee record in initial HTML.
     """
-    branches = list(branches_for_company(company=company, archived=None))
-    departments = list(departments_for_company(company=company, archived=None))
+    branch_ids = branch_scope_ids(membership) if membership is not None else None
+    branch_qs = branches_for_company(company=company, archived=None, membership=membership)
+    departments = list(departments_for_company(company=company, archived=None, membership=membership))
     employee_qs = employees_for_company(company=company)
+    if branch_ids is not None:
+        if not branch_ids:
+            branch_qs = branch_qs.none()
+            employee_qs = employee_qs.none()
+        else:
+            branch_qs = branch_qs.filter(pk__in=branch_ids)
+            scoped_assignment = EmployeeOrganizationAssignment.objects.for_company(company).filter(
+                employee_id=OuterRef("pk"),
+                effective_to__isnull=True,
+                branch_id__in=branch_ids,
+            )
+            employee_qs = employee_qs.annotate(_bootstrap_branch_scope=Exists(scoped_assignment)).filter(
+                _bootstrap_branch_scope=True
+            )
+    branches = list(branch_qs)
     total_employee_count = employee_qs.count()
     active_employee_count = employee_qs.filter(status=EmploymentStatus.ACTIVE).count()
     employees = list(employee_qs[:employee_limit] if employee_limit else employee_qs)

@@ -305,7 +305,7 @@ for marker in (
         raise SystemExit(f"Payroll server-directory browser contract missing: {marker}")
 
 for marker in (
-    'internal_master_context(company=request.company, include_histories=False, employee_limit=50)',
+    'internal_master_context(company=request.company, include_histories=False, employee_limit=50, membership=membership)',
 ):
     if marker not in payroll_view:
         raise SystemExit(f"Payroll shell lost the bounded 50-row employee bootstrap contract: {marker}")

@@ -388,7 +388,7 @@ def salary_payment_row_retry_api(request: HttpRequest, row_id) -> JsonResponse:
         return JsonResponse({
             "ok": True,
             "period": f"{batch.run.period_start:%Y-%m}",
-            "row": serialize_payment_row(row, can_pay=membership_has_capability(request.company_membership, Capability.PAY)),
+            "row": serialize_payment_row(row, can_pay=membership_has_permission(request.company_membership, AccessPermission.INTERNAL_PAYMENTS_EXECUTE)),
             "batch": serialize_payment_batch(batch, membership=request.company_membership, include_rows=False),
         })
     except Exception as exc:

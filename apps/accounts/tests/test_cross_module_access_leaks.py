@@ -78,6 +78,24 @@ class CrossModuleAccessLeakClosureTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_branch_scoped_payroll_bootstrap_hides_other_branch(self):
+        user, _membership = self._viewer(
+            "Scoped Bootstrap Viewer",
+            [AccessPermission.INTERNAL_EMPLOYEES_VIEW],
+            branch=self.branch_a,
+        )
+        self.client.force_login(user)
+        response = self.client.get(reverse("core:payroll"))
+        self.assertEqual(response.status_code, 200)
+
+        bootstrap = response.context["internal_master_context"]
+        branch_ids = {row["id"] for row in bootstrap["branches"]}
+        employee_numbers = {row["employeeNumber"] for row in bootstrap["employees"]}
+        self.assertIn(str(self.branch_a.pk), branch_ids)
+        self.assertNotIn(str(self.branch_b.pk), branch_ids)
+        self.assertIn("A-001", employee_numbers)
+        self.assertNotIn("B-001", employee_numbers)
+
     def test_generic_reports_permission_does_not_unlock_wps_data(self):
         user, _membership = self._viewer("Reports Only", [AccessPermission.INTERNAL_REPORTS_VIEW])
         self.client.force_login(user)
