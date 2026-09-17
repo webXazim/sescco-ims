@@ -1,3 +1,14 @@
+# 1.0.117 — Supplier Invoice Received Workflow Hotfix
+
+- Supplier invoices are recorded as external Supplier → SESCCO invoices; SESCCO no longer presents the buyer-side record as an invoice it issued.
+- Supplier Settlement Statement is the SESCCO-generated pre-invoice document for each supplier/project settlement.
+- Supplier Invoice Received captures supplier invoice number, date, VAT, total and the original PDF/JPEG/PNG with immutable SHA-256 evidence.
+- Supplier payments require a received supplier invoice before the first payment and use the received invoice total, including VAT, as the payable authority.
+- Supplier Payment Advice replaces supplier-payment receipt wording for SESCCO-generated payment evidence and references the matched supplier invoice.
+- Rental Documents can create all available Supplier Settlement Statements for a period in one controlled batch.
+- Same-origin print embedding is permitted only for authenticated final-document print routes so Documents preview and Print / Save PDF use the same renderer.
+- No database schema migration is introduced; existing historical settlements remain readable and existing payment allocations retain compatibility.
+
 # 1.0.117 — Payroll Production Document Pagination Hotfix
 
 - Uses the approved SESCCO company headpad on the first printed page only.

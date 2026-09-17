@@ -489,7 +489,9 @@ for marker in (
     'allowed_actions = supplier_payment_allowed_actions(payment, membership=membership)',
     '"allowedActions": allowed_actions',
     '"canRetry": "retry" in allowed_actions',
-    '"canGenerateInvoice": settlement.status in PAYABLE_SETTLEMENT_STATUSES',
+    '"canRecordSupplierInvoice": settlement.status in {RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID}',
+    '"supplierInvoice": {',
+    '"payable": str(payable)',
     '"canGenerateReceipt": payment.status == SupplierPaymentStatus.PAID',
     '"projectWorkflows": project_workflows',
 ):
@@ -530,7 +532,7 @@ for marker in (
 document_service = (ROOT / "apps/documents/services/documents.py").read_text(encoding="utf-8")
 for document_marker in (
     'Settlement documents require an Approved or later supplier settlement.',
-    'Supplier payment receipts require a Paid supplier payment.',
+    'Supplier Payment Advice requires a Paid supplier payment.',
     'if subtotal != settlement.total_net:',
 ):
     if document_marker not in document_service:

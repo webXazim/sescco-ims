@@ -727,9 +727,36 @@ def _allocation_totals(settlement: SupplierSettlement) -> tuple[Decimal, Decimal
     return _money(paid), _money(processing)
 
 
+def _supplier_invoice_payable(settlement: SupplierSettlement) -> tuple[Decimal, bool]:
+    """Return the immutable supplier-invoice payable when one has been received."""
+    from apps.documents.models import BusinessDocument, DocumentType
+    from apps.documents.services import verify_document_snapshot
+
+    document = (
+        BusinessDocument.objects.for_company(settlement.company)
+        .filter(
+            document_type=DocumentType.SUPPLIER_INVOICE,
+            source_model="rental_manpower.suppliersettlement",
+            source_id=settlement.pk,
+        )
+        .order_by("-finalized_at")
+        .first()
+    )
+    if document is None:
+        return _money(settlement.total_net), False
+    if not verify_document_snapshot(document):
+        raise ValidationError("Supplier invoice received record failed its integrity check.")
+    raw_total = (((document.snapshot or {}).get("invoice") or {}).get("total"))
+    total = _money(_decimal(raw_total, "invoice_total"))
+    if total <= ZERO:
+        raise ValidationError("Supplier invoice received total must be greater than zero.")
+    return total, True
+
+
 def _sync_settlement_payment_status(*, settlement: SupplierSettlement, actor_membership=None, request=None, reason: str = "") -> SupplierSettlement:
     paid, processing = _allocation_totals(settlement)
-    if paid >= settlement.total_net:
+    payable, _invoice_received = _supplier_invoice_payable(settlement)
+    if paid >= payable:
         target = RentalSettlementStatus.PAID
     elif paid > ZERO:
         target = RentalSettlementStatus.PARTIALLY_PAID
@@ -776,7 +803,11 @@ def record_supplier_payment(
     if amount <= ZERO:
         raise ValidationError({"amount": "Payment amount must be greater than zero."})
     paid, processing = _allocation_totals(settlement)
-    available = _money(settlement.total_net - paid - processing)
+    payable, invoice_received = _supplier_invoice_payable(settlement)
+    has_existing_allocation = SupplierPaymentAllocation.objects.for_company(company).filter(settlement=settlement).exists()
+    if not invoice_received and not has_existing_allocation:
+        raise ValidationError("Record the supplier invoice before the first supplier payment.")
+    available = _money(payable - paid - processing)
     if amount > available:
         raise ValidationError({"amount": f"Payment exceeds the available supplier payable of {available}."})
     if status not in {SupplierPaymentStatus.PROCESSING, SupplierPaymentStatus.PAID}:
@@ -876,7 +907,8 @@ def retry_supplier_payment(*, actor_membership, payment_id, payment_date: date |
     for allocation in allocations:
         settlement = SupplierSettlement.objects.select_for_update().for_company(company).get(pk=allocation.settlement_id)
         paid, processing = _allocation_totals(settlement)
-        available = _money(settlement.total_net - paid - processing)
+        payable, _invoice_received = _supplier_invoice_payable(settlement)
+        available = _money(payable - paid - processing)
         if allocation.amount > available:
             raise ValidationError(f"{settlement.settlement_number} no longer has enough outstanding balance for this retry.")
     retry = SupplierPayment(

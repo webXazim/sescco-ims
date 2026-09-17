@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from django.core.paginator import Paginator
 from django.db.models import Count, Exists, OuterRef, Q
+from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import branch_scope_ids, membership_has_permission, project_scope_ids
 
-from ..models import BusinessDocument, DocumentType, DocumentWorkspace
+from ..models import BusinessDocument, DocumentType, DocumentWorkspace, production_document_label
 from apps.internal_payroll.models import PayrollRunLine, SalaryPaymentRow
 from apps.rental_manpower.models import RentalTimesheetPeriod, SupplierPayment, SupplierPaymentAllocation, SupplierSettlement
 from ..services import verify_document_snapshot
@@ -104,7 +105,7 @@ def serialize_document(document: BusinessDocument, *, include_snapshot: bool = F
         "id": str(document.id),
         "workspace": document.workspace,
         "type": document.document_type,
-        "typeLabel": document.get_document_type_display(),
+        "typeLabel": production_document_label(document.document_type),
         "number": document.document_number,
         "title": document.title,
         "status": document.get_status_display(),
@@ -120,6 +121,13 @@ def serialize_document(document: BusinessDocument, *, include_snapshot: bool = F
         "finalizedBy": (document.finalized_by.get_full_name().strip() or document.finalized_by.username) if document.finalized_by else "System",
         "integrityOk": verify_document_snapshot(document),
     }
+    attachment = (((document.snapshot or {}).get("invoice") or {}).get("attachment") or {})
+    if attachment.get("storage_key"):
+        data["sourceAttachmentUrl"] = reverse("documents:document-source-attachment", kwargs={"document_id": document.id})
+        data["sourceAttachmentName"] = attachment.get("original_name") or "Supplier invoice"
+    else:
+        data["sourceAttachmentUrl"] = ""
+        data["sourceAttachmentName"] = ""
     if include_snapshot:
         data["snapshot"] = document.snapshot
     return data

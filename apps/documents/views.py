@@ -13,7 +13,7 @@ from apps.accounts.permissions import company_access_required
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
 
-from .models import BusinessDocument
+from .models import BusinessDocument, production_document_label
 from .services import verify_document_snapshot
 import hashlib
 
@@ -42,7 +42,13 @@ def print_document(request, document_id):
         raise PermissionDenied("Your role cannot access this document.")
     if not verify_document_snapshot(document):
         raise PermissionDenied("Document integrity verification failed.")
-    return render(request, "documents/print.html", {"document": document, "snapshot": document.snapshot, "headpad_url": _document_headpad_url(document), "embed": request.GET.get("embed") == "1"})
+    return render(request, "documents/print.html", {
+        "document": document,
+        "snapshot": document.snapshot,
+        "headpad_url": _document_headpad_url(document),
+        "document_label": production_document_label(document.document_type),
+        "embed": request.GET.get("embed") == "1",
+    })
 
 
 @login_required
@@ -80,5 +86,36 @@ def document_brand_asset(request, document_id, kind: str):
         raise PermissionDenied("Historical branding asset integrity verification failed.")
     response = FileResponse(handle, content_type=descriptor.get("content_type") or "application/octet-stream")
     response["Cache-Control"] = "private, max-age=31536000, immutable"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@company_access_required
+def document_source_attachment(request, document_id):
+    document = get_object_or_404(BusinessDocument.objects.for_company(request.company), pk=document_id)
+    if not _can_view_document(request.company_membership, document):
+        raise PermissionDenied("Your role cannot access this document.")
+    if not verify_document_snapshot(document):
+        raise PermissionDenied("Document integrity verification failed.")
+    descriptor = (((document.snapshot or {}).get("invoice") or {}).get("attachment") or {})
+    storage_key = descriptor.get("storage_key")
+    if not storage_key:
+        raise Http404("Supplier invoice attachment is not available.")
+    try:
+        handle = default_storage.open(storage_key, "rb")
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+        handle.seek(0)
+    except (FileNotFoundError, OSError):
+        raise Http404("Supplier invoice attachment is unavailable.")
+    if digest.hexdigest() != descriptor.get("sha256"):
+        handle.close()
+        raise PermissionDenied("Supplier invoice attachment integrity verification failed.")
+    response = FileResponse(handle, content_type=descriptor.get("content_type") or "application/octet-stream")
+    filename = Path(str(descriptor.get("original_name") or "supplier-invoice")).name.replace('"', '')
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
+    response["Cache-Control"] = "private, max-age=3600"
     response["X-Content-Type-Options"] = "nosniff"
     return response

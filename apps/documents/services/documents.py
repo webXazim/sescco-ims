@@ -36,7 +36,7 @@ from apps.rental_manpower.models import (
     RentalSettlementStatus,
 )
 
-from ..models import BusinessDocument, DocumentType, DocumentWorkspace
+from ..models import BusinessDocument, DocumentType, DocumentWorkspace, production_document_label
 from .amounts import money_to_words
 
 
@@ -353,16 +353,33 @@ def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, A
             "vat_amount": _money(vat_amount),
             "vat_rate": f"{vat_rate.quantize(Decimal('0.01')):.2f}",
             "total": _money(total),
+            "settlement_net": _money(settlement.total_net),
+            "variance": _money(total - (settlement.total_net + vat_amount)),
+            "match_status": "matched",
             "payment_terms": settlement.supplier.payment_terms or "",
+            "attachment": invoice.get("attachment"),
         }
     return snapshot, settlement.supplier_code, settlement.supplier_name, settlement.period_start, settlement.settlement_number
 
 
 def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[str, Any], str, str, date | None, str]:
     if payment.status != SupplierPaymentStatus.PAID:
-        raise ValidationError("Supplier payment receipts require a Paid supplier payment.")
+        raise ValidationError("Supplier Payment Advice requires a Paid supplier payment.")
     allocations = list(payment.allocations.select_related("settlement").order_by("settlement__period_start"))
     period_start = min((item.settlement.period_start for item in allocations), default=None)
+    settlement_ids = [item.settlement_id for item in allocations]
+    invoice_docs = (
+        BusinessDocument.objects.for_company(payment.company)
+        .filter(
+            document_type=DocumentType.SUPPLIER_INVOICE,
+            source_model="rental_manpower.suppliersettlement",
+            source_id__in=settlement_ids,
+        )
+        .order_by("source_id", "-finalized_at")
+    )
+    invoice_by_settlement: dict[str, BusinessDocument] = {}
+    for invoice_doc in invoice_docs:
+        invoice_by_settlement.setdefault(str(invoice_doc.source_id), invoice_doc)
     snapshot = {
         "kind": DocumentType.SUPPLIER_PAYMENT_RECEIPT,
         "supplier": {"code": payment.supplier_code, "name": payment.supplier_name},
@@ -381,6 +398,8 @@ def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[s
                 "period_start": item.settlement.period_start.isoformat(),
                 "project_code": item.settlement.project_code,
                 "project_name": item.settlement.project_name,
+                "supplier_invoice_number": (invoice_by_settlement.get(str(item.settlement_id)).external_reference if invoice_by_settlement.get(str(item.settlement_id)) else ""),
+                "supplier_invoice_total": (((invoice_by_settlement.get(str(item.settlement_id)).snapshot or {}).get("invoice") or {}).get("total") if invoice_by_settlement.get(str(item.settlement_id)) else ""),
                 "amount": _money(item.amount),
             }
             for item in allocations
@@ -532,13 +551,13 @@ def finalize_business_document(
     branding_mode = getattr(company_settings, "document_branding_mode", "standard")
     branding_profile = "company_settings"
     if normalized_type == DocumentType.SUPPLIER_INVOICE:
-        # SESCCO supplier invoices always use the approved A4 headpad supplied for production.
-        # The versioned packaged asset is fingerprinted into the immutable document snapshot so
-        # historical invoices cannot silently switch artwork after finalization.
+        # The Supplier Invoice Received record is an SESCCO internal matching record.
+        # It uses the approved company headpad; the supplier's original invoice remains
+        # attached separately and is never reproduced as a buyer-issued tax invoice.
         letterhead = _packaged_brand_asset_snapshot(SESCCO_SUPPLIER_INVOICE_LETTERHEAD)
-        watermark = None  # The official headpad already carries the SESCCO watermark.
+        watermark = None
         branding_mode = "letterhead"
-        branding_profile = "sescco_supplier_invoice_v1"
+        branding_profile = "sescco_supplier_invoice_received_v1"
     elif not letterhead:
         # This deployment is a single-company SESCCO workspace. When no company-specific
         # letterhead has been uploaded yet, finalized payroll documents still need to use the
@@ -587,15 +606,17 @@ def finalize_business_document(
     snapshot_fingerprint = _json_hash(snapshot)
     key, prefix = _prefix(normalized_type)
     number = allocate_number(company=company, key=key, prefix=prefix, padding=7)
-    title = DocumentType(normalized_type).label
+    title = production_document_label(normalized_type)
     if normalized_type == DocumentType.SALARY_SLIP:
         title = f"Salary Slip · {entity_name}"
     elif normalized_type == DocumentType.RENTAL_TIMESHEET:
         title = f"Rental Timesheet · {entity_name}"
     elif normalized_type == DocumentType.SUPPLIER_SETTLEMENT:
-        title = f"Supplier Settlement · {entity_name}"
+        title = f"Supplier Settlement Statement · {entity_name}"
     elif normalized_type == DocumentType.SUPPLIER_INVOICE:
-        title = f"Supplier Invoice · {entity_name}"
+        title = f"Supplier Invoice Received · {entity_name}"
+    elif normalized_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
+        title = f"Supplier Payment Advice · {entity_name}"
 
     external_reference = ""
     if normalized_type == DocumentType.SUPPLIER_INVOICE:

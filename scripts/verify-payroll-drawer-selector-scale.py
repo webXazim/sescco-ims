@@ -36,7 +36,8 @@ for needle in ("api/rental/suppliers/lookup/","api/rental/supplier-payments/sett
 for needle in ("def _bounded_lookup_page","page_size = min(25","start + page_size + 1","def supplier_lookup_api","def supplier_payment_settlement_lookup_api","SupplierPaymentStatus.PAID","SupplierPaymentStatus.PROCESSING","RentalSettlementStatus.PARTIALLY_PAID"):
     if needle not in rental_api: fail(f"rental lookup lost bounded/financial behavior: {needle}")
 payment_lookup=rental_api[rental_api.index("def supplier_payment_settlement_lookup_api"):rental_api.index("def suppliers_api",rental_api.index("def supplier_payment_settlement_lookup_api"))]
-if "total_net__gt=" not in payment_lookup: fail("supplier-payment lookup no longer excludes fully reserved/paid settlements")
+if '_payable__gt=F("_allocated")' not in payment_lookup: fail("supplier-payment lookup no longer excludes fully reserved/paid invoice payables")
+if '_supplier_invoice_number__isnull=False' not in payment_lookup: fail("supplier-payment lookup no longer requires received supplier invoice authority")
 if "Paginator(" in payment_lookup or ".count()" in payment_lookup or "serialize_list(" in payment_lookup: fail("supplier-payment lookup must remain count-free")
 
 js=text("static/payroll/js/app.js")

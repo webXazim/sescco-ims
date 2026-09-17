@@ -33,6 +33,12 @@ if employee.get("global_employee_search") is not False:
 type_fields = contract.get("type_specific_fields") or {}
 if type_fields.get("supplier_invoice_fields_created_only_for_supplier_invoice") is not True:
     fail("Supplier Invoice fields must be created only for Supplier Invoice")
+if type_fields.get("supplier_invoice_attachment_required") is not True:
+    fail("Supplier Invoice Received must require the external supplier invoice attachment")
+if type_fields.get("supplier_invoice_received_direction") != "supplier_to_sescco":
+    fail("Supplier Invoice Received direction changed")
+if type_fields.get("supplier_invoice_uses_multipart_upload") is not True:
+    fail("Supplier Invoice Received must use multipart upload")
 for key in ("salary_slip_supplier_fields", "internal_timesheet_supplier_fields", "salary_payment_receipt_supplier_fields"):
     if type_fields.get(key) is not False:
         fail(f"supplier fields leaked into {key}")
@@ -47,6 +53,8 @@ for marker in (
     '"employeeScoped": scoped_employee_id is not None',
     'page_size = min(25',
     'stop = start + page_size + 1',
+    'Supplier invoice file is required.',
+    'def batch_supplier_settlement_statements_api',
 ):
     if marker not in api:
         fail(f"backend employee-context source marker missing: {marker}")
@@ -65,7 +73,11 @@ for marker in (
     "autoSelectSingle:Boolean(scopedEmployeeId)",
     "state.drawerContext={selectedSource:null,employeeScoped,employeeId:employeeScoped?employeeId:'',period,type:preferred}",
     "stayOnEmployee",
-    "drawerSave.textContent=employeeScoped?'Finalize Salary Slip':'Finalize Document'",
+    "function documentCreateActionLabel(type, employeeScoped=false)",
+    "drawerSave.textContent=documentCreateActionLabel",
+    'name="document-invoice-file"',
+    "appMultipartApi('/api/documents/'",
+    "function createSupplierSettlementStatementBatch()",
 ):
     if marker not in js:
         fail(f"frontend contextual-finalization marker missing: {marker}")
@@ -86,4 +98,4 @@ for method in (
     if f"def {method}" not in tests:
         fail(f"missing Django regression: {method}")
 
-print("Verified SESCCO MS 1.0.117 contextual Payroll document finalization: employee-locked Salary Slip sources and type-only Supplier Invoice fields.")
+print("Verified SESCCO MS 1.0.117 contextual Payroll document creation: employee-locked Salary Slip, Supplier Invoice Received attachment capture and batch settlement statements.")

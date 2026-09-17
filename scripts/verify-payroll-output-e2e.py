@@ -147,7 +147,7 @@ for marker in (
     "Salary payment receipts require a Paid salary-payment row.",
     "Rental timesheet documents require a Locked project timesheet.",
     "Settlement documents require an Approved or later supplier settlement.",
-    "Supplier payment receipts require a Paid supplier payment.",
+    "Supplier Payment Advice requires a Paid supplier payment.",
 ):
     if marker not in doc_service:
         fail(f"document finalization gate missing: {marker}")

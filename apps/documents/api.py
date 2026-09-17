@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
+from pathlib import Path
 
 import json
 from datetime import date
 
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.core.files.storage import default_storage
+from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef, Q
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -37,15 +40,51 @@ def _errors(exc: Exception) -> JsonResponse:
 
 
 def _body(request: HttpRequest) -> dict[str, object]:
-    if request.content_type != "application/json":
-        raise ValidationError("Content-Type must be application/json.")
-    try:
-        value = json.loads(request.body or b"{}")
-    except json.JSONDecodeError as exc:
-        raise ValidationError("Request body is not valid JSON.") from exc
-    if not isinstance(value, dict):
-        raise ValidationError("JSON body must be an object.")
-    return value
+    if request.content_type == "application/json":
+        try:
+            value = json.loads(request.body or b"{}")
+        except json.JSONDecodeError as exc:
+            raise ValidationError("Request body is not valid JSON.") from exc
+        if not isinstance(value, dict):
+            raise ValidationError("JSON body must be an object.")
+        return value
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        return request.POST.dict()
+    raise ValidationError("Content-Type must be application/json or multipart/form-data.")
+
+
+def _store_supplier_invoice_attachment(request: HttpRequest) -> dict[str, object] | None:
+    uploaded = request.FILES.get("invoice_file")
+    if uploaded is None:
+        return None
+    if uploaded.size <= 0 or uploaded.size > 12 * 1024 * 1024:
+        raise ValidationError({"invoice_file": "Supplier invoice file must be between 1 byte and 12 MB."})
+    original_name = Path(uploaded.name or "supplier-invoice").name
+    head = uploaded.read(16)
+    uploaded.seek(0)
+    if head.startswith(b"%PDF-"):
+        ext, content_type = ".pdf", "application/pdf"
+    elif head.startswith(b"\x89PNG\r\n\x1a\n"):
+        ext, content_type = ".png", "image/png"
+    elif head[:3] == b"\xff\xd8\xff":
+        ext, content_type = ".jpg", "image/jpeg"
+    else:
+        raise ValidationError({"invoice_file": "Upload the supplier invoice as PDF, PNG, or JPEG."})
+    digest = hashlib.sha256()
+    for chunk in uploaded.chunks():
+        digest.update(chunk)
+    uploaded.seek(0)
+    storage_key = default_storage.save(
+        f"supplier-invoices/{request.company.id}/{uuid.uuid4().hex}{ext}",
+        uploaded,
+    )
+    return {
+        "storage_key": storage_key,
+        "sha256": digest.hexdigest(),
+        "content_type": content_type,
+        "original_name": original_name,
+        "size": uploaded.size,
+    }
 
 
 def _has_document_permission(membership, workspace: str, *, finalize: bool = False) -> bool:
@@ -89,6 +128,7 @@ def documents_api(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"ok": True, **payload})
         body = _body(request)
         requested_type = str(body.get("document_type") or "")
+        stored_attachment = None
         rental_types = {
             DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_SETTLEMENT,
             DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT,
@@ -103,12 +143,16 @@ def documents_api(request: HttpRequest) -> JsonResponse:
                 issue_date = date.fromisoformat(raw_date)
             except ValueError as exc:
                 raise ValidationError({"issue_date": "Enter a valid issue date."}) from exc
+            stored_attachment = _store_supplier_invoice_attachment(request)
+            if stored_attachment is None:
+                raise ValidationError({"invoice_file": "Supplier invoice file is required."})
             invoice = {
                 "invoice_number": body.get("invoice_number"),
                 "issue_date": issue_date,
                 "subtotal": body.get("subtotal"),
                 "vat_amount": body.get("vat_amount", "0"),
                 "total": body.get("total"),
+                "attachment": stored_attachment,
             }
         document = finalize_business_document(
             actor_membership=request.company_membership,
@@ -117,7 +161,62 @@ def documents_api(request: HttpRequest) -> JsonResponse:
             invoice=invoice,
             request=request,
         )
+        if stored_attachment:
+            actual_attachment = (((document.snapshot or {}).get("invoice") or {}).get("attachment") or {})
+            if actual_attachment.get("storage_key") != stored_attachment.get("storage_key"):
+                default_storage.delete(stored_attachment["storage_key"])
         return JsonResponse({"ok": True, "document": serialize_document(document, include_snapshot=True)}, status=201)
+    except Exception as exc:
+        try:
+            if "stored_attachment" in locals() and stored_attachment and default_storage.exists(stored_attachment.get("storage_key", "")):
+                default_storage.delete(stored_attachment["storage_key"])
+        except Exception:
+            pass
+        return _errors(exc)
+
+
+@require_http_methods(["POST"])
+@api_company_required
+def batch_supplier_settlement_statements_api(request: HttpRequest) -> JsonResponse:
+    """Finalize one Supplier Settlement Statement per eligible supplier/project settlement."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        body = _body(request)
+        period_start = _period(str(body.get("period") or ""))
+        if period_start is None:
+            raise ValidationError({"period": "Period is required."})
+        from apps.rental_manpower.models import SupplierSettlement, RentalSettlementStatus
+
+        final_statuses = [
+            RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING,
+            RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED,
+        ]
+        existing = BusinessDocument.objects.for_company(request.company).filter(
+            document_type=DocumentType.SUPPLIER_SETTLEMENT,
+            source_model="rental_manpower.suppliersettlement",
+            source_id=OuterRef("pk"),
+        )
+        rows = restrict_projects(
+            SupplierSettlement.objects.for_company(request.company).filter(period_start=period_start, status__in=final_statuses),
+            request.company_membership, field="project_id",
+        ).annotate(_finalized=Exists(existing)).filter(_finalized=False).order_by("project_code", "supplier_code")
+        project_id = str(body.get("project_id") or "").strip()
+        if project_id:
+            rows = rows.filter(project_id=project_id)
+        source_ids = list(rows.values_list("pk", flat=True)[:201])
+        if len(source_ids) > 200:
+            raise ValidationError("Batch document creation is limited to 200 supplier settlements at a time.")
+        created = []
+        with transaction.atomic():
+            for source_id in source_ids:
+                document = finalize_business_document(
+                    actor_membership=request.company_membership,
+                    document_type=DocumentType.SUPPLIER_SETTLEMENT,
+                    source_id=source_id, request=request,
+                )
+                created.append(serialize_document(document, include_snapshot=False))
+        return JsonResponse({"ok": True, "created": len(created), "documents": created})
     except Exception as exc:
         return _errors(exc)
 
@@ -125,7 +224,7 @@ def documents_api(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["GET"])
 @api_company_required
 def document_sources_api(request: HttpRequest) -> JsonResponse:
-    """Paged, bounded eligible-source lookup used by the Finalize Document combobox."""
+    """Paged, bounded eligible-source lookup used by the document creation drawer."""
     try:
         workspace = request.GET.get("workspace", "").strip()
         period_start = _period(request.GET.get("period", ""))
@@ -232,6 +331,8 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         elif document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
             from apps.rental_manpower.models import SupplierSettlement, RentalSettlementStatus
             final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED]
+            if document_type == DocumentType.SUPPLIER_INVOICE:
+                final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID]
             qs = SupplierSettlement.objects.for_company(request.company).filter(period_start=period_start, status__in=final_settlements)
             qs = restrict_projects(qs, membership, field="project_id")
             if query:

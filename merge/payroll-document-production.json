@@ -1,6 +1,6 @@
 {
   "release": "1.0.117",
-  "purpose": "Production-ready Payroll documents with SESCCO first-page headpad and plain continuation pages",
+  "purpose": "Production Payroll documents and supplier invoice-received workflow",
   "document_types": [
     "salary_slip",
     "internal_timesheet",
@@ -21,7 +21,7 @@
       595,
       842
     ],
-    "profile": "sescco_supplier_invoice_v1"
+    "profile": "sescco_supplier_invoice_received_v1"
   },
   "source_lookup_max_results": 25,
   "document_schema_version": "2.0",
@@ -35,6 +35,21 @@
     "timesheet_overtime_visible": true,
     "headpad_first_page_only": true,
     "plain_continuation_pages": true,
-    "preview_uses_print_route": true
+    "preview_uses_print_route": true,
+    "supplier_invoice_received_is_internal_match_record": true,
+    "payment_advice_references_supplier_invoice": true
+  },
+  "supplier_invoice_workflow": {
+    "direction": "supplier_to_sescco",
+    "sescco_generates_supplier_tax_invoice": false,
+    "settlement_statement_generated_by_sescco": true,
+    "supplier_invoice_received_record": true,
+    "supplier_invoice_attachment_required": true,
+    "supplier_invoice_attachment_hash_verified": true,
+    "supplier_payment_requires_invoice_before_first_payment": true,
+    "payment_payable_uses_invoice_total_including_vat": true,
+    "supplier_payment_advice_generated_by_sescco": true,
+    "batch_settlement_statements": true,
+    "schema_change": false
   }
 }

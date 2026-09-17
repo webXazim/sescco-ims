@@ -26,6 +26,22 @@ class DocumentType(models.TextChoices):
     SUPPLIER_PAYMENT_RECEIPT = "supplier_payment_receipt", "Supplier Payment Receipt"
 
 
+
+
+PRODUCTION_DOCUMENT_LABELS = {
+    DocumentType.SUPPLIER_SETTLEMENT: "Supplier Settlement Statement",
+    DocumentType.SUPPLIER_INVOICE: "Supplier Invoice Received",
+    DocumentType.SUPPLIER_PAYMENT_RECEIPT: "Supplier Payment Advice",
+}
+
+
+def production_document_label(document_type: str) -> str:
+    try:
+        normalized = DocumentType(document_type).value
+    except ValueError:
+        return str(document_type or "Document")
+    return PRODUCTION_DOCUMENT_LABELS.get(normalized, DocumentType(normalized).label)
+
 class DocumentStatus(models.TextChoices):
     FINAL = "final", "Final"
 

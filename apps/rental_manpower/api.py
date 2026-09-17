@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value
+from django.db.models import Case, Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value, When
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
@@ -49,6 +49,7 @@ from apps.rental_manpower.selectors import (
     rental_settlement_context,
     rental_financial_metrics_for_period,
     serialize_rental_adjustment,
+    with_supplier_invoice_authority,
 )
 from apps.rental_manpower.services import (
     assign_worker,
@@ -218,7 +219,8 @@ def supplier_payment_settlement_lookup_api(request: HttpRequest) -> JsonResponse
                 Q(settlement_number__icontains=query) | Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query)
                 | Q(project_code__icontains=query) | Q(project_name__icontains=query)
             )
-        money_field = DecimalField(max_digits=14, decimal_places=2)
+        money_field = DecimalField(max_digits=18, decimal_places=2)
+        rows = with_supplier_invoice_authority(rows, company=request.company)
         rows = rows.annotate(
             _paid=Coalesce(Sum("payment_allocations__amount", filter=Q(payment_allocations__payment__status=SupplierPaymentStatus.PAID)), Value(Decimal("0.00")), output_field=money_field),
             _processing=Coalesce(Sum("payment_allocations__amount", filter=Q(payment_allocations__payment__status=SupplierPaymentStatus.PROCESSING)), Value(Decimal("0.00")), output_field=money_field),
@@ -230,16 +232,25 @@ def supplier_payment_settlement_lookup_api(request: HttpRequest) -> JsonResponse
                 Value(Decimal("0.00")),
                 output_field=money_field,
             ),
-        ).filter(total_net__gt=F("_allocated")).order_by("settlement_number")
-        # Availability is revalidated transactionally on save; the lookup never exposes a fully allocated settlement.
+        ).annotate(
+            _payable=Case(
+                When(_supplier_invoice_total__gt=Decimal("0.00"), then=F("_supplier_invoice_total")),
+                default=F("total_net"), output_field=money_field,
+            )
+        ).filter(
+            Q(_supplier_invoice_number__isnull=False) | Q(_allocated__gt=Decimal("0.00")),
+            _payable__gt=F("_allocated"),
+        ).order_by("settlement_number")
+        # Availability is revalidated transactionally on save; new payables require a received supplier invoice.
         return _bounded_lookup_page(
             request, rows, allow_empty=True, min_query=0,
             serializer=lambda item: {
                 "id": str(item.pk), "code": item.settlement_number, "name": item.supplier_name,
                 "meta": item.project_name, "supplier": item.supplier_name, "project": item.project_name,
                 "paid": str(item._paid or Decimal("0.00")), "processing": str(item._processing or Decimal("0.00")),
-                "available": str(item.total_net - (item._paid or Decimal("0.00")) - (item._processing or Decimal("0.00"))),
-                "amount": str(item.total_net), "status": item.get_status_display(),
+                "available": str(item._payable - (item._paid or Decimal("0.00")) - (item._processing or Decimal("0.00"))),
+                "amount": str(item._payable), "status": item.get_status_display(),
+                "invoiceReceived": bool(item._supplier_invoice_number), "invoiceNumber": item._supplier_invoice_number or "",
             },
         )
     except Exception as exc:

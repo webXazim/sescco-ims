@@ -1,6 +1,6 @@
 {
   "release": "1.0.117",
-  "purpose": "Keep Payroll document finalization type-aware and preserve employee context when Salary Slip is finalized from an Internal Employee profile.",
+  "purpose": "Type-aware Payroll document creation with employee-scoped salary slips and supplier invoice-received capture.",
   "employee_salary_slip": {
     "document_type_locked": true,
     "employee_locked": true,
@@ -15,7 +15,10 @@
     "supplier_invoice_fields_created_only_for_supplier_invoice": true,
     "salary_slip_supplier_fields": false,
     "internal_timesheet_supplier_fields": false,
-    "salary_payment_receipt_supplier_fields": false
+    "salary_payment_receipt_supplier_fields": false,
+    "supplier_invoice_attachment_required": true,
+    "supplier_invoice_received_direction": "supplier_to_sescco",
+    "supplier_invoice_uses_multipart_upload": true
   },
   "source_lookup": {
     "page_size": 10,
@@ -29,5 +32,10 @@
   "regressions": [
     "apps.documents.tests.test_merge_access.DocumentTenantBoundaryTests.test_employee_scoped_salary_slip_sources_do_not_require_global_search",
     "apps.documents.tests.test_merge_access.DocumentTenantBoundaryTests.test_employee_scope_cannot_be_applied_to_non_employee_document_type"
-  ]
+  ],
+  "rental_supplier_documents": {
+    "batch_settlement_statements": true,
+    "supplier_invoice_received_from_settlement": true,
+    "supplier_payment_advice_from_paid_payment": true
+  }
 }

@@ -5,11 +5,13 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.paginator import Paginator
+from django.db.models.functions import Cast, Coalesce
 from django.core.exceptions import ValidationError
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, DecimalField, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
+from apps.documents.models import BusinessDocument, DocumentType
 from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
 from apps.rental_manpower.models.settlements import EARNING_ADJUSTMENT_TYPES
 from apps.rental_manpower.models import (
@@ -29,8 +31,29 @@ PAYABLE_SETTLEMENT_STATUSES = {
 }
 
 
+def with_supplier_invoice_authority(qs, *, company):
+    money = DecimalField(max_digits=18, decimal_places=2)
+    invoice_docs = BusinessDocument.objects.for_company(company).filter(
+        document_type=DocumentType.SUPPLIER_INVOICE,
+        source_model="rental_manpower.suppliersettlement",
+        source_id=OuterRef("pk"),
+    ).order_by("-finalized_at")
+    total_subquery = invoice_docs.annotate(
+        _invoice_total=Cast("snapshot__invoice__total", money)
+    ).values("_invoice_total")[:1]
+    return qs.annotate(
+        _supplier_invoice_total=Coalesce(Subquery(total_subquery, output_field=money), Value(ZERO), output_field=money),
+        _supplier_invoice_number=Subquery(invoice_docs.values("external_reference")[:1]),
+        _supplier_invoice_document_id=Subquery(invoice_docs.values("id")[:1]),
+        _supplier_invoice_received_at=Subquery(invoice_docs.values("finalized_at")[:1]),
+    )
+
+
 def _settlement_payable(settlement: SupplierSettlement) -> Decimal:
-    return settlement.total_net if settlement.status in PAYABLE_SETTLEMENT_STATUSES else ZERO
+    if settlement.status not in PAYABLE_SETTLEMENT_STATUSES:
+        return ZERO
+    invoice_total = Decimal(getattr(settlement, "_supplier_invoice_total", ZERO) or ZERO)
+    return invoice_total if invoice_total > ZERO else settlement.total_net
 
 
 def _month_bounds(period_start: date) -> tuple[date, date]:
@@ -77,8 +100,11 @@ def settlement_allowed_actions(settlement: SupplierSettlement, *, membership=Non
         RentalSettlementStatus.PARTIALLY_PAID,
     } and permissions["pay"]:
         _paid, processing = _payment_amounts(settlement)
-        available = max(ZERO, settlement.total_net - _paid - processing)
-        if available > ZERO:
+        payable = _settlement_payable(settlement)
+        invoice_received = bool(getattr(settlement, "_supplier_invoice_number", ""))
+        has_existing_payment = (_paid + processing) > ZERO
+        available = max(ZERO, payable - _paid - processing)
+        if available > ZERO and (invoice_received or has_existing_payment):
             actions.append("pay")
     elif settlement.status == RentalSettlementStatus.PAID and permissions["pay"]:
         actions.append("close")
@@ -297,11 +323,12 @@ def _settlement_queryset(company):
         ).order_by("worker_number", "worker_name")
     )
     allocation_qs = SupplierPaymentAllocation.objects.for_company(company).select_related("payment").order_by("created_at")
-    return (
+    base = (
         SupplierSettlement.objects.for_company(company)
         .select_related("project", "supplier", "source_timesheet", "calculated_by", "submitted_by", "approved_by", "closed_by")
         .prefetch_related(Prefetch("lines", queryset=line_qs, to_attr="snapshot_lines"), Prefetch("payment_allocations", queryset=allocation_qs, to_attr="snapshot_allocations"))
     )
+    return with_supplier_invoice_authority(base, company=company)
 
 
 def _payment_amounts(settlement: SupplierSettlement) -> tuple[Decimal, Decimal]:
@@ -452,12 +479,13 @@ def rental_financial_metrics_from_settlements(settlements: list[SupplierSettleme
 def rental_financial_metrics_for_period(*, company, period_start: date) -> dict[str, object]:
     start, _end = _month_bounds(period_start)
     allocation_qs = SupplierPaymentAllocation.objects.for_company(company).select_related("payment").order_by("created_at")
-    settlements = list(
+    settlement_qs = (
         SupplierSettlement.objects.for_company(company).filter(period_start=start)
         .select_related("project", "supplier")
         .prefetch_related(Prefetch("payment_allocations", queryset=allocation_qs, to_attr="snapshot_allocations"))
         .order_by("project_code", "supplier_code")
     )
+    settlements = list(with_supplier_invoice_authority(settlement_qs, company=company))
     advance_rows = (
         SupplierSettlementAdjustmentLine.objects.for_company(company)
         .filter(
@@ -517,7 +545,14 @@ def serialize_supplier_settlement(settlement: SupplierSettlement, *, membership=
         "reviewerNote": settlement.reviewer_note, "closedAt": settlement.closed_at.isoformat() if settlement.closed_at else None,
         "allowedActions": settlement_allowed_actions(settlement, membership=membership),
         "canGenerateSettlementDocument": settlement.status in PAYABLE_SETTLEMENT_STATUSES,
-        "canGenerateInvoice": settlement.status in PAYABLE_SETTLEMENT_STATUSES,
+        "canRecordSupplierInvoice": settlement.status in {RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID} and not bool(getattr(settlement, "_supplier_invoice_number", "")),
+        "supplierInvoice": {
+            "received": bool(getattr(settlement, "_supplier_invoice_number", "")),
+            "number": getattr(settlement, "_supplier_invoice_number", "") or "",
+            "documentId": str(getattr(settlement, "_supplier_invoice_document_id", "") or ""),
+            "total": str(Decimal(getattr(settlement, "_supplier_invoice_total", ZERO) or ZERO)),
+            "receivedAt": getattr(settlement, "_supplier_invoice_received_at", None).isoformat() if getattr(settlement, "_supplier_invoice_received_at", None) else None,
+        },
         "totals": {
             "workers": settlement.worker_count, "hours": str(settlement.total_regular_hours), "workDays": settlement.total_work_days,
             "otHours": str(settlement.total_overtime_hours), "base": str(settlement.total_base), "otAmount": str(settlement.total_overtime),
