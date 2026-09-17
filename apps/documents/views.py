@@ -6,6 +6,8 @@ from django.core.exceptions import PermissionDenied
 from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, render
+from django.templatetags.static import static
+from django.urls import reverse
 
 from apps.accounts.permissions import company_access_required
 from apps.accounts.access_catalog import AccessPermission
@@ -13,8 +15,17 @@ from apps.accounts.access_policy import membership_has_permission
 
 from .models import BusinessDocument
 from .services import verify_document_snapshot
+from .services.documents import SESCCO_COMPANY_DOCUMENT_HEADPAD
 import hashlib
 
+
+
+
+def _document_headpad_url(document) -> str:
+    branding = (((document.snapshot or {}).get("issuer") or {}).get("branding") or {})
+    if branding.get("letterhead") and branding.get("mode") == "letterhead":
+        return reverse("documents:document-brand-asset", kwargs={"document_id": document.id, "kind": "letterhead"})
+    return static("payroll/assets/sescco-company-document-headpad-v2.png")
 
 def _can_view_document(membership, document) -> bool:
     if document.workspace == "internal":
@@ -34,7 +45,7 @@ def print_document(request, document_id):
         raise PermissionDenied("Your role cannot access this document.")
     if not verify_document_snapshot(document):
         raise PermissionDenied("Document integrity verification failed.")
-    return render(request, "documents/print.html", {"document": document, "snapshot": document.snapshot})
+    return render(request, "documents/print.html", {"document": document, "snapshot": document.snapshot, "headpad_url": _document_headpad_url(document), "render_letterhead": True})
 
 
 @login_required

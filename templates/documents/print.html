@@ -84,11 +84,11 @@
 </head>
 <body>
   <div class="toolbar"><span>{{ document.document_number }} · Final immutable snapshot</span><button type="button" onclick="window.print()">Print / Save PDF</button></div>
-  <main class="paper{% if snapshot.issuer.branding.mode == 'letterhead' and snapshot.issuer.branding.letterhead %} paper--letterhead{% endif %}">
-    {% if snapshot.issuer.branding.letterhead and snapshot.issuer.branding.mode == 'letterhead' %}<div class="brand-layer"><img class="letterhead-bg" src="{% url 'documents:document-brand-asset' document.id 'letterhead' %}" alt=""></div>{% endif %}
+  <main class="paper{% if render_letterhead %} paper--letterhead{% endif %}">
+    {% if render_letterhead and headpad_url %}<div class="brand-layer"><img class="letterhead-bg" src="{{ headpad_url }}" alt=""></div>{% endif %}
     {% if snapshot.issuer.branding.watermark %}<div class="brand-layer"><img class="watermark-bg" src="{% url 'documents:document-brand-asset' document.id 'watermark' %}" alt=""></div>{% endif %}
     <div class="paper-content">
-    {% if snapshot.issuer.branding.mode == 'letterhead' and snapshot.issuer.branding.letterhead %}
+    {% if render_letterhead and headpad_url %}
       <header class="document-head--letterhead"><div></div><div class="doc-no"><span>{{ document.get_document_type_display }}</span><strong>{{ document.document_number }}</strong></div></header>
     {% else %}
       <header>
@@ -112,7 +112,7 @@
         <div class="doc-no"><span>{{ document.get_document_type_display }}</span><strong>{{ document.document_number }}</strong></div>
       </header>
     {% endif %}
-    <section class="title"><h2>{{ document.title }}</h2><span>{% if document.period_start %}{{ document.period_start|date:"F Y" }} · {% endif %}Finalized {{ document.finalized_at|date:"d M Y H:i" }}</span></section>
+    <section class="title"><h2>{{ document.title }}</h2><span>{% if document.period_start %}{{ document.period_start|date:"F Y" }} · {% endif %}Finalized {{ document.finalized_at|date:"d M Y H:i" }}</span>{% if render_letterhead %}<div class="small-note" style="margin-top:6px;">Printed on the approved company headpad.</div>{% endif %}</section>
 
     {% if document.document_type == 'salary_slip' %}
       <div class="meta"><div><span>Employee ID</span><strong>{{ snapshot.employee.number }}</strong></div><div><span>Employee</span><strong>{{ snapshot.employee.name }}</strong></div><div><span>Branch / Department</span><strong>{{ snapshot.employee.branch|default:"—" }}{% if snapshot.employee.department %} · {{ snapshot.employee.department }}{% endif %}</strong></div><div><span>Position</span><strong>{{ snapshot.employee.position|default:"—" }}</strong></div></div>

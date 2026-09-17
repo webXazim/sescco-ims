@@ -1,3 +1,18 @@
+# SESCCO MS 1.0.117 Payroll Document Headpad Parity Hotfix
+
+- Enforced the exact provided company headpad as the canonical payroll-document headpad for both preview and print.
+- Printing now uses the same headpad source path as preview, with a server-provided `headpad_url` passed into the final immutable print template.
+- Newly finalized payroll documents continue to snapshot the approved company headpad when company-specific letterhead is absent.
+- Bundled the exact uploaded Electronic PAD first-page render as the packaged company document headpad asset.
+
+# SESCCO MS 1.0.117 Payroll Documents Headpad + List Layout Hotfix
+
+- Fixed Rental/Internal Documents workspace list-panel stretching so the document list no longer grows as a full-height empty column beside preview.
+- Upgraded the in-app finalized-document preview to use the company A4 headpad presentation.
+- Added packaged SESCCO company headpad fallback for newly finalized payroll documents when company-specific letterhead is not yet configured.
+- Bundled the exact approved company headpad image from the provided Electronic PAD reference for preview/static fallback use.
+- Preserved existing immutable document snapshots; newly finalized documents receive the corrected headpad snapshot automatically.
+
 
 ## 1.0.117 Payroll calculation authority hotfix
 

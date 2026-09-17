@@ -8060,6 +8060,14 @@
     finally{state.documentLoadingId=null;}
   }
 
+  function documentPreviewHeadpadUrl(doc, snapshot) {
+    const branding=snapshot?.issuer?.branding||{};
+    if(branding.mode==='letterhead' && branding.letterhead && doc?.id) return `/documents/${encodeURIComponent(doc.id)}/brand/letterhead/`;
+    const companyBranding=state.systemSettings?.general?.branding||{};
+    if(state.systemSettings?.general?.documentBrandingMode==='letterhead' && companyBranding.letterhead?.configured && companyBranding.letterhead?.url) return companyBranding.letterhead.url;
+    return '/static/payroll/assets/sescco-company-document-headpad-v2.png';
+  }
+
   function documentSnapshotSummary(doc) {
     const full=state.documentDetails[doc?.id]||doc;
     const snapshot=full?.snapshot;
@@ -8069,6 +8077,12 @@
     const totals=snapshot.totals||snapshot.earnings||snapshot.payment||{};
     const important=Object.entries(totals).filter(([,value])=>['string','number'].includes(typeof value)).slice(0,8);
     const entity=snapshot.employee?.name||snapshot.supplier?.name||snapshot.project?.name||doc.entityName||'Company';
+    const summaryGrid=important.length?`<div class="document-summary-grid document-summary-grid--letterhead">${important.map(([key,value])=>`<div><span>${escapeHtml(String(key).replaceAll('_',' '))}</span><strong>${/amount|gross|net|deduction|base|overtime|total/i.test(key)?formatCurrency(value):escapeHtml(value)}</strong></div>`).join('')}</div>`:'';
+    const sourceNote=`<div class="source-note document-source-note document-source-note--letterhead">${icon('info')}<span><strong>Immutable snapshot.</strong> This preview is backed by the finalized Django document record. Use Print / Save PDF for the full formatted document.</span></div>`;
+    const headpadUrl=documentPreviewHeadpadUrl(doc,snapshot);
+    if(headpadUrl){
+      return `<article class="letterhead-paper"><img class="letterhead-paper__bg" src="${escapeHtml(headpadUrl)}" alt="Company headpad"><div class="letterhead-paper__safe"><div class="letterhead-document-title"><div><span>${escapeHtml(kind.toUpperCase())}</span><h2>${escapeHtml(doc.number)}</h2></div><div><small>Entity</small><strong>${escapeHtml(entity)}</strong><small>Period</small><strong>${escapeHtml(doc.period||'—')}</strong><small>Integrity</small><strong>${doc.integrityOk?'Verified':'Check failed'}</strong></div></div><div class="document-meta-grid document-meta-grid--letterhead"><div><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(doc.finalizedAt))}</strong></div><div><span>Finalized by</span><strong>${escapeHtml(doc.finalizedBy||'System')}</strong></div><div><span>Source</span><strong>${escapeHtml(doc.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(doc.status||'Final')}</strong></div></div>${summaryGrid}${sourceNote}</div></article>`;
+    }
     return `<article class="document-paper"><header class="document-brand-header"><div class="document-brand-mark">${escapeHtml(documentTypeCode(doc.type))}</div><div><strong>${escapeHtml(snapshot.issuer?.legal_name||snapshot.issuer?.name||serverAccess.company_name||'Company')}</strong><span>Final business document</span></div><div class="document-brand-vat"><span>Integrity</span><strong>${doc.integrityOk?'Verified':'Check failed'}</strong></div></header><div class="document-title-block"><span>${escapeHtml(kind.toUpperCase())}</span><h2>${escapeHtml(doc.number)}</h2></div><div class="document-meta-grid"><div><span>Entity</span><strong>${escapeHtml(entity)}</strong></div><div><span>Period</span><strong>${escapeHtml(doc.period||'—')}</strong></div><div><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(doc.finalizedAt))}</strong></div><div><span>Finalized by</span><strong>${escapeHtml(doc.finalizedBy||'System')}</strong></div></div>${important.length?`<div class="document-summary-grid">${important.map(([key,value])=>`<div><span>${escapeHtml(String(key).replaceAll('_',' '))}</span><strong>${/amount|gross|net|deduction|base|overtime|total/i.test(key)?formatCurrency(value):escapeHtml(value)}</strong></div>`).join('')}</div>`:''}<div class="source-note document-source-note">${icon('info')}<span><strong>Immutable snapshot.</strong> This preview is backed by the finalized Django document record. Use Print / Save PDF for the full formatted document.</span></div></article>`;
   }
 

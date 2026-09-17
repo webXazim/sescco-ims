@@ -45,7 +45,7 @@
 
 .ui-v2-root .ui-v2-payroll-document-workspace {
   min-height:660px; display:grid; grid-template-columns:minmax(280px,350px) minmax(0,1fr);
-  gap:0; align-items:stretch; overflow:hidden; border:1px solid var(--ui-v2-border);
+  gap:0; align-items:start; overflow:hidden; border:1px solid var(--ui-v2-border);
   border-radius:10px; background:var(--ui-v2-surface); box-shadow:none;
 }
 .ui-v2-root .ui-v2-payroll-document-list-panel,
@@ -53,7 +53,7 @@
   min-width:0; border:0; border-radius:0; box-shadow:none;
 }
 .ui-v2-root .ui-v2-payroll-document-list-panel {
-  display:flex; flex-direction:column; border-right:1px solid var(--ui-v2-border);
+  display:flex; flex-direction:column; align-self:start; border-right:1px solid var(--ui-v2-border);
 }
 .ui-v2-root .ui-v2-prs-document-list-head {
   min-height:46px; height:auto; display:flex; align-items:center; justify-content:space-between;
@@ -86,7 +86,7 @@
 .ui-v2-root .ui-v2-payroll-document-list-copy em { color:var(--ui-v2-text-muted); font-size:12px; font-style:normal; }
 .ui-v2-root .document-list-item__status .ui-v2-status { min-height:24px; padding:3px 7px; font-size:11px; }
 
-.ui-v2-root .ui-v2-payroll-document-preview-panel { display:flex; flex-direction:column; background:var(--ui-v2-surface-subtle); }
+.ui-v2-root .ui-v2-payroll-document-preview-panel { min-height:660px; display:flex; flex-direction:column; background:var(--ui-v2-surface-subtle); }
 .ui-v2-root .ui-v2-payroll-document-preview-toolbar {
   min-height:46px; display:flex; align-items:center; justify-content:space-between; gap:10px;
   padding:7px 9px; border-bottom:1px solid var(--ui-v2-border); background:var(--ui-v2-surface);
@@ -99,6 +99,11 @@
   flex:1; min-height:560px; display:flex; justify-content:center; align-items:flex-start;
   padding:20px; overflow:auto; background:var(--ui-v2-surface-subtle); scrollbar-width:thin;
 }
+.ui-v2-root .ui-v2-payroll-document-preview-stage .letterhead-paper { box-shadow:0 1px 0 rgba(0,0,0,.04),0 14px 34px rgba(0,0,0,.08); }
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-meta-grid--letterhead,
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-summary-grid--letterhead > div,
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-source-note--letterhead { background:rgba(255,255,255,.82); }
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-summary-grid--letterhead { margin-top:11px; }
 .ui-v2-root .ui-v2-payroll-document-info-strip {
   display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--ui-v2-border); background:var(--ui-v2-surface);
 }
@@ -335,7 +340,12 @@
   .ui-v2-root .ui-v2-payroll-document-preview-toolbar { align-items:flex-start; flex-direction:column; }
   .ui-v2-root .document-preview-toolbar__actions { width:100%; }
   .ui-v2-root .document-preview-toolbar__actions .ui-v2-button { width:100%; }
-  .ui-v2-root .ui-v2-payroll-document-info-strip { grid-template-columns:1fr 1fr; }
+  .ui-v2-root .ui-v2-payroll-document-preview-stage .letterhead-paper { box-shadow:0 1px 0 rgba(0,0,0,.04),0 14px 34px rgba(0,0,0,.08); }
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-meta-grid--letterhead,
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-summary-grid--letterhead > div,
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-source-note--letterhead { background:rgba(255,255,255,.82); }
+.ui-v2-root .ui-v2-payroll-document-preview-stage .document-summary-grid--letterhead { margin-top:11px; }
+.ui-v2-root .ui-v2-payroll-document-info-strip { grid-template-columns:1fr 1fr; }
   .ui-v2-root .ui-v2-payroll-document-info-strip > div:nth-child(2n) { border-right:0; }
   .ui-v2-root .ui-v2-payroll-document-paper { min-height:0; padding:24px 20px; }
   .ui-v2-root .ui-v2-payroll-paper-brand { align-items:flex-start; flex-wrap:wrap; }

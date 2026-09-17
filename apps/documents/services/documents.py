@@ -423,7 +423,8 @@ def _prefix(document_type: str) -> tuple[str, str]:
     }[document_type]
 
 
-SESCCO_SUPPLIER_INVOICE_LETTERHEAD = "apps/documents/assets/sescco-supplier-invoice-letterhead-v1.png"
+SESCCO_COMPANY_DOCUMENT_HEADPAD = "apps/documents/assets/sescco-company-document-headpad-v2.png"
+SESCCO_SUPPLIER_INVOICE_LETTERHEAD = SESCCO_COMPANY_DOCUMENT_HEADPAD
 
 
 def _packaged_brand_asset_snapshot(relative_path: str) -> dict[str, str]:
@@ -538,6 +539,14 @@ def finalize_business_document(
         watermark = None  # The official headpad already carries the SESCCO watermark.
         branding_mode = "letterhead"
         branding_profile = "sescco_supplier_invoice_v1"
+    elif not letterhead:
+        # This deployment is a single-company SESCCO workspace. When no company-specific
+        # letterhead has been uploaded yet, finalized payroll documents still need to use the
+        # approved company headpad so every newly generated document prints on the correct form.
+        letterhead = _packaged_brand_asset_snapshot(SESCCO_COMPANY_DOCUMENT_HEADPAD)
+        watermark = None
+        branding_mode = "letterhead"
+        branding_profile = "sescco_company_headpad_v1"
     elif branding_mode == "letterhead" and not letterhead:
         branding_mode = "standard"
     snapshot["issuer"] = {
