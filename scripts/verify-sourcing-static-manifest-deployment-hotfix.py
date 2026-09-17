@@ -115,8 +115,9 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
     if "verify-sourcing-static-manifest-deployment-hotfix.py" not in read(rel):
         fail(f"{rel} does not execute the hotfix verifier")
 
-if not read("RELEASE_NOTES.md").startswith("# 1.0.117 — Sourcing Static Manifest Deployment Hotfix\n"):
-    fail("release notes do not lead with the hotfix")
+release_notes = read("RELEASE_NOTES.md")
+if "# 1.0.117 — Sourcing Static Manifest Deployment Hotfix\n" not in release_notes:
+    fail("release notes are missing the Sourcing static-manifest hotfix section")
 if "SESCCO MS 1.0.117 — Sourcing Static Manifest Deployment Hotfix" not in read("README.md"):
     fail("README current release identity mismatch")
 

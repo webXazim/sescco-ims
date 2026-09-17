@@ -6,6 +6,7 @@
 - Internal salary setup, payment/WPS money normalization and overtime display-rate calculations now use explicit `ROUND_HALF_UP`, matching the payroll engine and rental settlement engine at half-cent boundaries.
 - Rental settlement hour totals now use explicit half-up normalization.
 - Added regression coverage for server-authoritative rental worker summaries and half-up monetary/rate rounding.
+- Deployment source-freeze verification now requires the historical Sourcing static-manifest hotfix section to remain present without incorrectly requiring it to be the first release-note heading, so later 1.0.117 hotfix notes can lead the file safely.
 
 # 1.0.117 — Sourcing Static Manifest Deployment Hotfix
 
