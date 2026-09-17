@@ -93,4 +93,24 @@ for kind, needle in bindings.items():
 if "data-directory-retry" not in js or "store.failedKey='';store.error='';loadServerDirectory(kind,{force:true});" not in js:
     fail("explicit failed-directory retry path is missing")
 
-print("Verified Payroll server-directory runtime: 6 paged directories, AbortController cancellation, 320 ms search debounce, stale-row refresh and loading-state completion order.")
+api = text("apps/rental_manpower/api.py")
+masters = text("apps/rental_manpower/selectors/masters.py")
+for required in (
+    'meta["summary"] = worker_directory_summary',
+    'def worker_directory_summary(*, company, membership=None)',
+    "'activeMasters': assigned + scheduled + available",
+    "'activeSuppliers': active_suppliers",
+    "'activeProjects': active_projects",
+):
+    if required not in api + masters:
+        fail(f"authoritative rental worker summary missing: {required}")
+for required in (
+    "const workerSummary = directory.meta.summary || {};",
+    "const totalWorkers = Number(workerSummary.total ?? directory.meta.count ?? rows.length);",
+    "const assigned = state.suppliers.reduce((sum, supplier) => sum + Number(supplier.activeWorkers || 0), 0);",
+    "const available = state.suppliers.reduce((sum, supplier) => sum + Number(supplier.availableWorkers || 0), 0);",
+):
+    if required not in js:
+        fail(f"payroll KPI authority missing: {required}")
+
+print("Verified Payroll server-directory runtime: 6 paged directories, cancellation-safe search, authoritative Rental workforce KPIs and bounded master merges.")

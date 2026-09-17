@@ -295,3 +295,12 @@ class SalarySetupServiceTests(TestCase):
                 object_id=str(structure.pk),
             ).exists()
         )
+
+
+class SalaryRoundingContractTests(TestCase):
+    def test_money_and_rate_round_half_up(self):
+        from apps.internal_payroll.services.salary import _money, _rate
+
+        self.assertEqual(_money("10.005"), Decimal("10.01"))
+        self.assertEqual(_money("10.004"), Decimal("10.00"))
+        self.assertEqual(_rate("1.23445", "rate"), Decimal("1.2345"))

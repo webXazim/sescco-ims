@@ -15,6 +15,7 @@ from .masters import (
     serialize_worker,
     suppliers_for_company,
     workers_for_company,
+    worker_directory_summary,
 )
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "serialize_worker",
     "suppliers_for_company",
     "workers_for_company",
+    "worker_directory_summary",
     "rental_timesheet_context",
     "rental_adjustments_by_worker",
     "rental_adjustments_for_period",

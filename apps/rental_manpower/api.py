@@ -44,6 +44,7 @@ from apps.rental_manpower.selectors import (
     serialize_worker,
     suppliers_for_company,
     workers_for_company,
+    worker_directory_summary,
     rental_adjustment_page_context,
     rental_settlement_context,
     rental_financial_metrics_for_period,
@@ -563,6 +564,7 @@ def workers_api(request: HttpRequest) -> JsonResponse:
             )
             rows = apply_ordering(rows, controls=controls, allowed_sorts=allowed_sorts)
             results, meta = serialize_list(rows, controls=controls, serializer=lambda item: serialize_worker(item, include_commercial=_commercial_visible(request)))
+            meta["summary"] = worker_directory_summary(company=request.company, membership=request.company_membership)
             return JsonResponse({"ok": True, "results": results, "meta": meta})
         body = json_body(request)
         worker = create_worker(

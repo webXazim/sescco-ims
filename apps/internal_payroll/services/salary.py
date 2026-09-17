@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Iterable
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -59,7 +59,7 @@ def _money(value: object, field: str = "amount") -> Decimal:
         amount = Decimal(str(value))
         if not amount.is_finite():
             raise InvalidOperation
-        return amount.quantize(Decimal("0.01"))
+        return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError({field: "Enter a valid finite monetary amount."}) from exc
 
@@ -69,7 +69,7 @@ def _rate(value: object, field: str) -> Decimal:
         result = Decimal(str(value))
         if not result.is_finite():
             raise InvalidOperation
-        return result.quantize(Decimal("0.0001"))
+        return result.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValidationError({field: "Enter a valid finite number."}) from exc
 

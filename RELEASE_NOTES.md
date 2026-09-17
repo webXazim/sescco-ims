@@ -1,3 +1,12 @@
+
+## 1.0.117 Payroll calculation authority hotfix
+
+- Rental Workforce KPI cards and status tabs now use authoritative server-side counts instead of the intentionally bounded browser bootstrap, preventing 51-vs-5,013 style count mismatches.
+- Manpower Supplier assigned/available totals now sum authoritative supplier aggregates rather than the thin worker bootstrap.
+- Internal salary setup, payment/WPS money normalization and overtime display-rate calculations now use explicit `ROUND_HALF_UP`, matching the payroll engine and rental settlement engine at half-cent boundaries.
+- Rental settlement hour totals now use explicit half-up normalization.
+- Added regression coverage for server-authoritative rental worker summaries and half-up monetary/rate rounding.
+
 # 1.0.117 — Sourcing Static Manifest Deployment Hotfix
 
 - Fixes the production Sourcing 500 / focused-test failure where `ManifestStaticFilesStorage` raised `Missing staticfiles manifest entry for 'sourcing/css/directory.css'` before the deployment reached `collectstatic`.

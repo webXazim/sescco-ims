@@ -5,7 +5,7 @@ import hashlib
 import io
 import json
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -48,7 +48,7 @@ from apps.internal_payroll.services.payroll import verify_payroll_run_integrity
 
 
 def _money(value: Decimal | int | str) -> Decimal:
-    return Decimal(value).quantize(Decimal("0.01"))
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _require_payment_prepare(membership: CompanyMembership) -> None:

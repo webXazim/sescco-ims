@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from calendar import month_name
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Prefetch, Q, Sum
@@ -172,7 +172,7 @@ def _overtime_setup_for_employee(*, company: Company, employee: InternalEmployee
         return {"configured": False, "reason": "The overtime base component is missing from the salary structure."}
     divisor = Decimal(structure.overtime_divisor)
     multiplier = Decimal(structure.overtime_multiplier)
-    overtime_rate = (base_line.amount / divisor * multiplier).quantize(Decimal("0.0001"))
+    overtime_rate = (base_line.amount / divisor * multiplier).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     return {
         "configured": True,
         "salaryStructureId": str(structure.pk),

@@ -77,9 +77,12 @@ for marker in (
     "key:'document-source',endpoint:'/api/documents/sources/'",
     "full Payroll masters are never loaded into this drawer.",
     "approved SESCCO A4 company headpad",
+    "return `${periodMonths[Math.max(0,Math.min(11,month-1))]} ${year}`;",
 ):
     if marker not in js:
         fail(f"document finalization UI lost bounded/letterhead marker: {marker}")
+if "return `${months[Math.max(0,Math.min(11,month-1))]} ${year}`;" in js:
+    fail("document period label regressed to the out-of-scope months identifier")
 
 print_template = text("templates/documents/print.html")
 for marker in (

@@ -157,6 +157,49 @@ class RentalMasterApiTests(TestCase):
         self.assertEqual(response.json()["created"], 1)
         self.assertEqual(response.json()["workers"][0]["name"], "Imported Worker")
 
+
+    def test_worker_directory_meta_summary_is_authoritative_not_page_limited(self):
+        from apps.rental_manpower.services import assign_worker, create_project
+
+        project = create_project(
+            actor_membership=self.membership,
+            code="SUM-PROJ",
+            name="Summary Project",
+            start_date=date(2026, 1, 1),
+        )
+        assigned = create_worker(
+            actor_membership=self.membership, supplier_id=self.supplier.pk,
+            worker_number="RW-SUM-1", full_name="Assigned Summary Worker", status="Active",
+        )
+        create_worker(
+            actor_membership=self.membership, supplier_id=self.supplier.pk,
+            worker_number="RW-SUM-2", full_name="Available Summary Worker", status="Active",
+        )
+        create_worker(
+            actor_membership=self.membership, supplier_id=self.supplier.pk,
+            worker_number="RW-SUM-3", full_name="Inactive Summary Worker", status="Inactive",
+        )
+        assign_worker(
+            actor_membership=self.membership, worker_id=assigned.pk, project_id=project.reference,
+            trade="Helper", rate_type="Hourly", rate="10.00", effective_date=date.today(),
+            reason="Summary regression coverage",
+        )
+        response = self.client.get(
+            reverse("rental_manpower:workers-api"),
+            {"page": 1, "page_size": 1},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        summary = payload["meta"]["summary"]
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(summary["assigned"], 1)
+        self.assertEqual(summary["available"], 1)
+        self.assertEqual(summary["inactive"], 1)
+        self.assertEqual(summary["activeMasters"], 2)
+        self.assertEqual(summary["activeSuppliers"], 1)
+        self.assertEqual(summary["activeProjects"], 1)
+
     def test_unauthenticated_request_returns_json_401(self):
         self.client.logout()
         response = self.client.get(reverse("rental_manpower:suppliers-api"))

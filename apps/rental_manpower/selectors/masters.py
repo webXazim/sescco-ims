@@ -253,6 +253,52 @@ def workers_for_company(
     return queryset.order_by("worker_number", "full_name")
 
 
+
+def worker_directory_summary(*, company, membership=None) -> dict[str, int]:
+    """Authoritative unfiltered worker-master counts for the current access scope.
+
+    The browser bootstrap is intentionally bounded, so page KPIs must never be
+    derived from the bootstrap array.  These counts are calculated from the same
+    effective-dated assignment rules used by the directory itself.
+    """
+    base = workers_for_company(company=company, archived=False, membership=membership).order_by()
+    active_base = base.filter(status=RentalWorkerStatus.ACTIVE, supplier__status=SupplierStatus.ACTIVE)
+    assigned = active_base.filter(_has_current_assignment=True).count()
+    scheduled = active_base.filter(_has_current_assignment=False, _has_future_assignment=True).count()
+    available = active_base.filter(_has_current_assignment=False, _has_future_assignment=False).count()
+    inactive = base.filter(Q(status=RentalWorkerStatus.INACTIVE) | Q(supplier__status=SupplierStatus.INACTIVE)).count()
+    terminated = base.filter(Q(status=RentalWorkerStatus.TERMINATED) | Q(supplier__status=SupplierStatus.TERMINATED)).count()
+    archived = workers_for_company(company=company, archived=True, membership=membership).order_by().count()
+    active_suppliers = active_base.values('supplier_id').distinct().count()
+
+    today = timezone.localdate()
+    assignment_rows = WorkerAssignment.objects.for_company(company).filter(
+        worker__deleted_at__isnull=True,
+        worker__supplier__deleted_at__isnull=True,
+        worker__archived_at__isnull=True,
+        worker__supplier__archived_at__isnull=True,
+        worker__status=RentalWorkerStatus.ACTIVE,
+        worker__supplier__status=SupplierStatus.ACTIVE,
+        cancelled_at__isnull=True,
+        effective_from__lte=today,
+    ).filter(Q(effective_to__isnull=True) | Q(effective_to__gte=today))
+    if membership is not None:
+        assignment_rows = restrict_projects(assignment_rows, membership, field='project_id')
+    active_projects = assignment_rows.values('project_id').distinct().count()
+
+    return {
+        'total': base.count(),
+        'activeMasters': assigned + scheduled + available,
+        'assigned': assigned,
+        'scheduled': scheduled,
+        'available': available,
+        'inactive': inactive,
+        'terminated': terminated,
+        'archived': archived,
+        'activeSuppliers': active_suppliers,
+        'activeProjects': active_projects,
+    }
+
 def serialize_supplier(supplier: ManpowerSupplier, financial: dict[str, object] | None = None) -> dict[str, object]:
     active_workers = int(getattr(supplier, "active_worker_count", 0))
     total_workers = int(getattr(supplier, "total_worker_count", 0))

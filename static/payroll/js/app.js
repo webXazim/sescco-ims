@@ -3331,8 +3331,8 @@
       };
     };
     const active = state.suppliers.filter(s => s.status === 'Active').length;
-    const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
-    const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
+    const assigned = state.suppliers.reduce((sum, supplier) => sum + Number(supplier.activeWorkers || 0), 0);
+    const available = state.suppliers.reduce((sum, supplier) => sum + Number(supplier.availableWorkers || 0), 0);
     const currentCost = controlRows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
     const paymentTermOptions = [...new Set(state.suppliers.map(s => s.paymentTerms || 'Payment terms not set'))].sort((a,b)=>a.localeCompare(b));
     const supplierAdvancedCount = [
@@ -6788,13 +6788,15 @@
   function rentalWorkforceTemplate() {
     const directory = serverDirectoryView('workers');
     const rows = directory.rows;
-    const assigned = state.rentalWorkers.filter(worker => worker.status === 'Assigned').length;
-    const available = state.rentalWorkers.filter(worker => worker.status === 'Available').length;
-    const scheduled = state.rentalWorkers.filter(worker => worker.status === 'Scheduled').length;
-    const activeSupplierIds = new Set(state.rentalWorkers.filter(worker => ['Assigned','Available'].includes(worker.status)).map(worker => worker.supplierId).filter(Boolean));
-    const activeProjectIds = new Set(state.rentalWorkers.filter(worker => worker.status === 'Assigned' && worker.projectId).map(worker => worker.projectId));
+    const workerSummary = directory.meta.summary || {};
+    const assigned = Number(workerSummary.assigned ?? 0);
+    const available = Number(workerSummary.available ?? 0);
+    const scheduled = Number(workerSummary.scheduled ?? 0);
+    const totalWorkers = Number(workerSummary.total ?? directory.meta.count ?? rows.length);
+    const activeMasters = Number(workerSummary.activeMasters ?? 0);
+    const activeSupplierCount = Number(workerSummary.activeSuppliers ?? 0);
+    const activeProjectCount = Number(workerSummary.activeProjects ?? 0);
     const trades = [...new Set(state.rentalWorkers.map(worker => worker.trade).filter(Boolean))].sort((a,b) => a.localeCompare(b));
-    const activeMasters = state.rentalWorkers.filter(worker => worker.masterStatus === 'Active').length;
     const filtered = !!state.rentalSearch || state.rentalStatus !== 'All' || state.rentalSupplier !== 'All suppliers' || state.rentalProject !== 'All projects' || state.rentalTrade !== 'All trades' || state.rentalRateType !== 'All rate types';
 
     return `<section class="page rental-workforce-page">
@@ -6814,11 +6816,11 @@
       </div>
 
       <div class="rental-summary-strip">
-        <button type="button" class="rental-summary-item ${state.rentalStatus === 'All' ? 'is-selected' : ''}" data-rental-summary="All"><span>Total workers</span><strong>${state.rentalWorkers.length}</strong><small>${activeMasters} active worker masters</small></button>
-        <button type="button" class="rental-summary-item ${state.rentalStatus === 'Assigned' ? 'is-selected' : ''}" data-rental-summary="Assigned"><span>Assigned now</span><strong>${assigned}</strong><small>Working on active projects</small></button>
-        <button type="button" class="rental-summary-item ${state.rentalStatus === 'Available' ? 'is-selected' : ''}" data-rental-summary="Available"><span>Available</span><strong>${available}</strong><small>Supplier worker pool</small></button>
-        <div class="rental-summary-item"><span>Active suppliers</span><strong>${activeSupplierIds.size}</strong><small>Linked manpower companies</small></div>
-        <div class="rental-summary-item"><span>Active projects</span><strong>${activeProjectIds.size}</strong><small>Current deployments</small></div>
+        <button type="button" class="rental-summary-item ${state.rentalStatus === 'All' ? 'is-selected' : ''}" data-rental-summary="All"><span>Total workers</span><strong>${totalWorkers.toLocaleString()}</strong><small>${activeMasters.toLocaleString()} active worker masters</small></button>
+        <button type="button" class="rental-summary-item ${state.rentalStatus === 'Assigned' ? 'is-selected' : ''}" data-rental-summary="Assigned"><span>Assigned now</span><strong>${assigned.toLocaleString()}</strong><small>Working on active projects</small></button>
+        <button type="button" class="rental-summary-item ${state.rentalStatus === 'Available' ? 'is-selected' : ''}" data-rental-summary="Available"><span>Available</span><strong>${available.toLocaleString()}</strong><small>Supplier worker pool</small></button>
+        <div class="rental-summary-item"><span>Active suppliers</span><strong>${activeSupplierCount.toLocaleString()}</strong><small>Linked manpower companies</small></div>
+        <div class="rental-summary-item"><span>Active projects</span><strong>${activeProjectCount.toLocaleString()}</strong><small>Current deployments</small></div>
       </div>
 
       <section class="panel panel--flush rental-directory-panel">
@@ -6838,7 +6840,8 @@
 
         <div class="rental-status-tabs" role="tablist" aria-label="Rental worker assignment status">
           ${['All','Assigned','Scheduled','Available','Inactive','Terminated','Archived'].map(status => {
-            const count = status === 'All' ? state.rentalWorkers.length : state.rentalWorkers.filter(worker => worker.status === status).length;
+            const countMap = {All:totalWorkers,Assigned:assigned,Scheduled:scheduled,Available:available,Inactive:Number(workerSummary.inactive||0),Terminated:Number(workerSummary.terminated||0),Archived:Number(workerSummary.archived||0)};
+            const count = Number(countMap[status] || 0);
             return `<button type="button" class="${state.rentalStatus === status ? 'is-active' : ''}" data-rental-status="${status}"><span>${status}</span><em>${count}</em></button>`;
           }).join('')}
         </div>
@@ -8008,7 +8011,7 @@
   function documentPeriodLabel(key) {
     const [year,month]=String(key||'').split('-').map(Number);
     if(!year||!month)return String(key||'');
-    return `${months[Math.max(0,Math.min(11,month-1))]} ${year}`;
+    return `${periodMonths[Math.max(0,Math.min(11,month-1))]} ${year}`;
   }
   function documentAllRecords() { return state.documentContext?.documents || []; }
   function documentRequest() {

@@ -612,3 +612,11 @@ class SalaryPaymentServiceTests(TestCase):
         self.assertTrue(context["batch"]["rowsDeferred"])
         self.assertEqual(context["batch"]["rows"], [])
 
+
+
+class PaymentRoundingContractTests(TestCase):
+    def test_payment_money_rounds_half_up_like_payroll_engine(self):
+        from apps.internal_payroll.services.payment import _money
+
+        self.assertEqual(_money("10.005"), Decimal("10.01"))
+        self.assertEqual(_money("10.004"), Decimal("10.00"))
