@@ -22,9 +22,9 @@ import hashlib
 
 
 def _document_headpad_url(document) -> str:
-    branding = (((document.snapshot or {}).get("issuer") or {}).get("branding") or {})
-    if branding.get("letterhead") and branding.get("mode") == "letterhead":
-        return reverse("documents:document-brand-asset", kwargs={"document_id": document.id, "kind": "letterhead"})
+    # Preview and print deliberately use the same canonical SESCCO company headpad.
+    # Historical snapshot branding remains immutable evidence but does not replace the
+    # approved company stationery used by this single-company production workspace.
     return static("payroll/assets/sescco-company-document-headpad-v2.png")
 
 def _can_view_document(membership, document) -> bool:

@@ -1,3 +1,11 @@
+# 1.0.117 — Payroll Headpad Preview/Print Exact-Parity Hotfix
+
+- Fixed the print view where the reserved headpad area was present but the headpad artwork itself could remain invisible.
+- Preview and Print / Save PDF now resolve to the same canonical `sescco-company-document-headpad-v2.png` artwork, regardless of historical per-document branding metadata.
+- Raised the print headpad image layer above the paper background while keeping document content above the stationery layer.
+- Suppressed any secondary watermark layer when the full company headpad is active, because the approved headpad already contains its watermark.
+- Added release verification markers to prevent preview/print headpad divergence from returning.
+
 # 1.0.117 — Payroll Document Headpad Parity Hotfix
 
 - Enforced the exact provided company headpad as the canonical payroll-document headpad for both preview and print.

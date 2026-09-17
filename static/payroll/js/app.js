@@ -8060,11 +8060,9 @@
     finally{state.documentLoadingId=null;}
   }
 
-  function documentPreviewHeadpadUrl(doc, snapshot) {
-    const branding=snapshot?.issuer?.branding||{};
-    if(branding.mode==='letterhead' && branding.letterhead && doc?.id) return `/documents/${encodeURIComponent(doc.id)}/brand/letterhead/`;
-    const companyBranding=state.systemSettings?.general?.branding||{};
-    if(state.systemSettings?.general?.documentBrandingMode==='letterhead' && companyBranding.letterhead?.configured && companyBranding.letterhead?.url) return companyBranding.letterhead.url;
+  function documentPreviewHeadpadUrl() {
+    // Keep in-app preview visually identical to Print / Save PDF by using the
+    // exact same approved SESCCO company headpad asset.
     return '/static/payroll/assets/sescco-company-document-headpad-v2.png';
   }
 
@@ -8079,7 +8077,7 @@
     const entity=snapshot.employee?.name||snapshot.supplier?.name||snapshot.project?.name||doc.entityName||'Company';
     const summaryGrid=important.length?`<div class="document-summary-grid document-summary-grid--letterhead">${important.map(([key,value])=>`<div><span>${escapeHtml(String(key).replaceAll('_',' '))}</span><strong>${/amount|gross|net|deduction|base|overtime|total/i.test(key)?formatCurrency(value):escapeHtml(value)}</strong></div>`).join('')}</div>`:'';
     const sourceNote=`<div class="source-note document-source-note document-source-note--letterhead">${icon('info')}<span><strong>Immutable snapshot.</strong> This preview is backed by the finalized Django document record. Use Print / Save PDF for the full formatted document.</span></div>`;
-    const headpadUrl=documentPreviewHeadpadUrl(doc,snapshot);
+    const headpadUrl=documentPreviewHeadpadUrl();
     if(headpadUrl){
       return `<article class="letterhead-paper"><img class="letterhead-paper__bg" src="${escapeHtml(headpadUrl)}" alt="Company headpad"><div class="letterhead-paper__safe"><div class="letterhead-document-title"><div><span>${escapeHtml(kind.toUpperCase())}</span><h2>${escapeHtml(doc.number)}</h2></div><div><small>Entity</small><strong>${escapeHtml(entity)}</strong><small>Period</small><strong>${escapeHtml(doc.period||'—')}</strong><small>Integrity</small><strong>${doc.integrityOk?'Verified':'Check failed'}</strong></div></div><div class="document-meta-grid document-meta-grid--letterhead"><div><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(doc.finalizedAt))}</strong></div><div><span>Finalized by</span><strong>${escapeHtml(doc.finalizedBy||'System')}</strong></div><div><span>Source</span><strong>${escapeHtml(doc.sourceReference||'Controlled record')}</strong></div><div><span>Status</span><strong>${escapeHtml(doc.status||'Final')}</strong></div></div>${summaryGrid}${sourceNote}</div></article>`;
     }

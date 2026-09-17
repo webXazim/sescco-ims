@@ -13,10 +13,10 @@
     .toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; background: #111; color: #fff; }
     .toolbar button { border: 1px solid #555; background: #fff; color: #111; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 700; }
     .paper { position: relative; width: 210mm; min-height: 297mm; margin: 18px auto; padding: 0; background: #fff; box-shadow: 0 8px 28px rgba(0,0,0,.12); overflow: hidden; }
-    .paper-content { position: relative; z-index: 1; min-height: 297mm; padding: 18mm 15mm; }
+    .paper-content { position: relative; z-index: 2; min-height: 297mm; padding: 18mm 15mm; }
     .paper--letterhead { page: letterhead; }
     .paper--letterhead .paper-content { padding: 39mm 15mm 25mm; }
-    .brand-layer { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+    .brand-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
     .letterhead-bg { width: 100%; height: 100%; object-fit: cover; display: block; }
     .watermark-bg { position: absolute; left: 50%; top: 50%; width: 54%; max-height: 54%; object-fit: contain; transform: translate(-50%,-50%); opacity: .065; }
     header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 12px; border-bottom: 2px solid #111; }
@@ -75,7 +75,7 @@
       .paper { margin:0; width:auto; min-height:0; padding:0; box-shadow:none; overflow:visible; }
       .paper-content { min-height:0; padding:0; }
       .paper--letterhead .paper-content { padding:0; }
-      .paper--letterhead .brand-layer { position:fixed; top:-39mm; left:-15mm; width:210mm; height:297mm; }
+      .paper--letterhead .brand-layer { position:fixed; z-index:1; top:-39mm; left:-15mm; width:210mm; height:297mm; }
       .paper--letterhead .letterhead-bg { width:210mm; height:297mm; object-fit:fill; }
       .paper--letterhead .watermark-bg { display:none; }
       a { color:inherit; text-decoration:none; }
@@ -86,7 +86,7 @@
   <div class="toolbar"><span>{{ document.document_number }} · Final immutable snapshot</span><button type="button" onclick="window.print()">Print / Save PDF</button></div>
   <main class="paper{% if render_letterhead %} paper--letterhead{% endif %}">
     {% if render_letterhead and headpad_url %}<div class="brand-layer"><img class="letterhead-bg" src="{{ headpad_url }}" alt=""></div>{% endif %}
-    {% if snapshot.issuer.branding.watermark %}<div class="brand-layer"><img class="watermark-bg" src="{% url 'documents:document-brand-asset' document.id 'watermark' %}" alt=""></div>{% endif %}
+    {% if not render_letterhead and snapshot.issuer.branding.watermark %}<div class="brand-layer"><img class="watermark-bg" src="{% url 'documents:document-brand-asset' document.id 'watermark' %}" alt=""></div>{% endif %}
     <div class="paper-content">
     {% if render_letterhead and headpad_url %}
       <header class="document-head--letterhead"><div></div><div class="doc-no"><span>{{ document.get_document_type_display }}</span><strong>{{ document.document_number }}</strong></div></header>

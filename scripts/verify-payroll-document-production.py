@@ -54,7 +54,7 @@ for marker in (
         fail(f"document service lost production marker: {marker}")
 
 views = text("apps/documents/views.py")
-for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")'):
+for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")'):
     if marker not in views:
         fail(f"historical packaged-brand asset guard missing: {marker}")
 
@@ -78,6 +78,8 @@ for marker in (
     "key:'document-source',endpoint:'/api/documents/sources/'",
     "full Payroll masters are never loaded into this drawer.",
     "approved SESCCO A4 company headpad",
+    "function documentPreviewHeadpadUrl()",
+    "return '/static/payroll/assets/sescco-company-document-headpad-v2.png';",
     "return `${periodMonths[Math.max(0,Math.min(11,month-1))]} ${year}`;",
 ):
     if marker not in js:
@@ -90,7 +92,9 @@ for marker in (
     "@page letterhead { size: A4; margin: 39mm 15mm 25mm; }",
     "thead { display: table-header-group; }",
     "break-inside: avoid; page-break-inside: avoid;",
-    ".paper--letterhead .brand-layer { position:fixed;",
+    ".paper--letterhead .brand-layer { position:fixed; z-index:1;",
+    ".paper-content { position: relative; z-index: 2;",
+    'src="{{ headpad_url }}"',
     "document.document_type == 'supplier_invoice'",
     "snapshot.invoice.total_in_words",
     "snapshot.payment.amount_in_words",
