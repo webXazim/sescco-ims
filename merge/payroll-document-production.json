@@ -11,7 +11,7 @@
     "supplier_payment_receipt"
   ],
   "supplier_invoice_letterhead": {
-    "asset": "apps/documents/assets/sescco-supplier-invoice-letterhead-v1.png",
+    "asset": "apps/documents/assets/sescco-company-document-headpad-v2.png",
     "sha256": "1a8a2f96834f942fbfda9e8334218cff24d81a5cde0e9694b7d1ef4a08e95641",
     "pixel_size": [
       2480,

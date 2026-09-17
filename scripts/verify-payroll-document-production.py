@@ -41,7 +41,8 @@ if size != contract["supplier_invoice_letterhead"]["pixel_size"]:
 
 service = text("apps/documents/services/documents.py")
 for marker in (
-    'SESCCO_SUPPLIER_INVOICE_LETTERHEAD = "apps/documents/assets/sescco-supplier-invoice-letterhead-v1.png"',
+    'SESCCO_COMPANY_DOCUMENT_HEADPAD = "apps/documents/assets/sescco-company-document-headpad-v2.png"',
+    'SESCCO_SUPPLIER_INVOICE_LETTERHEAD = SESCCO_COMPANY_DOCUMENT_HEADPAD',
     'branding_profile = "sescco_supplier_invoice_v1"',
     'branding_mode = "letterhead"',
     'watermark = None  # The official headpad already carries the SESCCO watermark.',
@@ -106,6 +107,6 @@ for doc_type in contract["document_types"]:
 
 print(
     "Verified Payroll document production contract: 7 immutable document types, "
-    "versioned SESCCO A4 supplier-invoice headpad, bounded 25-result source lookup, "
+    "canonical SESCCO A4 company headpad, bounded 25-result source lookup, "
     "and production print/page-break safeguards."
 )

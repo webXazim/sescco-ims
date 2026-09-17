@@ -1,4 +1,4 @@
-# SESCCO MS 1.0.117 Payroll Document Headpad Parity Hotfix
+# 1.0.117 — Payroll Document Headpad Parity Hotfix
 
 - Enforced the exact provided company headpad as the canonical payroll-document headpad for both preview and print.
 - Printing now uses the same headpad source path as preview, with a server-provided `headpad_url` passed into the final immutable print template.
