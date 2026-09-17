@@ -1,6 +1,6 @@
 {
   "release": "1.0.117",
-  "purpose": "Production-ready immutable Payroll documents and SESCCO supplier-invoice headpad",
+  "purpose": "Production-ready Payroll documents with SESCCO first-page headpad and plain continuation pages",
   "document_types": [
     "salary_slip",
     "internal_timesheet",
@@ -29,10 +29,12 @@
     "paper": "A4",
     "repeat_table_headers": true,
     "avoid_row_splits": true,
-    "letterhead_each_page": true,
     "immutable_brand_asset_hash": true,
     "supplier_invoice_amount_in_words": true,
     "payment_receipt_amount_in_words": true,
-    "timesheet_overtime_visible": true
+    "timesheet_overtime_visible": true,
+    "headpad_first_page_only": true,
+    "plain_continuation_pages": true,
+    "preview_uses_print_route": true
   }
 }

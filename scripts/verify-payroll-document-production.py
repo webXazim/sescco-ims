@@ -25,6 +25,11 @@ if contract.get("release") != "1.0.117":
     fail("document production contract is not frozen at 1.0.117")
 if len(contract.get("document_types") or []) != 7:
     fail("all seven Payroll document types must remain covered")
+print_contract = contract.get("print_contract") or {}
+if not print_contract.get("headpad_first_page_only") or not print_contract.get("plain_continuation_pages"):
+    fail("print contract must keep the company headpad on page one and use plain continuation pages")
+if not print_contract.get("preview_uses_print_route"):
+    fail("document preview must use the same print route as production printing")
 
 asset_rel = contract["supplier_invoice_letterhead"]["asset"]
 asset = ROOT / asset_rel
@@ -54,7 +59,7 @@ for marker in (
         fail(f"document service lost production marker: {marker}")
 
 views = text("apps/documents/views.py")
-for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")'):
+for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")', '@xframe_options_sameorigin', 'request.GET.get("embed") == "1"'):
     if marker not in views:
         fail(f"historical packaged-brand asset guard missing: {marker}")
 
@@ -76,33 +81,49 @@ for marker in (
     "function cancelDocumentSourceRequest()",
     "function setupDocumentSourceCombobox()",
     "key:'document-source',endpoint:'/api/documents/sources/'",
-    "full Payroll masters are never loaded into this drawer.",
-    "approved SESCCO A4 company headpad",
-    "function documentPreviewHeadpadUrl()",
-    "return '/static/payroll/assets/sescco-company-document-headpad-v2.png';",
+    "function documentPrintPreview(doc)",
+    "/print/?embed=1",
+    "document-print-preview",
     "return `${periodMonths[Math.max(0,Math.min(11,month-1))]} ${year}`;",
 ):
     if marker not in js:
-        fail(f"document finalization UI lost bounded/letterhead marker: {marker}")
+        fail(f"document finalization UI lost bounded/print-parity marker: {marker}")
+for forbidden in (
+    "Immutable snapshot.",
+    "This preview is backed by",
+    "Printed on the approved company headpad.",
+    "Immutable final records",
+):
+    if forbidden in js:
+        fail(f"production Documents UI reintroduced explanatory copy: {forbidden}")
 if "return `${months[Math.max(0,Math.min(11,month-1))]} ${year}`;" in js:
     fail("document period label regressed to the out-of-scope months identifier")
 
 print_template = text("templates/documents/print.html")
 for marker in (
-    "@page letterhead { size: A4; margin: 39mm 15mm 25mm; }",
-    "thead { display: table-header-group; }",
-    "break-inside: avoid; page-break-inside: avoid;",
-    ".paper--letterhead .brand-layer { position:fixed; z-index:1;",
-    ".paper-content { position: relative; z-index: 2;",
-    'src="{{ headpad_url }}"',
+    "@page:first { size: A4; margin: 0; }",
+    "thead { display:table-header-group; }",
+    "break-inside:avoid; page-break-inside:avoid;",
+    ".cover-sheet { height:297mm; overflow:hidden; break-after:page; page-break-after:always; }",
+    ".continuation-sheet { padding:14mm 13mm 16mm; }",
+    '<div class="cover-brand"><img src="{{ headpad_url }}" alt=""></div>',
+    "continuation-title-row",
     "document.document_type == 'supplier_invoice'",
     "snapshot.invoice.total_in_words",
     "snapshot.payment.amount_in_words",
-    "Approved overtime snapshot",
-    "Overtime snapshot",
+    "Rental Timesheet · {{ document.document_number }}",
+    "Supplier Settlement · {{ document.document_number }}",
 ):
     if marker not in print_template:
         fail(f"production print contract marker missing: {marker}")
+for forbidden in (
+    "position:fixed",
+    "Printed on the approved company headpad.",
+    "Immutable final snapshot",
+    "This invoice is an immutable",
+):
+    if forbidden in print_template:
+        fail(f"production print template reintroduced non-production/explanatory content: {forbidden}")
 
 models = text("apps/documents/models.py")
 for doc_type in contract["document_types"]:
@@ -111,6 +132,6 @@ for doc_type in contract["document_types"]:
 
 print(
     "Verified Payroll document production contract: 7 immutable document types, "
-    "canonical SESCCO A4 company headpad, bounded 25-result source lookup, "
-    "and production print/page-break safeguards."
+    "canonical SESCCO A4 first-page headpad, plain continuation pages, shared preview/print route, "
+    "bounded source lookup and production page-break safeguards."
 )

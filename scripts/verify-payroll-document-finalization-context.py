@@ -63,9 +63,9 @@ for marker in (
     "hideSearch:employeeScoped",
     "employee_id:scopedEmployeeId",
     "autoSelectSingle:Boolean(scopedEmployeeId)",
-    "This drawer is locked to the selected employee and working period.",
+    "state.drawerContext={selectedSource:null,employeeScoped,employeeId:employeeScoped?employeeId:'',period,type:preferred}",
     "stayOnEmployee",
-    "Finalizing creates an immutable salary-slip snapshot; it does not recalculate Payroll.",
+    "drawerSave.textContent=employeeScoped?'Finalize Salary Slip':'Finalize Document'",
 ):
     if marker not in js:
         fail(f"frontend contextual-finalization marker missing: {marker}")

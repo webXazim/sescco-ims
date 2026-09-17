@@ -382,3 +382,26 @@
   .ui-v2-root .ui-v2-payroll-report-kpis { grid-template-columns:1fr; }
   .ui-v2-root .ui-v2-payroll-document-info-strip > div { border-right:0; }
 }
+
+/* Production document viewer: the embedded print route is the single preview authority. */
+.ui-v2-root .ui-v2-payroll-document-preview-stage {
+  padding:0;
+  overflow:hidden;
+  background:#f3f3f2;
+}
+.ui-v2-root .document-print-preview {
+  display:block;
+  width:100%;
+  height:calc(100vh - 255px);
+  min-height:660px;
+  border:0;
+  background:#f3f3f2;
+}
+.ui-v2-root .receipt-preview-panel .document-print-preview {
+  height:calc(100vh - 285px);
+  min-height:620px;
+}
+@media (max-width:760px) {
+  .ui-v2-root .document-print-preview,
+  .ui-v2-root .receipt-preview-panel .document-print-preview { height:620px; min-height:520px; }
+}

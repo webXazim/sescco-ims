@@ -1,3 +1,11 @@
+# 1.0.117 — Payroll Production Document Pagination Hotfix
+
+- Uses the approved SESCCO company headpad on the first printed page only.
+- Long-detail document types print their records on plain continuation pages with repeated document/table headers.
+- Documents preview now embeds the same server-rendered print route used by Print / Save PDF, eliminating preview/print divergence.
+- Internal/Rental Timesheets, Supplier Settlements, Supplier Invoices and Supplier Payment Receipts use summary cover sheets plus continuation schedules.
+- Removed development/explanatory copy from the Documents workspace and generated document output; production surfaces retain only operational labels, values and statuses.
+
 # 1.0.117 — Payroll Headpad Preview/Print Exact-Parity Hotfix
 
 - Fixed the print view where the reserved headpad area was present but the headpad artwork itself could remain invisible.
