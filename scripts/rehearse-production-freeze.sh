@@ -195,6 +195,7 @@ run_manage merge_documents_management_report --fail-on-errors > "${evidence_dir}
 
 info "Collecting release static assets before template-render bootstrap checks"
 run_manage collectstatic --noinput
+run_manage inventory_bootstrap_report --fail-on-errors > "${evidence_dir}/inventory-bootstrap-report.txt"
 run_manage payroll_bootstrap_report --fail-on-errors > "${evidence_dir}/payroll-bootstrap-report.txt"
 
 info "Running dedicated Payroll production-E2E certification in the isolated test database"

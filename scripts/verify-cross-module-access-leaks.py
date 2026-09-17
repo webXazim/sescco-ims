@@ -35,6 +35,12 @@ for marker in ('restrict_current_employee_branches(', 'membership=request.compan
 organization=text("apps/internal_payroll/selectors/organization.py")
 for marker in ('def branches_for_company(', 'membership=None', 'scoped_branch_ids = branch_scope_ids(membership)', '_bootstrap_branch_scope=Exists(scoped_assignment)', 'departments_for_company(company=company, archived=None, membership=membership)'):
     if marker not in organization: fail(f"Internal bootstrap/organization Branch scope missing: {marker}")
+context_processor=text("apps/core/context_processors.py")
+if "from apps.accounts.access_policy import membership_has_permission" not in context_processor:
+    fail("Inventory application context must import membership_has_permission from the authoritative access_policy module")
+if "apps.accounts.access_control" in context_processor:
+    fail("Inventory application context references the retired/nonexistent access_control module")
+
 payroll_view=text("apps/core/payroll_views.py")
 if 'internal_master_context(company=request.company, include_histories=False, employee_limit=50, membership=membership)' not in payroll_view:
     fail("Payroll shell bootstrap does not pass the active membership into Internal scope projection")

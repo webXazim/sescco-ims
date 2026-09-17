@@ -37,6 +37,8 @@ require_text scripts/restore.sh 'PAYROLL_FIELD_ENCRYPTION_KEY does not match' 'R
 require_text scripts/restore.sh 'pg_restore --single-transaction' 'Database restore must be transactional.'
 require_text scripts/release-tasks.sh 'merge_access_report --fail-on-errors' 'Release verification must check company access integrity.'
 require_text scripts/release-tasks.sh 'merge_documents_management_report --fail-on-errors' 'Release verification must cover merged Payroll documents/management.'
+require_text scripts/release-tasks.sh 'inventory_bootstrap_report --fail-on-errors' 'Release verification must render the Inventory dashboard before cutover.'
+[[ -f apps/core/management/commands/inventory_bootstrap_report.py ]] || fail 'Inventory dashboard deployment verifier is missing.'
 require_text scripts/release-tasks.sh 'payroll_bootstrap_report --fail-on-errors' 'Release verification must render the Payroll bootstrap before cutover.'
 [[ -f apps/core/management/commands/payroll_bootstrap_report.py ]] || fail 'Payroll bootstrap deployment verifier is missing.'
 require_text scripts/release-tasks.sh 'migrate --check' 'Release verification must finish with zero pending migrations.'
@@ -46,9 +48,11 @@ if grep -Fq -- 'collectstatic --noinput --clear' scripts/release-tasks.sh script
 fi
 
 collect_line="$(grep -nF 'run_manage collectstatic --noinput' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
+inventory_bootstrap_line="$(grep -nF 'run_manage inventory_bootstrap_report --fail-on-errors' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
 bootstrap_line="$(grep -nF 'run_manage payroll_bootstrap_report --fail-on-errors' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
-[[ -n "${collect_line}" && -n "${bootstrap_line}" ]] || fail 'Static/bootstrap release ordering cannot be verified.'
-(( collect_line < bootstrap_line )) || fail 'collectstatic must run before Payroll template bootstrap under ManifestStaticFilesStorage.'
+[[ -n "${collect_line}" && -n "${inventory_bootstrap_line}" && -n "${bootstrap_line}" ]] || fail 'Static/bootstrap release ordering cannot be verified.'
+(( collect_line < inventory_bootstrap_line )) || fail 'collectstatic must run before Inventory template bootstrap under ManifestStaticFilesStorage.'
+(( inventory_bootstrap_line < bootstrap_line )) || fail 'Inventory dashboard bootstrap must run before the Payroll bootstrap.'
 
 require_text nginx/default.conf 'location /media/' 'Private media must have an explicit gateway rule.'
 require_text nginx/default.conf 'return 404;' 'Private media must not be served directly by Nginx.'

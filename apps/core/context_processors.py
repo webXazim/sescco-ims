@@ -35,7 +35,7 @@ def application_context(request):
             return context
 
         from apps.accounts.access_catalog import AccessPermission
-        from apps.accounts.access_control import membership_has_permission
+        from apps.accounts.access_policy import membership_has_permission
         from apps.core.trash import active_trash
         from apps.inventory.access import (
             restrict_inventory_location_queryset,

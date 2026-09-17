@@ -173,6 +173,9 @@ run_manage collectstatic --noinput
 info "Verifying collected Sourcing static manifest"
 run_manage verify_sourcing_static_manifest
 
+info "Rendering the production Inventory dashboard before live cutover"
+run_manage inventory_bootstrap_report --fail-on-errors
+
 info "Rendering the production Payroll bootstrap before live cutover"
 run_manage payroll_bootstrap_report --fail-on-errors
 
