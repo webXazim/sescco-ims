@@ -1,3 +1,14 @@
+# 1.0.117 — Supplier-Specific Payroll Document Workflow Hotfix
+
+- Added Supplier Timesheet Statement generation per supplier, project and payroll period without changing the frozen BusinessDocument schema.
+- Kept Project Timesheet as a separate internal project document while supplier-facing timesheets are split directly from the locked Project Timesheet by supplier, so they can be issued before settlement approval.
+- Added bounded source lookup and batch creation for Supplier Timesheet Statements, alongside existing Supplier Settlement Statement batching.
+- Rental Documents now expose Project Timesheet, Supplier Timesheet Statement, Supplier Settlement Statement, Supplier Invoice Received and Supplier Payment Advice as distinct production creation choices.
+- Supplier Timesheet Statements exclude commercial rates and contain only supplier/project identity, worker attendance, regular hours and overtime hours for supplier issue.
+- Added separate supplier-timesheet document numbering (`STS-`) while preserving the seven frozen BusinessDocument database types.
+- Hardened the embedded print preview gateway by hiding any upstream X-Frame-Options value before applying the scoped SAMEORIGIN policy to authenticated document print routes.
+- Removed remaining explanatory copy from the Supplier Documents empty state.
+
 # 1.0.117 — Supplier Invoice Received Workflow Hotfix
 
 - Supplier invoices are recorded as external Supplier → SESCCO invoices; SESCCO no longer presents the buyer-side record as an invoice it issued.

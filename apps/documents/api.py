@@ -21,6 +21,7 @@ from apps.accounts.access_policy import branch_scope_ids, membership_has_permiss
 from .models import BusinessDocument, DocumentType
 from .selectors import document_page_context, documents_for_company, serialize_document
 from .services import finalize_business_document
+from .services.documents import SUPPLIER_TIMESHEET_ALIAS, SUPPLIER_TIMESHEET_VARIANT
 
 
 def _errors(exc: Exception) -> JsonResponse:
@@ -127,17 +128,20 @@ def documents_api(request: HttpRequest) -> JsonResponse:
             )
             return JsonResponse({"ok": True, **payload})
         body = _body(request)
-        requested_type = str(body.get("document_type") or "")
+        requested_type = str(body.get("document_type") or "").strip()
+        document_variant = str(body.get("document_variant") or "").strip()
+        if requested_type == SUPPLIER_TIMESHEET_ALIAS:
+            document_variant = SUPPLIER_TIMESHEET_VARIANT
         stored_attachment = None
         rental_types = {
             DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_SETTLEMENT,
-            DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT,
+            DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT, SUPPLIER_TIMESHEET_ALIAS,
         }
         workspace_key = "rental" if requested_type in rental_types else "internal"
         if not _has_document_permission(request.company_membership, workspace_key, finalize=True):
             raise PermissionDenied("Your access profile cannot finalize documents for this workspace.")
         invoice = None
-        if str(body.get("document_type") or "") == DocumentType.SUPPLIER_INVOICE:
+        if requested_type == DocumentType.SUPPLIER_INVOICE:
             raw_date = str(body.get("issue_date") or "")
             try:
                 issue_date = date.fromisoformat(raw_date)
@@ -156,9 +160,11 @@ def documents_api(request: HttpRequest) -> JsonResponse:
             }
         document = finalize_business_document(
             actor_membership=request.company_membership,
-            document_type=str(body.get("document_type") or ""),
+            document_type=requested_type,
             source_id=body.get("source_id"),
             invoice=invoice,
+            document_variant=document_variant,
+            supplier_code=str(body.get("supplier_code") or ""),
             request=request,
         )
         if stored_attachment:
@@ -221,6 +227,65 @@ def batch_supplier_settlement_statements_api(request: HttpRequest) -> JsonRespon
         return _errors(exc)
 
 
+@require_http_methods(["POST"])
+@api_company_required
+def batch_supplier_timesheet_statements_api(request: HttpRequest) -> JsonResponse:
+    """Finalize one supplier-facing Timesheet Statement per supplier/project locked timesheet scope."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        body = _body(request)
+        period_start = _period(str(body.get("period") or ""))
+        if period_start is None:
+            raise ValidationError({"period": "Period is required."})
+        from apps.rental_manpower.models import RentalTimesheetEntry, RentalTimesheetStatus
+
+        existing = BusinessDocument.objects.for_company(request.company).filter(
+            document_type=DocumentType.RENTAL_TIMESHEET,
+            source_id=OuterRef("period_id"),
+            entity_reference=OuterRef("supplier_code"),
+            snapshot__document_variant=SUPPLIER_TIMESHEET_VARIANT,
+        )
+        rows = RentalTimesheetEntry.objects.for_company(request.company).filter(
+            period__period_start=period_start,
+            period__status=RentalTimesheetStatus.LOCKED,
+        )
+        allowed_projects = project_scope_ids(request.company_membership)
+        if allowed_projects is not None:
+            rows = rows.filter(period__project_id__in=allowed_projects) if allowed_projects else rows.none()
+        supplier_code = str(body.get("supplier_code") or "").strip()
+        project_id = str(body.get("project_id") or "").strip()
+        if supplier_code:
+            rows = rows.filter(supplier_code__iexact=supplier_code)
+        if project_id:
+            rows = rows.filter(period__project_id=project_id)
+        rows = (
+            rows.values("period_id", "supplier_code")
+            .distinct()
+            .annotate(_finalized=Exists(existing))
+            .filter(_finalized=False)
+            .order_by("supplier_code", "period_id")
+        )
+        source_rows = list(rows[:201])
+        if len(source_rows) > 200:
+            raise ValidationError("Batch document creation is limited to 200 supplier timesheets at a time.")
+        created = []
+        with transaction.atomic():
+            for row in source_rows:
+                document = finalize_business_document(
+                    actor_membership=request.company_membership,
+                    document_type=SUPPLIER_TIMESHEET_ALIAS,
+                    document_variant=SUPPLIER_TIMESHEET_VARIANT,
+                    source_id=row["period_id"],
+                    supplier_code=row["supplier_code"],
+                    request=request,
+                )
+                created.append(serialize_document(document, include_snapshot=False))
+        return JsonResponse({"ok": True, "created": len(created), "documents": created})
+    except Exception as exc:
+        return _errors(exc)
+
+
 @require_http_methods(["GET"])
 @api_company_required
 def document_sources_api(request: HttpRequest) -> JsonResponse:
@@ -239,17 +304,24 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         elif workspace == "rental":
             if not _has_document_permission(membership, workspace, finalize=True):
                 raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
-            allowed_types = {DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT}
+            allowed_types = {DocumentType.RENTAL_TIMESHEET, SUPPLIER_TIMESHEET_ALIAS, DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE, DocumentType.SUPPLIER_PAYMENT_RECEIPT}
         else:
             raise ValidationError({"workspace": "Workspace must be internal or rental."})
 
         requested_type = request.GET.get("type", "").strip()
         if not requested_type:
             raise ValidationError({"type": "Choose a document type before searching source records."})
-        try:
-            document_type = DocumentType(requested_type).value
-        except ValueError as exc:
-            raise ValidationError({"type": "Unsupported document type."}) from exc
+        if requested_type == SUPPLIER_TIMESHEET_ALIAS:
+            document_type = SUPPLIER_TIMESHEET_ALIAS
+            stored_document_type = DocumentType.RENTAL_TIMESHEET
+            document_variant = SUPPLIER_TIMESHEET_VARIANT
+        else:
+            try:
+                document_type = DocumentType(requested_type).value
+            except ValueError as exc:
+                raise ValidationError({"type": "Unsupported document type."}) from exc
+            stored_document_type = document_type
+            document_variant = ""
         if document_type not in allowed_types:
             raise PermissionDenied("This document type is not available in the selected workspace.")
 
@@ -278,13 +350,22 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
             DocumentType.INTERNAL_TIMESHEET: "internal_payroll.attendanceperiod",
             DocumentType.SALARY_PAYMENT_RECEIPT: "internal_payroll.salarypaymentrow",
             DocumentType.RENTAL_TIMESHEET: "rental_manpower.rentaltimesheetperiod",
+            SUPPLIER_TIMESHEET_ALIAS: "rental_manpower.rentaltimesheetperiod:supplier",
             DocumentType.SUPPLIER_SETTLEMENT: "rental_manpower.suppliersettlement",
             DocumentType.SUPPLIER_INVOICE: "rental_manpower.suppliersettlement",
             DocumentType.SUPPLIER_PAYMENT_RECEIPT: "rental_manpower.supplierpayment",
         }
-        existing = BusinessDocument.objects.for_company(request.company).filter(
-            document_type=document_type, source_model=source_model_by_type[document_type], source_id=OuterRef("pk")
-        )
+        if document_type == SUPPLIER_TIMESHEET_ALIAS:
+            existing = BusinessDocument.objects.for_company(request.company).filter(
+                document_type=DocumentType.RENTAL_TIMESHEET,
+                source_id=OuterRef("period_id"),
+                entity_reference=OuterRef("supplier_code"),
+                snapshot__document_variant=SUPPLIER_TIMESHEET_VARIANT,
+            )
+        else:
+            existing = BusinessDocument.objects.for_company(request.company).filter(
+                document_type=stored_document_type, source_model=source_model_by_type[document_type], source_id=OuterRef("pk")
+            )
         start = (page - 1) * page_size
         stop = start + page_size + 1
         rows = []
@@ -328,6 +409,41 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
                 qs = qs.filter(Q(project__code__icontains=query) | Q(project__name__icontains=query))
             rows = qs.annotate(_finalized=Exists(existing)).filter(_finalized=False).select_related("project").order_by("project__code")[start:stop]
             serialize = lambda row: {"type": document_type, "sourceId": str(row.id), "label": f"{row.project.code} · {row.project.name}", "status": "Locked", "amount": None}
+        elif document_type == SUPPLIER_TIMESHEET_ALIAS:
+            from apps.rental_manpower.models import RentalTimesheetEntry, RentalTimesheetStatus
+            qs = RentalTimesheetEntry.objects.for_company(request.company).filter(
+                period__period_start=period_start,
+                period__status=RentalTimesheetStatus.LOCKED,
+            )
+            allowed_projects = project_scope_ids(membership)
+            if allowed_projects is not None:
+                qs = qs.filter(period__project_id__in=allowed_projects) if allowed_projects else qs.none()
+            if query:
+                qs = qs.filter(
+                    Q(supplier_code__icontains=query) | Q(supplier_name__icontains=query)
+                    | Q(project_code__icontains=query) | Q(project_name__icontains=query)
+                )
+            qs = (
+                qs.values("period_id", "supplier_code", "supplier_name", "project_code", "project_name")
+                .distinct()
+                .annotate(_finalized=Exists(existing))
+                .filter(_finalized=False)
+                .order_by("supplier_code", "project_code")
+            )
+            rows = qs[start:stop]
+            serialize = lambda row: {
+                "type": SUPPLIER_TIMESHEET_ALIAS,
+                "storedType": DocumentType.RENTAL_TIMESHEET,
+                "documentVariant": SUPPLIER_TIMESHEET_VARIANT,
+                "sourceId": str(row["period_id"]),
+                "label": f"{row['supplier_name']} · {row['project_name']}",
+                "status": "Locked",
+                "amount": None,
+                "supplierCode": row["supplier_code"],
+                "supplierName": row["supplier_name"],
+                "projectCode": row["project_code"],
+                "projectName": row["project_name"],
+            }
         elif document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
             from apps.rental_manpower.models import SupplierSettlement, RentalSettlementStatus
             final_settlements = [RentalSettlementStatus.APPROVED, RentalSettlementStatus.PAYMENT_PROCESSING, RentalSettlementStatus.PARTIALLY_PAID, RentalSettlementStatus.PAID, RentalSettlementStatus.CLOSED]
@@ -361,7 +477,7 @@ def document_sources_api(request: HttpRequest) -> JsonResponse:
         return JsonResponse({
             "ok": True,
             "sources": sources,
-            "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "query": query, "type": document_type, "requiresSearch": requires_search, "employeeScoped": scoped_employee_id is not None},
+            "meta": {"page": page, "pageSize": page_size, "hasPrevious": page > 1, "hasNext": has_next, "query": query, "type": document_type, "storedType": stored_document_type, "documentVariant": document_variant, "requiresSearch": requires_search, "employeeScoped": scoped_employee_id is not None},
         })
     except Exception as exc:
         return _errors(exc)

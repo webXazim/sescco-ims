@@ -43,6 +43,13 @@ for key in ("salary_slip_supplier_fields", "internal_timesheet_supplier_fields",
     if type_fields.get(key) is not False:
         fail(f"supplier fields leaked into {key}")
 
+rental_docs = contract.get("rental_supplier_documents") or {}
+for key in ("supplier_timesheet_statement", "supplier_timesheet_per_supplier_project", "batch_supplier_timesheets", "batch_settlement_statements", "supplier_invoice_received_from_settlement", "supplier_payment_advice_from_paid_payment"):
+    if rental_docs.get(key) is not True:
+        fail(f"rental supplier document guarantee changed: {key}")
+if rental_docs.get("supplier_timesheet_source") != "locked_project_timesheet_supplier_scope":
+    fail("Supplier Timesheet source authority changed")
+
 api = text("apps/documents/api.py")
 for marker in (
     'raw_employee_id = request.GET.get("employee_id", "").strip()',
@@ -55,6 +62,8 @@ for marker in (
     'stop = start + page_size + 1',
     'Supplier invoice file is required.',
     'def batch_supplier_settlement_statements_api',
+    'def batch_supplier_timesheet_statements_api',
+    'SUPPLIER_TIMESHEET_ALIAS',
 ):
     if marker not in api:
         fail(f"backend employee-context source marker missing: {marker}")
@@ -78,6 +87,8 @@ for marker in (
     'name="document-invoice-file"',
     "appMultipartApi('/api/documents/'",
     "function createSupplierSettlementStatementBatch()",
+    "function createSupplierTimesheetStatementBatch()",
+    "supplier_timesheet:{label:'Supplier Timesheet Statement',code:'ST'}",
 ):
     if marker not in js:
         fail(f"frontend contextual-finalization marker missing: {marker}")
@@ -98,4 +109,4 @@ for method in (
     if f"def {method}" not in tests:
         fail(f"missing Django regression: {method}")
 
-print("Verified SESCCO MS 1.0.117 contextual Payroll document creation: employee-locked Salary Slip, Supplier Invoice Received attachment capture and batch settlement statements.")
+print("Verified SESCCO MS 1.0.117 contextual Payroll document creation: employee-locked Salary Slip, supplier-specific Timesheet Statements, Supplier Invoice Received capture, and batch supplier documents.")

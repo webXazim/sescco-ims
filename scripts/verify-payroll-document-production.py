@@ -36,7 +36,7 @@ for key in (
     "supplier_invoice_attachment_required", "supplier_invoice_attachment_hash_verified",
     "supplier_payment_requires_invoice_before_first_payment",
     "payment_payable_uses_invoice_total_including_vat", "supplier_payment_advice_generated_by_sescco",
-    "batch_settlement_statements",
+    "batch_settlement_statements", "batch_supplier_timesheets",
 ):
     if workflow.get(key) is not True:
         fail(f"supplier invoice workflow guarantee changed: {key}")
@@ -44,6 +44,18 @@ if workflow.get("direction") != "supplier_to_sescco" or workflow.get("sescco_gen
     fail("supplier invoice direction must remain Supplier -> SESCCO, not buyer-issued")
 if workflow.get("schema_change") is not False:
     fail("supplier invoice-received hotfix must not add a database schema change")
+supplier_docs = contract.get("supplier_document_workflow") or {}
+for key in (
+    "project_timesheet_internal", "supplier_timesheet_statement", "supplier_timesheet_excludes_commercial_rates",
+    "batch_supplier_timesheets", "supplier_settlement_statement", "supplier_invoice_received",
+    "supplier_payment_advice", "separate_document_per_supplier_project_period", "stored_document_types_unchanged",
+):
+    if supplier_docs.get(key) is not True:
+        fail(f"supplier document workflow guarantee changed: {key}")
+if supplier_docs.get("supplier_timesheet_source") != "locked_project_timesheet_supplier_scope":
+    fail("Supplier Timesheet Statement source authority changed")
+if supplier_docs.get("schema_change") is not False:
+    fail("supplier document expansion must remain schema-free")
 
 asset_rel = contract["supplier_invoice_letterhead"]["asset"]
 asset = ROOT / asset_rel
@@ -65,6 +77,11 @@ for marker in (
     'title = f"Supplier Invoice Received · {entity_name}"',
     'title = f"Supplier Settlement Statement · {entity_name}"',
     'title = f"Supplier Payment Advice · {entity_name}"',
+    'SUPPLIER_TIMESHEET_ALIAS = "supplier_timesheet"',
+    'def _supplier_timesheet_snapshot(period: RentalTimesheetPeriod, *, supplier_code: str)',
+    'source_model = f"rental_manpower.rentaltimesheetperiod:supplier:{normalized_supplier_code}"',
+    "title = f\"Supplier Timesheet Statement · {entity_name} · {snapshot['project']['name']}\"",
+    'key, prefix = "document.supplier_timesheet", "STS-"',
     'branding_mode = "letterhead"',
     'snapshot["invoice"]["total_in_words"] = money_to_words',
     '"attachment": invoice.get("attachment")',
@@ -92,6 +109,11 @@ for marker in (
     'Supplier invoice file is required.',
     'supplier-invoices/{request.company.id}/',
     'def batch_supplier_settlement_statements_api',
+    'def batch_supplier_timesheet_statements_api',
+    'SUPPLIER_TIMESHEET_ALIAS',
+    'RentalTimesheetEntry.objects.for_company(request.company)',
+    'source_id=OuterRef("period_id")',
+    'entity_reference=OuterRef("supplier_code")',
 ):
     if marker not in api:
         fail(f"bounded document source lookup marker missing: {marker}")
@@ -108,10 +130,15 @@ for marker in (
     "supplier_invoice:{label:'Supplier Invoice Received',code:'IR'}",
     "supplier_settlement:{label:'Supplier Settlement Statement',code:'SS'}",
     "supplier_payment_receipt:{label:'Supplier Payment Advice',code:'PA'}",
+    "supplier_timesheet:{label:'Supplier Timesheet Statement',code:'ST'}",
+    "rental_timesheet:{label:'Project Timesheet',code:'PT'}",
     'name="document-invoice-file"',
     "appMultipartApi('/api/documents/'",
     "data-document-batch-settlements",
     "function createSupplierSettlementStatementBatch()",
+    "function createSupplierTimesheetStatementBatch()",
+    "data-document-batch-timesheets",
+    "if(source.supplierCode)body.supplier_code=source.supplierCode",
     "return `${periodMonths[Math.max(0,Math.min(11,month-1))]} ${year}`;",
 ):
     if marker not in js:
@@ -139,7 +166,8 @@ for marker in (
     "document.document_type == 'supplier_invoice'",
     "snapshot.invoice.total_in_words",
     "snapshot.payment.amount_in_words",
-    "Rental Timesheet · {{ document.document_number }}",
+    "Project Timesheet · {{ document.document_number }}",
+    "Supplier Timesheet Statement · {{ document.document_number }}",
     "Supplier Settlement Statement · {{ document.document_number }}",
     "Supplier Payment Advice · {{ document.document_number }}",
     "row.supplier_invoice_number",
@@ -172,11 +200,11 @@ for marker in ("def _supplier_invoice_payable", "Record the supplier invoice bef
     if marker not in rental_service:
         fail(f"supplier payment invoice authority missing: {marker}")
 nginx = text("nginx/default.conf")
-if 'location ~ ^/documents/[0-9a-fA-F-]+/print/$' not in nginx or 'X-Frame-Options "SAMEORIGIN"' not in nginx:
+if 'location ~ ^/documents/[0-9a-fA-F-]+/print/$' not in nginx or 'X-Frame-Options "SAMEORIGIN"' not in nginx or 'proxy_hide_header X-Frame-Options;' not in nginx:
     fail("same-origin document preview gateway exception is missing")
 
 print(
     "Verified Payroll document production contract: 7 immutable document types, "
     "canonical SESCCO A4 first-page headpad, plain continuation pages, shared preview/print route, "
-    "Supplier -> SESCCO invoice-received authority, batch settlement statements and invoice-gated payments."
+    "supplier-specific Timesheet Statements, Supplier -> SESCCO invoice-received authority, batch supplier documents and invoice-gated payments."
 )

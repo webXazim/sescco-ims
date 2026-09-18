@@ -1,6 +1,6 @@
 {
   "release": "1.0.117",
-  "purpose": "Production Payroll documents and supplier invoice-received workflow",
+  "purpose": "Production Payroll documents, supplier-specific Timesheet Statements, and Supplier Invoice Received workflow",
   "document_types": [
     "salary_slip",
     "internal_timesheet",
@@ -37,7 +37,8 @@
     "plain_continuation_pages": true,
     "preview_uses_print_route": true,
     "supplier_invoice_received_is_internal_match_record": true,
-    "payment_advice_references_supplier_invoice": true
+    "payment_advice_references_supplier_invoice": true,
+    "supplier_timesheet_statement_per_supplier_project": true
   },
   "supplier_invoice_workflow": {
     "direction": "supplier_to_sescco",
@@ -50,6 +51,30 @@
     "payment_payable_uses_invoice_total_including_vat": true,
     "supplier_payment_advice_generated_by_sescco": true,
     "batch_settlement_statements": true,
+    "schema_change": false,
+    "batch_supplier_timesheets": true
+  },
+  "creation_types": [
+    "salary_slip",
+    "internal_timesheet",
+    "salary_payment_receipt",
+    "rental_timesheet",
+    "supplier_timesheet",
+    "supplier_settlement",
+    "supplier_invoice",
+    "supplier_payment_receipt"
+  ],
+  "supplier_document_workflow": {
+    "project_timesheet_internal": true,
+    "supplier_timesheet_statement": true,
+    "supplier_timesheet_source": "locked_project_timesheet_supplier_scope",
+    "supplier_timesheet_excludes_commercial_rates": true,
+    "batch_supplier_timesheets": true,
+    "supplier_settlement_statement": true,
+    "supplier_invoice_received": true,
+    "supplier_payment_advice": true,
+    "separate_document_per_supplier_project_period": true,
+    "stored_document_types_unchanged": true,
     "schema_change": false
   }
 }

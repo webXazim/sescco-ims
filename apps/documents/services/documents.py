@@ -46,6 +46,11 @@ _FINAL_PAYROLL = {
     PayrollRunStatus.PAID,
     PayrollRunStatus.CLOSED,
 }
+SUPPLIER_TIMESHEET_ALIAS = "supplier_timesheet"
+PROJECT_TIMESHEET_VARIANT = "project_timesheet"
+SUPPLIER_TIMESHEET_VARIANT = "supplier_timesheet"
+
+
 _FINAL_SETTLEMENT = {
     RentalSettlementStatus.APPROVED,
     RentalSettlementStatus.PAYMENT_PROCESSING,
@@ -244,6 +249,7 @@ def _rental_timesheet_snapshot(period: RentalTimesheetPeriod) -> tuple[dict[str,
     overtime = list(period.overtime_entries.select_related("worker").order_by("worker__worker_number"))
     snapshot = {
         "kind": DocumentType.RENTAL_TIMESHEET,
+        "document_variant": PROJECT_TIMESHEET_VARIANT,
         "period_start": period.period_start.isoformat(),
         "period_end": period.period_end.isoformat(),
         "revision": period.revision,
@@ -277,6 +283,70 @@ def _rental_timesheet_snapshot(period: RentalTimesheetPeriod) -> tuple[dict[str,
         ],
     }
     return snapshot, period.project.code, period.project.name, period.period_start, f"Timesheet {period.project.code} {period.period_start:%Y-%m}"
+
+
+def _supplier_timesheet_snapshot(period: RentalTimesheetPeriod, *, supplier_code: str) -> tuple[dict[str, Any], str, str, date, str]:
+    if period.status != RentalTimesheetStatus.LOCKED:
+        raise ValidationError("Supplier Timesheet Statements require a Locked project timesheet.")
+    supplier_code = str(supplier_code or "").strip().upper()
+    if not supplier_code:
+        raise ValidationError({"supplier_code": "Supplier is required for a Supplier Timesheet Statement."})
+    entries = list(
+        period.entries.select_related("worker")
+        .filter(supplier_code__iexact=supplier_code)
+        .order_by("worker__worker_number", "work_date")
+    )
+    overtime = list(
+        period.overtime_entries.select_related("worker")
+        .filter(supplier_code__iexact=supplier_code)
+        .order_by("worker__worker_number")
+    )
+    if not entries and not overtime:
+        raise ValidationError("The selected supplier has no rows in this locked project timesheet.")
+    supplier_name = next((item.supplier_name for item in entries if item.supplier_name), "") or next((item.supplier_name for item in overtime if item.supplier_name), "") or supplier_code
+    worker_ids = {str(item.worker_id) for item in entries} | {str(item.worker_id) for item in overtime}
+    regular_hours = sum((item.regular_hours for item in entries), Decimal("0"))
+    overtime_hours = sum((item.hours for item in overtime), Decimal("0"))
+    snapshot = {
+        "kind": DocumentType.RENTAL_TIMESHEET,
+        "document_variant": SUPPLIER_TIMESHEET_VARIANT,
+        "period_start": period.period_start.isoformat(),
+        "period_end": period.period_end.isoformat(),
+        "revision": period.revision,
+        "project": {"code": period.project.code, "name": period.project.name},
+        "supplier": {"code": supplier_code, "name": supplier_name},
+        "worker_count": len(worker_ids),
+        "regular_hours": _hours(regular_hours),
+        "overtime_hours": _hours(overtime_hours),
+        "entries": [
+            {
+                "worker_number": item.worker.worker_number,
+                "worker_name": item.worker.full_name,
+                "supplier_code": item.supplier_code,
+                "supplier_name": item.supplier_name,
+                "date": item.work_date.isoformat(),
+                "hours": _hours(item.regular_hours),
+                "code": item.code,
+                "note": item.note,
+                "trade": item.trade,
+                "rate_type": item.rate_type,
+            }
+            for item in entries
+        ],
+        "overtime": [
+            {
+                "worker_number": item.worker.worker_number,
+                "worker_name": item.worker.full_name,
+                "supplier_code": item.supplier_code,
+                "supplier_name": item.supplier_name,
+                "trade": item.trade,
+                "hours": _hours(item.hours),
+            }
+            for item in overtime
+        ],
+    }
+    source_ref = f"Supplier Timesheet {supplier_code} {period.project.code} {period.period_start:%Y-%m}"
+    return snapshot, supplier_code, supplier_name, period.period_start, source_ref
 
 
 def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, Any] | None = None) -> tuple[dict[str, Any], str, str, date, str]:
@@ -408,7 +478,7 @@ def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[s
     return snapshot, payment.supplier_code, payment.supplier_name, period_start, payment.payment_number
 
 
-def _load_source(*, company, document_type: str, source_id, invoice: dict[str, Any] | None = None):
+def _load_source(*, company, document_type: str, source_id, invoice: dict[str, Any] | None = None, document_variant: str = "", supplier_code: str = ""):
     if document_type == DocumentType.SALARY_SLIP:
         source = PayrollRunLine.objects.for_company(company).select_related("run", "employee").prefetch_related("components", "adjustments").get(pk=source_id)
         return DocumentWorkspace.INTERNAL, source, _salary_slip_snapshot(source)
@@ -420,6 +490,8 @@ def _load_source(*, company, document_type: str, source_id, invoice: dict[str, A
         return DocumentWorkspace.INTERNAL, source, _salary_payment_receipt_snapshot(source)
     if document_type == DocumentType.RENTAL_TIMESHEET:
         source = RentalTimesheetPeriod.objects.for_company(company).select_related("project").prefetch_related("entries__worker", "overtime_entries__worker").get(pk=source_id)
+        if document_variant == SUPPLIER_TIMESHEET_VARIANT:
+            return DocumentWorkspace.RENTAL, source, _supplier_timesheet_snapshot(source, supplier_code=supplier_code)
         return DocumentWorkspace.RENTAL, source, _rental_timesheet_snapshot(source)
     if document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
         source = SupplierSettlement.objects.for_company(company).select_related("supplier", "project").prefetch_related("lines__rate_lines", "lines__adjustment_lines").get(pk=source_id)
@@ -517,15 +589,23 @@ def finalize_business_document(
     document_type: str,
     source_id,
     invoice: dict[str, Any] | None = None,
+    document_variant: str = "",
+    supplier_code: str = "",
     request=None,
 ) -> BusinessDocument:
     company = actor_membership.company
+    requested_type = str(document_type or "").strip()
+    if requested_type == SUPPLIER_TIMESHEET_ALIAS:
+        requested_type = DocumentType.RENTAL_TIMESHEET
+        document_variant = SUPPLIER_TIMESHEET_VARIANT
+    elif requested_type == DocumentType.RENTAL_TIMESHEET and not document_variant:
+        document_variant = PROJECT_TIMESHEET_VARIANT
     try:
-        normalized_type = DocumentType(document_type).value
+        normalized_type = DocumentType(requested_type).value
     except ValueError as exc:
         raise ValidationError({"document_type": "Unsupported document type."}) from exc
 
-    workspace, source, payload = _load_source(company=company, document_type=normalized_type, source_id=source_id, invoice=invoice)
+    workspace, source, payload = _load_source(company=company, document_type=normalized_type, source_id=source_id, invoice=invoice, document_variant=document_variant, supplier_code=supplier_code)
     required = AccessPermission.INTERNAL_DOCUMENTS_FINALIZE if workspace == DocumentWorkspace.INTERNAL else AccessPermission.RENTAL_DOCUMENTS_FINALIZE
     if not (membership_has_permission(actor_membership, required) or membership_has_permission(actor_membership, AccessPermission.SHARED_DOCUMENTS_FINALIZE)):
         raise PermissionDenied("Your access profile cannot create documents for this workspace.")
@@ -533,6 +613,9 @@ def finalize_business_document(
 
     snapshot, entity_ref, entity_name, period_start, source_reference = payload
     source_model = source._meta.label_lower
+    if normalized_type == DocumentType.RENTAL_TIMESHEET and document_variant == SUPPLIER_TIMESHEET_VARIANT:
+        normalized_supplier_code = str(entity_ref or supplier_code or "").strip().upper()
+        source_model = f"rental_manpower.rentaltimesheetperiod:supplier:{normalized_supplier_code}"
     existing = BusinessDocument.objects.for_company(company).filter(
         document_type=normalized_type,
         source_model=source_model,
@@ -604,13 +687,19 @@ def finalize_business_document(
         "updated_at": source.updated_at.isoformat(),
     })
     snapshot_fingerprint = _json_hash(snapshot)
-    key, prefix = _prefix(normalized_type)
+    if normalized_type == DocumentType.RENTAL_TIMESHEET and document_variant == SUPPLIER_TIMESHEET_VARIANT:
+        key, prefix = "document.supplier_timesheet", "STS-"
+    else:
+        key, prefix = _prefix(normalized_type)
     number = allocate_number(company=company, key=key, prefix=prefix, padding=7)
     title = production_document_label(normalized_type)
     if normalized_type == DocumentType.SALARY_SLIP:
         title = f"Salary Slip · {entity_name}"
     elif normalized_type == DocumentType.RENTAL_TIMESHEET:
-        title = f"Rental Timesheet · {entity_name}"
+        if document_variant == SUPPLIER_TIMESHEET_VARIANT:
+            title = f"Supplier Timesheet Statement · {entity_name} · {snapshot['project']['name']}"
+        else:
+            title = f"Project Timesheet · {entity_name}"
     elif normalized_type == DocumentType.SUPPLIER_SETTLEMENT:
         title = f"Supplier Settlement Statement · {entity_name}"
     elif normalized_type == DocumentType.SUPPLIER_INVOICE:
@@ -655,6 +744,7 @@ def finalize_business_document(
             "workspace": document.workspace,
             "source_model": document.source_model,
             "source_id": str(document.source_id),
+            "document_variant": document_variant or "",
         },
         request=request,
     )

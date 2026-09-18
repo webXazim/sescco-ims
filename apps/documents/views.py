@@ -42,11 +42,17 @@ def print_document(request, document_id):
         raise PermissionDenied("Your role cannot access this document.")
     if not verify_document_snapshot(document):
         raise PermissionDenied("Document integrity verification failed.")
+    snapshot = document.snapshot or {}
+    document_label = production_document_label(document.document_type)
+    if document.document_type == "rental_timesheet" and snapshot.get("document_variant") == "supplier_timesheet":
+        document_label = "Supplier Timesheet Statement"
+    elif document.document_type == "rental_timesheet":
+        document_label = "Project Timesheet"
     return render(request, "documents/print.html", {
         "document": document,
-        "snapshot": document.snapshot,
+        "snapshot": snapshot,
         "headpad_url": _document_headpad_url(document),
-        "document_label": production_document_label(document.document_type),
+        "document_label": document_label,
         "embed": request.GET.get("embed") == "1",
     })
 

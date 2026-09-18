@@ -84,7 +84,14 @@ def documents_for_company(*, company, membership, workspace: str = "", query: st
     if period_start:
         qs = qs.filter(period_start=period_start)
     if document_type:
-        qs = qs.filter(document_type=document_type)
+        if document_type == "supplier_timesheet":
+            qs = qs.filter(document_type=DocumentType.RENTAL_TIMESHEET, snapshot__document_variant="supplier_timesheet")
+        elif document_type == DocumentType.RENTAL_TIMESHEET:
+            qs = qs.filter(document_type=DocumentType.RENTAL_TIMESHEET).filter(
+                Q(snapshot__document_variant__isnull=True) | Q(snapshot__document_variant="") | Q(snapshot__document_variant="project_timesheet")
+            )
+        else:
+            qs = qs.filter(document_type=document_type)
     if entity_reference:
         qs = qs.filter(entity_reference__iexact=entity_reference.strip())
     q = query.strip()
@@ -101,11 +108,17 @@ def documents_for_company(*, company, membership, workspace: str = "", query: st
 
 
 def serialize_document(document: BusinessDocument, *, include_snapshot: bool = False) -> dict[str, object]:
+    variant = str(((document.snapshot or {}).get("document_variant") or "")).strip()
+    if document.document_type == DocumentType.RENTAL_TIMESHEET:
+        type_label = "Supplier Timesheet Statement" if variant == "supplier_timesheet" else "Project Timesheet"
+    else:
+        type_label = production_document_label(document.document_type)
     data: dict[str, object] = {
         "id": str(document.id),
         "workspace": document.workspace,
         "type": document.document_type,
-        "typeLabel": production_document_label(document.document_type),
+        "documentVariant": variant,
+        "typeLabel": type_label,
         "number": document.document_number,
         "title": document.title,
         "status": document.get_status_display(),
@@ -155,6 +168,12 @@ def document_page_context(
         row["document_type"]: row["count"]
         for row in base.values("document_type").annotate(count=Count("id")).order_by()
     }
+    supplier_timesheet_count = base.filter(
+        document_type=DocumentType.RENTAL_TIMESHEET, snapshot__document_variant="supplier_timesheet"
+    ).count()
+    if supplier_timesheet_count:
+        type_counts["supplier_timesheet"] = supplier_timesheet_count
+        type_counts[DocumentType.RENTAL_TIMESHEET] = max(0, int(type_counts.get(DocumentType.RENTAL_TIMESHEET, 0)) - supplier_timesheet_count)
     periods = [
         value.strftime("%Y-%m")
         for value in base.exclude(period_start__isnull=True)

@@ -1,6 +1,6 @@
 {
   "release": "1.0.117",
-  "purpose": "Type-aware Payroll document creation with employee-scoped salary slips and supplier invoice-received capture.",
+  "purpose": "Type-aware Payroll document creation with employee-scoped salary slips and supplier-specific Rental documents.",
   "employee_salary_slip": {
     "document_type_locked": true,
     "employee_locked": true,
@@ -36,6 +36,10 @@
   "rental_supplier_documents": {
     "batch_settlement_statements": true,
     "supplier_invoice_received_from_settlement": true,
-    "supplier_payment_advice_from_paid_payment": true
+    "supplier_payment_advice_from_paid_payment": true,
+    "supplier_timesheet_statement": true,
+    "supplier_timesheet_per_supplier_project": true,
+    "batch_supplier_timesheets": true,
+    "supplier_timesheet_source": "locked_project_timesheet_supplier_scope"
   }
 }
