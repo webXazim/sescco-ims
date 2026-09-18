@@ -72,6 +72,15 @@ python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py
 python3 scripts/verify-payroll-document-finalization-context.py
 python3 scripts/verify-payroll-document-production.py
+python3 scripts/verify-payroll-flexible-document-generator.py
+python3 scripts/verify-payroll-document-generation-batch-audit.py
+python3 scripts/verify-payroll-document-delivery.py
+python3 scripts/verify-payroll-outbound-delivery.py
+python3 scripts/verify-payroll-delivery-link-lifecycle.py
+python3 scripts/verify-payroll-bulk-document-delivery.py
+python3 scripts/verify-payroll-bulk-document-dispatch.py
+python3 scripts/verify-payroll-delivery-operations.py
+python3 scripts/verify-payroll-document-system-closure.py
 python3 scripts/verify-payroll-output-e2e.py
 python3 scripts/verify-full-demo-seed.py
 python3 scripts/verify-payroll-scale-seed.py

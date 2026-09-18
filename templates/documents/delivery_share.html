@@ -1,0 +1,24 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>{{ pack.object_label }} — SESCCO Documents</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4f6;color:#111;font-family:Arial,Helvetica,sans-serif}.shell{max-width:980px;margin:0 auto;padding:24px}.paper{position:relative;min-height:520px;background:#fff;border:1px solid #ddd;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.08)}.headpad{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.16;pointer-events:none}.content{position:relative;z-index:1;padding:72px 52px 48px}.top{display:flex;justify-content:space-between;gap:20px;padding-bottom:14px;border-bottom:2px solid #111}.top span,.meta span{display:block;color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.top strong{display:block;margin-top:3px;font-size:18px}.status{font-weight:700}.supplier{margin:24px 0 18px}.supplier h1{margin:0 0 5px;font-size:24px}.supplier p{margin:0;color:#666}.meta{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #ddd}.meta>div{padding:11px 12px;border-right:1px solid #ddd}.meta>div:last-child{border-right:0}.meta strong{display:block;margin-top:4px;font-size:13px}.documents{margin-top:22px;border:1px solid #ddd;background:#fff}.documents header{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid #ddd;background:#fafafa}.documents header strong{font-size:13px}.row{display:grid;grid-template-columns:minmax(0,1fr) 150px 110px;gap:12px;align-items:center;padding:11px 13px;border-bottom:1px solid #eee}.row:last-child{border-bottom:0}.row>div{min-width:0}.row strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row small{display:block;margin-top:3px;color:#6b7280;font-size:11px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 13px;border:1px solid #bbb;border-radius:6px;background:#fff;color:#111;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer}.btn.primary{background:#111;color:#fff;border-color:#111}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.ack{margin-top:18px;padding:13px 15px;border:1px solid #cbd5e1;background:#f8fafc}.ack strong{font-size:13px}.ack p{margin:4px 0 0;color:#475569;font-size:12px}.foot{display:flex;justify-content:space-between;gap:15px;margin-top:18px;color:#6b7280;font-size:11px}@media(max-width:720px){.shell{padding:0}.paper{border:0;box-shadow:none}.content{padding:34px 18px}.meta{grid-template-columns:1fr}.meta>div{border-right:0;border-bottom:1px solid #ddd}.meta>div:last-child{border-bottom:0}.row{grid-template-columns:1fr}.row .btn{width:100%}.top{flex-direction:column}.actions{flex-direction:column}.actions .btn{width:100%}}
+</style>
+</head>
+<body>
+<div class="shell"><main class="paper"><img class="headpad" src="{{ headpad_url }}" alt=""><div class="content">
+<header class="top"><div><span>Supplier document pack</span><strong>{{ pack.object_label }}</strong></div><div><span>Status</span><strong class="status">{% if delivered %}Delivered{% else %}Sent{% endif %}</strong></div></header>
+<section class="supplier"><h1>{{ metadata.supplier_name }}</h1><p>{{ metadata.supplier_code }}</p></section>
+<section class="meta"><div><span>Recipient</span><strong>{{ metadata.recipient_name }}</strong></div><div><span>Issued</span><strong>{{ pack.created_at|date:"d M Y H:i" }}</strong></div><div><span>Access expires</span><strong>{{ expires_at|date:"d M Y H:i" }}</strong></div><div><span>Reference</span><strong>{{ metadata.reference|default:"—" }}</strong></div></section>
+<section class="documents"><header><strong>Documents</strong><span>{{ documents|length }}</span></header>{% for document in documents %}<div class="row"><div><strong>{{ document.title }}</strong><small>{{ document.document_number }}{% if document.period_start %} · {{ document.period_start|date:"F Y" }}{% endif %}</small></div><span>{{ document.source_reference|default:"—" }}</span><a class="btn" target="_blank" rel="noopener" href="{% url 'documents:delivery-pack-shared-document-print' pack.id token document.id %}">Open</a></div>{% endfor %}</section>
+{% if metadata.note %}<div class="ack"><strong>Note</strong><p>{{ metadata.note }}</p></div>{% endif %}
+{% if delivered %}<div class="ack"><strong>Receipt acknowledged</strong><p>{{ delivered.created_at|date:"d M Y H:i" }}</p></div>{% else %}<form method="post" action="{% url 'documents:delivery-pack-share-acknowledge' pack.id token %}" class="actions">{% csrf_token %}<button class="btn primary" type="submit">Acknowledge Receipt</button></form>{% endif %}
+<div class="foot"><span>{{ pack.object_label }}</span><span>SESCCO</span></div>
+</div></main></div>
+</body>
+</html>

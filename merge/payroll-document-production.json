@@ -35,10 +35,12 @@
     "timesheet_overtime_visible": true,
     "headpad_first_page_only": true,
     "plain_continuation_pages": true,
-    "preview_uses_print_route": true,
     "supplier_invoice_received_is_internal_match_record": true,
     "payment_advice_references_supplier_invoice": true,
-    "supplier_timesheet_statement_per_supplier_project": true
+    "supplier_timesheet_statement_per_supplier_project": true,
+    "native_first_page_preview": true,
+    "preview_iframe_disabled": true,
+    "full_print_opens_separately": true
   },
   "supplier_invoice_workflow": {
     "direction": "supplier_to_sescco",

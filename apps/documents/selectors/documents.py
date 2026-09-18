@@ -9,6 +9,7 @@ from apps.accounts.access_policy import branch_scope_ids, membership_has_permiss
 
 from ..models import BusinessDocument, DocumentType, DocumentWorkspace, production_document_label
 from apps.internal_payroll.models import PayrollRunLine, SalaryPaymentRow
+from apps.core.models import AuditArea, AuditEvent
 from apps.rental_manpower.models import RentalTimesheetPeriod, SupplierPayment, SupplierPaymentAllocation, SupplierSettlement
 from ..services import verify_document_snapshot
 
@@ -107,7 +108,7 @@ def documents_for_company(*, company, membership, workspace: str = "", query: st
     return qs
 
 
-def serialize_document(document: BusinessDocument, *, include_snapshot: bool = False) -> dict[str, object]:
+def serialize_document(document: BusinessDocument, *, include_snapshot: bool = False, delivery: dict[str, object] | None = None) -> dict[str, object]:
     variant = str(((document.snapshot or {}).get("document_variant") or "")).strip()
     if document.document_type == DocumentType.RENTAL_TIMESHEET:
         type_label = "Supplier Timesheet Statement" if variant == "supplier_timesheet" else "Project Timesheet"
@@ -133,6 +134,7 @@ def serialize_document(document: BusinessDocument, *, include_snapshot: bool = F
         "finalizedAt": document.finalized_at.isoformat(),
         "finalizedBy": (document.finalized_by.get_full_name().strip() or document.finalized_by.username) if document.finalized_by else "System",
         "integrityOk": verify_document_snapshot(document),
+        "delivery": delivery or {"status": "Not issued", "packNumber": "", "packEventId": "", "issuedAt": "", "deliveredAt": ""},
     }
     attachment = (((document.snapshot or {}).get("invoice") or {}).get("attachment") or {})
     if attachment.get("storage_key"):
@@ -181,9 +183,36 @@ def document_page_context(
         .distinct()
         .order_by("-period_start")
     ]
+    page_documents = list(page_obj.object_list)
+    delivery_by_document: dict[str, dict[str, object]] = {}
+    page_ids = [str(item.id) for item in page_documents]
+    if page_ids:
+        delivery_events = (
+            AuditEvent.objects.filter(
+                company=company, area=AuditArea.DOCUMENTS, object_type="documents.BusinessDocument",
+                object_id__in=page_ids, action__in=["documents.delivery_prepared", "documents.delivery_sent", "documents.delivery_opened", "documents.delivery_delivered"],
+            )
+            .order_by("-created_at", "-id")
+        )
+        for event in delivery_events:
+            if event.object_id in delivery_by_document:
+                continue
+            metadata = event.metadata or {}
+            delivered = event.action == "documents.delivery_delivered"
+            opened = event.action == "documents.delivery_opened"
+            sent = event.action == "documents.delivery_sent"
+            delivery_by_document[event.object_id] = {
+                "status": "Delivered" if delivered else ("Opened" if opened else ("Sent" if sent else "Prepared")),
+                "packNumber": metadata.get("pack_number", ""),
+                "packEventId": metadata.get("pack_event_id", ""),
+                "issuedAt": metadata.get("issued_at", ""),
+                "deliveredAt": event.created_at.isoformat() if delivered else "",
+                "recipient": metadata.get("recipient_name", ""),
+                "channel": metadata.get("channel", ""),
+            }
     return {
         "surface": "documents_page",
-        "documents": [serialize_document(item) for item in page_obj.object_list],
+        "documents": [serialize_document(item, delivery=delivery_by_document.get(str(item.id))) for item in page_documents],
         "summary": {"count": base.count(), "typeCounts": type_counts},
         "filters": {"periods": periods, "statuses": ["Final"]},
         "meta": {

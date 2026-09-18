@@ -87,6 +87,12 @@ python3 "${PROJECT_ROOT}/scripts/verify-payroll-final-browser-certification.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-report-performance.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-document-finalization-context.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-document-production.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-flexible-document-generator.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-delivery-link-lifecycle.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-bulk-document-delivery.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-bulk-document-dispatch.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-delivery-operations.py"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-document-system-closure.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-production-e2e.py"
 
 run_manage() {

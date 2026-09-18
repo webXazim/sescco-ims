@@ -4,17 +4,23 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.files.storage import default_storage
+from django.db import transaction
 from django.http import FileResponse, Http404
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
-from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import company_access_required
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
+from apps.core.models import AuditArea, AuditEvent
+from apps.core.services.audit import record_audit_event
 
 from .models import BusinessDocument, production_document_label
+from .selectors import documents_for_company
 from .services import verify_document_snapshot
+from .delivery import resolve_delivery_share
 import hashlib
 
 
@@ -35,7 +41,6 @@ def _can_view_document(membership, document) -> bool:
 
 @login_required
 @company_access_required
-@xframe_options_sameorigin
 def print_document(request, document_id):
     document = get_object_or_404(BusinessDocument.objects.for_company(request.company), pk=document_id)
     if not _can_view_document(request.company_membership, document):
@@ -53,8 +58,174 @@ def print_document(request, document_id):
         "snapshot": snapshot,
         "headpad_url": _document_headpad_url(document),
         "document_label": document_label,
-        "embed": request.GET.get("embed") == "1",
     })
+
+
+
+@login_required
+@company_access_required
+def print_delivery_pack(request, pack_event_id):
+    if not (membership_has_permission(request.company_membership, AccessPermission.RENTAL_DOCUMENTS_VIEW) or membership_has_permission(request.company_membership, AccessPermission.SHARED_DOCUMENTS_VIEW)):
+        raise PermissionDenied("Your role cannot access Rental Manpower documents.")
+    pack = get_object_or_404(
+        AuditEvent.objects.filter(company=request.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_issued", object_type="documents.DocumentDeliveryPack"),
+        pk=pack_event_id,
+    )
+    metadata = pack.metadata or {}
+    raw_ids = metadata.get("document_ids", [])
+    documents = list(
+        documents_for_company(company=request.company, membership=request.company_membership, workspace="rental")
+        .filter(pk__in=raw_ids).order_by("period_start", "document_type", "document_number")
+    )
+    if len(documents) != len(raw_ids):
+        raise PermissionDenied("One or more issue-pack documents are outside your current document scope.")
+    if any(not verify_document_snapshot(document) for document in documents):
+        raise PermissionDenied("Document integrity verification failed.")
+    delivered = AuditEvent.objects.filter(
+        company=request.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_delivered",
+        object_type="documents.DocumentDeliveryPack", object_id=pack.object_id,
+    ).order_by("-created_at").first()
+    return render(request, "documents/delivery_pack.html", {
+        "pack": pack,
+        "metadata": metadata,
+        "documents": documents,
+        "delivered": delivered,
+        "headpad_url": static("payroll/assets/sescco-company-document-headpad-v2.png"),
+    })
+
+
+def _share_documents(pack: AuditEvent) -> list[BusinessDocument]:
+    metadata = pack.metadata or {}
+    raw_ids = metadata.get("document_ids", [])
+    documents = list(
+        BusinessDocument.objects.for_company(pack.company)
+        .filter(pk__in=raw_ids)
+        .select_related("finalized_by")
+        .order_by("period_start", "document_type", "document_number")
+    )
+    if len(documents) != len(raw_ids):
+        raise PermissionDenied("This document pack is unavailable.")
+    if any(not verify_document_snapshot(document) for document in documents):
+        raise PermissionDenied("Document integrity verification failed.")
+    return documents
+
+
+def _share_delivered_event(pack: AuditEvent):
+    return AuditEvent.objects.filter(
+        company=pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_delivered",
+        object_type="documents.DocumentDeliveryPack", object_id=pack.object_id,
+    ).order_by("-created_at", "-id").first()
+
+
+def _record_share_opened(*, request, pack: AuditEvent, documents: list[BusinessDocument]) -> AuditEvent | None:
+    # Serialize the first-open transition on the immutable pack event. Two simultaneous
+    # supplier requests must not create duplicate Opened evidence for the same pack.
+    with transaction.atomic():
+        locked_pack = AuditEvent.objects.select_for_update().get(pk=pack.pk)
+        existing = AuditEvent.objects.filter(
+            company=locked_pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_opened",
+            object_type="documents.DocumentDeliveryPack", object_id=locked_pack.object_id,
+        ).order_by("-created_at", "-id").first()
+        if existing is not None:
+            return existing
+        metadata = locked_pack.metadata or {}
+        opened = record_audit_event(
+            company=locked_pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_opened",
+            object_type="documents.DocumentDeliveryPack", object_id=locked_pack.object_id, object_label=locked_pack.object_label,
+            request=request, metadata={"issue_event_id": str(locked_pack.id), "opened_at": timezone.now().isoformat()},
+        )
+        for document in documents:
+            record_audit_event(
+                company=locked_pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_opened",
+                object_type="documents.BusinessDocument", object_id=document.id, object_label=document.document_number,
+                request=request, metadata={
+                    "pack_event_id": str(locked_pack.id), "pack_number": locked_pack.object_label,
+                    "supplier_code": metadata.get("supplier_code", ""),
+                    "recipient_name": metadata.get("recipient_name", ""),
+                    "recipient_email": metadata.get("recipient_email", ""),
+                    "recipient_phone": metadata.get("recipient_phone", ""),
+                    "channel": metadata.get("channel", ""), "reference": metadata.get("reference", ""),
+                    "note": metadata.get("note", ""), "issued_at": metadata.get("issued_at", ""),
+                    "opened_event_id": str(opened.id), "delivery_source": "supplier_share",
+                },
+            )
+        return opened
+
+
+def delivery_pack_share(request, pack_event_id, token):
+    share = resolve_delivery_share(pack_event_id=pack_event_id, token=token)
+    pack = share.pack
+    documents = _share_documents(pack)
+    _record_share_opened(request=request, pack=pack, documents=documents)
+    response = render(request, "documents/delivery_share.html", {
+        "pack": pack, "metadata": pack.metadata or {}, "documents": documents,
+        "delivered": _share_delivered_event(pack), "token": token, "expires_at": share.expires_at,
+        "headpad_url": static("payroll/assets/sescco-company-document-headpad-v2.png"),
+    })
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    return response
+
+
+@require_POST
+def delivery_pack_share_acknowledge(request, pack_event_id, token):
+    share = resolve_delivery_share(pack_event_id=pack_event_id, token=token)
+    pack = share.pack
+    documents = _share_documents(pack)
+    # Direct acknowledgement still records Opened first, and the pack row serializes the
+    # Delivered transition so repeated/concurrent acknowledgements stay idempotent.
+    _record_share_opened(request=request, pack=pack, documents=documents)
+    with transaction.atomic():
+        locked_pack = AuditEvent.objects.select_for_update().get(pk=pack.pk)
+        existing = _share_delivered_event(locked_pack)
+        if existing is None:
+            metadata = locked_pack.metadata or {}
+            delivered_event = record_audit_event(
+                company=locked_pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_delivered",
+                object_type="documents.DocumentDeliveryPack", object_id=locked_pack.object_id, object_label=locked_pack.object_label,
+                request=request, metadata={"issue_event_id": str(locked_pack.id), "reference": "Supplier acknowledgement", "note": ""},
+            )
+            for document in documents:
+                record_audit_event(
+                    company=locked_pack.company, area=AuditArea.DOCUMENTS, action="documents.delivery_delivered",
+                    object_type="documents.BusinessDocument", object_id=document.id, object_label=document.document_number,
+                    request=request, metadata={
+                        "pack_event_id": str(locked_pack.id), "pack_number": locked_pack.object_label,
+                        "supplier_code": metadata.get("supplier_code", ""),
+                        "recipient_name": metadata.get("recipient_name", ""),
+                        "recipient_email": metadata.get("recipient_email", ""),
+                        "recipient_phone": metadata.get("recipient_phone", ""),
+                        "channel": metadata.get("channel", ""), "reference": "Supplier acknowledgement",
+                        "note": "", "issued_at": metadata.get("issued_at", ""),
+                        "delivered_event_id": str(delivered_event.id), "delivery_source": "supplier_share",
+                    },
+                )
+    return redirect("documents:delivery-pack-share", pack_event_id=pack_event_id, token=token)
+
+
+def delivery_pack_shared_document_print(request, pack_event_id, token, document_id):
+    share = resolve_delivery_share(pack_event_id=pack_event_id, token=token)
+    pack = share.pack
+    documents = _share_documents(pack)
+    document = next((row for row in documents if row.id == document_id), None)
+    if document is None:
+        raise PermissionDenied("This document is not part of the supplier issue pack.")
+    snapshot = document.snapshot or {}
+    document_label = production_document_label(document.document_type)
+    if document.document_type == "rental_timesheet" and snapshot.get("document_variant") == "supplier_timesheet":
+        document_label = "Supplier Timesheet Statement"
+    elif document.document_type == "rental_timesheet":
+        document_label = "Project Timesheet"
+    response = render(request, "documents/print.html", {
+        "document": document, "snapshot": snapshot,
+        "headpad_url": static("payroll/assets/sescco-company-document-headpad-v2.png"),
+        "document_label": document_label, "shared_view": True,
+    })
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    return response
 
 
 @login_required
@@ -122,6 +293,8 @@ def document_source_attachment(request, document_id):
     response = FileResponse(handle, content_type=descriptor.get("content_type") or "application/octet-stream")
     filename = Path(str(descriptor.get("original_name") or "supplier-invoice")).name.replace('"', '')
     response["Content-Disposition"] = f'inline; filename="{filename}"'
-    response["Cache-Control"] = "private, max-age=3600"
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
     response["X-Content-Type-Options"] = "nosniff"
+    response["X-Robots-Tag"] = "noindex, nofollow, noarchive"
     return response

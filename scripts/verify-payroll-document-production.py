@@ -28,8 +28,9 @@ if len(contract.get("document_types") or []) != 7:
 print_contract = contract.get("print_contract") or {}
 if not print_contract.get("headpad_first_page_only") or not print_contract.get("plain_continuation_pages"):
     fail("print contract must keep the company headpad on page one and use plain continuation pages")
-if not print_contract.get("preview_uses_print_route"):
-    fail("document preview must use the same print route as production printing")
+for key in ("native_first_page_preview", "preview_iframe_disabled", "full_print_opens_separately"):
+    if print_contract.get(key) is not True:
+        fail(f"production preview contract changed: {key}")
 workflow = contract.get("supplier_invoice_workflow") or {}
 for key in (
     "settlement_statement_generated_by_sescco", "supplier_invoice_received_record",
@@ -94,7 +95,7 @@ for marker in (
         fail(f"document service lost production marker: {marker}")
 
 views = text("apps/documents/views.py")
-for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")', '@xframe_options_sameorigin', 'request.GET.get("embed") == "1"', 'def document_source_attachment', 'Supplier invoice attachment integrity verification failed.'):
+for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")', 'def document_source_attachment', 'Supplier invoice attachment integrity verification failed.'):
     if marker not in views:
         fail(f"historical packaged-brand asset guard missing: {marker}")
 
@@ -124,9 +125,8 @@ for marker in (
     "function cancelDocumentSourceRequest()",
     "function setupDocumentSourceCombobox()",
     "key:'document-source',endpoint:'/api/documents/sources/'",
-    "function documentPrintPreview(doc)",
-    "/print/?embed=1",
-    "document-print-preview",
+    "function documentNativePreview(doc)",
+    "document-native-preview",
     "supplier_invoice:{label:'Supplier Invoice Received',code:'IR'}",
     "supplier_settlement:{label:'Supplier Settlement Statement',code:'SS'}",
     "supplier_payment_receipt:{label:'Supplier Payment Advice',code:'PA'}",
@@ -153,6 +153,8 @@ for forbidden in (
         fail(f"production Documents UI reintroduced explanatory copy: {forbidden}")
 if "return `${months[Math.max(0,Math.min(11,month-1))]} ${year}`;" in js:
     fail("document period label regressed to the out-of-scope months identifier")
+if "<iframe" in js or "/print/?embed=1" in js:
+    fail("Documents workspace must not embed the print route in an iframe")
 
 print_template = text("templates/documents/print.html")
 for marker in (
@@ -200,11 +202,13 @@ for marker in ("def _supplier_invoice_payable", "Record the supplier invoice bef
     if marker not in rental_service:
         fail(f"supplier payment invoice authority missing: {marker}")
 nginx = text("nginx/default.conf")
-if 'location ~ ^/documents/[0-9a-fA-F-]+/print/$' not in nginx or 'X-Frame-Options "SAMEORIGIN"' not in nginx or 'proxy_hide_header X-Frame-Options;' not in nginx:
-    fail("same-origin document preview gateway exception is missing")
+if 'add_header X-Frame-Options "DENY" always;' not in nginx:
+    fail("global clickjacking protection must remain DENY")
+if 'X-Frame-Options "SAMEORIGIN"' in nginx or 'proxy_hide_header X-Frame-Options;' in nginx:
+    fail("document iframe exception must not be present")
 
 print(
     "Verified Payroll document production contract: 7 immutable document types, "
-    "canonical SESCCO A4 first-page headpad, plain continuation pages, shared preview/print route, "
+    "canonical SESCCO A4 first-page headpad, plain continuation pages, native first-page preview with separate full print, "
     "supplier-specific Timesheet Statements, Supplier -> SESCCO invoice-received authority, batch supplier documents and invoice-gated payments."
 )

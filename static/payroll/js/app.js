@@ -8065,9 +8065,31 @@
     finally{state.documentLoadingId=null;}
   }
 
-  function documentPrintPreview(doc) {
+  function documentPreviewSummaryValues(snapshot={}) {
+    const rows=[];
+    const add=(label,value)=>{if(value!==undefined&&value!==null&&String(value).trim()!==''&&String(value)!=='0.00')rows.push([label,String(value)]);};
+    if(snapshot.employee){add('Employee',snapshot.employee.name||snapshot.employee.number);add('Employee ID',snapshot.employee.number);}
+    if(snapshot.supplier){add('Supplier',snapshot.supplier.name||snapshot.supplier.code);}
+    if(snapshot.project){add('Project',snapshot.project.name||snapshot.project.code);}
+    add('Workers',snapshot.worker_count||snapshot.totals?.workers);
+    add('Regular hours',snapshot.regular_hours||snapshot.totals?.regular_hours);
+    add('Overtime hours',snapshot.overtime_hours||snapshot.totals?.overtime_hours);
+    if(snapshot.invoice){add('Invoice',snapshot.invoice.supplier_invoice_number);add('Invoice total',snapshot.invoice.total?formatCurrency(snapshot.invoice.total):'');}
+    if(snapshot.payment){add('Payment',snapshot.payment.number||snapshot.payment.transaction_reference);add('Amount',snapshot.payment.amount?formatCurrency(snapshot.payment.amount):'');}
+    if(snapshot.totals?.net) add('Net',formatCurrency(snapshot.totals.net));
+    if(snapshot.net) add('Net pay',formatCurrency(snapshot.net));
+    return rows.slice(0,6);
+  }
+
+  function documentNativePreview(doc) {
     if(!doc)return '<div class="table-empty table-empty--card"><strong>No document selected</strong></div>';
-    return `<iframe class="document-print-preview" src="/documents/${encodeURIComponent(doc.id)}/print/?embed=1" title="${escapeHtml(doc.number||'Document')}"></iframe>`;
+    const full=state.documentDetails[doc.id]||doc;
+    const snapshot=full.snapshot;
+    if(!snapshot){if(state.documentLoadingId!==doc.id)queueMicrotask(()=>loadDocumentDetail(doc.id));return '<div class="table-empty table-empty--card"><strong>Loading document…</strong></div>';}
+    const label=documentRecordLabel(full);
+    const values=documentPreviewSummaryValues(snapshot);
+    const entity=snapshot.supplier?.name||snapshot.employee?.name||snapshot.project?.name||full.entityName||full.entityReference||'';
+    return `<article class="document-native-preview"><img class="document-native-preview__headpad" src="/static/payroll/assets/sescco-company-document-headpad-v2.png" alt=""><div class="document-native-preview__body"><header><div><span>${escapeHtml(label.toUpperCase())}</span><h2>${escapeHtml(full.number||'')}</h2></div><dl><dt>Period</dt><dd>${escapeHtml(full.period||'—')}</dd><dt>Status</dt><dd>${escapeHtml(full.status||'Final')}</dd><dt>Integrity</dt><dd>${full.integrityOk?'Verified':'Failed'}</dd></dl></header>${entity?`<div class="document-native-preview__entity">${escapeHtml(entity)}</div>`:''}<div class="document-native-preview__grid">${values.map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><footer><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(full.finalizedAt)||'—')}</strong><span>By</span><strong>${escapeHtml(full.finalizedBy||'System')}</strong></footer></div></article>`;
   }
 
   function recordKindLabel(kind) {
@@ -8099,6 +8121,312 @@
     return `<section class="page records-bin-page ui-v2-payroll-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">Records · Lifecycle control</span><h1>${title}</h1><p>${escapeHtml(copy)}</p></div></div><section class="panel panel--flush"><div class="panel__head panel__head--padded"><div><h2>${title}</h2><p>${isTrash ? 'Deleted records remain separate from Archive. Protected historical references stay preserved even after the 30-day recovery window expires.' : 'Archive is persistent until a user deliberately restores the record.'}</p></div><span class="status-badge">${count.toLocaleString()} record${count===1?'':'s'}</span></div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="recordManagementSearch" type="search" value="${escapeHtml(state.recordManagement.search[bucket]||'')}" placeholder="Search code or name…"></div></div>${body}<div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${Number(meta.rangeStart||0).toLocaleString()}</strong>–<strong>${Number(meta.rangeEnd||0).toLocaleString()}</strong> of <strong>${count.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-record-page="${bucket}|${page-1}" ${page<=1?'disabled':''}>‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-record-page="${bucket}|${page+1}" ${page>=totalPages?'disabled':''}>›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select data-record-page-size="${bucket}" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></section><section class="source-note">${icon('info')}<span><strong>${isTrash?'30-day delete recovery':'Archive is not deletion'}.</strong>${isTrash?' Deleting a record starts a 30-day recovery window and never erases protected payroll, assignment, inventory, settlement or audit history.':' Archived records are retained until restored and remain resolvable from historical records.'}</span></section></section>`;
   }
 
+
+  function documentCanIssue(doc) {
+    if(!doc || doc.workspace!=='rental')return false;
+    if(doc.documentVariant==='supplier_timesheet')return true;
+    return ['supplier_settlement','supplier_payment_receipt'].includes(doc.type);
+  }
+
+  function documentDeliveryHistoryHtml(history=[],packs=[]) {
+    if(packs.length){
+      return `<div class="document-delivery-history">${packs.slice(0,8).map(pack=>{
+        const canDeliver=['Sent','Opened'].includes(pack.status);
+        const shareActive=pack.shareStatus==='Active';
+        return `<div class="document-delivery-history__row"><div><strong>${escapeHtml(pack.number||'Issue pack')}</strong><small>${escapeHtml(pack.status||'Prepared')} · ${escapeHtml(payrollTimestamp(pack.issuedAt)||'')}</small><small>${escapeHtml(pack.recipientName||'')}${pack.channel?` · ${escapeHtml(pack.channel)}`:''}${pack.shareStatus?` · Link ${escapeHtml(pack.shareStatus)}`:''}</small></div><div><button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(pack.id)}">Issue Sheet</button>${pack.status==='Prepared'?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-send="${escapeHtml(pack.id)}">Send</button>`:''}${canDeliver?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-delivered="${escapeHtml(pack.id)}">Mark Delivered</button>`:''}${shareActive&&pack.shareUrl?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-copy="${escapeHtml(pack.id)}">Copy Link</button><button type="button" class="btn btn--ghost btn--sm" data-document-pack-revoke="${escapeHtml(pack.id)}">Revoke Link</button>`:`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-reissue="${escapeHtml(pack.id)}">Reissue Link</button>`}</div></div>`;
+      }).join('')}</div>`;
+    }
+    if(!history.length)return '<div class="table-empty"><strong>No issue history</strong></div>';
+    const seen=new Set();
+    return `<div class="document-delivery-history">${history.filter(item=>{
+      const key=`${item.packEventId}|${item.action}`;if(seen.has(key))return false;seen.add(key);return true;
+    }).slice(0,8).map(item=>`<div class="document-delivery-history__row"><div><strong>${escapeHtml(item.packNumber||item.action)}</strong><small>${escapeHtml(item.action)} · ${escapeHtml(payrollTimestamp(item.createdAt)||'')}</small><small>${escapeHtml(item.recipientName||'')}${item.channel?` · ${escapeHtml(item.channel)}`:''}</small></div><div>${item.packEventId?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(item.packEventId)}">Issue Sheet</button>`:''}</div></div>`).join('')}</div>`;
+  }
+
+  async function openDocumentDeliveryDrawer(doc) {
+    if(!documentCanIssue(doc))return;
+    state.drawerType='document-delivery';state.drawerContext={documentId:doc.id,loading:true};
+    drawerTitle.textContent='Issue supplier documents';drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Issue Documents';
+    drawerBody.innerHTML='<div class="table-empty table-empty--card"><strong>Loading…</strong></div>';
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    try{
+      const payload=await appApi(`/api/documents/${encodeURIComponent(doc.id)}/delivery-options/`);
+      if(state.drawerType!=='document-delivery')return;
+      state.drawerContext={documentId:doc.id,payload};
+      const recipient=payload.recipient||{},docs=payload.documents||[],history=payload.history||[],packs=payload.packs||[];
+      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>${escapeHtml(payload.supplier?.name||doc.entityName||'Supplier')}</strong><span>${escapeHtml(payload.supplier?.code||doc.entityReference||'')}</span></div><div class="form-grid"><label class="form-field"><span>Recipient name</span><input name="document-delivery-recipient" value="${escapeHtml(recipient.name||'')}" required></label><label class="form-field"><span>Channel</span><select name="document-delivery-channel"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="hand">Hand delivery</option><option value="portal">Portal</option><option value="other">Other</option></select></label><label class="form-field"><span>Email</span><input name="document-delivery-email" type="email" value="${escapeHtml(recipient.email||'')}"></label><label class="form-field"><span>Phone</span><input name="document-delivery-phone" value="${escapeHtml(recipient.phone||'')}"></label><label class="form-field"><span>Reference</span><input name="document-delivery-reference"></label><label class="form-field is-wide"><span>Note</span><textarea name="document-delivery-note" rows="2"></textarea></label></div></section><section class="form-section"><div class="form-section__head"><strong>Documents</strong><span>${docs.length.toLocaleString()}</span></div><div class="document-delivery-selection">${docs.map(item=>`<label><input type="checkbox" name="document-delivery-document" value="${escapeHtml(item.id)}" ${item.id===doc.id?'checked':''}><span><strong>${escapeHtml(item.number)}</strong><small>${escapeHtml(documentRecordLabel(item))} · ${escapeHtml(item.period||'')}</small></span></label>`).join('')}</div></section><section class="form-section"><div class="form-section__head"><strong>Issue history</strong></div>${documentDeliveryHistoryHtml(history,packs)}</section>`;
+      applyPayrollRequiredFields(drawerBody,'document-delivery');
+      const update=()=>{const count=drawerBody.querySelectorAll('[name="document-delivery-document"]:checked').length;drawerSave.disabled=!count;drawerSave.textContent=`Issue ${count||''} Document${count===1?'':'s'}`.replace('  ',' ');};
+      drawerBody.querySelectorAll('[name="document-delivery-document"]').forEach(input=>input.addEventListener('change',update));update();
+      drawerBody.querySelectorAll('[data-document-pack-print]').forEach(btn=>btn.addEventListener('click',()=>window.open(`/documents/delivery-packs/${encodeURIComponent(btn.dataset.documentPackPrint)}/print/`,'_blank','noopener')));
+      drawerBody.querySelectorAll('[data-document-pack-send]').forEach(btn=>btn.addEventListener('click',()=>sendPreparedDocumentPack(btn.dataset.documentPackSend)));
+      drawerBody.querySelectorAll('[data-document-pack-delivered]').forEach(btn=>btn.addEventListener('click',()=>markDocumentPackDelivered(btn.dataset.documentPackDelivered)));
+      drawerBody.querySelectorAll('[data-document-pack-copy]').forEach(btn=>btn.addEventListener('click',()=>copyDocumentPackLink(btn.dataset.documentPackCopy)));
+      drawerBody.querySelectorAll('[data-document-pack-revoke]').forEach(btn=>btn.addEventListener('click',()=>revokeDocumentPackLink(btn.dataset.documentPackRevoke)));
+      drawerBody.querySelectorAll('[data-document-pack-reissue]').forEach(btn=>btn.addEventListener('click',()=>reissueDocumentPackLink(btn.dataset.documentPackReissue)));
+    }catch(error){drawerSave.disabled=true;drawerBody.innerHTML=`<div class="table-empty table-empty--card"><strong>Issue data unavailable</strong><span>${escapeHtml(error.message)}</span></div>`;}
+  }
+
+  async function refreshDocumentDeliveryDrawer() {
+    if(state.drawerType==='document-delivery-operations'){
+      const context=state.drawerContext||{};
+      await openDocumentDeliveryStatusDrawer(context.period||'',context.query||'',context.status||'all');
+      return;
+    }
+    const documentId=state.drawerContext?.documentId;if(!documentId)return;
+    const doc=documentAllRecords().find(item=>item.id===documentId)||state.documentDetails[documentId];
+    if(doc)await openDocumentDeliveryDrawer(doc);
+  }
+
+  async function copyDocumentPackLink(packEventId) {
+    const pack=(state.drawerContext?.payload?.packs||[]).find(item=>item.id===packEventId);
+    const link=pack?.shareUrl||'';
+    if(!link){showToast('Secure link unavailable','Reissue the link first.');return;}
+    try{
+      if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(link);showToast('Secure link copied',pack.number||'Issue pack');return;}
+    }catch(error){}
+    window.prompt('Copy secure supplier link',link);
+  }
+
+  async function revokeDocumentPackLink(packEventId) {
+    if(!packEventId||!window.confirm('Revoke this supplier link? Anyone using the current link will lose access immediately.'))return;
+    try{
+      const payload=await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/share/revoke/`,{method:'POST',body:{}});
+      showToast('Supplier link revoked',payload.pack?.number||'Issue pack');await refreshDocumentDeliveryDrawer();
+    }catch(error){showToast('Link not revoked',error.message);}
+  }
+
+  async function reissueDocumentPackLink(packEventId) {
+    if(!packEventId)return;
+    try{
+      const payload=await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/share/reissue/`,{method:'POST',body:{}});
+      const link=payload.shareUrl||payload.pack?.shareUrl||'';
+      if(link){try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(link);}catch(error){}}
+      showToast('New supplier link issued',`${payload.pack?.number||'Issue pack'} · Previous links are invalid.`);await refreshDocumentDeliveryDrawer();
+    }catch(error){showToast('Link not reissued',error.message);}
+  }
+
+  async function createDocumentDeliveryPack(get) {
+    const ids=[...drawerBody.querySelectorAll('[name="document-delivery-document"]:checked')].map(input=>input.value);
+    if(!ids.length){showToast('Document required','Select at least one document.');return false;}
+    const body={document_ids:ids,recipient_name:get('document-delivery-recipient'),recipient_email:get('document-delivery-email'),recipient_phone:get('document-delivery-phone'),channel:get('document-delivery-channel')||'email',reference:get('document-delivery-reference'),note:get('document-delivery-note')};
+    drawerSave.disabled=true;drawerSave.textContent=body.channel==='email'?'Sending…':'Preparing…';
+    try{
+      const created=await appApi('/api/documents/delivery-packs/',{method:'POST',body});
+      const pack=created.pack||{};
+      const dispatched=await appApi(`/api/documents/delivery-packs/${encodeURIComponent(pack.id)}/dispatch/`,{method:'POST',body:{}});
+      if(dispatched.handoffUrl){
+        const handoff=window.open(dispatched.handoffUrl,'_blank','noopener');
+        if(!handoff){showToast('WhatsApp blocked','Allow pop-ups, then use Issue again.');}
+        const confirmed=window.confirm('Confirm after the WhatsApp message has been sent.');
+        if(confirmed)await appApi(`/api/documents/delivery-packs/${encodeURIComponent(pack.id)}/sent/`,{method:'POST',body:{reference:body.reference||''}});
+      }else if(dispatched.requiresConfirmation){
+        const confirmed=window.confirm('Confirm that this document pack has been sent or handed over.');
+        if(confirmed)await appApi(`/api/documents/delivery-packs/${encodeURIComponent(pack.id)}/sent/`,{method:'POST',body:{reference:body.reference||''}});
+      }
+      closeDrawer();cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';await loadDocumentList({render:true,force:true});
+      const finalPack=dispatched.pack||pack;
+      showToast(finalPack.status==='Sent'?'Documents sent':'Issue pack prepared',`${finalPack.number||'Issue pack'} · ${ids.length} document${ids.length===1?'':'s'}.`);return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent='Issue Documents';showToast('Documents not sent',error.message);return false;}
+  }
+
+  async function sendPreparedDocumentPack(packEventId) {
+    if(!packEventId)return;
+    try{
+      const payload=await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/dispatch/`,{method:'POST',body:{}});
+      if(payload.handoffUrl){
+        const handoff=window.open(payload.handoffUrl,'_blank','noopener');
+        if(!handoff){showToast('WhatsApp blocked','Allow pop-ups and try again.');return;}
+        if(window.confirm('Confirm after the WhatsApp message has been sent.'))await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/sent/`,{method:'POST',body:{}});
+      }else if(payload.requiresConfirmation){
+        if(window.confirm('Confirm that this document pack has been sent or handed over.'))await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/sent/`,{method:'POST',body:{}});
+      }
+      closeDrawer();cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';await loadDocumentList({render:true,force:true});
+      showToast('Issue pack updated',payload.pack?.number||'Issue pack');
+    }catch(error){showToast('Documents not sent',error.message);}
+  }
+
+  async function markDocumentPackDelivered(packEventId) {
+    if(!packEventId)return;
+    try{
+      const payload=await appApi(`/api/documents/delivery-packs/${encodeURIComponent(packEventId)}/delivered/`,{method:'POST',body:{}});
+      closeDrawer();cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';await loadDocumentList({render:true,force:true});
+      showToast('Delivery confirmed',`${payload.pack?.number||'Issue pack'} · Delivered.`);
+    }catch(error){showToast('Delivery not confirmed',error.message);}
+  }
+
+  function documentDeliveryOperationsPeriodKey() {
+    return bulkDocumentDeliveryPeriodKey();
+  }
+
+  function documentDeliveryOperationsRowsHtml(packs=[]) {
+    if(!packs.length)return '<div class="table-empty table-empty--card"><strong>No delivery packs</strong></div>';
+    const canManage=hasAnyAccessPermission('rental.documents.finalize','shared.documents.finalize');
+    return `<div class="document-delivery-history">${packs.map(pack=>{
+      const canDeliver=canManage&&['Sent','Opened'].includes(pack.status);
+      const active=pack.shareStatus==='Active';
+      const needsLink=canManage&&pack.status!=='Delivered'&&!active;
+      const expiry=pack.shareExpiresAt?payrollTimestamp(pack.shareExpiresAt):'';
+      return `<div class="document-delivery-history__row"><div><strong>${escapeHtml(pack.number||'Issue pack')} · ${escapeHtml(pack.supplierName||pack.supplierCode||'Supplier')}</strong><small>${escapeHtml(pack.status||'Prepared')} · ${escapeHtml(pack.channel||'')} · ${Number(pack.documentCount||0).toLocaleString()} document${Number(pack.documentCount||0)===1?'':'s'}</small><small>${escapeHtml(pack.recipientName||'')}${pack.recipientEmail?` · ${escapeHtml(pack.recipientEmail)}`:''}${pack.shareStatus?` · Link ${escapeHtml(pack.shareStatus)}`:''}${expiry?` · Expires ${escapeHtml(expiry)}`:''}</small></div><div><button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(pack.id)}">Issue Sheet</button>${canManage&&pack.status==='Prepared'&&active?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-send="${escapeHtml(pack.id)}">Send</button>`:''}${canDeliver?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-delivered="${escapeHtml(pack.id)}">Mark Delivered</button>`:''}${canManage&&active&&pack.shareUrl?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-copy="${escapeHtml(pack.id)}">Copy Link</button><button type="button" class="btn btn--ghost btn--sm" data-document-pack-revoke="${escapeHtml(pack.id)}">Revoke</button>`:''}${needsLink?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-reissue="${escapeHtml(pack.id)}">Reissue Link</button>`:''}</div></div>`;
+    }).join('')}</div>`;
+  }
+
+  async function openDocumentDeliveryStatusDrawer(period='',query='',status='all') {
+    const periodKey=period||documentDeliveryOperationsPeriodKey();
+    state.drawerType='document-delivery-operations';state.drawerContext={period:periodKey,query,status,loading:true};
+    drawerTitle.textContent='Supplier delivery';drawerSave.hidden=true;drawerSave.disabled=true;
+    drawerBody.innerHTML='<div class="table-empty table-empty--card"><strong>Loading…</strong></div>';
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    try{
+      const params=new URLSearchParams({period:periodKey,status:status||'all'});if(query.trim())params.set('q',query.trim());
+      const payload=await appApi(`/api/documents/delivery-operations/?${params.toString()}`);
+      if(state.drawerType!=='document-delivery-operations')return;
+      state.drawerContext={period:periodKey,query,status,payload};
+      const summary=payload.summary||{},packs=payload.packs||[];
+      const periodKeys=state.documentContext?.filters?.periods||[];
+      const keys=periodKeys.includes(periodKey)?periodKeys:[periodKey,...periodKeys].filter(Boolean);
+      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Delivery status</strong><span>${Number(summary.total||0).toLocaleString()} packs</span></div><div class="form-grid"><label class="form-field"><span>Working period</span><select name="document-delivery-ops-period">${keys.map(key=>`<option value="${escapeHtml(key)}" ${key===periodKey?'selected':''}>${escapeHtml(documentPeriodLabel(key))}</option>`).join('')}</select></label><label class="form-field"><span>Status</span><select name="document-delivery-ops-status"><option value="all" ${status==='all'?'selected':''}>All statuses</option><option value="prepared" ${status==='prepared'?'selected':''}>Prepared</option><option value="sent" ${status==='sent'?'selected':''}>Sent</option><option value="opened" ${status==='opened'?'selected':''}>Opened</option><option value="delivered" ${status==='delivered'?'selected':''}>Delivered</option><option value="attention" ${status==='attention'?'selected':''}>Link attention</option></select></label><label class="form-field is-wide"><span>Search</span><input type="search" name="document-delivery-ops-search" value="${escapeHtml(query)}" placeholder="Pack, supplier, recipient or document number"></label></div><div class="document-delivery-ops-summary"><span><strong>${Number(summary.prepared||0).toLocaleString()}</strong> Prepared</span><span><strong>${Number(summary.sent||0).toLocaleString()}</strong> Sent</span><span><strong>${Number(summary.opened||0).toLocaleString()}</strong> Opened</span><span><strong>${Number(summary.delivered||0).toLocaleString()}</strong> Delivered</span><span><strong>${Number(summary.attention||0).toLocaleString()}</strong> Link attention</span></div></section><section class="form-section"><div class="form-section__head"><strong>Issue packs</strong><span>${Number(payload.meta?.count||packs.length).toLocaleString()}</span></div>${documentDeliveryOperationsRowsHtml(packs)}${payload.meta?.truncated?'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>Showing the latest 100 matching packs. Narrow the period, status or search.</p></div>':''}</section>`;
+      const rerun=()=>openDocumentDeliveryStatusDrawer(drawerBody.querySelector('[name="document-delivery-ops-period"]')?.value||periodKey,drawerBody.querySelector('[name="document-delivery-ops-search"]')?.value||'',drawerBody.querySelector('[name="document-delivery-ops-status"]')?.value||'all');
+      drawerBody.querySelector('[name="document-delivery-ops-period"]')?.addEventListener('change',rerun);
+      drawerBody.querySelector('[name="document-delivery-ops-status"]')?.addEventListener('change',rerun);
+      let searchTimer=null;drawerBody.querySelector('[name="document-delivery-ops-search"]')?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(rerun,320);});
+      drawerBody.querySelectorAll('[data-document-pack-print]').forEach(btn=>btn.addEventListener('click',()=>window.open(`/documents/delivery-packs/${encodeURIComponent(btn.dataset.documentPackPrint)}/print/`,'_blank','noopener')));
+      drawerBody.querySelectorAll('[data-document-pack-send]').forEach(btn=>btn.addEventListener('click',()=>sendPreparedDocumentPack(btn.dataset.documentPackSend)));
+      drawerBody.querySelectorAll('[data-document-pack-delivered]').forEach(btn=>btn.addEventListener('click',()=>markDocumentPackDelivered(btn.dataset.documentPackDelivered)));
+      drawerBody.querySelectorAll('[data-document-pack-copy]').forEach(btn=>btn.addEventListener('click',()=>copyDocumentPackLink(btn.dataset.documentPackCopy)));
+      drawerBody.querySelectorAll('[data-document-pack-revoke]').forEach(btn=>btn.addEventListener('click',()=>revokeDocumentPackLink(btn.dataset.documentPackRevoke)));
+      drawerBody.querySelectorAll('[data-document-pack-reissue]').forEach(btn=>btn.addEventListener('click',()=>reissueDocumentPackLink(btn.dataset.documentPackReissue)));
+    }catch(error){drawerBody.innerHTML=`<div class="table-empty table-empty--card"><strong>Delivery status unavailable</strong><span>${escapeHtml(error.message)}</span></div>`;}
+  }
+
+  function bulkDocumentDeliveryPeriodKey() {
+    const label=state.documentPeriodFilter&&state.documentPeriodFilter!=='All periods'?state.documentPeriodFilter:state.period;
+    return periodKeyFromLabel(label||state.period);
+  }
+
+  function documentDeliveryRecentPacksHtml(packs=[]) {
+    if(!packs.length)return '<div class="table-empty"><strong>No issue packs for this period</strong></div>';
+    return `<div class="document-delivery-history">${packs.slice(0,10).map(pack=>{
+      const canDeliver=['Sent','Opened'].includes(pack.status);
+      const active=pack.shareStatus==='Active';
+      return `<div class="document-delivery-history__row"><div><strong>${escapeHtml(pack.number||'Issue pack')}</strong><small>${escapeHtml(pack.supplierName||pack.supplierCode||'Supplier')} · ${escapeHtml(pack.status||'Prepared')}</small><small>${escapeHtml(pack.recipientName||'')}${pack.channel?` · ${escapeHtml(pack.channel)}`:''}</small></div><div><button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(pack.id)}">Issue Sheet</button>${pack.status==='Prepared'?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-send="${escapeHtml(pack.id)}">Send</button>`:''}${canDeliver?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-delivered="${escapeHtml(pack.id)}">Mark Delivered</button>`:''}${active&&pack.shareUrl?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-copy="${escapeHtml(pack.id)}">Copy Link</button>`:''}</div></div>`;
+    }).join('')}</div>`;
+  }
+
+  function wireBulkDocumentDeliveryActions() {
+    const update=()=>{
+      const checked=[...drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]:checked')];
+      const suppliers=new Set(checked.map(input=>input.closest('[data-document-delivery-supplier]')?.dataset.documentDeliverySupplier).filter(Boolean));
+      drawerSave.disabled=!checked.length;
+      drawerSave.textContent=checked.length?`Prepare ${suppliers.size.toLocaleString()} Pack${suppliers.size===1?'':'s'}`:'Prepare Packs';
+      for(const group of drawerBody.querySelectorAll('[data-document-delivery-supplier]')){
+        const master=group.querySelector('[name="document-delivery-bulk-supplier"]');
+        const children=[...group.querySelectorAll('[name="document-delivery-bulk-document"]')];
+        const selected=children.filter(input=>input.checked).length;
+        if(master){master.checked=Boolean(children.length&&selected===children.length);master.indeterminate=selected>0&&selected<children.length;}
+      }
+      const all=drawerBody.querySelector('[name="document-delivery-bulk-all"]');
+      const children=[...drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]')];
+      const selected=children.filter(input=>input.checked).length;
+      if(all){all.checked=Boolean(children.length&&selected===children.length);all.indeterminate=selected>0&&selected<children.length;}
+    };
+    drawerBody.querySelector('[name="document-delivery-bulk-all"]')?.addEventListener('change',event=>{
+      drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]').forEach(input=>{if(!input.closest('[data-document-delivery-supplier]')?.hidden)input.checked=event.target.checked;});update();
+    });
+    drawerBody.querySelectorAll('[name="document-delivery-bulk-supplier"]').forEach(master=>master.addEventListener('change',()=>{
+      master.closest('[data-document-delivery-supplier]')?.querySelectorAll('[name="document-delivery-bulk-document"]').forEach(input=>input.checked=master.checked);update();
+    }));
+    drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]').forEach(input=>input.addEventListener('change',update));
+    const search=drawerBody.querySelector('[name="document-delivery-bulk-search"]');
+    search?.addEventListener('input',()=>{
+      const q=search.value.trim().toLowerCase();
+      for(const group of drawerBody.querySelectorAll('[data-document-delivery-supplier]')) group.hidden=Boolean(q&&!String(group.dataset.documentDeliverySearch||'').includes(q));
+    });
+    drawerBody.querySelector('[name="document-delivery-bulk-period"]')?.addEventListener('change',event=>openBulkDocumentDeliveryDrawer(event.target.value));
+    drawerBody.querySelectorAll('[data-document-pack-print]').forEach(btn=>btn.addEventListener('click',()=>window.open(`/documents/delivery-packs/${encodeURIComponent(btn.dataset.documentPackPrint)}/print/`,'_blank','noopener')));
+    drawerBody.querySelectorAll('[data-document-pack-send]').forEach(btn=>btn.addEventListener('click',()=>sendPreparedDocumentPack(btn.dataset.documentPackSend)));
+    drawerBody.querySelectorAll('[data-document-pack-delivered]').forEach(btn=>btn.addEventListener('click',()=>markDocumentPackDelivered(btn.dataset.documentPackDelivered)));
+    drawerBody.querySelectorAll('[data-document-pack-copy]').forEach(btn=>btn.addEventListener('click',()=>copyDocumentPackLink(btn.dataset.documentPackCopy)));
+    update();
+  }
+
+  function renderBulkDocumentDeliveryDrawer(payload) {
+    const context=state.drawerContext||{};
+    const period=context.period||payload.period||bulkDocumentDeliveryPeriodKey();
+    const periodKeys=[...new Set([period,...(state.documentContext?.filters?.periods||[])])].filter(Boolean).sort().reverse();
+    const groups=payload.groups||[];
+    drawerTitle.textContent='Issue supplier documents';drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Prepare Packs';
+    const groupHtml=groups.length?groups.map(group=>{
+      const searchText=[group.supplierName,group.supplierCode,...(group.documents||[]).flatMap(item=>[item.number,item.title,item.sourceReference,item.entityName])].join(' ').toLowerCase();
+      const recipient=group.recipient||{};
+      return `<section class="document-delivery-bulk-group" data-document-delivery-supplier="${escapeHtml(group.supplierCode||'')}" data-document-delivery-search="${escapeHtml(searchText)}"><header><label><input type="checkbox" name="document-delivery-bulk-supplier"><span><strong>${escapeHtml(group.supplierName||group.supplierCode||'Supplier')}</strong><small>${escapeHtml(group.supplierCode||'')} · ${escapeHtml(recipient.name||'No contact')}${recipient.email?` · ${escapeHtml(recipient.email)}`:''}</small></span></label><em>${Number(group.documents?.length||0).toLocaleString()}</em></header><div class="document-delivery-selection">${(group.documents||[]).map(item=>`<label><input type="checkbox" name="document-delivery-bulk-document" value="${escapeHtml(item.id)}"><span><strong>${escapeHtml(item.number)} · ${escapeHtml(documentRecordLabel(item))}</strong><small>${escapeHtml(item.sourceReference||item.entityName||'')} · ${escapeHtml(item.delivery?.status||'Not issued')}</small></span></label>`).join('')}</div></section>`;
+    }).join(''):'<div class="table-empty table-empty--card"><strong>No supplier-facing documents</strong><span>No finalized supplier documents are available for this period.</span></div>';
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Delivery scope</strong><span>${Number(payload.meta?.suppliers||groups.length).toLocaleString()} suppliers</span></div><div class="form-grid"><label class="form-field"><span>Working period</span><select name="document-delivery-bulk-period">${periodKeys.map(key=>`<option value="${escapeHtml(key)}" ${key===period?'selected':''}>${escapeHtml(documentPeriodLabel(key))}</option>`).join('')}</select></label><label class="form-field"><span>Channel</span><select name="document-delivery-bulk-channel"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="hand">Hand delivery</option><option value="portal">Portal</option><option value="other">Other</option></select></label><label class="form-field is-wide"><span>Search</span><input type="search" name="document-delivery-bulk-search" placeholder="Supplier, project or document number"></label><label class="form-field"><span>Reference</span><input name="document-delivery-bulk-reference"></label><label class="form-field"><span>Note</span><input name="document-delivery-bulk-note"></label></div>${payload.meta?.truncated?'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>500 documents shown. Narrow the period or search before preparing packs.</p></div>':''}</section><section class="form-section"><div class="form-section__head"><label class="document-delivery-bulk-select-all"><input type="checkbox" name="document-delivery-bulk-all"><strong>Select all visible</strong></label><span>${Number(payload.meta?.documents||0).toLocaleString()} documents</span></div><div class="document-delivery-bulk-groups">${groupHtml}</div></section><section class="form-section"><div class="form-section__head"><strong>Recent issue packs</strong></div>${documentDeliveryRecentPacksHtml(payload.recentPacks||[])}</section>`;
+    wireBulkDocumentDeliveryActions();
+  }
+
+  async function openBulkDocumentDeliveryDrawer(period='') {
+    if(state.workspace!=='rental')return;
+    const periodKey=period||bulkDocumentDeliveryPeriodKey();
+    state.drawerType='document-delivery-bulk';state.drawerContext={period:periodKey,loading:true};
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    drawerTitle.textContent='Issue supplier documents';drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Loading…';
+    drawerBody.innerHTML='<div class="table-empty table-empty--card"><strong>Loading supplier documents…</strong></div>';
+    try{
+      const payload=await appApi(`/api/documents/delivery-center/?period=${encodeURIComponent(periodKey)}`);
+      if(state.drawerType!=='document-delivery-bulk')return;
+      state.drawerContext={period:periodKey,payload};renderBulkDocumentDeliveryDrawer(payload);
+    }catch(error){drawerSave.disabled=true;drawerBody.innerHTML=`<div class="table-empty table-empty--card"><strong>Supplier documents unavailable</strong><span>${escapeHtml(error.message)}</span></div>`;}
+  }
+
+  async function createBulkDocumentDeliveryPacks(get) {
+    const ids=[...drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]:checked')].map(input=>input.value);
+    if(!ids.length){showToast('Documents required','Select one or more supplier documents.');return false;}
+    const suppliers=new Set([...drawerBody.querySelectorAll('[name="document-delivery-bulk-document"]:checked')].map(input=>input.closest('[data-document-delivery-supplier]')?.dataset.documentDeliverySupplier).filter(Boolean));
+    if(suppliers.size>25){showToast('Too many suppliers','Prepare at most 25 supplier packs at a time.');return false;}
+    drawerSave.disabled=true;drawerSave.textContent='Preparing…';
+    try{
+      const payload=await appApi('/api/documents/delivery-batches/',{method:'POST',body:{document_ids:ids,channel:get('document-delivery-bulk-channel')||'email',reference:get('document-delivery-bulk-reference'),note:get('document-delivery-bulk-note')}});
+      const packs=payload.packs||[];const channel=String(packs[0]?.channel||get('document-delivery-bulk-channel')||'email').toLowerCase();
+      state.drawerContext={...(state.drawerContext||{}),prepared:true,batchId:payload.batch?.id||'',batchNumber:payload.batch?.number||'',channel,packs};
+      drawerTitle.textContent='Supplier packs prepared';
+      drawerSave.hidden=channel==='whatsapp';drawerSave.disabled=false;
+      drawerSave.textContent=channel==='email'?'Send All Emails':'Confirm All Sent';
+      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>${escapeHtml(payload.batch?.number||'Delivery batch')}</strong><span>${Number(payload.batch?.packCount||packs.length).toLocaleString()} packs · ${Number(payload.batch?.documentCount||ids.length).toLocaleString()} documents</span></div><div class="document-delivery-history">${packs.map(pack=>`<div class="document-delivery-history__row"><div><strong>${escapeHtml(pack.number||'Issue pack')}</strong><small>${escapeHtml(pack.supplierName||pack.supplierCode||'Supplier')} · ${escapeHtml(pack.recipientName||'')}</small><small>${escapeHtml(pack.channel||'')} · ${escapeHtml(pack.status||'Prepared')}</small></div><div><button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(pack.id)}">Issue Sheet</button><button type="button" class="btn btn--secondary btn--sm" data-document-pack-send="${escapeHtml(pack.id)}">Send</button>${pack.shareUrl?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-copy-result="${escapeHtml(pack.id)}">Copy Link</button>`:''}</div></div>`).join('')}</div>${channel==='whatsapp'?'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>WhatsApp messages are opened and confirmed separately for each supplier.</p></div>':''}</section>`;
+      drawerBody.querySelectorAll('[data-document-pack-print]').forEach(btn=>btn.addEventListener('click',()=>window.open(`/documents/delivery-packs/${encodeURIComponent(btn.dataset.documentPackPrint)}/print/`,'_blank','noopener')));
+      drawerBody.querySelectorAll('[data-document-pack-send]').forEach(btn=>btn.addEventListener('click',()=>sendPreparedDocumentPack(btn.dataset.documentPackSend)));
+      drawerBody.querySelectorAll('[data-document-pack-copy-result]').forEach(btn=>btn.addEventListener('click',async()=>{const pack=packs.find(item=>item.id===btn.dataset.documentPackCopyResult);if(!pack?.shareUrl)return;try{await navigator.clipboard?.writeText(pack.shareUrl);showToast('Secure link copied',pack.number||'Issue pack');}catch(error){window.prompt('Copy secure supplier link',pack.shareUrl);}}));
+      cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';
+      showToast('Supplier packs prepared',`${payload.batch?.number||'Delivery batch'} · ${packs.length} supplier pack${packs.length===1?'':'s'}.`);return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent='Prepare Packs';showToast('Supplier packs not prepared',error.message);return false;}
+  }
+
+  async function dispatchBulkDocumentDeliveryBatch() {
+    const context=state.drawerContext||{};const batchId=context.batchId||'';const channel=String(context.channel||'').toLowerCase();
+    if(!context.prepared||!batchId)return false;
+    if(channel==='whatsapp'){showToast('Individual WhatsApp handoff required','Open and confirm each supplier message separately.');return false;}
+    let confirm=true;
+    if(channel!=='email')confirm=window.confirm(`Confirm that all ${Number(context.packs?.length||0).toLocaleString()} supplier packs have been sent or handed over.`);
+    if(!confirm)return false;
+    drawerSave.disabled=true;drawerSave.textContent=channel==='email'?'Sending…':'Confirming…';
+    try{
+      const payload=await appApi(`/api/documents/delivery-batches/${encodeURIComponent(batchId)}/dispatch/`,{method:'POST',body:{confirm:channel!=='email'}});
+      const batch=payload.batch||{},results=payload.results||[];
+      const byId=new Map(results.filter(row=>row.pack).map(row=>[row.id,row.pack]));
+      const packs=(context.packs||[]).map(pack=>byId.get(pack.id)||pack);
+      state.drawerContext={...context,packs,dispatchResult:payload};
+      drawerSave.hidden=Number(batch.failed||0)===0;drawerSave.disabled=false;drawerSave.textContent=channel==='email'?'Retry Failed Emails':'Confirm All Sent';
+      drawerTitle.textContent=Number(batch.failed||0)?'Supplier delivery needs attention':'Supplier delivery sent';
+      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>${escapeHtml(batch.number||context.batchNumber||'Delivery batch')}</strong><span>${Number(batch.sent||0).toLocaleString()} sent · ${Number(batch.alreadySent||0).toLocaleString()} already sent · ${Number(batch.failed||0).toLocaleString()} failed</span></div><div class="document-delivery-history">${results.map(row=>{const pack=row.pack||{};const failed=row.result==='failed';return `<div class="document-delivery-history__row"><div><strong>${escapeHtml(row.number||pack.number||'Issue pack')}</strong><small>${failed?'Failed':escapeHtml(pack.supplierName||pack.supplierCode||'Supplier')} · ${failed?escapeHtml(row.error||'Delivery failed'):escapeHtml(pack.status||'Sent')}</small></div><div>${pack.id?`<button type="button" class="btn btn--ghost btn--sm" data-document-pack-print="${escapeHtml(pack.id)}">Issue Sheet</button>`:''}${failed&&row.id?`<button type="button" class="btn btn--secondary btn--sm" data-document-pack-send="${escapeHtml(row.id)}">Retry</button>`:''}</div></div>`;}).join('')}</div></section>`;
+      drawerBody.querySelectorAll('[data-document-pack-print]').forEach(btn=>btn.addEventListener('click',()=>window.open(`/documents/delivery-packs/${encodeURIComponent(btn.dataset.documentPackPrint)}/print/`,'_blank','noopener')));
+      drawerBody.querySelectorAll('[data-document-pack-send]').forEach(btn=>btn.addEventListener('click',()=>sendPreparedDocumentPack(btn.dataset.documentPackSend)));
+      cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';
+      if(Number(batch.failed||0))showToast('Some supplier packs were not sent',`${Number(batch.sent||0)} sent · ${Number(batch.failed||0)} failed. Retry only the failed packs.`);
+      else showToast('Supplier packs sent',`${Number(batch.sent||0)+Number(batch.alreadySent||0)} pack${Number(batch.total||0)===1?'':'s'} complete.`);
+      return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent=channel==='email'?'Send All Emails':'Confirm All Sent';showToast('Bulk delivery not completed',error.message);return false;}
+  }
+
   function documentsTemplate() {
     const allowedTypes=state.workspace==='rental'?['supplier_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt','rental_timesheet']:['salary_slip','internal_timesheet','salary_payment_receipt'];
     if(state.documentTab!=='all'&&!allowedTypes.includes(state.documentTab)){state.documentTab='all';state.documentPage=1;}
@@ -8113,8 +8441,8 @@
     const startRow=Number(meta.rangeStart||0),endRow=Number(meta.rangeEnd||0);
     const loading=server.loading && server.pendingKey===request.key;
     const listHtml=server.error?`<div class="table-empty table-empty--card"><strong>Documents unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-document-retry>Retry</button></div>`:all.length?all.map(doc=>`<button class="document-list-item ${doc.id===selected?.id?'is-active':''}" data-document-select="${escapeHtml(doc.id)}"><span class="document-list-item__icon">${escapeHtml(documentRecordCode(doc))}</span><span class="document-list-item__body"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.number)} · ${escapeHtml(doc.entityName||doc.entityReference||'Company')}</small><em>${escapeHtml(doc.period||'No period')} · ${escapeHtml(doc.sourceReference||'Source')}</em></span><span class="document-list-item__status">${documentStatusBadge(doc.status)}</span></button>`).join(''):`<div class="table-empty table-empty--card"><strong>${loading?'Loading…':'No documents'}</strong></div>`;
-    const preview=documentPrintPreview(selected);
-    return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1></div><div class="page-head__actions">${state.workspace==='rental'?`<button class="btn btn--secondary" data-document-batch-timesheets>Supplier Timesheets</button><button class="btn btn--secondary" data-document-batch-settlements>Settlement Statements</button>`:''}<button class="btn btn--primary" data-document-generate>${icon('plus')} New Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="New document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document'}</strong><span>${selected?`${escapeHtml(documentRecordLabel(selected))} · ${escapeHtml(selected.period||'')}`:''}</span></div><div class="document-preview-toolbar__actions">${selected?.sourceAttachmentUrl?`<button class="btn btn--secondary btn--sm" data-document-source-attachment="${escapeHtml(selected.id)}">${icon('document')} Supplier Invoice</button>`:''}<button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${preview}</div></section></div></section>`;
+    const preview=documentNativePreview(selected);
+    return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1></div><div class="page-head__actions">${state.workspace==='rental'?`<button class="btn btn--secondary" data-document-delivery-status>${icon('document')} Delivery</button><button class="btn btn--secondary" data-document-bulk-delivery>${icon('document')} Issue Documents</button>`:''}<button class="btn btn--primary" data-document-generate>${icon('plus')} New Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="New document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document'}</strong><span>${selected?`${escapeHtml(documentRecordLabel(selected))} · ${escapeHtml(selected.period||'')}`:''}</span></div><div class="document-preview-toolbar__actions">${selected?.delivery?.status&&selected.delivery.status!=='Not issued'?`<span class="status status--${selected.delivery.status==='Delivered'?'success':'neutral'}"><span></span>${escapeHtml(selected.delivery.status)}</span>`:''}${documentCanIssue(selected)?`<button class="btn btn--secondary btn--sm" data-document-delivery="${escapeHtml(selected.id)}">Issue</button>`:''}${selected?.sourceAttachmentUrl?`<button class="btn btn--secondary btn--sm" data-document-source-attachment="${escapeHtml(selected.id)}">${icon('document')} Supplier Invoice</button>`:''}<button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${preview}</div></section></div></section>`;
   }
 
   function documentSourceTypesForWorkspace(){return state.workspace==='rental'?['supplier_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt','rental_timesheet']:['salary_slip','internal_timesheet','salary_payment_receipt'];}
@@ -8164,7 +8492,7 @@
     });
   }
 
-  async function openDocumentGenerateDrawer(preferredType='', context={}) {
+  async function openSingleDocumentGenerateDrawer(preferredType='', context={}) {
     const requestedType=documentTypeKey(preferredType);const employeeId=String(context?.employeeId||'');
     const employee=employeeId?state.employees.find(item=>item.id===employeeId):null;
     const employeeScoped=Boolean(state.workspace==='internal'&&employee&&requestedType==='salary_slip');
@@ -8182,6 +8510,155 @@
     const syncType=()=>{const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');box?._lookupUiController?.abort();if(box){box.querySelector('input[type="hidden"]').value='';box.querySelector('[data-adjustment-combobox-value]').textContent='Select source record';box.querySelector('[data-adjustment-combobox-trigger]').classList.remove('has-value');const search=box.querySelector('[data-adjustment-combobox-search]');if(search)search.value='';box.querySelector('[data-adjustment-combobox-results]').innerHTML=`<div class="adjustment-combobox__empty">${['salary_slip','salary_payment_receipt'].includes(typeControlNode.value)?'Type at least 2 characters to search.':'Open to browse eligible source records.'}</div>`;}state.drawerContext={...(state.drawerContext||{}),type:typeControlNode.value,selectedSource:null};drawerSave.textContent=documentCreateActionLabel(typeControlNode.value,employeeScoped);renderDocumentTypeSpecificFields(typeControlNode.value);setupDocumentSourceCombobox();};
     if(!employeeScoped)typeControlNode.addEventListener('change',syncType);
     renderDocumentTypeSpecificFields(preferred);applyPayrollRequiredFields(drawerBody,'document-generate');setupDocumentSourceCombobox();
+  }
+
+
+  const rentalGeneratorTypes = ['supplier_timesheet','supplier_settlement','rental_timesheet','supplier_payment_receipt'];
+
+  function rentalGeneratorPayload() {
+    const context=state.drawerContext||{};
+    const selectedTypes=[...drawerBody.querySelectorAll('[name="rental-generator-type"]:checked')].map(input=>input.value);
+    const allSuppliers=Boolean(drawerBody.querySelector('[name="rental-generator-all-suppliers"]')?.checked);
+    const allProjects=Boolean(drawerBody.querySelector('[name="rental-generator-all-projects"]')?.checked);
+    const supplierCodes=allSuppliers?[]:[...drawerBody.querySelector('[name="rental-generator-suppliers"]')?.selectedOptions||[]].map(option=>option.value);
+    const projectIds=allProjects?[]:[...drawerBody.querySelector('[name="rental-generator-projects"]')?.selectedOptions||[]].map(option=>option.value);
+    return {period:periodKeyFromLabel(context.period||state.period),document_types:selectedTypes,supplier_codes:supplierCodes,project_ids:projectIds,output_mode:'separate_supplier_project'};
+  }
+
+  function rentalGeneratorTypeCards(selectedTypes) {
+    return rentalGeneratorTypes.map(type=>`<label class="document-generator-type ${selectedTypes.includes(type)?'is-selected':''}"><input type="checkbox" name="rental-generator-type" value="${type}" ${selectedTypes.includes(type)?'checked':''}><span><strong>${escapeHtml(documentTypeLabel(type))}</strong></span></label>`).join('');
+  }
+
+  function rentalGeneratorOptionsHtml(kind, rows, selectedValues, allSelected) {
+    const valueKey=kind==='supplier'?'code':'id';
+    return `<div class="document-generator-filter"><div class="document-generator-filter__head"><label><input type="checkbox" name="rental-generator-all-${kind==='supplier'?'suppliers':'projects'}" ${allSelected?'checked':''}> All ${kind==='supplier'?'suppliers':'projects'}</label><input type="search" data-document-generator-search="${kind}" placeholder="Search ${kind==='supplier'?'suppliers':'projects'}"></div><select multiple size="7" name="rental-generator-${kind==='supplier'?'suppliers':'projects'}" ${allSelected?'disabled':''}>${rows.map(row=>`<option value="${escapeHtml(row[valueKey])}" ${selectedValues.includes(String(row[valueKey]))?'selected':''}>${escapeHtml(row.label)}</option>`).join('')}</select></div>`;
+  }
+
+  const rentalGeneratorSearchTimers={supplier:null,project:null};
+
+  function mergeRentalGeneratorSearchRows(kind,rows=[]) {
+    if(state.drawerType!=='document-generate'||!state.drawerContext?.flexibleGenerator)return;
+    const select=drawerBody.querySelector(`[name="rental-generator-${kind==='supplier'?'suppliers':'projects'}"]`);
+    const search=drawerBody.querySelector(`[data-document-generator-search="${kind}"]`);
+    if(!select||!search)return;
+    const valueKey=kind==='supplier'?'code':'id';
+    const known=new Set([...select.options].map(option=>String(option.value)));
+    for(const row of rows){
+      const value=String(row?.[valueKey]||'');if(!value||known.has(value))continue;
+      const option=document.createElement('option');option.value=value;option.textContent=String(row.label||value);select.append(option);known.add(value);
+    }
+    const q=search.value.trim().toLowerCase();
+    for(const option of select.options)option.hidden=Boolean(q&&!option.textContent.toLowerCase().includes(q));
+  }
+
+  function searchRentalGeneratorOptions(kind,query) {
+    const q=String(query||'').trim();
+    if(rentalGeneratorSearchTimers[kind])clearTimeout(rentalGeneratorSearchTimers[kind]);
+    if(q.length<2)return;
+    rentalGeneratorSearchTimers[kind]=setTimeout(async()=>{
+      if(state.drawerType!=='document-generate'||!state.drawerContext?.flexibleGenerator)return;
+      const params=new URLSearchParams({period:periodKeyFromLabel(state.drawerContext?.period||state.period)});
+      params.set(kind==='supplier'?'supplier_q':'project_q',q);
+      try{
+        const payload=await appApi(`/api/documents/generation-options/?${params.toString()}`);
+        mergeRentalGeneratorSearchRows(kind,kind==='supplier'?(payload.suppliers||[]):(payload.projects||[]));
+      }catch(error){showToast(`${kind==='supplier'?'Supplier':'Project'} search unavailable`,error.message);}
+    },250);
+  }
+
+  function rentalGeneratorRecentBatchesHtml(batches=[]) {
+    if(!batches.length)return '';
+    return `<section class="form-section document-generator-recent"><div class="form-section__head"><strong>Recent generation</strong></div><div class="document-generator-recent-list">${batches.map(batch=>`<div><span><strong>${escapeHtml(batch.number||'Batch')}</strong><small>${escapeHtml(payrollTimestamp(batch.createdAt))} · ${escapeHtml(batch.initiatedBy||'System')}</small></span><span><strong>${Number(batch.created||0).toLocaleString()}</strong><small>created · ${Number(batch.existing||0).toLocaleString()} existing</small></span></div>`).join('')}</div></section>`;
+  }
+
+  function wireRentalGeneratorConfigure() {
+    const context=state.drawerContext||{};
+    drawerBody.querySelectorAll('[name="rental-generator-type"]').forEach(input=>input.addEventListener('change',()=>{
+      const types=[...drawerBody.querySelectorAll('[name="rental-generator-type"]:checked')].map(item=>item.value);
+      state.drawerContext={...context,selectedTypes:types};
+      input.closest('.document-generator-type')?.classList.toggle('is-selected',input.checked);
+      drawerSave.disabled=!types.length;
+    }));
+    for(const kind of ['supplier','project']){
+      const allName=`rental-generator-all-${kind==='supplier'?'suppliers':'projects'}`;
+      const selectName=`rental-generator-${kind==='supplier'?'suppliers':'projects'}`;
+      const all=drawerBody.querySelector(`[name="${allName}"]`),select=drawerBody.querySelector(`[name="${selectName}"]`);
+      all?.addEventListener('change',()=>{if(select)select.disabled=all.checked;});
+      const search=drawerBody.querySelector(`[data-document-generator-search="${kind}"]`);
+      search?.addEventListener('input',()=>{const q=search.value.trim().toLowerCase();for(const option of select?.options||[])option.hidden=Boolean(q&&!option.textContent.toLowerCase().includes(q));searchRentalGeneratorOptions(kind,q);});
+    }
+    drawerBody.querySelector('[data-document-record-invoice]')?.addEventListener('click',()=>openSingleDocumentGenerateDrawer('supplier_invoice',{period:context.period||state.period}));
+  }
+
+  function renderRentalGeneratorConfigure() {
+    const context=state.drawerContext||{};
+    const options=context.options||{suppliers:[],projects:[]};
+    const selectedTypes=context.selectedTypes?.length?context.selectedTypes:['supplier_timesheet'];
+    drawerTitle.textContent='New documents';
+    drawerSave.hidden=false;drawerSave.textContent='Review';drawerSave.disabled=!selectedTypes.length;
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Documents</strong></div><div class="document-generator-types">${rentalGeneratorTypeCards(selectedTypes)}</div><div class="document-generator-secondary-action"><button type="button" class="btn btn--secondary" data-document-record-invoice>Record Supplier Invoice Received</button></div></section><section class="form-section"><div class="form-section__head"><strong>Scope</strong></div><div class="form-grid"><label class="form-field"><span>Working period</span><strong>${escapeHtml(context.period||state.period)}</strong></label><label class="form-field"><span>Output</span><strong>Separate documents by source</strong></label></div><div class="document-generator-filters">${rentalGeneratorOptionsHtml('supplier',options.suppliers||[],context.supplierCodes||[],context.allSuppliers!==false)}${rentalGeneratorOptionsHtml('project',options.projects||[],context.projectIds||[],context.allProjects!==false)}</div></section>${rentalGeneratorRecentBatchesHtml(context.recentBatches||[])}`;
+    wireRentalGeneratorConfigure();
+  }
+
+  async function openRentalDocumentGeneratorDrawer(preferredType='') {
+    state.drawerType='document-generate';
+    state.drawerContext={flexibleGenerator:true,stage:'configure',period:state.period,selectedTypes:rentalGeneratorTypes.includes(preferredType)?[preferredType]:['supplier_timesheet'],supplierCodes:[],projectIds:[],allSuppliers:true,allProjects:true,options:{suppliers:[],projects:[]},recentBatches:[]};
+    drawer.classList.add('is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    drawerTitle.textContent='New documents';drawerSave.hidden=false;drawerSave.disabled=true;drawerSave.textContent='Loading…';
+    drawerBody.innerHTML='<div class="table-empty table-empty--card"><strong>Loading document scope…</strong></div>';
+    try{
+      const period=encodeURIComponent(periodKeyFromLabel(state.period));
+      const [payload,batchPayload]=await Promise.all([
+        appApi(`/api/documents/generation-options/?period=${period}`),
+        appApi(`/api/documents/generation-batches/?period=${period}&limit=5`),
+      ]);
+      if(state.drawerType!=='document-generate'||!state.drawerContext?.flexibleGenerator)return;
+      state.drawerContext={...state.drawerContext,options:{suppliers:payload.suppliers||[],projects:payload.projects||[]},recentBatches:batchPayload.batches||[]};
+      renderRentalGeneratorConfigure();
+    }catch(error){drawerSave.disabled=true;drawerBody.innerHTML=`<div class="table-empty table-empty--card"><strong>Document scope unavailable</strong><span>${escapeHtml(error.message)}</span></div>`;}
+  }
+
+  function renderRentalGeneratorReview(plan) {
+    const context=state.drawerContext||{};
+    const newItems=(plan.items||[]).filter(item=>!item.existing);
+    state.drawerContext={...context,stage:'review',plan,selectedKeys:newItems.map(item=>item.key)};
+    drawerTitle.textContent='Review documents';
+    drawerSave.hidden=false;drawerSave.disabled=!newItems.length;drawerSave.textContent=`Create ${newItems.length.toLocaleString()} Document${newItems.length===1?'':'s'}`;
+    const typeRows=Object.entries(plan.summary?.typeCounts||{}).map(([type,count])=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(count.new||0).toLocaleString()}</strong><small>${Number(count.existing||0).toLocaleString()} existing</small></div>`).join('');
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Generation summary</strong><button type="button" class="btn btn--ghost btn--sm" data-document-generator-back>Back</button></div><div class="document-generator-summary">${typeRows}</div></section><section class="form-section"><div class="form-section__head"><strong>Documents to create</strong><span>${newItems.length.toLocaleString()}</span></div><div class="document-generator-plan">${newItems.length?newItems.map(item=>`<label><input type="checkbox" name="document-generator-plan-item" value="${escapeHtml(item.key)}" checked><span><strong>${escapeHtml(documentTypeLabel(item.type))}</strong><small>${escapeHtml(item.label)}</small></span></label>`).join(''):'<div class="table-empty"><strong>No new documents</strong></div>'}</div></section>`;
+    drawerBody.querySelector('[data-document-generator-back]')?.addEventListener('click',()=>{state.drawerContext={...state.drawerContext,stage:'configure'};renderRentalGeneratorConfigure();});
+    drawerBody.querySelectorAll('[name="document-generator-plan-item"]').forEach(input=>input.addEventListener('change',()=>{const keys=[...drawerBody.querySelectorAll('[name="document-generator-plan-item"]:checked')].map(item=>item.value);state.drawerContext={...state.drawerContext,selectedKeys:keys};drawerSave.disabled=!keys.length;drawerSave.textContent=`Create ${keys.length.toLocaleString()} Document${keys.length===1?'':'s'}`;}));
+  }
+
+  async function reviewRentalDocumentGeneration() {
+    const payload=rentalGeneratorPayload();
+    if(!payload.document_types.length){showToast('Document type required','Select at least one document type.');return false;}
+    const supplierAll=drawerBody.querySelector('[name="rental-generator-all-suppliers"]')?.checked!==false;
+    const projectAll=drawerBody.querySelector('[name="rental-generator-all-projects"]')?.checked!==false;
+    if(!supplierAll&&!payload.supplier_codes.length){showToast('Supplier required','Select one or more suppliers or choose All suppliers.');return false;}
+    if(!projectAll&&!payload.project_ids.length){showToast('Project required','Select one or more projects or choose All projects.');return false;}
+    state.drawerContext={...(state.drawerContext||{}),selectedTypes:payload.document_types,supplierCodes:payload.supplier_codes,projectIds:payload.project_ids,allSuppliers:supplierAll,allProjects:projectAll};
+    drawerSave.disabled=true;drawerSave.textContent='Reviewing…';
+    try{const response=await appApi('/api/documents/generation-plan/',{method:'POST',body:payload});renderRentalGeneratorReview(response.plan||{});return true;}
+    catch(error){drawerSave.disabled=false;drawerSave.textContent='Review';showToast('Generation plan unavailable',error.message);return false;}
+  }
+
+  async function executeRentalDocumentGeneration() {
+    const context=state.drawerContext||{},plan=context.plan||{};const selectedKeys=context.selectedKeys||[];
+    if(!selectedKeys.length){showToast('No documents selected','Select at least one document.');return false;}
+    const body={period:plan.period,document_types:plan.documentTypes||[],supplier_codes:plan.supplierCodes||[],project_ids:plan.projectIds||[],selected_keys:selectedKeys,output_mode:'separate_supplier_project'};
+    drawerSave.disabled=true;drawerSave.textContent='Creating…';
+    try{
+      const payload=await appApi('/api/documents/generate/',{method:'POST',body});
+      cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';state.documentPage=1;state.documentTab='all';closeDrawer();
+      if(currentRoute()!=='documents')navigate('documents');else await loadDocumentList({render:true,force:true});
+      const batchNumber=payload.batch?.number||'';showToast('Documents created',`${batchNumber?`${batchNumber} · `:''}${Number(payload.created||0).toLocaleString()} created · ${Number(payload.skippedExisting||0).toLocaleString()} existing.`);return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent=`Create ${selectedKeys.length.toLocaleString()} Document${selectedKeys.length===1?'':'s'}`;showToast('Documents could not be created',error.message);return false;}
+  }
+
+  async function openDocumentGenerateDrawer(preferredType='', context={}) {
+    if(state.workspace==='rental' && preferredType!=='supplier_invoice')return openRentalDocumentGeneratorDrawer(documentTypeKey(preferredType));
+    return openSingleDocumentGenerateDrawer(preferredType,context);
   }
 
 
@@ -8212,7 +8689,12 @@
 
 
   async function generateDocumentFromDrawer(get) {
-    const drawerContext=state.drawerContext||{};const employeeReturnId=drawerContext.employeeScoped?drawerContext.employeeId:'';
+    const drawerContext=state.drawerContext||{};
+    if(drawerContext.flexibleGenerator){
+      if(drawerContext.stage==='review')return executeRentalDocumentGeneration();
+      return reviewRentalDocumentGeneration();
+    }
+    const employeeReturnId=drawerContext.employeeScoped?drawerContext.employeeId:'';
     const sourceId=get('document-source');const source=drawerContext.selectedSource?.sourceId===sourceId?drawerContext.selectedSource:null;
     if(!source){showToast(drawerContext.employeeScoped?'No eligible payroll source':'Source required',drawerContext.employeeScoped?'This employee does not have an unfinalized Approved-or-later payroll line for the selected period.':'Select a source record.');return false;}
     const body={document_type:source.type,source_id:source.sourceId};if(source.supplierCode)body.supplier_code=source.supplierCode;
@@ -8805,8 +9287,11 @@
     document.querySelectorAll('[data-document-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelDocumentListRequest();state.documentSearch='';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';state.documentPage=1;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();}));
     document.querySelectorAll('[data-document-select]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedDocumentId=btn.dataset.documentSelect;localStorage.setItem('payroll-ui-selected-document',state.selectedDocumentId);renderRoute();}));
     document.querySelectorAll('[data-document-generate]').forEach(btn=>btn.addEventListener('click',()=>openDocumentGenerateDrawer()));
+    document.querySelectorAll('[data-document-delivery-status]').forEach(btn=>btn.addEventListener('click',()=>openDocumentDeliveryStatusDrawer()));
+    document.querySelectorAll('[data-document-bulk-delivery]').forEach(btn=>btn.addEventListener('click',()=>openBulkDocumentDeliveryDrawer()));
     document.querySelectorAll('[data-document-batch-timesheets]').forEach(btn=>btn.addEventListener('click',createSupplierTimesheetStatementBatch));
     document.querySelectorAll('[data-document-batch-settlements]').forEach(btn=>btn.addEventListener('click',createSupplierSettlementStatementBatch));
+    document.querySelectorAll('[data-document-delivery]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===btn.dataset.documentDelivery)||documentAllRecords().find(item=>item.id===state.selectedDocumentId);openDocumentDeliveryDrawer(doc);}));
     document.querySelectorAll('[data-document-print]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===state.selectedDocumentId);printDocumentRecord(doc);}));
     document.querySelectorAll('[data-document-source-attachment]').forEach(btn=>btn.addEventListener('click',()=>{const doc=documentAllRecords().find(item=>item.id===btn.dataset.documentSourceAttachment)||documentAllRecords().find(item=>item.id===state.selectedDocumentId);if(doc?.sourceAttachmentUrl)window.open(doc.sourceAttachmentUrl,'_blank','noopener');}));
     document.querySelectorAll('[data-adjustment-view]').forEach(btn => btn.addEventListener('click', () => { cancelInternalAdjustmentRequest(); state.adjustmentView=btn.dataset.adjustmentView; state.adjustmentPage=1; renderRoute(); }));
@@ -10268,6 +10753,7 @@
       'document-generate': ['document-source'],
     };
     const names = [...(fixed[type] || [])];
+    if(type==='document-generate' && state.drawerContext?.flexibleGenerator) names.splice(0,names.length);
 
     if (type === 'advance' && state.workspace === 'rental') names.push('adjustment-project');
     if (type === 'salary-component' && state.drawerContext) names.push('salary-component-code');
@@ -10934,7 +11420,7 @@
     if (paymentDrawer && !roleCanPay()) { showToast('Payment permission required', `${accessProfileLabel()} cannot post or reconcile payments.`); return; }
     if (!approvalDrawer && !paymentDrawer && !roleCanEdit(state.workspace)) { showToast('Read-only workspace access', `${accessProfileLabel()} can view this workspace but cannot change operational records.`); return; }
     if (!validatePayrollRequiredFields()) return;
-    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','employee-record-lifecycle','project-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
+    if (!['project','project-edit','supplier','supplier-edit','branch','branch-edit','department','department-edit','employee-organization','internal-employee','internal-employee-edit','employee-lifecycle','employee-record-lifecycle','project-lifecycle','organization-lifecycle','rental-master-lifecycle','configuration-lifecycle','rental-worker','rental-assignment-action','salary-component','salary-structure','overtime-policy','attendance-import','attendance-return','payroll-review-decision','payroll-policy','supplier-payment','supplier-payment-result','advance','document-generate','document-delivery','document-delivery-bulk','bank-template','employee-payment-profile','salary-payment-settings'].includes(state.drawerType)) {
       const type = state.drawerType;
       closeDrawer();
       showToast('Action unavailable', 'This function is not enabled in the current backend module.');
@@ -10942,6 +11428,16 @@
     }
 
     const get = name => drawerBody.querySelector(`[name="${name}"]`)?.value.trim() || '';
+
+    if (state.drawerType === 'document-delivery') {
+      await createDocumentDeliveryPack(get);
+      return;
+    }
+    if (state.drawerType === 'document-delivery-bulk') {
+      if(state.drawerContext?.prepared)await dispatchBulkDocumentDeliveryBatch();
+      else await createBulkDocumentDeliveryPacks(get);
+      return;
+    }
 
     if (state.drawerType === 'attendance-import') {
       const text = get('attendance-import-text');
@@ -11966,7 +12462,7 @@
       if (target.matches('[data-rental-master-lifecycle],[data-rental-worker-action],[data-onboarding-create-master],[data-onboarding-import],[data-onboarding-apply-defaults]') && !hasAccessPermission('rental.workers.manage')) return 'edit';
       if (target.matches('[data-project-lifecycle]') && !hasAccessPermission('rental.assignments.manage')) return 'edit';
       if (target.matches('[data-adjustment-action]') && !hasAccessPermission(target.dataset.adjustmentAction === 'approve' ? 'rental.adjustments.approve' : 'rental.adjustments.manage')) return target.dataset.adjustmentAction === 'approve' ? 'approval' : 'edit';
-      if (target.matches('[data-document-generate]') && !hasAnyAccessPermission('rental.documents.finalize','shared.documents.finalize')) return 'edit';
+      if (target.matches('[data-document-generate],[data-document-bulk-delivery]') && !hasAnyAccessPermission('rental.documents.finalize','shared.documents.finalize')) return 'edit';
       if (target.dataset?.quickAdd === 'rental-worker' && !hasAccessPermission('rental.workers.manage')) return 'edit';
       if (target.dataset?.quickAdd === 'project' && !hasAccessPermission('rental.assignments.manage')) return 'edit';
       if (target.dataset?.quickAdd === 'supplier' && !hasAccessPermission('rental.suppliers.manage')) return 'edit';
@@ -12011,7 +12507,7 @@
       '[data-overtime-policy-add]','[data-overtime-policy-edit]','[data-timesheet-bulk-action]','[data-timesheet-import]','[data-timesheet-save]',
       '[data-rental-timesheet-import]','[data-rental-timesheet-save]','[data-rental-ts-bulk]','[data-payroll-calculate]','[data-payroll-reopen]','[data-payroll-reset-run]','[data-payroll-submit-review]',
       '[data-bank-batch-prepare]','[data-bank-template-new]','[data-bank-template-edit]','[data-wps-prepare]','[data-wps-validate]','[data-payment-profile-edit]','[data-payment-settings]',
-      '[data-rental-worker-action]','[data-onboarding-create-master]','[data-onboarding-import]','[data-onboarding-apply-defaults]','[data-settlement-progress]','[data-adjustment-action="submit"]','[data-document-generate]'
+      '[data-rental-worker-action]','[data-onboarding-create-master]','[data-onboarding-import]','[data-onboarding-apply-defaults]','[data-settlement-progress]','[data-adjustment-action="submit"]','[data-document-generate]','[data-document-bulk-delivery]'
     ].join(',');
     if (target.matches(editSelector) && !roleCanEdit(state.workspace)) return 'edit';
     return null;

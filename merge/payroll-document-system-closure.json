@@ -1,0 +1,39 @@
+{
+  "release": "1.0.117",
+  "purpose": "Final production closure for SESCCO MS Payroll document generation, supplier issue, secure delivery, and audit lifecycle",
+  "schema_change": false,
+  "authority": {
+    "business_documents_immutable": true,
+    "generation_batches_audit_backed": true,
+    "delivery_packs_audit_backed": true,
+    "delivery_lifecycle_audit_backed": true
+  },
+  "generation": {
+    "project_scope_safe_options": true,
+    "server_search_suppliers": true,
+    "server_search_projects": true,
+    "review_required": true,
+    "explicit_nonempty_selection_required": true,
+    "stale_review_rejected": true,
+    "max_plan_units": 500,
+    "max_create_per_batch": 200
+  },
+  "delivery": {
+    "period_filtered_before_bounds": true,
+    "integrity_required_before_issue": true,
+    "integrity_required_before_send": true,
+    "integrity_required_before_issue_sheet": true,
+    "sent_or_opened_required_before_manual_delivered": true,
+    "opened_idempotent": true,
+    "delivered_idempotent": true,
+    "share_revoke_reissue_serialized": true,
+    "email_dispatch_serialized_per_pack": true
+  },
+  "security": {
+    "supplier_invoice_attachment_no_store": true,
+    "supplier_invoice_attachment_no_referrer": true,
+    "supplier_invoice_attachment_no_index": true,
+    "shared_pack_no_store": true,
+    "global_frame_policy_denied": true
+  }
+}

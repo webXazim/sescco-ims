@@ -1,3 +1,100 @@
+# 1.0.117 — Payroll Document System Production Closure Hotfix
+
+- Closed the Rental document generator against project-scope leakage: supplier and project choices are resolved from only the current member's permitted period sources.
+- Added server-backed supplier/project search so the flexible generator can find records beyond the initial bounded 100-option result without loading the complete master into the browser.
+- Generation execution now requires an explicit non-empty reviewed selection and rejects stale/unknown reviewed keys instead of silently creating a different subset.
+- Delivery Operations and recent issue-pack lookup now filter the requested payroll period in PostgreSQL before applying bounded result limits, preventing newer periods from hiding older-period packs.
+- Supplier issue packs, issue sheets, Sent transitions and Delivered transitions now fail closed when any finalized document no longer passes snapshot-integrity verification.
+- Serialized supplier delivery lifecycle transitions with row locks so concurrent Opened, Sent, Delivered, Revoke and Reissue actions do not create duplicate authority events; SMTP dispatch is also serialized per pack.
+- Manual Delivered confirmation now requires prior Sent/Open evidence; supplier acknowledgement records Opened first and remains idempotent.
+- Supplier invoice source attachments now use no-store/no-referrer/no-index response controls.
+- Preserved the approved SESCCO first-page headpad, plain continuation pages, native preview, Supplier Invoice Received authority, flexible generation, delivery packs, secure links and bulk dispatch without adding a database migration.
+
+# 1.0.117 — Supplier Delivery Operations Center Hotfix
+
+- Added a Rental Documents **Delivery** workspace that tracks supplier issue packs by payroll period with Prepared, Sent, Opened and Delivered lifecycle counts.
+- Added bounded supplier-pack search and status filtering by pack number, supplier, recipient and document number, with a dedicated Link attention view for revoked or expired supplier links.
+- Supplier pack rows expose the operational actions already supported by the delivery authority: Issue Sheet, Send, Mark Delivered, Copy Link, Revoke and Reissue.
+- Hardened secure-link expiry so copying or reopening the same generation can no longer extend its validity window; expiry is fixed to the immutable pack/reissue generation start.
+- Expired links are blocked from Email, Portal, Hand delivery and Other dispatch paths until an authorized user explicitly reissues the link.
+- View-only document users can inspect delivery status but secure external share URLs are returned only to users with Rental/Shared document finalization authority.
+- Added explicit share expiry metadata (`shareExpiresAt`, Active/Expired/Revoked state) to issue-pack responses without introducing a mutable delivery model or database migration.
+
+# 1.0.117 — Supplier Bulk Dispatch Execution Hotfix
+
+- Added batch-level dispatch for prepared `DIB-` supplier delivery batches so Email packs can be sent to every supplier in the reviewed batch from one action.
+- Bulk Email dispatch is retry-safe: already-sent packs are skipped, only still-prepared packs are sent, and partial failures remain visible for retry without duplicating successful sends.
+- Hand delivery, Portal and Other channels can be confirmed Sent across the whole prepared batch only after an explicit operator confirmation; WhatsApp remains supplier-by-supplier because each external handoff must be individually confirmed.
+- Every bulk dispatch attempt writes immutable `documents.delivery_batch_dispatched` audit evidence with sent, already-sent and failed pack counts plus the affected pack references.
+- A failed supplier email does not roll back or hide successful deliveries to other suppliers; the result screen shows per-pack success/failure and supports retry of the remaining failed pack set.
+- Finalized BusinessDocument records and issued `DIP-` packs remain immutable; no database migration is introduced.
+
+# 1.0.117 — Supplier Bulk Delivery Planner Hotfix
+
+- Added one Rental Documents **Issue Documents** workspace for preparing supplier issue packs across one, several, or all suppliers in a payroll period.
+- Supplier-facing finalized documents are grouped by supplier with searchable supplier/project/document context and per-document selection.
+- One reviewed bulk action automatically creates a separate immutable `DIP-` issue pack for each selected supplier; documents from different suppliers are never mixed.
+- Bulk preparation supports Email, WhatsApp, Hand delivery, Portal, and Other channels while validating required supplier contact data before any pack is committed.
+- Added immutable `DIB-` delivery-batch audit evidence recording the supplier set, document count, created issue-pack IDs/numbers, channel, and operator.
+- Bulk issue is bounded to 200 documents, 25 suppliers, and 25 documents per supplier pack; document scope and Rental/Shared finalize permissions are enforced server-side.
+- Recent issue packs for the selected period are available from the same drawer with Issue Sheet, Send, Mark Delivered, and secure-link actions.
+- Finalized BusinessDocument records remain unchanged and no database migration is introduced.
+
+# 1.0.117 — Supplier Delivery Link Lifecycle Hotfix
+
+- Added secure supplier-link lifecycle controls for issued document packs: Copy Link, Revoke Link and Reissue Link.
+- Reissuing a link rotates an append-only generation number so every older signed token becomes invalid immediately.
+- Revocation is enforced on the public supplier portal and shared document print routes without changing finalized BusinessDocument records.
+- Added first-open evidence for each supplier issue pack and its documents; delivery can now progress Prepared → Sent → Opened → Delivered.
+- Supplier share pages display the access-expiry time derived from the signed link issue time.
+- Public supplier pack and shared print responses are non-cacheable, no-referrer and no-index to reduce link leakage from browsers and crawlers.
+- All link lifecycle evidence remains in immutable AuditEvent records; no database migration is introduced.
+
+# 1.0.117 — Supplier Outbound Delivery Portal Hotfix
+
+- Added SMTP email dispatch for prepared supplier document packs.
+- Added secure signed supplier links with a 30-day default validity window.
+- Added supplier acknowledgement that records immutable Delivered evidence.
+- Added WhatsApp handoff with an operator confirmation step before Sent is recorded.
+- Added Prepared → Sent → Delivered delivery states without changing finalized BusinessDocument records.
+- Added secure shared document printing for documents belonging to the issued supplier pack only.
+
+# 1.0.117 — Supplier Document Delivery Pack Hotfix
+
+- Added supplier document issue packs for finalized Supplier Timesheet Statements, Supplier Settlement Statements and Supplier Payment Advice records.
+- One issue pack may contain 1–25 finalized documents for the same supplier; document records remain immutable.
+- Recipient name, email, phone, delivery channel, external reference and note are captured at issue time.
+- Supplier master contact details prefill the issue drawer and same-period supplier documents can be selected into one pack.
+- Added immutable Sent and Delivered evidence through the existing AuditEvent authority, with `DIP-` numbered issue packs and no database schema migration.
+- Added a printable SESCCO supplier document issue sheet using the approved company headpad.
+- Documents show operational Sent/Delivered state and allow issue-sheet printing and delivery confirmation from the Documents workspace.
+
+# 1.0.117 — Rental Document Generation Batch Audit Hotfix
+
+- Every flexible Rental document execution now receives a company-scoped `DGB-` batch number and one immutable Documents audit event.
+- Batch audit evidence records period, requested document types, supplier/project scope, reviewed selection, created document IDs/numbers, existing skips and a deterministic request fingerprint.
+- The New Documents drawer shows the five most recent generation batches for the selected working period.
+- Batch execution remains atomic and idempotent; no BusinessDocument schema change or new migration is introduced.
+
+# 1.0.117 — Flexible Rental Document Generator Hotfix
+
+- Replaced fixed Supplier Timesheets / Settlement Statements page actions with one New Document workflow.
+- Added multi-document selection for Supplier Timesheet Statement, Supplier Settlement Statement, Project Timesheet and Supplier Payment Advice.
+- Added period-scoped supplier and project multi-select filters with search and All scope controls.
+- Added server-authoritative generation review showing exact new/existing document counts before creation.
+- Added per-output review selection so users can create one, several or all planned documents in a single atomic request.
+- Supplier Invoice Received remains an incoming-document workflow in the same New Document drawer and continues to require the supplier's original attachment.
+- Generation remains idempotent: already-finalized source documents are shown as existing and skipped rather than duplicated.
+- Generation is capped at 200 new documents per execution and 500 plan units to keep production requests bounded.
+- No BusinessDocument schema change or database migration is introduced.
+
+# 1.0.117 — Payroll Native Document Preview Hotfix
+
+- Replaced the embedded print iframe in Payroll Documents with a native first-page document preview.
+- Full multi-page output remains available through Print / Save PDF in a separate browser tab.
+- Restored global `X-Frame-Options: DENY`; no document route requires framing.
+- Preview uses the approved SESCCO headpad and operational document metadata without explanatory/development copy.
+
 # 1.0.117 — Supplier-Specific Payroll Document Workflow Hotfix
 
 - Added Supplier Timesheet Statement generation per supplier, project and payroll period without changing the frozen BusinessDocument schema.
