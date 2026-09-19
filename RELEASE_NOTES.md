@@ -1,3 +1,10 @@
+# 1.0.117 — Supplier Timesheet Source Reconciliation Deployment Hotfix
+
+- Fixed production deployment reconciliation for Supplier Timesheet Statements whose immutable source identity is intentionally stored as `rental_manpower.rentaltimesheetperiod:supplier:<SUPPLIER_CODE>`.
+- The reconciliation command now validates the real `RentalTimesheetPeriod` source UUID and company ownership, then verifies that the compound supplier code matches both the immutable document snapshot and entity reference.
+- Existing finalized Supplier Timesheet Statements remain unchanged; no data rewrite, deletion, regeneration, or database migration is required.
+- Added release verification so the supplier-timesheet compound-source contract cannot regress back to generic Django model-label parsing.
+
 # 1.0.117 — Rental Finance Runtime & Directory Performance Hotfix
 
 - Removed period financial-rollup work from ordinary Manpower Suppliers and Projects directory reads so large worker/assignment datasets no longer block basic master-data pages.

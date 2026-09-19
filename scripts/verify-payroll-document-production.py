@@ -94,6 +94,17 @@ for marker in (
     if marker not in service:
         fail(f"document service lost production marker: {marker}")
 
+reconciliation = text("apps/core/management/commands/merge_documents_management_report.py")
+for marker in (
+    'supplier_timesheet_prefix = "rental_manpower.rentaltimesheetperiod:supplier:"',
+    'django_apps.get_model("rental_manpower", "RentalTimesheetPeriod")',
+    'snapshot.get("document_variant") != "supplier_timesheet"',
+    'snapshot_supplier_code != supplier_code',
+    'document.entity_reference or ""',
+):
+    if marker not in reconciliation:
+        fail(f"Documents/Management reconciliation lost supplier-timesheet compound-source support: {marker}")
+
 views = text("apps/documents/views.py")
 for marker in ('descriptor.get("package_path")', 'apps" / "documents" / "assets', 'digest.hexdigest() != descriptor.get("sha256")', 'return static("payroll/assets/sescco-company-document-headpad-v2.png")', 'def document_source_attachment', 'Supplier invoice attachment integrity verification failed.'):
     if marker not in views:
