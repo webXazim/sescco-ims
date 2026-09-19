@@ -34,32 +34,48 @@ class Command(BaseCommand):
         if missing_settings:
             errors.append(f"CompanySettings: {missing_settings} companies are missing settings")
 
-        supplier_timesheet_prefix = "rental_manpower.rentaltimesheetperiod:supplier:"
+        supplier_timesheet_base = "rental_manpower.rentaltimesheetperiod"
 
         for document in BusinessDocument.objects.select_related("company").iterator():
             if not verify_document_snapshot(document):
                 errors.append(f"BusinessDocument {document.pk}: snapshot fingerprint mismatch")
                 continue
 
-            # Supplier Timesheet Statements intentionally use a compound source identity.
-            # ``source_id`` remains the real RentalTimesheetPeriod UUID while the supplier
-            # code is appended to ``source_model`` so several supplier-specific immutable
-            # documents can coexist for one locked project timesheet.  This is a document
-            # identity, not a Django model label, so reconcile its base model explicitly.
-            if document.source_model.startswith(supplier_timesheet_prefix):
-                supplier_code = document.source_model[len(supplier_timesheet_prefix):].strip().upper()
+            # BusinessDocument.source_model is normally a Django model label.  Some
+            # finalized document variants append a controlled qualifier after a colon
+            # so multiple immutable outputs can share the same authoritative source row.
+            # Always resolve only the base label through Django's app registry.
+            source_identity = str(document.source_model or "").strip()
+            base_source_model, separator, source_qualifier = source_identity.partition(":")
+            base_source_model = base_source_model.strip().lower()
+            source_qualifier = source_qualifier.strip()
+
+            try:
+                app_label, model_name = base_source_model.split(".", 1)
+                source_model = django_apps.get_model(app_label, model_name)
+            except (ValueError, LookupError):
+                errors.append(f"BusinessDocument {document.pk}: unknown source model {document.source_model!r}")
+                continue
+
+            source_company_id = source_model.objects.filter(pk=document.source_id).values_list("company_id", flat=True).first()
+            if source_company_id is None:
+                errors.append(
+                    f"BusinessDocument {document.pk}: missing source {base_source_model}:{document.source_id}"
+                )
+                continue
+            if source_company_id != document.company_id:
+                errors.append(f"BusinessDocument {document.pk}: source belongs to a different company")
+                continue
+
+            if not separator:
+                continue
+
+            # Supplier Timesheet Statements use:
+            # rental_manpower.rentaltimesheetperiod:supplier:<SUPPLIER_CODE>
+            if base_source_model == supplier_timesheet_base and source_qualifier.lower().startswith("supplier:"):
+                supplier_code = source_qualifier.split(":", 1)[1].strip().upper()
                 if not supplier_code:
                     errors.append(f"BusinessDocument {document.pk}: supplier-timesheet source is missing supplier code")
-                    continue
-                source_model = django_apps.get_model("rental_manpower", "RentalTimesheetPeriod")
-                source_company_id = source_model.objects.filter(pk=document.source_id).values_list("company_id", flat=True).first()
-                if source_company_id is None:
-                    errors.append(
-                        f"BusinessDocument {document.pk}: missing source rental_manpower.rentaltimesheetperiod:{document.source_id}"
-                    )
-                    continue
-                if source_company_id != document.company_id:
-                    errors.append(f"BusinessDocument {document.pk}: source belongs to a different company")
                     continue
 
                 snapshot = document.snapshot if isinstance(document.snapshot, dict) else {}
@@ -75,20 +91,7 @@ class Command(BaseCommand):
                     errors.append(f"BusinessDocument {document.pk}: supplier-timesheet source code does not match its entity reference")
                 continue
 
-            try:
-                app_label, model_name = document.source_model.split(".", 1)
-                source_model = django_apps.get_model(app_label, model_name)
-            except (ValueError, LookupError):
-                errors.append(f"BusinessDocument {document.pk}: unknown source model {document.source_model!r}")
-                continue
-            source_company_id = source_model.objects.filter(pk=document.source_id).values_list("company_id", flat=True).first()
-            if source_company_id is None:
-                errors.append(
-                    f"BusinessDocument {document.pk}: missing source {document.source_model}:{document.source_id}"
-                )
-                continue
-            if source_company_id != document.company_id:
-                errors.append(f"BusinessDocument {document.pk}: source belongs to a different company")
+            errors.append(f"BusinessDocument {document.pk}: unsupported qualified source model {document.source_model!r}")
 
         membership_by_id = {
             str(row.id): row.company_id

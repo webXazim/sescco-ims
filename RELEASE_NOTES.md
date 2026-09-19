@@ -1,3 +1,10 @@
+# 1.0.117 — Supplier Timesheet Source Reconciliation Activation Hotfix
+
+- Hardened document-source reconciliation by resolving only the base Django model label before any controlled `:<qualifier>` suffix, so supplier-specific timesheet identities can never be passed to Django's app registry as a model name.
+- Supplier Timesheet Statements continue to validate the authoritative RentalTimesheetPeriod source, company ownership, immutable supplier snapshot, document variant and entity reference.
+- Added an early deployment activation guard. A deployment now stops immediately with a clear message if `/opt/sites/ims` is still an older checkout that does not contain this reconciliation fix, instead of rebuilding the old image and failing much later.
+- Existing finalized documents and database rows are unchanged; no migration, rewrite, deletion or regeneration is required.
+
 # 1.0.117 — Supplier Timesheet Source Reconciliation Deployment Hotfix
 
 - Fixed production deployment reconciliation for Supplier Timesheet Statements whose immutable source identity is intentionally stored as `rental_manpower.rentaltimesheetperiod:supplier:<SUPPLIER_CODE>`.

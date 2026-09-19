@@ -51,6 +51,12 @@ lock_dir="${PROJECT_ROOT}/.deploy-lock"
 mkdir "${lock_dir}" 2>/dev/null || fatal "Another IMS deployment appears to be running."
 trap 'rmdir "${lock_dir}" 2>/dev/null || true' EXIT
 
+reconciliation_source="${PROJECT_ROOT}/apps/core/management/commands/merge_documents_management_report.py"
+if ! grep -Fq 'base_source_model, separator, source_qualifier = source_identity.partition(":")' "${reconciliation_source}"; then
+  fatal "Supplier-timesheet compound-source reconciliation hotfix is not active in this checkout. Replace /opt/sites/ims with the current release package before deploying."
+fi
+info "Supplier-timesheet compound-source reconciliation hotfix is active"
+
 info "Verifying the packaged production source freeze"
 bash "${PROJECT_ROOT}/scripts/verify-production-freeze.sh"
 

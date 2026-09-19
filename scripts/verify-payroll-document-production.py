@@ -96,11 +96,14 @@ for marker in (
 
 reconciliation = text("apps/core/management/commands/merge_documents_management_report.py")
 for marker in (
-    'supplier_timesheet_prefix = "rental_manpower.rentaltimesheetperiod:supplier:"',
-    'django_apps.get_model("rental_manpower", "RentalTimesheetPeriod")',
+    'supplier_timesheet_base = "rental_manpower.rentaltimesheetperiod"',
+    'base_source_model, separator, source_qualifier = source_identity.partition(":")',
+    'source_model = django_apps.get_model(app_label, model_name)',
+    'source_qualifier.lower().startswith("supplier:")',
     'snapshot.get("document_variant") != "supplier_timesheet"',
     'snapshot_supplier_code != supplier_code',
     'document.entity_reference or ""',
+    'unsupported qualified source model',
 ):
     if marker not in reconciliation:
         fail(f"Documents/Management reconciliation lost supplier-timesheet compound-source support: {marker}")
