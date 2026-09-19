@@ -10,6 +10,7 @@ from io import StringIO
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
+from apps.documents.models import BusinessDocument, DocumentType, DocumentWorkspace
 from apps.projects.contracts import ProjectStatus
 from apps.rental_manpower.project_adapter import project_public_id
 from apps.rental_manpower.models import (
@@ -421,6 +422,39 @@ class RentalSettlementTests(TestCase):
         self.assertEqual(Decimal(project_master["netCost"]), Decimal("90.00"))
         self.assertEqual(Decimal(supplier_master["currentCost"]), Decimal("90.00"))
         self.assertEqual(Decimal(supplier_master["outstanding"]), Decimal("50.00"))
+
+    def test_supplier_invoice_string_total_is_postgresql_safe_in_finance_context(self):
+        """Finalized invoice snapshots store money as JSON strings; reads must not cast JSONB directly."""
+        worker = self._worker("RW-INV-TEXT", "Invoice Text Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        settlement = self._approve_settlements()[0]
+        BusinessDocument.objects.create(
+            company=self.company,
+            workspace=DocumentWorkspace.RENTAL,
+            document_type=DocumentType.SUPPLIER_INVOICE,
+            document_number="SINV-PG-TEXT-1",
+            period_start=date(2026, 8, 1),
+            title="Supplier Invoice Received · Supplier S",
+            entity_reference=self.supplier.code,
+            entity_name=self.supplier.name,
+            source_model="rental_manpower.suppliersettlement",
+            source_id=settlement.pk,
+            source_reference=settlement.settlement_number,
+            external_reference="INV-PG-TEXT-1",
+            snapshot={"invoice": {"total": "92.00"}},
+            source_fingerprint="1" * 64,
+            snapshot_fingerprint="2" * 64,
+            finalized_at=timezone.now(),
+            finalized_by=self.user,
+        )
+
+        context = rental_settlement_context(
+            company=self.company, period_start=date(2026, 8, 1), membership=self.owner
+        )
+        row = context["settlements"][0]
+        self.assertEqual(row["supplierInvoice"]["number"], "INV-PG-TEXT-1")
+        self.assertEqual(Decimal(row["supplierInvoice"]["total"]), Decimal("92.00"))
+        self.assertEqual(Decimal(row["totals"]["payable"]), Decimal("92.00"))
 
     def test_unapproved_settlement_cost_is_not_exposed_as_supplier_payable(self):
         worker = self._worker("RW-DRAFT-M", "Draft Metric Worker", "Hourly", "10")

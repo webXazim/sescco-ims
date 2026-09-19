@@ -1,3 +1,12 @@
+# 1.0.117 — Rental Finance PostgreSQL JSON Response Hotfix
+
+- Fixed the Rental Manpower finance failure that surfaced as **“The server returned an invalid response”** on Supplier Settlements and every page that reuses the selected-period settlement authority, including Supplier Payments, Rental Overview, Projects and project/supplier finance profiles.
+- Root cause: finalized Supplier Invoice snapshots intentionally store monetary values as JSON strings (for example `"115.00"`), while the finance selector directly cast the PostgreSQL `jsonb` value to `numeric`. PostgreSQL rejects a JSON string-to-numeric cast and Django therefore emitted an HTML 500 page, which the SPA could not parse as JSON.
+- The invoice authority now extracts `snapshot.invoice.total` as text with `KeyTextTransform`, converts empty legacy values to SQL NULL, and only then casts to the authoritative decimal type. No settlement, invoice, payment or document data is rewritten.
+- Added a regression test using the real immutable Supplier Invoice snapshot shape so PostgreSQL-backed release tests exercise the JSON-string total path.
+- Hardened every Rental Manpower API error path to log unexpected exceptions while still returning the JSON contract expected by the Payroll SPA, and improved the browser error message for non-JSON upstream/proxy failures.
+- Extended the Rental Finance runtime release gate so the unsafe direct JSONB-to-numeric cast cannot be reintroduced. No migration or schema change is required.
+
 # 1.0.117 — Supplier Timesheet Source Reconciliation Activation Hotfix
 
 - Hardened document-source reconciliation by resolving only the base Django model label before any controlled `:<qualifier>` suffix, so supplier-specific timesheet identities can never be passed to Django's app registry as a model name.

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.http import HttpRequest, JsonResponse
+
+
+logger = logging.getLogger(__name__)
 
 
 def json_body(request: HttpRequest) -> dict[str, object]:
@@ -50,4 +54,23 @@ def handle_api_error(exc: Exception) -> JsonResponse:
         return JsonResponse({"ok": False, "errors": {"__all__": [str(exc)]}}, status=403)
     if isinstance(exc, IntegrityError):
         return JsonResponse({"ok": False, "errors": {"__all__": ["The request conflicts with an existing record."]}}, status=409)
-    raise exc
+
+    # Rental Payroll is an SPA surface: returning Django's HTML 500 page makes the
+    # browser report the misleading "server returned an invalid response" message and
+    # hides the real HTTP status.  Preserve the traceback in server logs while keeping
+    # every /api/rental/* failure on the JSON contract expected by the frontend.
+    logger.error(
+        "Unhandled Rental Manpower API error",
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JsonResponse(
+        {
+            "ok": False,
+            "errors": {
+                "__all__": [
+                    "The server could not complete this Rental Manpower request. Please retry; if it continues, check the server log for this request."
+                ]
+            },
+        },
+        status=500,
+    )

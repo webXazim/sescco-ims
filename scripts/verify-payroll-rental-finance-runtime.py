@@ -23,6 +23,7 @@ if contract.get("release") != version:
 js = text("static/payroll/js/app.js")
 api = text("apps/rental_manpower/api.py")
 selectors = text("apps/rental_manpower/selectors/settlements.py")
+api_utils = text("apps/rental_manpower/api_utils.py")
 
 for needle in (
     "rentalSettlementDetailKeys: new Set()",
@@ -67,4 +68,24 @@ for needle in (
     if needle not in selectors:
         fail(f"bounded settlement selector missing: {needle}")
 
-print("Verified Rental finance runtime: fast master directories, bounded settlement/payment summary, lazy project detail and retryable failures.")
+# PostgreSQL cannot cast a JSONB string (for example the immutable invoice snapshot
+# value "115.00") directly to numeric. The finance authority must extract text first.
+for needle in (
+    'KeyTextTransform("total", KeyTransform("invoice", F("snapshot")))',
+    'NullIf(',
+    '_invoice_total=Cast(invoice_total_text, money)',
+):
+    if needle not in selectors:
+        fail(f"PostgreSQL-safe supplier invoice extraction missing: {needle}")
+if 'Cast("snapshot__invoice__total", money)' in selectors:
+    fail("unsafe direct JSONB-to-numeric supplier invoice cast was reintroduced")
+
+for needle in (
+    'logger.error(',
+    '"Unhandled Rental Manpower API error"',
+    'status=500',
+):
+    if needle not in api_utils:
+        fail(f"Rental API JSON 500 contract missing: {needle}")
+
+print("Verified Rental finance runtime: fast master directories, bounded settlement/payment summary, PostgreSQL-safe invoice totals, lazy project detail and JSON retryable failures.")

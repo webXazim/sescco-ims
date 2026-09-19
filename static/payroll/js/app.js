@@ -94,7 +94,10 @@
     const response = await fetch(url, options);
     let payload = {};
     try { payload = await response.json(); }
-    catch { throw new Error('The server returned an invalid response.'); }
+    catch {
+      if (!response.ok) throw new Error(`Request failed (${response.status}) before the server returned JSON.`);
+      throw new Error('The server returned an invalid response.');
+    }
     if (response.status === 401) {
       throw new Error('Your sign-in session is no longer active. Sign in again to continue.');
     }
@@ -112,7 +115,10 @@
     const response = await fetch(url, options);
     let payload = {};
     try { payload = await response.json(); }
-    catch { throw new Error('The server returned an invalid response.'); }
+    catch {
+      if (!response.ok) throw new Error(`Request failed (${response.status}) before the server returned JSON.`);
+      throw new Error('The server returned an invalid response.');
+    }
     if (response.status === 401) throw new Error('Your sign-in session is no longer active. Sign in again to continue.');
     if (!response.ok || payload.ok === false) {
       const errors = payload.errors || {};

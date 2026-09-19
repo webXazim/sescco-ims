@@ -4,10 +4,11 @@ from calendar import month_name, monthrange
 from datetime import date
 from decimal import Decimal
 
-from django.core.paginator import Paginator
-from django.db.models.functions import Cast, Coalesce
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db.models import Count, DecimalField, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
+from django.db.models.functions import Cast, Coalesce, NullIf
 
 from apps.accounts.permissions import membership_can_edit, membership_can_workspace, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
@@ -38,8 +39,20 @@ def with_supplier_invoice_authority(qs, *, company):
         source_model="rental_manpower.suppliersettlement",
         source_id=OuterRef("pk"),
     ).order_by("-finalized_at")
+
+    # Supplier invoice snapshots intentionally store money as JSON strings (for example
+    # ``"115.00"``).  On PostgreSQL a direct Cast of a JSONField key uses the JSONB
+    # value itself; JSONB strings cannot be cast to numeric and the whole API request
+    # becomes an HTML 500 response.  Extract the JSON scalar as text first, then cast
+    # the text.  NullIf also keeps incomplete legacy snapshots from attempting to cast
+    # an empty string.  This path is shared by Settlement, Supplier Payment, Projects/
+    # Suppliers finance roll-ups and the Rental bootstrap, so it must remain PostgreSQL-safe.
+    invoice_total_text = NullIf(
+        KeyTextTransform("total", KeyTransform("invoice", F("snapshot"))),
+        Value(""),
+    )
     total_subquery = invoice_docs.annotate(
-        _invoice_total=Cast("snapshot__invoice__total", money)
+        _invoice_total=Cast(invoice_total_text, money)
     ).values("_invoice_total")[:1]
     return qs.annotate(
         _supplier_invoice_total=Coalesce(Subquery(total_subquery, output_field=money), Value(ZERO), output_field=money),

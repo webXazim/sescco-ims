@@ -1,7 +1,10 @@
 {
   "release": "1.0.117",
   "surface": "rental-finance-runtime",
-  "directories": ["projects", "suppliers"],
+  "directories": [
+    "projects",
+    "suppliers"
+  ],
   "settlement_summary_default": true,
   "project_detail_lazy": true,
   "directory_financial_rollup_deferred": true,
@@ -12,6 +15,10 @@
     "worker-level-settlement-lines-load-only-for-selected-project",
     "supplier-view-uses-settlement-summary-totals",
     "payments-use-bounded-settlement-summary",
-    "failed-finance-reads-leave-retryable-ui"
-  ]
+    "failed-finance-reads-leave-retryable-ui",
+    "supplier-invoice-json-string-totals-are-extracted-as-text-before-numeric-cast",
+    "unexpected-rental-api-errors-remain-json-and-are-logged"
+  ],
+  "postgresql_safe_invoice_total": true,
+  "json_error_contract": true
 }
