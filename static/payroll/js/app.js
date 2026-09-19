@@ -1095,6 +1095,9 @@
     rentalSettlementContexts: {},
     rentalFinancialMetricsByPeriod: rentalMaster.financialPeriod ? { [rentalMaster.financialPeriod]: rentalMaster.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}} } : {},
     rentalSettlementLoadedPeriods: new Set(),
+    rentalSettlementDetailKeys: new Set(),
+    rentalSettlementDetailLoadingKey: '',
+    rentalSettlementErrorByPeriod: {},
     rentalSettlementLoadingPeriod: null,
     rentalTimesheetScopes: [],
     rentalTimesheetMeta: {},
@@ -1339,7 +1342,7 @@
       if (state.projectClient !== 'All clients') params.set('client',state.projectClient === 'Client not set' ? '__blank__' : state.projectClient);
       if (state.projectManager !== 'All managers') params.set('manager',state.projectManager === 'Manager not set' ? '__blank__' : state.projectManager);
       if (state.projectSupplier !== 'All suppliers') params.set('supplier_id',state.projectSupplier);
-      params.set('period',periodKeyFromLabel(state.period)); params.set('sort','start'); params.set('direction','desc');
+      params.set('sort','start'); params.set('direction','desc');
     } else if (kind === 'suppliers') {
       endpoint='/api/rental/suppliers/';
       if (state.supplierSearch.trim()) params.set('q',state.supplierSearch.trim());
@@ -1352,7 +1355,7 @@
       else if (state.supplierWorkforce === 'No active workers') params.set('workforce','none');
       if (state.supplierOutstanding === 'Open payable') params.set('outstanding','open');
       else if (state.supplierOutstanding === 'Cleared / none') params.set('outstanding','cleared');
-      params.set('period',periodKeyFromLabel(state.period)); params.set('sort','code'); params.set('direction','asc');
+      params.set('sort','code'); params.set('direction','asc');
     } else if (kind === 'workers') {
       endpoint='/api/rental/workers/';
       if (state.rentalSearch.trim()) params.set('q',state.rentalSearch.trim());
@@ -6158,7 +6161,9 @@
 
   function paymentsSupplierTemplate() {
     if (!state.rentalSettlementLoadedPeriods.has(state.period)) {
-      loadRentalSettlementContext(state.period);
+      const error=state.rentalSettlementErrorByPeriod[state.period]||'';
+      if(!error && state.rentalSettlementLoadingPeriod!==state.period)loadRentalSettlementContext(state.period);
+      if(error)return `<div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Supplier payments unavailable</strong><span>${escapeHtml(error)}</span><button class="btn btn--secondary btn--sm" data-rental-settlement-retry>Retry</button></div>`;
       return `<div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Loading supplier payments…</strong></div>`;
     }
     let payables=supplierPayables(state.period);
@@ -6191,7 +6196,9 @@
   function paymentsTemplate() {
     if (state.workspace === 'rental') {
       if (!state.rentalSettlementLoadedPeriods.has(state.period)) {
-        loadRentalSettlementContext(state.period);
+        const error=state.rentalSettlementErrorByPeriod[state.period]||'';
+        if(!error && state.rentalSettlementLoadingPeriod!==state.period)loadRentalSettlementContext(state.period);
+        if(error)return `<section class="page payments-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-finance-page ui-v2-payroll-rental-supplier-payments-page"><div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Supplier payments unavailable</strong><span>${escapeHtml(error)}</span><button class="btn btn--secondary btn--sm" data-rental-settlement-retry>Retry</button></div></section>`;
         return `<section class="page payments-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-finance-page ui-v2-payroll-rental-supplier-payments-page"><div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Loading supplier payments…</strong></div></section>`;
       }
       if (!['supplier','receipts'].includes(state.paymentTab)) state.paymentTab='supplier';
@@ -7058,20 +7065,39 @@
     return `${period}::${projectId}::${supplierId}`;
   }
 
-  function applyRentalSettlementPayload(payload, { activate = true, supersede = true } = {}) {
+  function applyRentalSettlementPayload(payload, { activate = true, supersede = true, merge = false } = {}) {
     const label = payload.label || state.period;
     if (supersede) supersedePayrollAuthority('rental-settlements', label);
-    state.rentalSettlementContexts[label] = payload;
-    state.rentalFinancialMetricsByPeriod[label] = payload.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}};
-    if (activate) state.rentalTimesheetScopes = payload.timesheetScopes || [];
-    Object.keys(state.rentalSettlements).forEach(key => {
-      if (state.rentalSettlements[key]?.period === label) delete state.rentalSettlements[key];
-    });
+    if (merge && state.rentalSettlementContexts[label]) {
+      const previous=state.rentalSettlementContexts[label];
+      state.rentalSettlementContexts[label]={...previous,...payload,
+        timesheetScopes:(payload.timesheetScopes||[]).length?payload.timesheetScopes:previous.timesheetScopes,
+        projectWorkflows:{...(previous.projectWorkflows||{}),...(payload.projectWorkflows||{})},
+        payments:(payload.payments||[]).length?payload.payments:previous.payments,
+      };
+    } else state.rentalSettlementContexts[label] = payload;
+    if (!merge) state.rentalFinancialMetricsByPeriod[label] = payload.financialMetrics || {projects:{},suppliers:{},scopes:{},totals:{}};
+    else if (payload.financialMetrics) {
+      const previousMetrics=state.rentalFinancialMetricsByPeriod[label]||{projects:{},suppliers:{},scopes:{},totals:{}};
+      state.rentalFinancialMetricsByPeriod[label]={...previousMetrics,
+        projects:{...(previousMetrics.projects||{}),...(payload.financialMetrics.projects||{})},
+        suppliers:{...(previousMetrics.suppliers||{}),...(payload.financialMetrics.suppliers||{})},
+        scopes:{...(previousMetrics.scopes||{}),...(payload.financialMetrics.scopes||{})},
+      };
+    }
+    if (activate && (payload.timesheetScopes||[]).length) state.rentalTimesheetScopes = payload.timesheetScopes || [];
+    if (!merge) {
+      Object.keys(state.rentalSettlements).forEach(key => {
+        if (state.rentalSettlements[key]?.period === label) delete state.rentalSettlements[key];
+      });
+    }
     (payload.settlements || []).forEach(record => {
-      state.rentalSettlements[rentalSettlementKey(record.period, record.projectId, record.supplierId)] = record;
+      const key=rentalSettlementKey(record.period, record.projectId, record.supplierId);
+      const previous=state.rentalSettlements[key];
+      state.rentalSettlements[key] = merge && previous ? {...previous,...record,rows:(record.rows||[]).length?record.rows:(previous.rows||[])} : record;
     });
-    if (activate) {
-      state.rentalAdjustments = payload.adjustmentsByWorker || {};
+    if (activate && !merge) {
+      if (payload.adjustmentsByWorker && Object.keys(payload.adjustmentsByWorker).length) state.rentalAdjustments = payload.adjustmentsByWorker;
       state.supplierPayments = {};
       (payload.payments || []).forEach(payment => {
         state.supplierPayments[payment.supplierId] ||= [];
@@ -7093,14 +7119,40 @@
       const payload = await appApi(`/api/rental/settlements/?period=${encodeURIComponent(periodKeyFromLabel(period))}`);
       if (!payrollAuthorityIsCurrent(authorityTicket)) return state.rentalSettlementContexts[period] || null;
       const activate = state.period === period;
+      delete state.rentalSettlementErrorByPeriod[period];
       applyRentalSettlementPayload(payload, { activate, supersede:false });
       if (render && activate) renderRoute();
       return payload;
     } catch (error) {
-      showToast('Could not load rental settlements', error.message);
+      state.rentalSettlementErrorByPeriod[period]=error.message||'Supplier settlement data could not be loaded.';
+      showToast('Could not load rental settlements', state.rentalSettlementErrorByPeriod[period]);
+      if(render && state.period===period && ['rental-settlements','payments'].includes(currentRoute()))renderRoute();
       return null;
     } finally {
       if (state.rentalSettlementLoadingPeriod === period) state.rentalSettlementLoadingPeriod = null;
+    }
+  }
+
+
+  async function loadRentalSettlementProjectDetail(projectId, period = state.period, { render = true, force = false } = {}) {
+    if (!projectId) return null;
+    const detailKey=`${period}::${projectId}`;
+    if (!force && state.rentalSettlementDetailKeys.has(detailKey)) return true;
+    if (state.rentalSettlementDetailLoadingKey===detailKey) return null;
+    state.rentalSettlementDetailLoadingKey=detailKey;
+    try {
+      const params=new URLSearchParams({period:periodKeyFromLabel(period),project_id:projectId,detail:'1'});
+      const payload=await appApi(`/api/rental/settlements/?${params.toString()}`);
+      if(state.period!==period)return payload;
+      applyRentalSettlementPayload(payload,{activate:true,supersede:false,merge:true});
+      state.rentalSettlementDetailKeys.add(detailKey);
+      if(render && currentRoute()==='rental-settlements')renderRoute();
+      return payload;
+    } catch(error) {
+      showToast('Could not load settlement detail',error.message);
+      return null;
+    } finally {
+      if(state.rentalSettlementDetailLoadingKey===detailKey)state.rentalSettlementDetailLoadingKey='';
     }
   }
 
@@ -7224,7 +7276,10 @@
       } else {
         payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action } });
       }
-      applyRentalSettlementPayload(payload); renderRoute();
+      applyRentalSettlementPayload(payload);
+      state.rentalSettlementDetailKeys.delete(`${state.period}::${state.rentalSettlementProject}`);
+      renderRoute();
+      queueMicrotask(()=>loadRentalSettlementProjectDetail(state.rentalSettlementProject,state.period,{force:true}));
       const labels={calculate:'calculated',submit:'submitted for review',approve:'approved',close:'closed'};
       showToast(`Settlement ${labels[action] || action}`, `${state.period} supplier settlement state was updated by the server.`);
     } catch (error) { showToast('Settlement action blocked', error.message); }
@@ -7236,7 +7291,10 @@
     if (!reason?.trim()) return;
     try {
       const payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action:'return', reason:reason.trim() } });
-      applyRentalSettlementPayload(payload); renderRoute();
+      applyRentalSettlementPayload(payload);
+      state.rentalSettlementDetailKeys.delete(`${state.period}::${state.rentalSettlementProject}`);
+      renderRoute();
+      queueMicrotask(()=>loadRentalSettlementProjectDetail(state.rentalSettlementProject,state.period,{force:true}));
       showToast('Settlement returned', 'The Review settlement is Calculated again and must be recalculated after source changes.');
     } catch (error) { showToast('Settlement return blocked', error.message); }
   }
@@ -7246,7 +7304,10 @@
     if (!window.confirm('Close this fully paid project settlement period? Closed settlements remain immutable unless a paid supplier payment is later reversed.')) return;
     try {
       const payload = await appApi('/api/rental/settlements/workflow/', { method:'POST', body:{ period:periodKeyFromLabel(), project_id:state.rentalSettlementProject, action:'close' } });
-      applyRentalSettlementPayload(payload); renderRoute();
+      applyRentalSettlementPayload(payload);
+      state.rentalSettlementDetailKeys.delete(`${state.period}::${state.rentalSettlementProject}`);
+      renderRoute();
+      queueMicrotask(()=>loadRentalSettlementProjectDetail(state.rentalSettlementProject,state.period,{force:true}));
       showToast('Settlement period closed', `${state.period} supplier settlements for this project are closed.`);
     } catch (error) { showToast('Settlement close blocked', error.message); }
   }
@@ -7295,6 +7356,8 @@
   function rentalSettlementProjectView() {
     const project = state.projects.find(item => item.id === state.rentalSettlementProject);
     if (!project) return `<div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Select a project</strong><span>Choose a managed project with a rental timesheet for the selected month.</span></div>`;
+    const detailKey=`${state.period}::${project.id}`;
+    if(!state.rentalSettlementDetailKeys.has(detailKey)) return `<div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Loading project settlement…</strong><span>Loading only this project's worker-level settlement detail.</span></div>`;
     const suppliers = rentalSettlementSuppliers(project.id,state.period);
     if (state.rentalSettlementSupplier !== 'All suppliers' && !suppliers.some(item=>item.id===state.rentalSettlementSupplier)) state.rentalSettlementSupplier='All suppliers';
     const groups = rentalSettlementCurrentGroups();
@@ -7342,7 +7405,12 @@
     Object.values(state.rentalSettlements||{}).filter(row=>row.period===state.period&&row.supplierId===supplier.id).forEach(row=>projectIds.add(row.projectId));
     const projects=state.projects.filter(project=>projectIds.has(project.id));
     const groups = projects.map(project=>rentalSettlementRecordOrDraft(state.period,project.id,supplier.id));
-    const totals = rentalSettlementTotals(groups.flatMap(group=>group.rows||[]));
+    const totals = groups.reduce((sum,group)=>{
+      const t=group.totals||rentalSettlementTotals(group.rows||[]);
+      sum.workers+=Number(t.workers||0);sum.hours+=Number(t.hours||0);sum.otHours+=Number(t.otHours||0);
+      sum.gross+=Number(t.gross||0);sum.adjustmentEarnings+=Number(t.adjustmentEarnings||0);sum.adjustments+=Number(t.adjustments||0);sum.net+=Number(t.net||0);
+      return sum;
+    },{workers:0,hours:0,otHours:0,gross:0,adjustmentEarnings:0,adjustments:0,net:0});
     return `<section class="supplier-settlement-hero ui-v2-payroll-rental-supplier-settlement-hero"><div><span>Supplier settlement</span><button class="entity-link entity-link--stack ui-v2-payroll-table-entity" data-route-link="suppliers/${escapeHtml(supplier.id)}"><strong>${escapeHtml(supplier.name)}</strong><span>${escapeHtml(state.period)} · project-by-project manpower payable</span></button></div><div class="supplier-settlement-total"><span>Calculated net</span><strong>${formatCurrency(totals.net)}</strong><small>${projects.length} project${projects.length===1?'':'s'} · ${totals.workers} worker snapshots</small></div></section>
       <section class="data-panel ui-v2-payroll-panel ui-v2-payroll-register"><div class="table-toolbar ui-v2-payroll-register__toolbar"><div class="timesheet-filter timesheet-filter--compact"><select id="rentalSettlementSupplierMaster" class="ui-v2-select ui-v2-payroll-operational-select" aria-label="Supplier">${candidateSuppliers.map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===supplier.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}</select></div><button class="btn btn--secondary" data-supplier-assignment-activity="${escapeHtml(supplier.id)}">Assignment Activity</button></div><div class="table-scroll ui-v2-payroll-table-wrap"><table class="data-table settlement-project-table ui-v2-payroll-rental-settlement-table"><thead><tr><th>Project</th><th>Timesheet</th><th>Workers</th><th>Hours</th><th>Gross</th><th>Additions</th><th>Deductions</th><th>Net</th><th>Settlement</th><th></th></tr></thead><tbody>${groups.length?groups.map(group=>{const project=state.projects.find(p=>p.id===group.projectId);const totals=group.totals||rentalSettlementTotals(group.rows||[]);const ts=rentalTimesheetScope(group.projectId,state.period)?.status||'Not started';return `<tr><td><button class="entity-link entity-link--stack ui-v2-payroll-table-entity" data-route-link="projects/${escapeHtml(group.projectId)}"><strong>${escapeHtml(project?.name||group.projectId)}</strong><span>${escapeHtml(project?.code||'Project')}</span></button></td><td>${rentalSettlementStatusBadge(ts)}</td><td>${totals.workers}</td><td>${Number(totals.hours||0).toLocaleString('en-SA',{maximumFractionDigits:2})}</td><td class="table-money">${formatCurrency(totals.gross)}</td><td class="table-money">${formatCurrency(totals.adjustmentEarnings||0)}</td><td class="table-money">${formatCurrency(totals.adjustments)}</td><td class="table-money"><strong>${formatCurrency(totals.net)}</strong></td><td>${rentalSettlementStatusBadge(group.status)}</td><td><button class="btn btn--ghost btn--sm" data-open-rental-settlement-project="${escapeHtml(group.projectId)}" data-settlement-supplier="${escapeHtml(supplier.id)}">Open</button></td></tr>`}).join(''):`<tr><td colspan="10"><div class="table-empty ui-v2-payroll-table-empty"><strong>No project deployment in ${escapeHtml(state.period)}.</strong><span>This supplier does not appear in a rental timesheet for the selected month.</span></div></td></tr>`}</tbody></table></div></section>
       <section class="source-note ui-v2-payroll-source-note">${icon('info')}<span><strong>Commercial ledger separation.</strong> Each project remains independently auditable while this view aggregates the supplier's calculated snapshots across projects.</span></section>`;
@@ -7356,14 +7424,22 @@
   }
   function rentalSettlementsTemplate() {
     if (!state.rentalSettlementLoadedPeriods.has(state.period)) {
-      loadRentalSettlementContext(state.period);
+      const error=state.rentalSettlementErrorByPeriod[state.period]||'';
+      if(!error && state.rentalSettlementLoadingPeriod!==state.period)loadRentalSettlementContext(state.period);
+      if(error)return `<section class="page rental-settlement-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-finance-page ui-v2-payroll-rental-settlements"><div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Supplier settlements unavailable</strong><span>${escapeHtml(error)}</span><button class="btn btn--secondary btn--sm" data-rental-settlement-retry>Retry</button></div></section>`;
       return `<section class="page rental-settlement-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-finance-page ui-v2-payroll-rental-settlements"><div class="table-empty table-empty--card ui-v2-payroll-table-empty"><strong>Loading supplier settlements…</strong><span>Fetching the locked-timesheet settlement context from the server.</span></div></section>`;
     }
     const scopes=state.rentalSettlementContexts[state.period]?.timesheetScopes||[];
     const scopedProjectIds=new Set(scopes.map(item=>item.projectId));
     Object.values(state.rentalSettlements||{}).filter(item=>item.period===state.period).forEach(item=>scopedProjectIds.add(item.projectId));
     const currentProject = state.projects.find(item=>item.id===state.rentalSettlementProject&&scopedProjectIds.has(item.id)) || state.projects.find(item=>scopedProjectIds.has(item.id));
-    if (currentProject) state.rentalSettlementProject=currentProject.id;
+    if (currentProject) {
+      state.rentalSettlementProject=currentProject.id;
+      const detailKey=`${state.period}::${currentProject.id}`;
+      if(state.rentalSettlementTab==='current' && !state.rentalSettlementDetailKeys.has(detailKey) && state.rentalSettlementDetailLoadingKey!==detailKey) {
+        queueMicrotask(()=>loadRentalSettlementProjectDetail(currentProject.id,state.period));
+      }
+    }
     return `<section class="page rental-settlement-page ui-v2-payroll-page ui-v2-prs-rental-page ui-v2-prs-rental-finance-page ui-v2-payroll-rental-settlements">
       <div class="page-head"><div class="page-head__copy"><span class="eyebrow">Rental Manpower · Cost & Settlement</span><h1>Supplier Settlements</h1><p>Convert locked project-timesheet snapshots into immutable supplier payables without mixing rental manpower with internal employee payroll.</p><span class="period-note">Settlement period: <strong>${escapeHtml(state.period)}</strong></span></div><div class="page-head__actions"><button class="btn btn--secondary" data-route-link="timesheets">Project Timesheets</button><button class="btn btn--secondary" data-route-link="adjustments">Worker Adjustments</button><button class="btn btn--secondary" data-route-link="payments">Supplier Payments</button></div></div>
       <div class="source-banner source-banner--compact ui-v2-payroll-source-note ui-v2-payroll-rental-settlement-boundary">${icon('info')}<span><strong>Controlled settlement boundary.</strong> Locked project timesheets supply the frozen hours and OT snapshot; effective assignment rates and Approved rental adjustments are calculated on the server and snapshotted before Finance Review. Approval creates the supplier payable; payment remains separate.</span></div>
@@ -7482,6 +7558,7 @@
     // any previously cached settlement mega-context, but never reload it just to refresh the
     // Worker Adjustments page. The dedicated page API is the only live-register authority.
     state.rentalSettlementLoadedPeriods.delete(period);
+    [...state.rentalSettlementDetailKeys].filter(key=>key.startsWith(`${period}::`)).forEach(key=>state.rentalSettlementDetailKeys.delete(key));
     delete state.rentalSettlementContexts[period];
     if(currentRoute()==='adjustments'&&state.workspace==='rental') {
       await loadRentalAdjustmentPage(period,{force:true,render:false});
@@ -9167,6 +9244,11 @@
     }));
     document.querySelectorAll('[data-directory-retry]').forEach(btn => btn.addEventListener('click', () => {
       const kind=btn.dataset.directoryRetry; const store=directoryStore(kind); if(store){store.key='';store.failedKey='';store.error='';loadServerDirectory(kind,{force:true});}
+    }));
+    document.querySelectorAll('[data-rental-settlement-retry]').forEach(btn => btn.addEventListener('click', () => {
+      delete state.rentalSettlementErrorByPeriod[state.period];
+      loadRentalSettlementContext(state.period,{force:true,render:true});
+      renderRoute();
     }));
     document.querySelectorAll('[data-assignment-page]').forEach(btn => btn.addEventListener('click', () => {
       const [kind,pageRaw]=String(btn.dataset.assignmentPage||'').split('|');const store=rentalAssignmentStore(kind),page=Number(pageRaw);

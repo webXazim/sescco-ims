@@ -1176,14 +1176,21 @@ def rental_settlements_api(request: HttpRequest) -> JsonResponse:
     try:
         _require_permission(request, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
         period_start = _request_period(request)
+        detail = str(request.GET.get("detail", "")).strip().lower() in {"1", "true", "yes"}
+        project_id = request.GET.get("project_id") or None
+        if detail and not project_id:
+            raise ValidationError({"project_id": "project_id is required for settlement detail."})
         return JsonResponse({
             "ok": True,
             **rental_settlement_context(
                 company=request.company,
                 period_start=period_start,
                 membership=request.company_membership,
-                project_id=request.GET.get("project_id") or None,
+                project_id=project_id,
                 supplier_id=request.GET.get("supplier_id") or None,
+                include_rows=detail,
+                include_adjustments=False,
+                include_payments=not detail,
             ),
         })
     except Exception as exc:

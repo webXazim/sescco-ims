@@ -51,6 +51,7 @@ bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-payroll-reference-coverage.py
 python3 scripts/verify-payroll-reference-output.py
 python3 scripts/verify-payroll-directory-runtime.py
+python3 scripts/verify-payroll-rental-finance-runtime.py
 python3 scripts/verify-payroll-assignment-runtime.py
 python3 scripts/verify-payroll-timesheet-scale.py
 python3 scripts/verify-payroll-bootstrap-search.py

@@ -69,6 +69,7 @@ python3 "${PROJECT_ROOT}/scripts/verify-sourcing-security-certification.py"
 python3 "${PROJECT_ROOT}/scripts/verify-sourcing-browser-e2e.py"
 
 info "Verifying frozen Payroll production-E2E certification contract"
+python3 "${PROJECT_ROOT}/scripts/verify-payroll-rental-finance-runtime.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-timesheet-scale.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-bootstrap-search.py"
 python3 "${PROJECT_ROOT}/scripts/verify-payroll-query-hardening.py"

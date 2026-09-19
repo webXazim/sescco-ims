@@ -1,3 +1,12 @@
+# 1.0.117 — Rental Finance Runtime & Directory Performance Hotfix
+
+- Removed period financial-rollup work from ordinary Manpower Suppliers and Projects directory reads so large worker/assignment datasets no longer block basic master-data pages.
+- Split Rental settlement loading into a bounded period summary plus lazy worker-level detail for only the selected project; the initial Settlement and Supplier Payments pages no longer serialize every settlement line/rate/adjustment row.
+- Supplier-oriented settlement totals now use immutable settlement summary totals and do not depend on hydrating every worker row.
+- Supplier Payments consumes the same bounded settlement summary while preserving payment/invoice authority and existing lifecycle actions.
+- Added explicit failed-load states and Retry controls for Supplier Settlements and Supplier Payments instead of leaving the page on an endless loading panel after an upstream/API failure.
+- Preserved server-backed pagination/search for supplier/project directories, supplier/project access scope, immutable settlement snapshots and the completed document-delivery workflow; no database migration is introduced.
+
 # 1.0.117 — Payroll Document System Production Closure Hotfix
 
 - Closed the Rental document generator against project-scope leakage: supplier and project choices are resolved from only the current member's permitted period sources.

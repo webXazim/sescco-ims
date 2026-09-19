@@ -30,8 +30,8 @@ for section, keys in {
         if values.get(key) is not True:
             fail(f"closure contract guarantee changed: {section}.{key}")
 
-if not notes.startswith("# 1.0.117 — Payroll Document System Production Closure Hotfix"):
-    fail("release notes do not lead with the final document-system closure")
+if "# 1.0.117 — Payroll Document System Production Closure Hotfix" not in notes:
+    fail("release notes no longer contain the final document-system closure")
 
 required_api = [
     'timesheet_sources = RentalTimesheetEntry.objects.for_company(request.company).filter(period__period_start=period_start)',

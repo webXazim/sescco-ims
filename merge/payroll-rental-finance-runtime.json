@@ -1,0 +1,17 @@
+{
+  "release": "1.0.117",
+  "surface": "rental-finance-runtime",
+  "directories": ["projects", "suppliers"],
+  "settlement_summary_default": true,
+  "project_detail_lazy": true,
+  "directory_financial_rollup_deferred": true,
+  "error_retry": true,
+  "guarantees": [
+    "project-and-supplier-directory-reads-do-not-load-period-financial-rollups",
+    "settlement-list-does-not-prefetch-worker-lines",
+    "worker-level-settlement-lines-load-only-for-selected-project",
+    "supplier-view-uses-settlement-summary-totals",
+    "payments-use-bounded-settlement-summary",
+    "failed-finance-reads-leave-retryable-ui"
+  ]
+}

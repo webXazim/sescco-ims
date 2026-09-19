@@ -526,7 +526,7 @@ def serialize_settlement_line(line: SupplierSettlementLine) -> dict[str, object]
     }
 
 
-def serialize_supplier_settlement(settlement: SupplierSettlement, *, membership=None) -> dict[str, object]:
+def serialize_supplier_settlement(settlement: SupplierSettlement, *, membership=None, include_rows: bool = True) -> dict[str, object]:
     paid, processing = _payment_amounts(settlement)
     payable = _settlement_payable(settlement)
     outstanding = max(ZERO, payable - paid)
@@ -560,14 +560,23 @@ def serialize_supplier_settlement(settlement: SupplierSettlement, *, membership=
             "adjustments": str(settlement.total_adjustment_deductions), "net": str(settlement.total_net),
             "payable": str(payable), "paid": str(paid), "processing": str(processing), "outstanding": str(outstanding), "available": str(available),
         },
-        "rows": [serialize_settlement_line(line) for line in getattr(settlement, "snapshot_lines", [])],
+        "rows": [serialize_settlement_line(line) for line in getattr(settlement, "snapshot_lines", [])] if include_rows else [],
         "preview": False,
     }
 
 
-def settlements_for_period(*, company, period_start: date, project_id=None, supplier_id=None) -> list[SupplierSettlement]:
+def settlements_for_period(*, company, period_start: date, project_id=None, supplier_id=None, include_rows: bool = True) -> list[SupplierSettlement]:
     start, _end = _month_bounds(period_start)
-    qs = _settlement_queryset(company).filter(period_start=start)
+    if include_rows:
+        qs = _settlement_queryset(company).filter(period_start=start)
+    else:
+        allocation_qs = SupplierPaymentAllocation.objects.for_company(company).select_related("payment").order_by("created_at")
+        qs = (
+            SupplierSettlement.objects.for_company(company).filter(period_start=start)
+            .select_related("project", "supplier", "source_timesheet", "calculated_by", "submitted_by", "approved_by", "closed_by")
+            .prefetch_related(Prefetch("payment_allocations", queryset=allocation_qs, to_attr="snapshot_allocations"))
+        )
+        qs = with_supplier_invoice_authority(qs, company=company)
     if project_id:
         project = rental_project_for_company(company=company, identifier=project_id)
         qs = qs.filter(project=project)
@@ -614,17 +623,38 @@ def supplier_payments_for_period(*, company, period_start: date) -> list[Supplie
     return list(payments)
 
 
-def rental_settlement_context(*, company, period_start: date, membership=None, project_id=None, supplier_id=None) -> dict[str, object]:
+def rental_settlement_context(
+    *, company, period_start: date, membership=None, project_id=None, supplier_id=None,
+    include_rows: bool = False, include_adjustments: bool = False, include_payments: bool = True,
+) -> dict[str, object]:
+    """Return a bounded settlement workspace payload.
+
+    The default list/workspace read intentionally excludes worker line snapshots and
+    the full adjustment register.  Those records are the largest objects in a rental
+    period and previously made ordinary Settlement/Payment page loads serialize
+    thousands of nested rows.  A project detail request opts into settlement rows.
+    """
     start, _end = _month_bounds(period_start)
-    settlements = settlements_for_period(company=company, period_start=start, project_id=project_id, supplier_id=supplier_id)
-    adjustments = rental_adjustments_for_period(company=company, period_start=start)
+    settlements = settlements_for_period(
+        company=company, period_start=start, project_id=project_id, supplier_id=supplier_id, include_rows=include_rows
+    )
+
     adjustments_by_worker: dict[str, list[dict[str, object]]] = {}
-    for adjustment in adjustments:
-        adjustments_by_worker.setdefault(str(adjustment.worker_id), []).append(serialize_rental_adjustment(adjustment))
-    payments = supplier_payments_for_period(company=company, period_start=start)
+    adjustments_payload: list[dict[str, object]] = []
+    if include_adjustments:
+        adjustments = rental_adjustments_for_period(company=company, period_start=start)
+        adjustments_payload = [serialize_rental_adjustment(row) for row in adjustments]
+        for row in adjustments_payload:
+            adjustments_by_worker.setdefault(str(row["workerId"]), []).append(row)
+
+    payments = supplier_payments_for_period(company=company, period_start=start) if include_payments else []
     timesheet_scopes = []
     project_workflows: dict[str, dict[str, object]] = {}
-    periods = list(RentalTimesheetPeriod.objects.for_company(company).filter(period_start=start).select_related("project").order_by("project__code"))
+    periods_qs = RentalTimesheetPeriod.objects.for_company(company).filter(period_start=start).select_related("project")
+    if project_id:
+        project = rental_project_for_company(company=company, identifier=project_id)
+        periods_qs = periods_qs.filter(project=project)
+    periods = list(periods_qs.order_by("project__code"))
     period_ids = [item.pk for item in periods]
     supplier_scope_rows = list(
         RentalTimesheetEntry.objects.for_company(company).filter(period_id__in=period_ids)
@@ -647,16 +677,29 @@ def rental_settlement_context(*, company, period_start: date, membership=None, p
         project_workflows[project_public_id(ts_period.project)] = project_settlement_workflow(
             period=ts_period, settlements=settlements_by_project.get(ts_period.project_id, []), membership=membership
         )
-    financial_metrics = rental_financial_metrics_from_settlements(settlements)
+
+    # Summary mode computes advance totals with one aggregate query rather than
+    # prefetching every settlement line and adjustment line.
+    advance_totals = None
+    if not include_rows:
+        advance_rows = (
+            SupplierSettlementAdjustmentLine.objects.for_company(company)
+            .filter(settlement_line__settlement__period_start=start, adjustment_type="advance")
+            .values("settlement_line__settlement_id")
+            .annotate(total=Sum("amount"))
+        )
+        advance_totals = {row["settlement_line__settlement_id"]: row["total"] or ZERO for row in advance_rows}
+    financial_metrics = rental_financial_metrics_from_settlements(settlements, advance_totals=advance_totals)
     return {
         "period": f"{start:%Y-%m}", "label": _period_label(start),
-        "settlements": [serialize_supplier_settlement(row, membership=membership) for row in settlements],
+        "settlements": [serialize_supplier_settlement(row, membership=membership, include_rows=include_rows) for row in settlements],
         "financialMetrics": financial_metrics,
-        "adjustments": [serialize_rental_adjustment(row) for row in adjustments],
+        "adjustments": adjustments_payload,
         "adjustmentsByWorker": adjustments_by_worker,
         "payments": [serialize_supplier_payment(row, membership=membership) for row in payments],
         "timesheetScopes": timesheet_scopes,
         "projectWorkflows": project_workflows,
+        "detail": bool(include_rows),
         "canEdit": _rental_permissions(membership)["edit"],
         "canApprove": _rental_permissions(membership)["approve"],
         "canPay": _rental_permissions(membership)["pay"],
