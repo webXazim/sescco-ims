@@ -408,11 +408,29 @@ def _assert_settlement_integrity(settlement: SupplierSettlement) -> None:
 
 
 def assert_supplier_settlement_integrity(settlement: SupplierSettlement) -> None:
-    """Public read-side guard for immutable documents and downstream finance evidence.
+    """Read-side guard for immutable financial documents and downstream evidence.
 
-    This does not change settlement calculations. It only reuses the settlement authority's
-    existing source/snapshot fingerprints before another immutable artefact is finalized.
+    Before approval, a settlement is still recalculable, so the live Locked Timesheet source
+    must continue to match the calculation fingerprint. Once the settlement reaches an
+    Approved-or-later payable state, the approved settlement snapshot is the immutable
+    financial authority. Later operational/source normalization must not make a historical
+    Settlement Statement impossible to issue; at that point we verify the frozen settlement
+    snapshot and its stored source proof instead of recomputing the live source fingerprint.
     """
+    if settlement.source_timesheet.status != RentalTimesheetStatus.LOCKED:
+        raise ValidationError("The source rental timesheet is no longer Locked.")
+
+    if settlement.status in PAYABLE_SETTLEMENT_STATUSES:
+        if not settlement.source_fingerprint or len(settlement.source_fingerprint) != 64:
+            raise ValidationError("Settlement source integrity proof is missing.")
+        current_snapshot = settlement_snapshot_fingerprint(settlement)
+        if not settlement.snapshot_fingerprint or current_snapshot != settlement.snapshot_fingerprint:
+            raise ValidationError("Settlement snapshot integrity check failed. The approved settlement record may have changed.")
+        return
+
+    # Calculated/Review rows are still mutable financial work-in-progress. Keep the strict
+    # source comparison here so changed attendance/rates/approved adjustments force a real
+    # recalculation before Finance can approve them.
     _assert_settlement_integrity(settlement)
 
 

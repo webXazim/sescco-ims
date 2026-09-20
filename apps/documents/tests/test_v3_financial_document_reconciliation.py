@@ -14,7 +14,8 @@ from django.test import SimpleTestCase
 from apps.documents.models import DocumentType
 from apps.documents.schema import validate_document_snapshot_for_type
 from apps.documents.services.documents import _settlement_snapshot, _supplier_payment_receipt_snapshot
-from apps.rental_manpower.models import RentalTimesheetStatus, SupplierPaymentStatus
+from apps.rental_manpower.models import RentalSettlementStatus, RentalTimesheetStatus, SupplierPaymentStatus
+from apps.rental_manpower.services.settlements import assert_supplier_settlement_integrity
 
 
 class _FakeLines:
@@ -80,6 +81,7 @@ def _settlement():
         total_adjustment_earnings=Decimal("5.00"),
         total_adjustment_deductions=Decimal("3.00"),
         total_net=Decimal("102.00"),
+        source_fingerprint="b" * 64,
         snapshot_fingerprint="a" * 64,
         lines=_FakeLines([line]),
     )
@@ -105,6 +107,44 @@ class FinancialDocumentReconciliationContractTests(SimpleTestCase):
         self.assertEqual(contract["source_timesheet"]["status"], RentalTimesheetStatus.LOCKED)
         self.assertEqual(contract["settlement"]["revision"], 7)
         validate_document_snapshot_for_type(DocumentType.SUPPLIER_SETTLEMENT, snapshot)
+
+    def test_closed_settlement_statement_uses_frozen_snapshot_when_live_source_has_drifted(self):
+        settlement = _settlement()
+        settlement.status = RentalSettlementStatus.CLOSED
+        with (
+            patch(
+                "apps.rental_manpower.services.settlements.settlement_source_fingerprint",
+                return_value="c" * 64,
+            ) as live_source,
+            patch(
+                "apps.rental_manpower.services.settlements.settlement_snapshot_fingerprint",
+                return_value=settlement.snapshot_fingerprint,
+            ),
+        ):
+            snapshot, *_ = _settlement_snapshot(settlement)
+        live_source.assert_not_called()
+        self.assertEqual(snapshot["settlement_status"], RentalSettlementStatus.CLOSED)
+        self.assertEqual(snapshot["totals"]["net"], "102.00")
+        self.assertEqual(
+            snapshot["financial_reconciliation_contract"]["source_timesheet"]["revision"],
+            settlement.source_timesheet_revision,
+        )
+
+    def test_calculated_settlement_still_requires_live_source_match_before_approval(self):
+        settlement = _settlement()
+        settlement.status = RentalSettlementStatus.CALCULATED
+        with (
+            patch(
+                "apps.rental_manpower.services.settlements.settlement_source_fingerprint",
+                return_value="c" * 64,
+            ),
+            patch(
+                "apps.rental_manpower.services.settlements.settlement_snapshot_fingerprint",
+                return_value=settlement.snapshot_fingerprint,
+            ),
+            self.assertRaisesMessage(ValidationError, "Settlement source data changed after calculation"),
+        ):
+            assert_supplier_settlement_integrity(settlement)
 
     def test_supplier_invoice_received_matches_approved_settlement_net_without_recalculating_it(self):
         settlement = _settlement()

@@ -45,6 +45,28 @@ for needle, message in (
 ):
     require(SCHEMA, needle, message)
 
+# Approved-or-later document creation must use the frozen settlement snapshot as financial
+# authority. A historical settlement cannot become unprintable merely because mutable/live
+# operational source rows were normalized after approval. Calculated/Review transitions remain
+# strict because the private workflow guard still recomputes the live source fingerprint.
+settlement_tree = ast.parse(SETTLEMENTS)
+settlement_lines = SETTLEMENTS.splitlines()
+public_guard = next(
+    (node for node in settlement_tree.body if isinstance(node, ast.FunctionDef) and node.name == "assert_supplier_settlement_integrity"),
+    None,
+)
+if public_guard is None:
+    fail("Approved settlement document integrity guard disappeared")
+public_guard_source = "\n".join(settlement_lines[public_guard.lineno - 1 : public_guard.end_lineno])
+for needle, message in (
+    ("PAYABLE_SETTLEMENT_STATUSES", "Approved-or-later settlement documents are not using the frozen-authority branch"),
+    ("settlement_snapshot_fingerprint(settlement)", "Approved settlement documents no longer verify the frozen snapshot"),
+    ("_assert_settlement_integrity(settlement)", "Pre-approval settlement workflow no longer retains strict live-source integrity"),
+):
+    require(public_guard_source, needle, message)
+if "settlement_source_fingerprint(" in public_guard_source:
+    fail("Approved document read-side guard recomputes mutable live source fingerprint")
+
 for needle, message in (
     ("Received from supplier", "Supplier Invoice Received direction is ambiguous in print output"),
     ("Matched to approved settlement net", "Supplier invoice match basis is not explicit in print output"),
@@ -88,6 +110,8 @@ for name, expected in expected_function_hashes.items():
 
 required_tests = (
     "test_settlement_statement_preserves_approved_totals_and_locked_timesheet_revision",
+    "test_closed_settlement_statement_uses_frozen_snapshot_when_live_source_has_drifted",
+    "test_calculated_settlement_still_requires_live_source_match_before_approval",
     "test_supplier_invoice_received_matches_approved_settlement_net_without_recalculating_it",
     "test_financial_schema_rejects_invoice_or_settlement_math_drift",
     "test_payment_advice_allocations_reconcile_exactly_to_paid_payment",

@@ -1,3 +1,11 @@
+# 1.0.117 — Settlement Statement Frozen-Source Integrity Hotfix
+
+- Fixed Supplier Settlement Statement creation for Approved, Payment Processing, Partially Paid, Paid, and Closed settlements when the live operational timesheet source has changed after Finance approval.
+- Approved-or-later settlements now use their immutable settlement snapshot and stored source proof as the document authority; document creation no longer asks users to recalculate a settlement that is already financially finalized.
+- Calculated/Review settlements remain strict: a live source fingerprint mismatch still blocks submit/approval and requires a true recalculation.
+- Settlement snapshot tampering, missing source proof, and an unlocked source timesheet still fail closed.
+- No settlement formula, payment formula, database migration, or historical data rewrite is introduced.
+
 # 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & End-to-End Acceptance (Upgrade 14/14)
 
 - Closed the 14-stage Rental supplier-document migration and marked the v3 workflow production-frozen without rewriting historical v2 documents.

@@ -725,6 +725,8 @@
       "evidence": {
         "apps/documents/tests/test_v3_financial_document_reconciliation.py": [
           "test_settlement_statement_preserves_approved_totals_and_locked_timesheet_revision",
+          "test_closed_settlement_statement_uses_frozen_snapshot_when_live_source_has_drifted",
+          "test_calculated_settlement_still_requires_live_source_match_before_approval",
           "test_supplier_invoice_received_matches_approved_settlement_net_without_recalculating_it",
           "test_financial_schema_rejects_invoice_or_settlement_math_drift",
           "test_payment_advice_allocations_reconcile_exactly_to_paid_payment",

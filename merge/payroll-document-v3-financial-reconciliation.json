@@ -20,7 +20,10 @@
     "settlement_snapshot_fingerprint_frozen": true,
     "supplier_invoice_subtotal_must_equal_settlement_net": true,
     "payment_allocations_must_equal_paid_amount": true,
-    "payment_invoice_document_integrity_verified_when_present": true
+    "payment_invoice_document_integrity_verified_when_present": true,
+    "approved_or_later_documents_use_frozen_settlement_snapshot": true,
+    "live_source_recheck_required_before_approval": true,
+    "historical_settlement_document_creation_blocked_by_live_source_drift": false
   },
   "presentation": {
     "supplier_invoice_direction": "received_from_supplier",
@@ -30,7 +33,8 @@
   },
   "legacy_compatibility": {
     "historical_v2_financial_documents_without_contract_remain_valid": true,
-    "historical_rows_rewritten": false
+    "historical_rows_rewritten": false,
+    "approved_or_closed_settlements_remain_documentable_after_source_normalization": true
   },
   "frozen_rental_financial_authority_functions": {
     "_calculate_supplier_snapshot": "8bdf1a32b5b1b2410e0eeeca311a16fc492c5f2b67e08d9551381e8c0de79e6b",
