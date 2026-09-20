@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{{ document.document_number }} — {{ document_label }}</title>
+  <title>{{ page_title|default:document.document_number }} — {{ document_label }}</title>
   <style>
     @page { size: A4; margin: 14mm 13mm 16mm; }
     @page:first { size: A4; margin: 0; }
@@ -14,6 +14,8 @@
     body.embed { background:#f3f3f2; }
     .toolbar { position:sticky; top:0; z-index:20; display:flex; justify-content:space-between; align-items:center; gap:16px; min-height:54px; padding:9px 18px; background:#111; color:#fff; }
     .toolbar strong { font-size:12px; }
+    .toolbar-actions { display:flex; align-items:center; gap:8px; }
+    .toolbar a { border:1px solid #555; color:#fff; padding:8px 12px; border-radius:6px; text-decoration:none; font-weight:700; font-size:10px; }
     .toolbar button { border:1px solid #555; background:#fff; color:#111; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:700; }
     body.embed .toolbar { display:none; }
 
@@ -90,6 +92,66 @@
     .continuation-section:first-child { margin-top:0; }
     .continuation-footer { margin-top:18px; padding-top:7px; border-top:1px solid #ddd; color:#777; font-size:8px; }
 
+
+    /* Supplier Timesheet Pack v3 print authority. The pack is operational evidence: no commercial columns. */
+    .pack-sheet { position:relative; break-after:page; page-break-after:always; overflow:visible; }
+    .pack-sheet:last-child { break-after:auto; page-break-after:auto; }
+    .pack-first-sheet { height:297mm; overflow:hidden; }
+    .pack-first-brand { position:absolute; inset:0; z-index:0; pointer-events:none; }
+    .pack-first-brand img { display:block; width:100%; height:100%; object-fit:fill; }
+    .pack-first-content { position:relative; z-index:1; height:297mm; padding:39mm 15mm 22mm; display:flex; flex-direction:column; }
+    .pack-page-content { padding:14mm 13mm 16mm; }
+    .pack-header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding-bottom:7px; border-bottom:1.5px solid #111; margin-bottom:9px; }
+    .pack-header .eyebrow { display:block; color:#555; font-size:7.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .pack-header h1 { margin:3px 0 0; font-size:16px; line-height:1.15; }
+    .pack-header .doc-ref { text-align:right; font-size:8px; color:#555; line-height:1.45; }
+    .pack-header .doc-ref strong { display:block; color:#111; font-size:10px; }
+    .pack-identity { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-bottom:8px; }
+    .pack-identity > div { border:1px solid #d9d9d9; padding:5px 6px; min-width:0; background:rgba(255,255,255,.9); }
+    .pack-identity span, .pack-stat span, .worker-meta span { display:block; margin-bottom:2px; color:#777; font-size:6.8px; letter-spacing:.04em; text-transform:uppercase; }
+    .pack-identity strong, .pack-stat strong, .worker-meta strong { display:block; font-size:8.5px; line-height:1.25; word-break:break-word; }
+    .pack-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-bottom:8px; }
+    .pack-stat { border-top:2px solid #111; border-bottom:1px solid #ddd; padding:5px 6px; background:rgba(255,255,255,.9); }
+    .pack-stat strong { font-size:11px; }
+    .pack-note { margin:5px 0 8px; color:#555; font-size:7.5px; line-height:1.35; }
+    .pack-summary-table { margin:4px 0 8px; table-layout:fixed; }
+    .pack-summary-table th, .pack-summary-table td { padding:4px 3px; font-size:7.2px; }
+    .pack-summary-table th { font-size:6.5px; }
+    .pack-summary-table .worker-col { width:19%; }
+    .pack-summary-table .trade-col { width:14%; }
+    .pack-summary-table .small-num { width:6.2%; text-align:right; white-space:nowrap; }
+    .pack-summary-table .hours-num { width:8.2%; text-align:right; white-space:nowrap; }
+    .pack-summary-footer { margin-top:auto; }
+    .pack-signatures { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:15px; margin-top:20px; }
+    .pack-signatures > div { padding-top:14px; border-top:1px solid #777; min-height:22px; color:#444; font-size:8px; }
+    .pack-footer { display:flex; justify-content:space-between; gap:12px; margin-top:8px; padding-top:5px; border-top:1px solid #ddd; color:#777; font-size:7px; }
+    .worker-page { overflow:visible; }
+    .worker-header { display:flex; justify-content:space-between; gap:14px; align-items:flex-end; padding-bottom:6px; border-bottom:1.5px solid #111; margin-bottom:7px; }
+    .worker-header h2 { margin:2px 0 0; font-size:13px; line-height:1.15; }
+    .worker-header .company { color:#555; font-size:7px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+    .worker-header .worker-doc-ref { text-align:right; color:#666; font-size:7px; line-height:1.4; }
+    .worker-header .worker-doc-ref strong { color:#111; font-size:9px; }
+    .worker-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin-bottom:6px; }
+    .worker-meta > div { border:1px solid #ddd; padding:4px 5px; min-width:0; }
+    .worker-segments { margin:-1px 0 6px; color:#555; font-size:7px; line-height:1.35; }
+    .worker-table { margin:4px 0 6px; table-layout:fixed; }
+    .worker-table th, .worker-table td { padding:2.7px 3px; font-size:7.15px; line-height:1.18; }
+    .worker-table th { font-size:6.5px; }
+    .worker-table .date-col { width:13%; }
+    .worker-table .day-col { width:12%; }
+    .worker-table .status-col { width:14%; }
+    .worker-table .trade-col { width:17%; }
+    .worker-table .hours-col { width:10%; text-align:right; white-space:nowrap; }
+    .worker-table .note-col { width:auto; }
+    .worker-table tr.outside-assignment td { color:#888; background:#fafafa; }
+    .worker-totals { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); border-top:2px solid #111; border-bottom:1px solid #ddd; margin-top:5px; }
+    .worker-totals > div { padding:5px 4px; border-right:1px solid #e3e3e3; min-width:0; }
+    .worker-totals > div:last-child { border-right:0; }
+    .worker-totals span { display:block; color:#777; font-size:6px; text-transform:uppercase; letter-spacing:.03em; }
+    .worker-totals strong { display:block; margin-top:2px; font-size:8px; }
+    .worker-ot-note { margin:5px 0 0; color:#555; font-size:6.8px; line-height:1.3; }
+    .worker-page .pack-signatures { margin-top:14px; }
+
     @media print {
       body { background:#fff; }
       .toolbar { display:none !important; }
@@ -98,13 +160,71 @@
       .cover-content { height:297mm; }
       .continuation-sheet { padding:0; }
       .continuation-title-row { break-inside:avoid; page-break-inside:avoid; }
+      .pack-sheet { width:auto; min-height:0; margin:0; box-shadow:none; }
+      .pack-first-sheet { width:210mm; height:297mm; min-height:297mm; overflow:hidden; }
+      .pack-page-content { padding:0; }
+      body.worker-extract .worker-page .pack-page-content { padding:14mm 13mm 16mm; }
+      .worker-page { break-inside:auto; page-break-inside:auto; }
+      .worker-table thead { display:table-header-group; }
+      .worker-table tr { break-inside:avoid; page-break-inside:avoid; }
       a { color:inherit; text-decoration:none; }
     }
   </style>
 </head>
-<body>
-  <div class="toolbar"><strong>{{ document.document_number }} · {{ document_label }}</strong><button type="button" onclick="window.print()">Print / Save PDF</button></div>
+<body class="{% if document.document_type == 'supplier_timesheet_pack' %}supplier-timesheet-pack{% endif %}{% if worker_timesheet_extract %} worker-extract{% endif %}">
+  <div class="toolbar"><strong>{% if worker_timesheet_extract %}{{ document.document_number }} · {{ supplier_timesheet_pack_worker.worker_number }} · Worker Monthly Timesheet{% else %}{{ document.document_number }} · {{ document_label }}{% endif %}</strong><div class="toolbar-actions">{% if worker_timesheet_extract and parent_print_url %}<a href="{{ parent_print_url }}">Full pack</a>{% endif %}<button type="button" onclick="window.print()">Print / Save PDF</button></div></div>
   <div class="document-stack">
+    {% if document.document_type == 'supplier_timesheet_pack' %}
+      {% if not worker_timesheet_extract %}
+      {% for page in supplier_timesheet_pack_print.summary_pages %}
+        <section class="sheet pack-sheet pack-summary-sheet{% if page.is_first %} pack-first-sheet{% endif %}">
+          {% if page.is_first %}<div class="pack-first-brand"><img src="{{ headpad_url }}" alt=""></div>{% endif %}
+          <div class="{% if page.is_first %}pack-first-content{% else %}pack-page-content{% endif %}">
+            <header class="pack-header">
+              <div><span class="eyebrow">{{ supplier_timesheet_pack_print.issuer.legal_name|default:supplier_timesheet_pack_print.issuer.name|default:"SESCCO" }} · {{ document_label }}{% if not page.is_first %} · Summary continued{% endif %}</span><h1>{{ document.document_number }}</h1></div>
+              <div class="doc-ref"><strong>{{ supplier_timesheet_pack_print.period_label }}</strong>Summary {{ page.number }} / {{ page.count }}<br>Locked revision {{ supplier_timesheet_pack_print.source.revision }}</div>
+            </header>
+            <div class="pack-identity">
+              <div><span>Supplier</span><strong>{{ supplier_timesheet_pack_print.supplier.code }} · {{ supplier_timesheet_pack_print.supplier.name }}</strong></div>
+              <div><span>Project</span><strong>{{ supplier_timesheet_pack_print.project.code }} · {{ supplier_timesheet_pack_print.project.name }}</strong></div>
+              <div><span>Service period</span><strong>{{ supplier_timesheet_pack_print.period_label }}</strong></div>
+              <div><span>Locked source</span><strong>Revision {{ supplier_timesheet_pack_print.source.revision }}{% if supplier_timesheet_pack_print.source.locked_at_label %} · {{ supplier_timesheet_pack_print.source.locked_at_label }}{% endif %}</strong></div>
+            </div>
+            {% if page.is_first %}
+              <div class="pack-stats">
+                <div class="pack-stat"><span>Workers</span><strong>{{ supplier_timesheet_pack_print.summary.worker_count }}</strong></div>
+                <div class="pack-stat"><span>Regular hours</span><strong>{{ supplier_timesheet_pack_print.summary.regular_hours }}</strong></div>
+                <div class="pack-stat"><span>Monthly OT</span><strong>{{ supplier_timesheet_pack_print.summary.overtime_hours }}</strong></div>
+                <div class="pack-stat"><span>Total hours</span><strong>{{ supplier_timesheet_pack_print.summary.total_hours }}</strong></div>
+              </div>
+              <p class="pack-note">{{ supplier_timesheet_pack_print.commercial_exclusion_note }}</p>
+            {% endif %}
+            <table class="pack-summary-table">
+              <thead><tr><th class="worker-col">Worker</th><th class="trade-col">Trade</th><th class="small-num">Work</th><th class="small-num">Absent</th><th class="small-num">Leave</th><th class="small-num">Off</th><th class="small-num">No Scope</th><th class="hours-num">Reg. Hrs</th><th class="hours-num">OT Hrs</th><th class="hours-num">Total</th></tr></thead>
+              <tbody>{% for row in page.rows %}<tr><td><strong>{{ row.worker_number }}</strong><br>{{ row.worker_name }}</td><td>{{ row.trade_display|default:"—" }}</td><td class="num">{{ row.work_days }}</td><td class="num">{{ row.absent_days }}</td><td class="num">{{ row.leave_days }}</td><td class="num">{{ row.off_days }}</td><td class="num">{{ row.no_scope_days }}</td><td class="num">{{ row.regular_hours }}</td><td class="num">{{ row.overtime_hours }}</td><td class="num"><strong>{{ row.total_hours }}</strong></td></tr>{% endfor %}</tbody>
+            </table>
+            {% if page.is_last %}
+              <div class="pack-summary-footer">
+                <p class="pack-note">Worker detail sheets following this summary are part of the same immutable pack and reconcile to the locked project timesheet.</p>
+                <div class="pack-signatures">{% for role in page.signature_roles %}<div>{{ role.label }}</div>{% endfor %}</div>
+                <footer class="pack-footer"><span>{{ document.source_reference }}</span><span>{{ document.document_number }} · Final · Supplier summary</span></footer>
+              </div>
+            {% else %}
+              <footer class="pack-footer"><span>{{ supplier_timesheet_pack_print.supplier.code }} · {{ supplier_timesheet_pack_print.project.code }}</span><span>{{ document.document_number }} · Summary {{ page.number }} / {{ page.count }}</span></footer>
+            {% endif %}
+          </div>
+        </section>
+      {% endfor %}
+
+      {% endif %}
+      {% if worker_timesheet_extract %}
+        {% include "documents/_supplier_timesheet_worker_sheet.html" with worker=supplier_timesheet_pack_worker %}
+      {% else %}
+        {% for worker in supplier_timesheet_pack_print.worker_pages %}
+          {% include "documents/_supplier_timesheet_worker_sheet.html" with worker=worker %}
+        {% endfor %}
+      {% endif %}
+    {% else %}
     <main class="sheet cover-sheet">
       <div class="cover-brand"><img src="{{ headpad_url }}" alt=""></div>
       <div class="cover-content">
@@ -138,16 +258,18 @@
             {% endif %}
           {% elif document.document_type == 'supplier_settlement' %}
             <div class="meta"><div><span>Supplier</span><strong>{{ snapshot.supplier.code }} · {{ snapshot.supplier.name }}</strong></div><div><span>Project</span><strong>{{ snapshot.project.code }} · {{ snapshot.project.name }}</strong></div><div><span>Settlement</span><strong>{{ snapshot.settlement_number }}</strong></div><div><span>Period</span><strong>{{ document.period_start|date:"F Y" }}</strong></div></div>
+            {% if snapshot.financial_reconciliation_contract %}<div class="meta"><div><span>Settlement Revision</span><strong>{{ snapshot.financial_reconciliation_contract.settlement.revision }}</strong></div><div><span>Locked Timesheet Revision</span><strong>{{ snapshot.financial_reconciliation_contract.source_timesheet.revision }}</strong></div><div><span>Financial Authority</span><strong>Approved settlement snapshot</strong></div><div><span>Timesheet Pack</span><strong>Not required for settlement authority</strong></div></div>{% endif %}
             <div class="totals"><div><span>Gross</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.totals.gross }}</strong></div><div><span>Adjustment earnings</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.totals.adjustment_earnings }}</strong></div><div><span>Adjustment deductions</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.totals.adjustment_deductions }}</strong></div><div class="net"><span>Net settlement</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.totals.net }}</strong></div></div>
           {% elif document.document_type == 'supplier_invoice' %}
-            <div class="invoice-summary"><div><span>Supplier Invoice No.</span><strong>{{ snapshot.invoice.supplier_invoice_number }}</strong></div><div><span>Issue Date</span><strong>{{ snapshot.invoice.issue_date }}</strong></div><div><span>Settlement</span><strong>{{ snapshot.settlement_number }}</strong></div><div><span>Match</span><strong>Matched</strong></div></div>
+            <div class="invoice-summary"><div><span>Supplier Invoice No.</span><strong>{{ snapshot.invoice.supplier_invoice_number }}</strong></div><div><span>Issue Date</span><strong>{{ snapshot.invoice.issue_date }}</strong></div><div><span>Settlement</span><strong>{{ snapshot.settlement_number }}</strong></div><div><span>Match</span><strong>Matched to approved settlement net</strong></div></div>
+            {% if snapshot.financial_reconciliation_contract %}<div class="meta"><div><span>Record Direction</span><strong>Received from supplier</strong></div><div><span>Settlement Revision</span><strong>{{ snapshot.financial_reconciliation_contract.settlement.revision }}</strong></div><div><span>Locked Timesheet Revision</span><strong>{{ snapshot.financial_reconciliation_contract.source_timesheet.revision }}</strong></div><div><span>Subtotal Variance</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.invoice.subtotal_variance }}</strong></div></div>{% endif %}
             <div class="invoice-parties"><section><span>Supplier / Account</span><h3>{{ snapshot.supplier.name }}</h3><p>{{ snapshot.supplier.code }}</p>{% if snapshot.supplier.cr_number %}<p>CR: {{ snapshot.supplier.cr_number }}</p>{% endif %}{% if snapshot.supplier.vat_number %}<p>VAT: {{ snapshot.supplier.vat_number }}</p>{% endif %}{% if snapshot.supplier.address %}<p>{{ snapshot.supplier.address }}</p>{% endif %}</section><section><span>Project / Service Period</span><h3>{{ snapshot.project.code }} · {{ snapshot.project.name }}</h3><p>{{ document.period_start|date:"F Y" }}</p><p>Workers: {{ snapshot.totals.workers }}</p><p>Regular hours: {{ snapshot.totals.regular_hours }} · OT hours: {{ snapshot.totals.overtime_hours }}</p>{% if snapshot.invoice.payment_terms %}<p>Payment terms: {{ snapshot.invoice.payment_terms }}</p>{% endif %}</section></div>
             <div class="invoice-totals"><div><span>Settlement Net</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.invoice.settlement_net }}</strong></div><div><span>VAT ({{ snapshot.invoice.vat_rate }}%)</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.invoice.vat_amount }}</strong></div><div class="grand"><span>Invoice Total</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.invoice.total }}</strong></div></div>
             {% if snapshot.invoice.attachment %}<div class="meta" style="margin-top:14px"><div style="grid-column:span 4"><span>Supplier Invoice File</span><strong>{{ snapshot.invoice.attachment.original_name }}</strong></div></div>{% endif %}
             <div class="salary-words"><span>Total in words</span><strong>{{ snapshot.invoice.total_in_words }}</strong></div>
           {% elif document.document_type == 'supplier_payment_receipt' %}
             <div class="meta"><div><span>Supplier</span><strong>{{ snapshot.supplier.code }} · {{ snapshot.supplier.name }}</strong></div><div><span>Payment</span><strong>{{ snapshot.payment.number }}</strong></div><div><span>Payment Date</span><strong>{{ snapshot.payment.date }}</strong></div><div><span>Method</span><strong>{{ snapshot.payment.method }}</strong></div></div>
-            <div class="meta"><div><span>Amount</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.payment.amount }}</strong></div><div><span>Transaction Reference</span><strong>{{ snapshot.payment.transaction_reference|default:"Cash" }}</strong></div><div><span>Paid At</span><strong>{{ snapshot.payment.paid_at|default:"—" }}</strong></div><div><span>Note</span><strong>{{ snapshot.payment.note|default:"—" }}</strong></div></div>
+            <div class="meta"><div><span>Amount</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.payment.amount }}</strong></div><div><span>Allocated Total</span><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ snapshot.financial_reconciliation_contract.allocated_total|default:snapshot.payment.amount }}</strong></div><div><span>Transaction Reference</span><strong>{{ snapshot.payment.transaction_reference|default:"Cash" }}</strong></div><div><span>Paid At</span><strong>{{ snapshot.payment.paid_at|default:"—" }}</strong></div></div>
             <div class="salary-words"><span>Amount in words</span><strong>{{ snapshot.payment.amount_in_words }}</strong></div>
           {% endif %}
         </div>
@@ -175,7 +297,8 @@
     {% elif document.document_type == 'supplier_settlement' %}
       <section class="sheet continuation-sheet"><table class="continuation-table"><thead><tr class="continuation-title-row"><th colspan="8"><div class="continuation-title"><strong>Supplier Settlement Statement · {{ document.document_number }}</strong><span>{{ snapshot.supplier.name }} · {{ document.period_start|date:"F Y" }}</span></div></th></tr><tr><th>Worker</th><th>Trade</th><th class="num">Regular Hrs</th><th class="num">OT Hrs</th><th>Rate</th><th class="num">Gross</th><th class="num">Adjustments</th><th class="num">Net</th></tr></thead><tbody>{% for row in snapshot.lines %}<tr><td>{{ row.worker_number }} · {{ row.worker_name }}</td><td>{{ row.trade }}</td><td class="num">{{ row.regular_hours }}</td><td class="num">{{ row.overtime_hours }}</td><td>{{ row.rate_summary }}</td><td class="num">{{ row.gross }}</td><td class="num">+{{ row.adjustment_earnings }} / -{{ row.adjustment_deductions }}</td><td class="num"><strong>{{ row.net }}</strong></td></tr>{% endfor %}</tbody></table></section>
     {% elif document.document_type == 'supplier_payment_receipt' and snapshot.allocations %}
-      <section class="sheet continuation-sheet"><table class="continuation-table"><thead><tr class="continuation-title-row"><th colspan="5"><div class="continuation-title"><strong>Supplier Payment Advice · {{ document.document_number }}</strong><span>{{ snapshot.supplier.name }}</span></div></th></tr><tr><th>Supplier Invoice</th><th>Settlement</th><th>Project</th><th>Period</th><th class="num">Allocated Amount</th></tr></thead><tbody>{% for row in snapshot.allocations %}<tr><td>{{ row.supplier_invoice_number|default:"—" }}</td><td>{{ row.settlement_number }}</td><td>{{ row.project_code }} · {{ row.project_name }}</td><td>{{ row.period_start }}</td><td class="num">{{ snapshot.issuer.currency|default:"SAR" }} {{ row.amount }}</td></tr>{% endfor %}</tbody></table></section>
+      <section class="sheet continuation-sheet"><table class="continuation-table"><thead><tr class="continuation-title-row"><th colspan="7"><div class="continuation-title"><strong>Supplier Payment Advice · {{ document.document_number }}</strong><span>{{ snapshot.supplier.name }} · Paid allocation reconciliation</span></div></th></tr><tr><th>Supplier Invoice</th><th>Settlement</th><th>TS Rev</th><th>Project / Period</th><th class="num">Settlement Net</th><th class="num">Invoice Total</th><th class="num">Allocated Amount</th></tr></thead><tbody>{% for row in snapshot.allocations %}<tr><td>{% if row.supplier_invoice_recorded %}{{ row.supplier_invoice_number }}{% else %}Historical / not recorded{% endif %}</td><td>{{ row.settlement_number }}</td><td>{{ row.source_timesheet_revision }}</td><td>{{ row.project_code }} · {{ row.project_name }}<br>{{ row.period_start }}</td><td class="num">{{ snapshot.issuer.currency|default:"SAR" }} {{ row.settlement_net }}</td><td class="num">{% if row.supplier_invoice_recorded %}{{ snapshot.issuer.currency|default:"SAR" }} {{ row.supplier_invoice_total }}{% else %}—{% endif %}</td><td class="num"><strong>{{ snapshot.issuer.currency|default:"SAR" }} {{ row.amount }}</strong></td></tr>{% endfor %}</tbody></table></section>
+    {% endif %}
     {% endif %}
   </div>
 </body>

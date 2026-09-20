@@ -354,3 +354,32 @@
     min-width:0;
   }
 }
+
+/* 1.0.117 — Supplier Settlements breathing hotfix.
+ * Settlement Control owns its own full-width row again.  The financial summary
+ * and register filters begin on the next row instead of being compressed beside
+ * the lifecycle card.  With the extra horizontal room, keep all six lifecycle
+ * stages on one row on desktop and collapse deliberately at smaller widths.
+ */
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-control-grid {
+  grid-template-columns:minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .settlement-lifecycle-card {
+  width:100%;
+}
+.ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-workflow {
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+@media (max-width:900px) {
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-workflow {
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+@media (max-width:560px) {
+  .ui-v2-root .ui-v2-prs-rental-finance-page .ui-v2-payroll-rental-settlement-workflow {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+

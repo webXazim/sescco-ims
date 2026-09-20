@@ -27,6 +27,7 @@ from apps.internal_payroll.models import (
     SalaryPaymentRow,
     SalaryPaymentRowStatus,
 )
+from apps.rental_manpower.services import assert_supplier_settlement_integrity
 from apps.rental_manpower.models import (
     RentalTimesheetPeriod,
     RentalTimesheetStatus,
@@ -37,6 +38,11 @@ from apps.rental_manpower.models import (
 )
 
 from ..models import BusinessDocument, DocumentType, DocumentWorkspace, production_document_label
+from ..schema import (
+    LEGACY_DOCUMENT_SCHEMA_VERSION,
+    document_schema_version_for_type,
+)
+from .supplier_timesheet_pack import build_supplier_timesheet_pack_snapshot
 from .amounts import money_to_words
 
 
@@ -352,6 +358,9 @@ def _supplier_timesheet_snapshot(period: RentalTimesheetPeriod, *, supplier_code
 def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, Any] | None = None) -> tuple[dict[str, Any], str, str, date, str]:
     if settlement.status not in _FINAL_SETTLEMENT:
         raise ValidationError("Settlement documents require an Approved or later supplier settlement.")
+    # Document finalization must preserve the already-approved Rental settlement authority;
+    # it must never recalculate amounts or depend on a printable Timesheet Pack existing.
+    assert_supplier_settlement_integrity(settlement)
     lines = []
     for line in settlement.lines.prefetch_related("rate_lines", "adjustment_lines").all():
         lines.append(
@@ -400,6 +409,23 @@ def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, A
         },
         "lines": lines,
         "settlement_snapshot_fingerprint": settlement.snapshot_fingerprint,
+        "financial_reconciliation_contract": {
+            "version": "1.0",
+            "authority": "approved_supplier_settlement",
+            "timesheet_pack_required": False,
+            "source_timesheet": {
+                "id": str(settlement.source_timesheet_id),
+                "revision": settlement.source_timesheet_revision,
+                "status": settlement.source_timesheet.status,
+            },
+            "settlement": {
+                "id": str(settlement.pk),
+                "number": settlement.settlement_number,
+                "revision": settlement.revision,
+                "status": settlement.status,
+                "snapshot_fingerprint": settlement.snapshot_fingerprint,
+            },
+        },
     }
     if invoice is not None:
         external_number = str(invoice.get("invoice_number") or "").strip().upper()
@@ -424,6 +450,8 @@ def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, A
             "vat_rate": f"{vat_rate.quantize(Decimal('0.01')):.2f}",
             "total": _money(total),
             "settlement_net": _money(settlement.total_net),
+            "match_basis": "approved_settlement_net",
+            "subtotal_variance": _money(subtotal - settlement.total_net),
             "variance": _money(total - (settlement.total_net + vat_amount)),
             "match_status": "matched",
             "payment_terms": settlement.supplier.payment_terms or "",
@@ -435,7 +463,16 @@ def _settlement_snapshot(settlement: SupplierSettlement, *, invoice: dict[str, A
 def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[str, Any], str, str, date | None, str]:
     if payment.status != SupplierPaymentStatus.PAID:
         raise ValidationError("Supplier Payment Advice requires a Paid supplier payment.")
-    allocations = list(payment.allocations.select_related("settlement").order_by("settlement__period_start"))
+    allocations = list(
+        payment.allocations.select_related("settlement", "settlement__source_timesheet")
+        .order_by("settlement__period_start", "settlement__settlement_number")
+    )
+    if not allocations:
+        raise ValidationError("Supplier Payment Advice requires at least one settlement allocation.")
+    allocated_total = sum((Decimal(item.amount or 0) for item in allocations), Decimal("0"))
+    if allocated_total != payment.amount:
+        raise ValidationError("Supplier Payment Advice allocations must reconcile exactly to the paid amount.")
+
     period_start = min((item.settlement.period_start for item in allocations), default=None)
     settlement_ids = [item.settlement_id for item in allocations]
     invoice_docs = (
@@ -449,7 +486,32 @@ def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[s
     )
     invoice_by_settlement: dict[str, BusinessDocument] = {}
     for invoice_doc in invoice_docs:
+        if not verify_document_snapshot(invoice_doc):
+            raise ValidationError("A Supplier Invoice Received record used by this payment failed its integrity check.")
         invoice_by_settlement.setdefault(str(invoice_doc.source_id), invoice_doc)
+
+    allocation_rows = []
+    for item in allocations:
+        settlement = item.settlement
+        invoice_doc = invoice_by_settlement.get(str(item.settlement_id))
+        invoice_snapshot = ((invoice_doc.snapshot or {}).get("invoice") or {}) if invoice_doc else {}
+        allocation_rows.append({
+            "settlement_id": str(item.settlement_id),
+            "settlement_number": settlement.settlement_number,
+            "settlement_status": settlement.status,
+            "settlement_revision": settlement.revision,
+            "period_start": settlement.period_start.isoformat(),
+            "project_code": settlement.project_code,
+            "project_name": settlement.project_name,
+            "source_timesheet_id": str(settlement.source_timesheet_id),
+            "source_timesheet_revision": settlement.source_timesheet_revision,
+            "settlement_net": _money(settlement.total_net),
+            "supplier_invoice_recorded": invoice_doc is not None,
+            "supplier_invoice_number": invoice_doc.external_reference if invoice_doc else "",
+            "supplier_invoice_total": invoice_snapshot.get("total", "") if invoice_doc else "",
+            "amount": _money(item.amount),
+        })
+
     snapshot = {
         "kind": DocumentType.SUPPLIER_PAYMENT_RECEIPT,
         "supplier": {"code": payment.supplier_code, "name": payment.supplier_name},
@@ -462,18 +524,19 @@ def _supplier_payment_receipt_snapshot(payment: SupplierPayment) -> tuple[dict[s
             "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
             "note": payment.note,
         },
-        "allocations": [
-            {
-                "settlement_number": item.settlement.settlement_number,
-                "period_start": item.settlement.period_start.isoformat(),
-                "project_code": item.settlement.project_code,
-                "project_name": item.settlement.project_name,
-                "supplier_invoice_number": (invoice_by_settlement.get(str(item.settlement_id)).external_reference if invoice_by_settlement.get(str(item.settlement_id)) else ""),
-                "supplier_invoice_total": (((invoice_by_settlement.get(str(item.settlement_id)).snapshot or {}).get("invoice") or {}).get("total") if invoice_by_settlement.get(str(item.settlement_id)) else ""),
-                "amount": _money(item.amount),
-            }
-            for item in allocations
-        ],
+        "allocations": allocation_rows,
+        "financial_reconciliation_contract": {
+            "version": "1.0",
+            "authority": "paid_supplier_payment",
+            "timesheet_pack_required": False,
+            "payment": {
+                "id": str(payment.pk),
+                "number": payment.payment_number,
+                "status": payment.status,
+            },
+            "allocation_count": len(allocation_rows),
+            "allocated_total": _money(allocated_total),
+        },
     }
     return snapshot, payment.supplier_code, payment.supplier_name, period_start, payment.payment_number
 
@@ -493,11 +556,16 @@ def _load_source(*, company, document_type: str, source_id, invoice: dict[str, A
         if document_variant == SUPPLIER_TIMESHEET_VARIANT:
             return DocumentWorkspace.RENTAL, source, _supplier_timesheet_snapshot(source, supplier_code=supplier_code)
         return DocumentWorkspace.RENTAL, source, _rental_timesheet_snapshot(source)
+    if document_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+        # The v3 pack aggregator deliberately performs two supplier-filtered reads
+        # (daily attendance + monthly OT) instead of prefetching the whole project month.
+        source = RentalTimesheetPeriod.objects.for_company(company).select_related("project").get(pk=source_id)
+        return DocumentWorkspace.RENTAL, source, build_supplier_timesheet_pack_snapshot(source, supplier_code=supplier_code)
     if document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_INVOICE}:
-        source = SupplierSettlement.objects.for_company(company).select_related("supplier", "project").prefetch_related("lines__rate_lines", "lines__adjustment_lines").get(pk=source_id)
+        source = SupplierSettlement.objects.for_company(company).select_related("supplier", "project", "source_timesheet").prefetch_related("lines__rate_lines", "lines__adjustment_lines").get(pk=source_id)
         return DocumentWorkspace.RENTAL, source, _settlement_snapshot(source, invoice=invoice if document_type == DocumentType.SUPPLIER_INVOICE else None)
     if document_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
-        source = SupplierPayment.objects.for_company(company).select_related("supplier").prefetch_related("allocations__settlement").get(pk=source_id)
+        source = SupplierPayment.objects.for_company(company).select_related("supplier").prefetch_related("allocations__settlement__source_timesheet").get(pk=source_id)
         return DocumentWorkspace.RENTAL, source, _supplier_payment_receipt_snapshot(source)
     raise ValidationError({"document_type": "Unsupported document type."})
 
@@ -508,6 +576,7 @@ def _prefix(document_type: str) -> tuple[str, str]:
         DocumentType.INTERNAL_TIMESHEET: ("document.internal_timesheet", "ITS-"),
         DocumentType.SALARY_PAYMENT_RECEIPT: ("document.salary_receipt", "SRCP-"),
         DocumentType.RENTAL_TIMESHEET: ("document.rental_timesheet", "RTS-"),
+        DocumentType.SUPPLIER_TIMESHEET_PACK: ("document.supplier_timesheet_pack", "STP-"),
         DocumentType.SUPPLIER_SETTLEMENT: ("document.supplier_settlement", "SSET-"),
         DocumentType.SUPPLIER_INVOICE: ("document.supplier_invoice", "SINV-"),
         DocumentType.SUPPLIER_PAYMENT_RECEIPT: ("document.supplier_receipt", "PRCP-"),
@@ -551,8 +620,6 @@ def _brand_asset_snapshot(field) -> dict[str, str] | None:
     }
 
 
-@transaction.atomic
-
 def _assert_source_scope(*, membership, document_type: str, source) -> None:
     """Fail closed when a finalized document source sits outside the actor scope."""
     if document_type == DocumentType.SALARY_SLIP:
@@ -569,7 +636,7 @@ def _assert_source_scope(*, membership, document_type: str, source) -> None:
         if branch_ids is not None and source.run_line.branch_id_snapshot not in set(branch_ids):
             raise PermissionDenied("The salary-payment source is outside your Branch/Office scope.")
         return
-    if document_type == DocumentType.RENTAL_TIMESHEET:
+    if document_type in {DocumentType.RENTAL_TIMESHEET, DocumentType.SUPPLIER_TIMESHEET_PACK}:
         if not membership_allows_project(membership, source.project):
             raise PermissionDenied("The Rental Timesheet source is outside your Project scope.")
         return
@@ -583,6 +650,7 @@ def _assert_source_scope(*, membership, document_type: str, source) -> None:
             raise PermissionDenied("Supplier payment receipts are available only when every allocation is inside your Project scope.")
 
 
+@transaction.atomic
 def finalize_business_document(
     *,
     actor_membership,
@@ -592,6 +660,7 @@ def finalize_business_document(
     document_variant: str = "",
     supplier_code: str = "",
     request=None,
+    allow_supplier_timesheet_pack: bool = False,
 ) -> BusinessDocument:
     company = actor_membership.company
     requested_type = str(document_type or "").strip()
@@ -604,6 +673,10 @@ def finalize_business_document(
         normalized_type = DocumentType(requested_type).value
     except ValueError as exc:
         raise ValidationError({"document_type": "Unsupported document type."}) from exc
+    if normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK and not allow_supplier_timesheet_pack:
+        raise ValidationError({
+            "document_type": "Supplier Timesheet Pack creation is not yet exposed through the generic Documents API."
+        })
 
     workspace, source, payload = _load_source(company=company, document_type=normalized_type, source_id=source_id, invoice=invoice, document_variant=document_variant, supplier_code=supplier_code)
     required = AccessPermission.INTERNAL_DOCUMENTS_FINALIZE if workspace == DocumentWorkspace.INTERNAL else AccessPermission.RENTAL_DOCUMENTS_FINALIZE
@@ -611,9 +684,20 @@ def finalize_business_document(
         raise PermissionDenied("Your access profile cannot create documents for this workspace.")
     _assert_source_scope(membership=actor_membership, document_type=normalized_type, source=source)
 
+    if normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+        # Serialize finalization for the same locked project-timesheet source.  The
+        # document table already has a unique source/type constraint, but without
+        # locking two simultaneous browser retries can both pass the initial
+        # existence check and one request then fails at INSERT.  Locking the
+        # immutable source row makes v3 pack creation retry-safe without changing
+        # its source authority or creating a mutable document state.
+        source.__class__._default_manager.select_for_update().only("pk").get(pk=source.pk)
+
     snapshot, entity_ref, entity_name, period_start, source_reference = payload
     source_model = source._meta.label_lower
-    if normalized_type == DocumentType.RENTAL_TIMESHEET and document_variant == SUPPLIER_TIMESHEET_VARIANT:
+    if (
+        normalized_type == DocumentType.RENTAL_TIMESHEET and document_variant == SUPPLIER_TIMESHEET_VARIANT
+    ) or normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
         normalized_supplier_code = str(entity_ref or supplier_code or "").strip().upper()
         source_model = f"rental_manpower.rentaltimesheetperiod:supplier:{normalized_supplier_code}"
     existing = BusinessDocument.objects.for_company(company).filter(
@@ -671,7 +755,11 @@ def finalize_business_document(
             "profile": branding_profile,
         },
     }
-    snapshot["document_schema_version"] = "2.0"
+    if normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+        snapshot["document_schema_version"] = document_schema_version_for_type(normalized_type)
+    else:
+        # Keep this explicit legacy assignment as a compatibility guard for every v2 document family.
+        snapshot["document_schema_version"] = LEGACY_DOCUMENT_SCHEMA_VERSION
     currency = snapshot["issuer"]["currency"]
     if normalized_type == DocumentType.SALARY_SLIP:
         snapshot["salary_in_words"] = money_to_words(snapshot["net"], currency)
@@ -681,11 +769,23 @@ def finalize_business_document(
         snapshot["invoice"]["total_in_words"] = money_to_words(snapshot["invoice"]["total"], currency)
     elif normalized_type == DocumentType.SUPPLIER_PAYMENT_RECEIPT:
         snapshot["payment"]["amount_in_words"] = money_to_words(snapshot["payment"]["amount"], currency)
-    source_fingerprint = getattr(source, "snapshot_fingerprint", "") or getattr(source, "source_fingerprint", "") or _json_hash({
-        "model": source_model,
-        "id": str(source.pk),
-        "updated_at": source.updated_at.isoformat(),
-    })
+    if normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+        # Bind the source fingerprint to the supplier-qualified locked operational extract,
+        # not to issuer branding or other presentation metadata added during finalization.
+        source_fingerprint = _json_hash({
+            "source_model": source_model,
+            "source": snapshot.get("source"),
+            "project": snapshot.get("project"),
+            "supplier": snapshot.get("supplier"),
+            "summary": snapshot.get("summary"),
+            "workers": snapshot.get("workers"),
+        })
+    else:
+        source_fingerprint = getattr(source, "snapshot_fingerprint", "") or getattr(source, "source_fingerprint", "") or _json_hash({
+            "model": source_model,
+            "id": str(source.pk),
+            "updated_at": source.updated_at.isoformat(),
+        })
     snapshot_fingerprint = _json_hash(snapshot)
     if normalized_type == DocumentType.RENTAL_TIMESHEET and document_variant == SUPPLIER_TIMESHEET_VARIANT:
         key, prefix = "document.supplier_timesheet", "STS-"
@@ -700,6 +800,8 @@ def finalize_business_document(
             title = f"Supplier Timesheet Statement · {entity_name} · {snapshot['project']['name']}"
         else:
             title = f"Project Timesheet · {entity_name}"
+    elif normalized_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+        title = f"Supplier Monthly Timesheet Pack · {entity_name} · {snapshot['project']['name']}"
     elif normalized_type == DocumentType.SUPPLIER_SETTLEMENT:
         title = f"Supplier Settlement Statement · {entity_name}"
     elif normalized_type == DocumentType.SUPPLIER_INVOICE:

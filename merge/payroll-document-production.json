@@ -78,5 +78,21 @@
     "separate_document_per_supplier_project_period": true,
     "stored_document_types_unchanged": true,
     "schema_change": false
+  },
+  "v3_migration_freeze": {
+    "contract": "merge/payroll-document-v3-freeze.json",
+    "state": "freeze_only",
+    "schema_change": false,
+    "data_rewrite": false,
+    "target_schema_version": "3.0"
+  },
+  "v3_type_foundation": {
+    "contract": "merge/payroll-document-v3-type.json",
+    "upgrade_sequence": "2/14",
+    "state": "additive_foundation_only",
+    "stored_type": "supplier_timesheet_pack",
+    "schema_change": true,
+    "data_rewrite": false,
+    "generator_active": false
   }
 }

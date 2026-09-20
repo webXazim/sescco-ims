@@ -1,0 +1,51 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-production-print-renderer",
+  "upgrade_sequence": "6/14",
+  "state": "production_renderer_internal_only",
+  "schema_change": false,
+  "data_rewrite": false,
+  "stored_type": "supplier_timesheet_pack",
+  "document_schema_version": "3.0",
+  "renderer": {
+    "template": "templates/documents/print.html",
+    "context_builder": "apps/documents/printing.py",
+    "summary_rows_per_render_page": 18,
+    "summary_first": true,
+    "worker_detail_after_summary": true,
+    "target_worker_render_unit": "one_worker_month",
+    "worker_overflow_policy": "flow_to_next_physical_page_without_clipping",
+    "repeat_worker_table_header": true,
+    "commercial_values_allowed": false,
+    "daily_overtime_allowed": false,
+    "monthly_overtime_disclosure": true
+  },
+  "summary_output": {
+    "identity": ["supplier", "project", "period", "locked_revision"],
+    "totals": ["worker_count", "regular_hours", "overtime_hours", "total_hours"],
+    "worker_rows": true,
+    "signature_roles_from_snapshot": true
+  },
+  "worker_output": {
+    "complete_calendar": true,
+    "columns": ["date", "day", "status", "trade", "regular_hours", "remark"],
+    "outside_assignment_visible": true,
+    "assignment_trade_segments_visible": true,
+    "monthly_summary_visible": true,
+    "signature_roles_from_snapshot": true
+  },
+  "compatibility": {
+    "legacy_v2_renderer_unchanged": true,
+    "generic_documents_api": false,
+    "frontend_creation_ui": false,
+    "historical_documents_rewritten": false,
+    "shared_supplier_print_uses_same_renderer": true
+  },
+  "implementation": {
+    "renderer": "apps/documents/printing.py",
+    "print_template": "templates/documents/print.html",
+    "print_views": "apps/documents/views.py",
+    "regression_tests": "apps/documents/tests/test_v3_production_print_renderer.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-derived-worker-timesheet-export"
+}

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from django.apps import apps as django_apps
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.core.serializers.json import DjangoJSONEncoder
 
+import hashlib
+import json
+
+from apps.documents.models import DocumentType
+from apps.documents.schema import validate_document_snapshot_for_type
 from apps.documents.services import verify_document_snapshot
 
 
@@ -40,6 +47,11 @@ class Command(BaseCommand):
             if not verify_document_snapshot(document):
                 errors.append(f"BusinessDocument {document.pk}: snapshot fingerprint mismatch")
                 continue
+            try:
+                validate_document_snapshot_for_type(document.document_type, document.snapshot)
+            except ValidationError as exc:
+                errors.append(f"BusinessDocument {document.pk}: document snapshot contract invalid: {exc}")
+                continue
 
             # BusinessDocument.source_model is normally a Django model label.  Some
             # finalized document variants append a controlled qualifier after a colon
@@ -70,8 +82,11 @@ class Command(BaseCommand):
             if not separator:
                 continue
 
-            # Supplier Timesheet Statements use:
+            # Supplier-scoped Rental Timesheet documents use:
             # rental_manpower.rentaltimesheetperiod:supplier:<SUPPLIER_CODE>
+            #
+            # Both the legacy v2 Supplier Timesheet Statement and the v3 Supplier
+            # Monthly Timesheet Pack intentionally share this qualified source identity.
             if base_source_model == supplier_timesheet_base and source_qualifier.lower().startswith("supplier:"):
                 supplier_code = source_qualifier.split(":", 1)[1].strip().upper()
                 if not supplier_code:
@@ -81,14 +96,49 @@ class Command(BaseCommand):
                 snapshot = document.snapshot if isinstance(document.snapshot, dict) else {}
                 snapshot_supplier = snapshot.get("supplier") if isinstance(snapshot.get("supplier"), dict) else {}
                 snapshot_supplier_code = str(snapshot_supplier.get("code") or "").strip().upper()
-                if snapshot.get("document_variant") != "supplier_timesheet":
-                    errors.append(f"BusinessDocument {document.pk}: supplier-timesheet source has the wrong document variant")
-                    continue
                 if snapshot_supplier_code != supplier_code:
                     errors.append(f"BusinessDocument {document.pk}: supplier-timesheet source code does not match its snapshot")
                     continue
                 if str(document.entity_reference or "").strip().upper() != supplier_code:
                     errors.append(f"BusinessDocument {document.pk}: supplier-timesheet source code does not match its entity reference")
+                    continue
+
+                if document.document_type == DocumentType.RENTAL_TIMESHEET:
+                    if snapshot.get("document_variant") != "supplier_timesheet":
+                        errors.append(f"BusinessDocument {document.pk}: legacy supplier-timesheet source has the wrong document variant")
+                    continue
+
+                if document.document_type == DocumentType.SUPPLIER_TIMESHEET_PACK:
+                    source_snapshot = snapshot.get("source") if isinstance(snapshot.get("source"), dict) else {}
+                    if str(source_snapshot.get("id") or "") != str(document.source_id):
+                        errors.append(f"BusinessDocument {document.pk}: v3 pack source id does not match its immutable snapshot")
+                        continue
+                    if str(source_snapshot.get("model") or "").strip().lower() != supplier_timesheet_base:
+                        errors.append(f"BusinessDocument {document.pk}: v3 pack source model does not match RentalTimesheetPeriod")
+                        continue
+                    expected_source_payload = {
+                        "source_model": document.source_model,
+                        "source": snapshot.get("source"),
+                        "project": snapshot.get("project"),
+                        "supplier": snapshot.get("supplier"),
+                        "summary": snapshot.get("summary"),
+                        "workers": snapshot.get("workers"),
+                    }
+                    encoded = json.dumps(
+                        expected_source_payload,
+                        cls=DjangoJSONEncoder,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                    expected_source_fingerprint = hashlib.sha256(encoded).hexdigest()
+                    if document.source_fingerprint != expected_source_fingerprint:
+                        errors.append(f"BusinessDocument {document.pk}: v3 pack source fingerprint mismatch")
+                    continue
+
+                errors.append(
+                    f"BusinessDocument {document.pk}: unsupported document type for supplier-qualified Rental Timesheet source"
+                )
                 continue
 
             errors.append(f"BusinessDocument {document.pk}: unsupported qualified source model {document.source_model!r}")

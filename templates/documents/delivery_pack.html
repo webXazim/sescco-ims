@@ -29,10 +29,10 @@
     <div><span>Reference</span><strong>{{ metadata.reference|default:"—" }}</strong></div>
   </section>
   <div class="section-title">Documents</div>
-  <table><thead><tr><th>#</th><th>Document</th><th>Number</th><th>Period</th><th>Reference</th></tr></thead><tbody>
-  {% for document in documents %}<tr><td>{{ forloop.counter }}</td><td>{{ document.title }}</td><td>{{ document.document_number }}</td><td>{% if document.period_start %}{{ document.period_start|date:"F Y" }}{% else %}—{% endif %}</td><td>{{ document.source_reference|default:"—" }}</td></tr>{% endfor %}
+  <table><thead><tr><th>#</th><th>Document</th><th>Number / File</th><th>Period</th><th>Reference</th></tr></thead><tbody>
+  {% for entry in document_entries %}<tr><td>{{ forloop.counter }}</td><td><strong>{{ entry.label }}</strong>{% if entry.primary %}<br><small>Primary supplier timesheet</small>{% endif %}</td><td>{{ entry.document.document_number }}<br><small>{{ entry.file_name }}</small></td><td>{% if entry.document.period_start %}{{ entry.document.period_start|date:"F Y" }}{% else %}—{% endif %}</td><td>{{ entry.document.source_reference|default:"—" }}</td></tr>{% endfor %}
   </tbody></table>
-  {% if metadata.note %}<div class="section-title">Note</div><p>{{ metadata.note }}</p>{% endif %}
+  {% if metadata.note %}<div class="section-title">Note</div><p>{{ metadata.note }}</p>{% endif %}<div class="section-title">Acknowledgement scope</div><p>Receipt only — acknowledgement does not alter the locked timesheet, approved settlement, supplier invoice, or payment authority.</p>
   <div class="signatures"><div>Issued by</div><div>Recipient acknowledgement</div></div>
   <div class="footer"><span>{{ pack.object_label }} · {{ metadata.supplier_code }}</span><span>{% if delivered %}Delivered {{ delivered.created_at|date:"d M Y H:i" }}{% else %}Sent{% endif %}</span></div>
 </div>

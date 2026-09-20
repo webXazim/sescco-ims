@@ -17,6 +17,20 @@
     "apps.internal_payroll.tests",
     "apps.rental_manpower.tests",
     "apps.documents.tests.test_documents",
+    "apps.documents.tests.test_v3_contract_freeze",
+    "apps.documents.tests.test_v3_type_foundation",
+    "apps.documents.tests.test_v3_supplier_timesheet_pack_aggregator",
+    "apps.documents.tests.test_v3_worker_monthly_sheet_contract",
+    "apps.documents.tests.test_v3_supplier_summary_contract",
+    "apps.documents.tests.test_v3_production_print_renderer",
+    "apps.documents.tests.test_v3_derived_worker_timesheet_export",
+    "apps.documents.tests.test_v3_type_first_generator_api",
+    "apps.documents.tests.test_v3_new_documents_ux_cutover",
+    "apps.documents.tests.test_v3_documents_workspace_cleanup",
+    "apps.documents.tests.test_v3_financial_document_reconciliation",
+    "apps.documents.tests.test_v3_supplier_delivery_cutover",
+    "apps.documents.tests.test_v3_scale_production_certification",
+    "apps.documents.tests.test_v3_production_freeze_acceptance",
     "apps.documents.tests.test_merge_access",
     "apps.core.tests.test_management_reporting",
     "apps.core.tests.test_merge_management_access",
@@ -60,6 +74,20 @@
     "scripts/verify-lifecycle-retention-contract.py",
     "scripts/verify-payroll-document-finalization-context.py",
     "scripts/verify-payroll-document-production.py",
+    "scripts/verify-payroll-document-v3-freeze.py",
+    "scripts/verify-payroll-document-v3-type.py",
+    "scripts/verify-payroll-document-v3-aggregator.py",
+    "scripts/verify-payroll-document-v3-worker-sheet.py",
+    "scripts/verify-payroll-document-v3-supplier-summary.py",
+    "scripts/verify-payroll-document-v3-print-renderer.py",
+    "scripts/verify-payroll-document-v3-worker-export.py",
+    "scripts/verify-payroll-document-v3-type-first-generator-api.py",
+    "scripts/verify-payroll-document-v3-new-documents-ux.py",
+    "scripts/verify-payroll-document-v3-documents-workspace.py",
+    "scripts/verify-payroll-document-v3-financial-reconciliation.py",
+    "scripts/verify-payroll-document-v3-supplier-delivery-cutover.py",
+    "scripts/verify-payroll-document-v3-scale-production-certification.py",
+    "scripts/verify-payroll-document-v3-production-freeze.py",
     "scripts/verify-granular-access-authority.py",
     "scripts/verify-single-access-authority.py",
     "scripts/verify-user-management-backend.py",
@@ -563,6 +591,181 @@
           "test_custom_profile_permission_edit_revokes_every_assigned_user_session",
           "test_deactivate_then_reactivate_before_next_request_still_revokes_old_session",
           "test_temporary_password_blocks_operations_until_changed"
+        ]
+      }
+    },
+    {
+      "id": "rental-document-v3-contract-freeze",
+      "evidence": {
+        "apps/documents/tests/test_v3_contract_freeze.py": [
+          "test_legacy_v2_document_types_remain_available_after_additive_cutover",
+          "test_supplier_timesheet_alias_and_legacy_variants_are_frozen",
+          "test_rental_timesheet_authority_is_daily_regular_and_monthly_overtime",
+          "test_existing_document_routes_remain_reverseable",
+          "test_document_schema_lineage_keeps_frozen_v2_migrations_and_adds_v3_type_migration"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-type-foundation",
+      "evidence": {
+        "apps/documents/tests/test_v3_type_foundation.py": [
+          "test_supplier_timesheet_pack_is_additive_stored_type",
+          "test_schema_version_selection_keeps_legacy_v2_and_pack_v3",
+          "test_valid_supplier_timesheet_pack_schema_is_accepted",
+          "test_supplier_timesheet_pack_rejects_commercial_fields_recursively",
+          "test_supplier_timesheet_pack_rejects_invented_daily_overtime",
+          "test_v3_type_migration_is_additive_and_has_no_data_rewrite"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-snapshot-aggregator",
+      "evidence": {
+        "apps/documents/tests/test_v3_supplier_timesheet_pack_aggregator.py": [
+          "test_aggregator_builds_supplier_scoped_summary_and_worker_daily_detail",
+          "test_aggregator_is_deterministic",
+          "test_aggregator_uses_two_supplier_filtered_data_queries_independent_of_worker_count",
+          "test_source_dispatch_is_constant_three_queries_and_does_not_prefetch_whole_project",
+          "test_pack_rejects_unlocked_or_empty_supplier_source",
+          "test_internal_finalizer_creates_one_supplier_qualified_v3_document",
+          "test_generic_documents_api_keeps_v3_creation_closed_until_generator_cutover"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-worker-monthly-sheet-contract",
+      "evidence": {
+        "apps/documents/tests/test_v3_worker_monthly_sheet_contract.py": [
+          "test_partial_assignment_materializes_complete_month_without_fabricating_attendance",
+          "test_trade_change_creates_distinct_non_commercial_assignment_segments",
+          "test_worker_sheet_contract_freezes_real_world_acknowledgement_roles",
+          "test_schema_rejects_fabricated_outside_assignment_work_or_trade",
+          "test_schema_rejects_missing_calendar_day_and_daily_ot_distribution"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-supplier-summary-contract",
+      "evidence": {
+        "apps/documents/tests/test_v3_supplier_summary_contract.py": [
+          "test_supplier_summary_has_one_reconciled_row_per_worker",
+          "test_supplier_summary_contract_freezes_identity_columns_and_acknowledgement_roles",
+          "test_schema_rejects_tampered_supplier_summary_identity_or_hours",
+          "test_supplier_summary_rejects_commercial_fields_and_daily_ot",
+          "test_upgrade4_internal_snapshot_without_supplier_summary_contract_remains_valid"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-production-print-renderer",
+      "evidence": {
+        "apps/documents/tests/test_v3_production_print_renderer.py": [
+          "test_renderer_chunks_large_supplier_summary_without_losing_workers",
+          "test_renderer_keeps_complete_worker_calendar_and_monthly_only_overtime",
+          "test_renderer_fails_closed_on_tampered_or_commercial_snapshot",
+          "test_template_renders_summary_then_worker_monthly_sheet_without_commercial_columns",
+          "test_worker_page_css_allows_safe_overflow_instead_of_clipping"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-derived-worker-timesheet-export",
+      "evidence": {
+        "apps/documents/tests/test_v3_derived_worker_timesheet_export.py": [
+          "test_worker_extract_selects_one_worker_from_immutable_pack_without_mutation",
+          "test_worker_extract_rejects_unknown_worker_and_tampered_snapshot",
+          "test_internal_worker_print_route_renders_only_selected_worker_without_creating_document",
+          "test_internal_worker_print_route_fails_closed_for_unknown_worker_and_non_pack_document",
+          "test_supplier_share_worker_print_requires_pack_membership_and_uses_same_immutable_snapshot"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-type-first-generator-api",
+      "evidence": {
+        "apps/documents/tests/test_v3_type_first_generator_api.py": [
+          "test_type_catalog_is_lightweight_and_exposes_only_supplier_facing_single_document_purposes",
+          "test_supplier_and_project_selectors_are_bounded_and_dependency_scoped",
+          "test_sources_and_review_resolve_only_the_selected_supplier_project_period",
+          "test_type_first_create_is_the_only_api_path_that_can_activate_v3_pack",
+          "test_type_first_routes_do_not_expose_project_timesheet_or_unbounded_all_scope"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-new-documents-ux-cutover",
+      "evidence": {
+        "apps/documents/tests/test_v3_new_documents_ux_cutover.py": [
+          "test_rental_new_document_opens_purpose_first_without_heavy_scope_discovery",
+          "test_purpose_catalog_contains_only_supplier_facing_business_actions",
+          "test_scope_is_progressive_and_uses_bounded_dependency_selectors",
+          "test_review_and_create_use_type_first_endpoints_and_invoice_remains_multipart",
+          "test_frontend_cutover_is_reachable_and_has_dedicated_breathing_layout"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-documents-workspace-cleanup",
+      "evidence": {
+        "apps/documents/tests/test_v3_documents_workspace_cleanup.py": [
+          "test_register_page_defers_snapshot_integrity_and_uses_supplier_timesheet_family_count",
+          "test_summary_detail_returns_small_preview_without_worker_array",
+          "test_full_detail_remains_backward_compatible_and_integrity_verified",
+          "test_rental_workspace_has_four_business_families_and_project_timesheet_stays_secondary",
+          "test_documents_toolbar_removes_redundant_final_status_filter",
+          "test_browser_requests_summary_preview_instead_of_full_snapshot",
+          "test_backend_register_and_summary_paths_explicitly_defer_large_snapshot",
+          "test_workspace_cleanup_has_dedicated_responsive_layout"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-financial-document-reconciliation",
+      "evidence": {
+        "apps/documents/tests/test_v3_financial_document_reconciliation.py": [
+          "test_settlement_statement_preserves_approved_totals_and_locked_timesheet_revision",
+          "test_supplier_invoice_received_matches_approved_settlement_net_without_recalculating_it",
+          "test_financial_schema_rejects_invoice_or_settlement_math_drift",
+          "test_payment_advice_allocations_reconcile_exactly_to_paid_payment",
+          "test_payment_advice_rejects_allocation_total_that_differs_from_paid_amount",
+          "test_financial_print_language_keeps_invoice_direction_and_source_revisions_unambiguous"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-supplier-delivery-cutover",
+      "evidence": {
+        "apps/documents/tests/test_v3_supplier_delivery_cutover.py": [
+          "test_delivery_policy_treats_v3_pack_as_primary_and_hides_exact_legacy_replacement",
+          "test_delivery_options_promotes_v3_pack_and_uses_supplier_master_defaults",
+          "test_delivery_center_includes_v3_pack_and_suppresses_legacy_equivalent",
+          "test_issued_pack_freezes_manifest_primary_identity_and_receipt_scope",
+          "test_supplier_share_renders_primary_full_pack_filename_and_receipt_only_language",
+          "test_supplier_acknowledgement_is_receipt_only_and_retry_safe",
+          "test_email_dispatch_names_primary_timesheet_and_explains_receipt_only_acknowledgement"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-scale-production-certification",
+      "evidence": {
+        "apps/documents/tests/test_v3_scale_production_certification.py": [
+          "test_250_worker_pack_uses_two_data_queries_and_stays_within_snapshot_budget",
+          "test_250_worker_full_print_and_worker_extract_are_query_free_and_reconcile",
+          "test_finalization_is_retry_safe_and_keeps_one_immutable_pack",
+          "test_scale_report_command_certifies_real_250_worker_locked_source",
+          "test_concurrent_pack_finalization_returns_one_document_without_integrity_error"
+        ]
+      }
+    },
+    {
+      "id": "supplier-timesheet-pack-v3-production-freeze-acceptance",
+      "evidence": {
+        "apps/documents/tests/test_v3_production_freeze_acceptance.py": [
+          "test_management_reconciliation_accepts_legacy_and_v3_supplier_timesheet_sources",
+          "test_management_reconciliation_verifies_v3_snapshot_source_binding",
+          "test_management_reconciliation_fails_closed_on_v3_source_fingerprint_drift"
         ]
       }
     }

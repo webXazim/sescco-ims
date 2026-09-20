@@ -10,6 +10,8 @@ from django.db.utils import NotSupportedError
 from apps.core.models import CompanyOwnedModel
 from apps.core.models.scoping import CompanyScopedQuerySet
 
+from .schema import validate_document_snapshot_for_type
+
 
 class DocumentWorkspace(models.TextChoices):
     INTERNAL = "internal", "Internal Company"
@@ -21,6 +23,7 @@ class DocumentType(models.TextChoices):
     INTERNAL_TIMESHEET = "internal_timesheet", "Internal Timesheet"
     SALARY_PAYMENT_RECEIPT = "salary_payment_receipt", "Salary Payment Receipt"
     RENTAL_TIMESHEET = "rental_timesheet", "Rental Timesheet"
+    SUPPLIER_TIMESHEET_PACK = "supplier_timesheet_pack", "Supplier Timesheet Pack"
     SUPPLIER_SETTLEMENT = "supplier_settlement", "Supplier Settlement"
     SUPPLIER_INVOICE = "supplier_invoice", "Supplier Invoice"
     SUPPLIER_PAYMENT_RECEIPT = "supplier_payment_receipt", "Supplier Payment Receipt"
@@ -29,6 +32,7 @@ class DocumentType(models.TextChoices):
 
 
 PRODUCTION_DOCUMENT_LABELS = {
+    DocumentType.SUPPLIER_TIMESHEET_PACK: "Supplier Monthly Timesheet Pack",
     DocumentType.SUPPLIER_SETTLEMENT: "Supplier Settlement Statement",
     DocumentType.SUPPLIER_INVOICE: "Supplier Invoice Received",
     DocumentType.SUPPLIER_PAYMENT_RECEIPT: "Supplier Payment Advice",
@@ -137,6 +141,7 @@ class BusinessDocument(CompanyOwnedModel):
             raise ValidationError({"source_model": "Document source model is required."})
         if not isinstance(self.snapshot, dict) or not self.snapshot:
             raise ValidationError({"snapshot": "Document snapshot cannot be empty."})
+        validate_document_snapshot_for_type(self.document_type, self.snapshot)
         if len(self.source_fingerprint) != 64 or len(self.snapshot_fingerprint) != 64:
             raise ValidationError("Document integrity fingerprints must be SHA-256 values.")
 

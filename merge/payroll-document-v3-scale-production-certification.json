@@ -1,0 +1,57 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-scale-production-certification",
+  "upgrade_sequence": "13/14",
+  "state": "scale_and_concurrency_certified_before_final_freeze",
+  "schema_change": false,
+  "data_rewrite": false,
+  "certified_worker_volume": 250,
+  "query_budgets": {
+    "snapshot_aggregator": 2,
+    "full_print_context": 0,
+    "derived_worker_print_context": 0
+  },
+  "snapshot_budget": {
+    "max_mib_at_250_workers": 8,
+    "budget_is_release_certification_not_runtime_truncation": true
+  },
+  "rendering": {
+    "summary_rows_per_section": 18,
+    "worker_render_units_equal_worker_count": true,
+    "complete_calendar_per_worker": true,
+    "database_queries_during_render": 0
+  },
+  "idempotency": {
+    "sequential_retry_returns_existing_document": true,
+    "postgresql_concurrent_finalization_certified": true,
+    "source_row_locked_before_existing_document_decision": true,
+    "duplicate_business_document_rows_allowed": false,
+    "finalizer_transaction_atomic": true
+  },
+  "operator_benchmark": {
+    "command": "python manage.py supplier_timesheet_pack_scale_report --fail-on-limits",
+    "auto_selects_largest_locked_supplier_project_source": true,
+    "supports_company_period_project_supplier_pinning": true,
+    "reports_elapsed_time_without_portable_time_threshold": true
+  },
+  "authority_boundaries": {
+    "locked_timesheet_source_unchanged": true,
+    "monthly_overtime_authority_unchanged": true,
+    "settlement_and_payment_formulas_unchanged": true,
+    "commercial_values_excluded_from_timesheet_pack": true
+  },
+  "implementation": {
+    "aggregator": "apps/documents/services/supplier_timesheet_pack.py",
+    "finalizer": "apps/documents/services/documents.py",
+    "print_builder": "apps/documents/printing.py",
+    "scale_command": "apps/documents/management/commands/supplier_timesheet_pack_scale_report.py",
+    "tests": "apps/documents/tests/test_v3_scale_production_certification.py",
+    "verifier": "scripts/verify-payroll-document-v3-scale-production-certification.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-final-production-freeze",
+  "certified_worker_volumes": [
+    1,
+    50,
+    250
+  ]
+}

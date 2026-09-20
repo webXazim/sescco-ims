@@ -1,0 +1,80 @@
+{
+  "release": "1.0.117",
+  "upgrade": "rental-document-v3-contract-freeze",
+  "upgrade_sequence": "1/14",
+  "state": "freeze_only",
+  "schema_change": false,
+  "data_rewrite": false,
+  "current_document_schema_version": "2.0",
+  "target_document_schema_version": "3.0",
+  "purpose": "Freeze the current Rental document authority before the Supplier Monthly Timesheet Pack cutover so historical documents, source states, settlement authority and public routes cannot drift during the migration.",
+  "authority": {
+    "timesheet_source": "locked RentalTimesheetPeriod",
+    "regular_attendance_granularity": "daily per worker",
+    "overtime_granularity": "monthly per worker",
+    "supplier_settlement_source": "approved-or-later SupplierSettlement",
+    "financial_authority_unchanged": true,
+    "documents_are_historical_snapshots_not_ledgers": true,
+    "finalized_documents_remain_immutable": true
+  },
+  "legacy_v2": {
+    "stored_document_types": [
+      "salary_slip",
+      "internal_timesheet",
+      "salary_payment_receipt",
+      "rental_timesheet",
+      "supplier_settlement",
+      "supplier_invoice",
+      "supplier_payment_receipt"
+    ],
+    "supplier_timesheet_public_alias": "supplier_timesheet",
+    "supplier_timesheet_stored_type": "rental_timesheet",
+    "supplier_timesheet_variant": "supplier_timesheet",
+    "project_timesheet_variant": "project_timesheet",
+    "supplier_timesheet_source_identity": "rental_manpower.rentaltimesheetperiod:supplier:<SUPPLIER_CODE>",
+    "snapshot_version": "2.0",
+    "must_remain_readable": true,
+    "must_remain_printable": true,
+    "must_not_be_rewritten": true
+  },
+  "target_v3": {
+    "planned_stored_type": "supplier_timesheet_pack",
+    "unit": "one supplier + one project + one month + one locked timesheet revision",
+    "summary_first": true,
+    "worker_detail_sections": true,
+    "one_business_document_per_pack": true,
+    "worker_extract_is_derived_view": true,
+    "commercial_rates_forbidden_in_timesheet_pack": true,
+    "daily_overtime_must_not_be_invented": true,
+    "settlement_remains_independent_of_pack_generation": true,
+    "implementation_started": false
+  },
+  "protected_routes": [
+    "/api/documents/",
+    "/api/documents/sources/",
+    "/api/documents/generation-options/",
+    "/api/documents/generation-plan/",
+    "/api/documents/generate/",
+    "/api/documents/generation-batches/",
+    "/api/documents/batch/settlement-statements/",
+    "/api/documents/batch/supplier-timesheets/",
+    "/api/documents/<uuid:document_id>/",
+    "/documents/<uuid:document_id>/print/"
+  ],
+  "document_migration_lineage": [
+    "apps/documents/migrations/0001_initial.py",
+    "apps/documents/migrations/0002_alter_businessdocument_company_and_more.py"
+  ],
+  "baseline_sha256": {
+    "apps/documents/models.py": "8275e8dfd26f802c5685047c2c52d28d251d3bc5949a245bb668c0fcad416148",
+    "apps/documents/services/documents.py": "b2f44cdcbd45668eab63e776e85031a982412efdcc2109a882f0ddfb6ceeb307",
+    "apps/documents/api.py": "ecda17505f0536c32ea8c48cb30e65c6f8ed6ec2f42b2a3d75cbf10afb7d107b",
+    "apps/documents/urls.py": "e68413e0a1147e7b3ec5de699dd99fc1d87504f01e1d76f7090d9c3951c9cce8",
+    "templates/documents/print.html": "09893d5b013611f3885868085198f2afa349200280586186115dcf0522f0251f",
+    "static/payroll/js/app.js": "d730af83a7afa69b29f7124bacc6cdcdf81e7bc8dabb8fc557ad9c8a115cbac0",
+    "apps/rental_manpower/models/timesheets.py": "a67f27135b5acda4593f36f9b5ef92bfcf605ac731f79cdeb1cd275ffd41d25d",
+    "apps/documents/migrations/0001_initial.py": "48f0e57f8c844c9bd9e084729578477765b7c22d34bacd3e04e19743f7a980fd",
+    "apps/documents/migrations/0002_alter_businessdocument_company_and_more.py": "0b7361f375843239301e00514f5a45c836f8d98a04af1aa402692199cb6ca32a"
+  },
+  "next_upgrade": "supplier-timesheet-pack-type-and-schema-foundation"
+}

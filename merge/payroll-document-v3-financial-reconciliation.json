@@ -1,0 +1,52 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-financial-document-reconciliation",
+  "upgrade_sequence": "11/14",
+  "state": "financial_documents_reconciled_without_authority_change",
+  "schema_change": false,
+  "data_rewrite": false,
+  "document_schema_version": "2.0",
+  "financial_reconciliation_contract_version": "1.0",
+  "authority": {
+    "supplier_settlement_statement": "approved SupplierSettlement immutable calculation snapshot",
+    "supplier_invoice_received": "approved SupplierSettlement net + supplier-provided VAT/invoice metadata",
+    "supplier_payment_advice": "Paid SupplierPayment + exact settlement allocations",
+    "supplier_timesheet_pack_required": false
+  },
+  "source_evidence": {
+    "settlement_source": "Locked RentalTimesheetPeriod",
+    "settlement_timesheet_revision_frozen": true,
+    "settlement_revision_frozen": true,
+    "settlement_snapshot_fingerprint_frozen": true,
+    "supplier_invoice_subtotal_must_equal_settlement_net": true,
+    "payment_allocations_must_equal_paid_amount": true,
+    "payment_invoice_document_integrity_verified_when_present": true
+  },
+  "presentation": {
+    "supplier_invoice_direction": "received_from_supplier",
+    "supplier_invoice_match_basis": "approved_settlement_net",
+    "payment_advice_allocation_reconciliation": true,
+    "settlement_prints_locked_timesheet_revision": true
+  },
+  "legacy_compatibility": {
+    "historical_v2_financial_documents_without_contract_remain_valid": true,
+    "historical_rows_rewritten": false
+  },
+  "frozen_rental_financial_authority_functions": {
+    "_calculate_supplier_snapshot": "8bdf1a32b5b1b2410e0eeeca311a16fc492c5f2b67e08d9551381e8c0de79e6b",
+    "settlement_source_fingerprint": "80589d0c89ad00df2ddb4786fb5c992e66048fda7a0042404eb23f767450ce1a",
+    "settlement_snapshot_fingerprint": "7c996f65b6188610c9f2647b2c2966f8a2308a5e4ce6ff86c0929d2d73297c62",
+    "_supplier_invoice_payable": "0dc3d4ec1bf2750f7bb4b3015d51de469ff88e033f81ba222c755d9af89874f6",
+    "record_supplier_payment": "16fc1addd23c467b5b558506e3d000d64d6b4b6c8efa1da4788410a88d66f667"
+  },
+  "implementation": {
+    "snapshot_service": "apps/documents/services/documents.py",
+    "snapshot_schema": "apps/documents/schema.py",
+    "financial_authority": "apps/rental_manpower/services/settlements.py",
+    "type_first_review": "apps/documents/services/type_first_generator.py",
+    "print_template": "templates/documents/print.html",
+    "regression_tests": "apps/documents/tests/test_v3_financial_document_reconciliation.py",
+    "release_verifier": "scripts/verify-payroll-document-v3-financial-reconciliation.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-supplier-delivery-cutover"
+}

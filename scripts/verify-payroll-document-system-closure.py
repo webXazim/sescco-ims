@@ -86,13 +86,17 @@ for forbidden in (
     if forbidden in js:
         fail(f"obsolete Documents workflow returned: {forbidden}")
 
-if len(migrations) != 2:
-    fail(f"document closure must remain schema-free; found migrations: {[p.name for p in migrations]}")
+migration_names = [p.name for p in migrations]
+expected_prefix = ["0001_initial.py", "0002_alter_businessdocument_company_and_more.py"]
+if migration_names[:2] != expected_prefix:
+    fail(f"frozen document closure migrations changed: {migration_names}")
+if migration_names[2:] not in ([], ["0003_supplier_timesheet_pack_type.py"]):
+    fail(f"unexpected document migration after production closure: {migration_names}")
 if 'class DocumentDelivery' in models or 'class DocumentGenerationBatch' in models:
     fail("closure must preserve immutable BusinessDocument + append-only AuditEvent authority")
 
 print(
     "Verified SESCCO MS 1.0.117 Payroll document-system production closure: scope-safe server search, "
     "exact reviewed generation, period-safe delivery monitoring, integrity-gated issue packs, serialized lifecycle transitions, "
-    "secure invoice attachments and schema-free immutable authority."
+    "secure invoice attachments and preserved immutable authority through the additive v3 document-type migration."
 )

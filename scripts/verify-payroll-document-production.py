@@ -72,6 +72,9 @@ if size != contract["supplier_invoice_letterhead"]["pixel_size"]:
     fail(f"SESCCO letterhead pixel size changed: {size}")
 
 service = text("apps/documents/services/documents.py")
+schema = text("apps/documents/schema.py")
+if 'LEGACY_DOCUMENT_SCHEMA_VERSION = "2.0"' not in schema:
+    fail("legacy document schema version is no longer pinned to v2")
 for marker in (
     'SESCCO_COMPANY_DOCUMENT_HEADPAD = "apps/documents/assets/sescco-company-document-headpad-v2.png"',
     'SESCCO_SUPPLIER_INVOICE_LETTERHEAD = SESCCO_COMPANY_DOCUMENT_HEADPAD',
@@ -86,8 +89,8 @@ for marker in (
     'branding_mode = "letterhead"',
     'snapshot["invoice"]["total_in_words"] = money_to_words',
     '"attachment": invoice.get("attachment")',
-    '"supplier_invoice_number": (invoice_by_settlement.get',
-    'snapshot["document_schema_version"] = "2.0"',
+    '"supplier_invoice_number": invoice_doc.external_reference if invoice_doc else ""',
+    'snapshot["document_schema_version"] = LEGACY_DOCUMENT_SCHEMA_VERSION',
     'snapshot["invoice"]["total_in_words"] = money_to_words',
     'DocumentType.SUPPLIER_PAYMENT_RECEIPT',
 ):

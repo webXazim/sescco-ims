@@ -10,7 +10,9 @@ is reserved for Django superusers and protected corrections.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.117 — Sourcing Static Manifest Deployment Hotfix**.
+Current packaged release: **SESCCO MS 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & Acceptance (Upgrade 14/14)**.
+
+Previous deployment baseline retained for verification: **SESCCO MS 1.0.117 — Sourcing Static Manifest Deployment Hotfix**.
 
 This repository is at **merge Upgrade 12 of 12 — production freeze**. Inventory and Payroll now share one Django project, PostgreSQL database, authentication/company context, project authority, shell, and production deployment stack. The planned merge is complete.
 
@@ -63,6 +65,8 @@ authorized through company-scoped `CompanyMembership` + `AccessProfile`; ordinar
 Access Administrators never receive Django staff access. Production User Management CRUD is available through the normal Administration module and remains enforced by the company-scoped backend authority.
 Backend security/API contract: `docs/USER_MANAGEMENT_BACKEND.md`. UI contract: `docs/USER_MANAGEMENT_UI.md`.
 Rental Supervisor / Foreman production scope contract: `docs/RENTAL_SUPERVISOR_ACCESS.md`.
+Rental document v3 migration contract: `docs/PAYROLL_DOCUMENT_V3_MIGRATION.md`.
+Supplier Timesheet Pack worker extracts are derived from the immutable finalized pack and do not create one document row per worker. Final v3 production freeze: the normal creation path is the bounded type-first generator; the supplier pack is the primary outbound timesheet; the document reconciliation command now validates both legacy supplier-qualified timesheets and v3 packs, including schema/source/fingerprint bindings; and release acceptance includes the 250-worker scale gate in rehearsal/benchmark environments. See `docs/SUPPLIER_TIMESHEET_PACK_PRODUCTION_FREEZE.md`. Rental Documents now uses the purpose-first creation flow: choose Supplier Timesheet, Settlement Statement, Supplier Invoice Received, or Payment Advice first, then lazily select only the eligible month/supplier/project/source. Project Timesheet stays in the Project Timesheets workspace. The Documents register is now grouped by those supplier-facing business families, defers large immutable snapshots while listing records, and loads only a bounded summary fragment for the on-screen preview; full snapshot integrity verification remains on authoritative full-detail/print/share paths. Financial documents are now explicitly reconciled to the approved Supplier Settlement and its Locked source-timesheet revision: Supplier Invoice Received matches the settlement net, Payment Advice allocations must equal the paid amount, and none of those financial authorities depends on generating a printable Supplier Timesheet Pack. Supplier delivery now treats the v3 Supplier Monthly Timesheet Pack as the primary outbound timesheet, freezes a supplier-facing delivery manifest and safe PDF filenames at issue time, keeps Settlement Statement and Payment Advice opt-in, keeps Supplier Invoice Received inbound-only, and records supplier acknowledgement strictly as evidence of receipt rather than approval.
 Internal Payroll / Finance duty-separation contract: `docs/INTERNAL_FINANCE_PERMISSIONS.md`.
 Cross-module authorization leak-closure contract: `docs/CROSS_MODULE_ACCESS_LEAK_CLOSURE.md`.
 Credential/session revocation contract: `docs/CREDENTIAL_SESSION_REVOCATION.md`.
@@ -108,6 +112,21 @@ python manage.py payroll_performance_report --period 2026-07 --fail-on-query-bud
 ```
 
 The report measures Internal Attendance context, Internal Payroll preflight, the largest Rental project timesheet context, and Rental settlement context. The default release guard is 40 SQL queries per measured Internal/Rental path; elapsed milliseconds are reported for environment comparison but are not treated as a portable pass/fail threshold.
+
+Supplier Timesheet Pack v3 has a separate production-scale certification. It measures the real immutable pack builder, snapshot size, full-pack print context and one derived worker sheet from a Locked Rental timesheet source:
+
+```bash
+python manage.py supplier_timesheet_pack_scale_report --fail-on-limits
+# Pin a known high-volume supplier/project/month when certifying a release:
+python manage.py supplier_timesheet_pack_scale_report \
+  --period 2026-07 \
+  --project-code DEMO-SCALE-P-001 \
+  --supplier-code DEMO-SCALE-SUP-001 \
+  --min-workers 250 \
+  --fail-on-limits
+```
+
+The release budgets are two SQL queries for the supplier-scoped snapshot aggregator, zero SQL queries while building full-pack/worker print contexts, and at most 8 MiB for the packaged 250-worker certification fixture. Elapsed milliseconds are reported for environment comparison but are not used as a portable pass/fail threshold. See `docs/SUPPLIER_TIMESHEET_PACK_SCALE_CERTIFICATION.md`.
 
 For Sourcing benchmark certification:
 

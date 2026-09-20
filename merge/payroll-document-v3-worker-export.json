@@ -1,0 +1,58 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-derived-worker-timesheet-export",
+  "upgrade_sequence": "7/14",
+  "state": "derived_worker_export_internal_and_shared",
+  "schema_change": false,
+  "data_rewrite": false,
+  "stored_type": "supplier_timesheet_pack",
+  "document_schema_version": "3.0",
+  "derived_export": {
+    "business_document_created": false,
+    "source": "immutable_parent_snapshot",
+    "selection_key": "worker_id",
+    "full_parent_snapshot_validated_first": true,
+    "database_queries_in_renderer": false,
+    "commercial_values_allowed": false,
+    "daily_overtime_allowed": false,
+    "print_save_pdf": true
+  },
+  "routes": {
+    "internal": "documents/<document_id>/workers/<worker_id>/print/",
+    "supplier_share": "documents/delivery-packs/<pack_event_id>/share/<token>/documents/<document_id>/workers/<worker_id>/print/",
+    "parent_pack_back_link": true
+  },
+  "security": {
+    "company_scope_required": true,
+    "document_view_permission_required": true,
+    "snapshot_fingerprint_required": true,
+    "worker_must_exist_in_parent_snapshot": true,
+    "supplier_share_requires_document_pack_membership": true,
+    "private_no_store": true,
+    "noindex": true
+  },
+  "rendering": {
+    "shared_worker_partial": "templates/documents/_supplier_timesheet_worker_sheet.html",
+    "same_worker_markup_for_full_pack_and_extract": true,
+    "complete_month": true,
+    "monthly_overtime_only": true,
+    "safe_overflow": true,
+    "derived_parent_reference_visible": true
+  },
+  "compatibility": {
+    "legacy_v2_renderer_unchanged": true,
+    "generic_documents_api": false,
+    "frontend_creation_ui": false,
+    "historical_documents_rewritten": false,
+    "new_migration": false
+  },
+  "implementation": {
+    "renderer": "apps/documents/printing.py",
+    "views": "apps/documents/views.py",
+    "urls": "apps/documents/urls.py",
+    "print_template": "templates/documents/print.html",
+    "worker_partial": "templates/documents/_supplier_timesheet_worker_sheet.html",
+    "regression_tests": "apps/documents/tests/test_v3_derived_worker_timesheet_export.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-type-first-generator-api"
+}

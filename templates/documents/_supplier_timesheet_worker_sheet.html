@@ -1,0 +1,30 @@
+<section class="sheet pack-sheet worker-page"><div class="pack-page-content">
+  <header class="worker-header">
+    <div><span class="company">{{ supplier_timesheet_pack_print.issuer.legal_name|default:supplier_timesheet_pack_print.issuer.name|default:"SESCCO" }} · Worker Monthly Timesheet</span><h2>{{ worker.worker_number }} · {{ worker.worker_name }}</h2></div>
+    <div class="worker-doc-ref"><strong>{{ document.document_number }}</strong>{{ worker.period_label }}<br>Locked revision {{ supplier_timesheet_pack_print.source.revision }}{% if worker_timesheet_extract %}<br>Derived from finalized supplier pack{% endif %}</div>
+  </header>
+  <div class="worker-meta">
+    <div><span>Supplier</span><strong>{{ supplier_timesheet_pack_print.supplier.code }} · {{ supplier_timesheet_pack_print.supplier.name }}</strong></div>
+    <div><span>Project</span><strong>{{ supplier_timesheet_pack_print.project.code }} · {{ supplier_timesheet_pack_print.project.name }}</strong></div>
+    <div><span>Trade(s)</span><strong>{{ worker.trade_display|default:"—" }}</strong></div>
+    <div><span>Period</span><strong>{{ worker.period_label }}</strong></div>
+  </div>
+  {% if worker.assignment_segments %}<div class="worker-segments"><strong>Assignment / trade segments:</strong> {% for segment in worker.assignment_segments %}{{ segment.start_label }}–{{ segment.end_label }} · {{ segment.trade|default:"Unspecified trade" }}{% if not forloop.last %}; {% endif %}{% endfor %}</div>{% endif %}
+  <table class="worker-table">
+    <thead><tr><th class="date-col">Date</th><th class="day-col">Day</th><th class="status-col">Status</th><th class="trade-col">Trade</th><th class="hours-col">Reg. Hrs</th><th class="note-col">Remark</th></tr></thead>
+    <tbody>{% for day in worker.days %}<tr{% if day.is_outside_assignment %} class="outside-assignment"{% endif %}><td>{{ day.date_label }}</td><td>{{ day.day }}</td><td>{{ day.attendance }}</td><td>{{ day.trade|default:"—" }}</td><td class="num">{{ day.regular_hours }}</td><td>{{ day.note|default:"" }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <div class="worker-totals">
+    <div><span>Assigned days</span><strong>{{ worker.summary.assigned_days }}</strong></div>
+    <div><span>Work</span><strong>{{ worker.summary.work_days }}</strong></div>
+    <div><span>Absent</span><strong>{{ worker.summary.absent_days }}</strong></div>
+    <div><span>Leave</span><strong>{{ worker.summary.leave_days }}</strong></div>
+    <div><span>Off / No scope</span><strong>{{ worker.summary.off_days }} / {{ worker.summary.no_scope_days }}</strong></div>
+    <div><span>Regular hours</span><strong>{{ worker.summary.regular_hours }}</strong></div>
+    <div><span>Monthly OT</span><strong>{{ worker.summary.overtime_hours }}</strong></div>
+    <div><span>Total hours</span><strong>{{ worker.summary.total_hours }}</strong></div>
+  </div>
+  <p class="worker-ot-note">{{ supplier_timesheet_pack_print.monthly_ot_note }}</p>
+  <div class="pack-signatures">{% for role in supplier_timesheet_pack_print.worker_signature_roles %}<div>{{ role.label }}</div>{% endfor %}</div>
+  <footer class="pack-footer"><span>{{ supplier_timesheet_pack_print.supplier.code }} · {{ supplier_timesheet_pack_print.project.code }} · {{ worker.worker_number }}</span><span>{{ document.document_number }} · {% if worker_timesheet_extract %}Derived worker sheet{% else %}Final worker sheet{% endif %}</span></footer>
+</div></section>

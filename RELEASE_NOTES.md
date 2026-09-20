@@ -1,3 +1,164 @@
+# 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & End-to-End Acceptance (Upgrade 14/14)
+
+- Closed the 14-stage Rental supplier-document migration and marked the v3 workflow production-frozen without rewriting historical v2 documents.
+- Fixed the production `merge_documents_management_report` reconciliation path so supplier-qualified `RentalTimesheetPeriod` sources correctly support both the legacy v2 Supplier Timesheet Statement and the new v3 Supplier Monthly Timesheet Pack.
+- Final reconciliation now validates schema contracts for v3/financial documents, verifies the v3 snapshot source id/model and supplier/entity binding, and recomputes the v3 source fingerprint from the immutable source/project/supplier/summary/worker payload. Source-fingerprint drift now fails closed.
+- Added final Django regression evidence proving legacy + v3 documents reconcile together, the v3 source binding is exact, and database-level source-fingerprint drift is rejected.
+- Added `merge/payroll-document-v3-production-freeze.json`, the final static verifier, and operator documentation covering reconciliation, deployment acceptance and the 250-worker scale gate.
+- Wired Upgrade 14 into release tasks, production freeze, Payroll frontend integration, the curated Payroll production-E2E suite, and the release-candidate static/runtime/benchmark gate registry.
+- Updated stale package/rehearsal wording to identify the current document-v3 production freeze instead of an earlier transitional upgrade.
+- No new database migration, historical-document rewrite, Payroll formula change, settlement calculation change, payment/accounting authority change or document UI feature change is introduced in this final freeze.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Scale & Production Certification (Upgrade 13/14)
+
+- Certified the new Supplier Monthly Timesheet Pack at **1-worker, 50-worker, and 250-worker / 7,500 daily-row** locked supplier/project/month volumes with a fixed release budget of two supplier-scoped data queries for snapshot aggregation.
+- Added a production `supplier_timesheet_pack_scale_report` management command that can auto-select the largest eligible Locked supplier/project source or be pinned to company, month, project and supplier. It reports worker volume, SQL query count, immutable JSON snapshot size, full-pack render sections and derived-worker render behavior.
+- Full-pack and derived-worker print-context construction are now explicitly certified as **query-free**; all printing is derived from the finalized immutable snapshot rather than rereading current Payroll rows.
+- Added an 8 MiB release-certification snapshot budget for the 250-worker fixture. This is a regression threshold, not a runtime truncation limit: production documents are never silently cut to fit the budget.
+- Hardened Supplier Timesheet Pack finalization against simultaneous browser retries by making finalization transactionally atomic and locking the authoritative Locked Timesheet source row before the existing-document decision. PostgreSQL concurrency regression coverage proves two simultaneous finalizations return the same immutable `BusinessDocument` instead of one request failing on the unique source constraint.
+- Added sequential retry/idempotency, summary-page count, worker-page reconciliation, complete-calendar worker export and commercial-field exclusion checks at scale.
+- No database migration, historical-document rewrite, timesheet/OT authority change, settlement formula change or payment/accounting change is introduced. Added Upgrade 13 to release, production-freeze, Payroll frontend integration and production-E2E certification gates.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Supplier Delivery Cutover (Upgrade 12/14)
+
+- Promoted the v3 **Supplier Monthly Timesheet Pack** to the primary supplier-facing timesheet for delivery. A legacy Supplier Timesheet Statement remains deliverable only when no exact v3 pack exists for the same supplier/source; duplicate legacy + v3 timesheets are blocked from the same issue pack.
+- Added Supplier Timesheet Pack support to single-document delivery and the period-based Delivery Center while keeping **Supplier Invoice Received** excluded from outbound supplier delivery because it is an inbound document from the supplier to SESCCO.
+- Added supplier-master recipient defaults and a practical channel priority: email when available, otherwise WhatsApp, otherwise secure portal/link. Single-document issue does not silently bundle later financial documents.
+- Freezes a versioned delivery manifest at issue time with document role, production label, period, source reference, primary-timesheet marker and a sanitized supplier/project/period/document-number PDF filename. Historical issued packs remain readable through their stored metadata.
+- Bulk delivery now preselects the authoritative Timesheet Pack (or legacy statement only where no v3 replacement exists); Settlement Statement and Payment Advice remain opt-in commercial documents.
+- Reworked the supplier secure-share page and printable delivery cover around the primary timesheet, including **Open Full Pack**, worker-sheet availability, stable filenames and clearer supplier-document identity.
+- Supplier acknowledgement is explicitly **receipt only**. It records opened/delivered evidence but does not approve, alter or replace the Locked Timesheet, approved Supplier Settlement, Supplier Invoice Received or Supplier Payment authority.
+- Hardened supplier shared views/prints with private/no-store, no-referrer, noindex/noarchive and nosniff protections while retaining signed expiring links, revocation and reissue.
+- Updated supplier email subject/body to identify the primary monthly timesheet and explain the receipt-only acknowledgement boundary.
+- No database migration, historical-document rewrite, settlement/payment formula change or accounting-authority change is introduced. Added dedicated regression/static certification and wired Upgrade 12 into release, production-freeze and Payroll E2E gates.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Financial Document Reconciliation (Upgrade 11/14)
+
+- Reconciled Supplier Settlement Statement, Supplier Invoice Received and Supplier Payment Advice around the existing Rental finance authority without changing settlement, invoice-payable or payment formulas.
+- Settlement/Invoice document finalization now reuses the authoritative settlement integrity guard before freezing another immutable document, and records the approved settlement revision/fingerprint plus the Locked source-timesheet revision.
+- Added an optional financial-reconciliation contract for newly finalized v2 financial documents. Historical v2 financial documents that predate the contract remain valid and are not rewritten.
+- Supplier Invoice Received now explicitly records `approved_settlement_net` as the match basis, freezes zero subtotal variance, and keeps the direction unambiguous as a supplier-provided invoice received by SESCCO rather than a buyer-issued tax invoice.
+- Supplier Payment Advice now requires allocations to reconcile exactly to the Paid supplier-payment amount, freezes settlement net/source-timesheet revision per allocation, and verifies any referenced Supplier Invoice Received document fingerprint before reading its immutable totals.
+- Updated financial print output to show settlement/timesheet revisions, received-invoice direction, match basis and allocation reconciliation while preserving the existing supplier-facing document names.
+- Extended the type-first review payload with settlement revision/fingerprint, Locked timesheet revision, gross/adjustment/net context and payment allocated total. Financial review remains independent of whether a Supplier Timesheet Pack has been generated.
+- Added release verification that freezes the pre-existing Rental settlement/payment authority function hashes, proving this upgrade did not alter the settlement calculation, source fingerprint, supplier payable or payment-recording formulas.
+- No migration, historical-document rewrite, new accounting authority, or payroll formula change is introduced. Added dedicated regression/static certification and wired Upgrade 11 into Payroll frontend/release/production-freeze/production-E2E checks.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Documents Workspace Cleanup (Upgrade 10/14)
+
+- Reworked the Rental Documents register around the four supplier-facing business families: Supplier Timesheets, Settlement Statements, Supplier Invoices, and Payment Advices. Project Timesheet remains preserved in All records as an operational archive and is created/printed from the Project Timesheets workspace.
+- Removed the redundant final-status filter from the Documents register and simplified the toolbar to search, period, and reset controls. Added a direct **Open Project Timesheets** handoff and clearer workspace guidance.
+- Changed paginated document-list loading to defer the immutable JSON snapshot and skip per-row fingerprint verification. Large Supplier Timesheet Pack worker arrays are no longer loaded or hashed merely to render the register.
+- Added a bounded summary-preview path (`?view=summary`) that reads only small JSON fragments needed by the selected-document preview: supplier/project identity, summary/totals, source/revision, invoice/payment metadata, and similar lightweight fields. Worker, entry, and allocation collections are not returned in summary mode.
+- Preserved the full detail API for backward compatibility. Full immutable snapshots remain available when explicitly requested, and print/share output continues to perform integrity verification before rendering authoritative document content.
+- Added Supplier Timesheet Pack preview metrics for worker count, regular hours, monthly OT, total hours, and locked source revision while keeping financial fields outside the timesheet pack.
+- Added a wider, responsive clean Documents workspace with lightweight preview disclosure and business-purpose labels. Historical v2 Supplier Timesheet Statements remain reachable under the Supplier Timesheets family and All records.
+- No migration, historical-document rewrite, payroll/settlement/payment formula change, or timesheet-authority change is introduced. Added dedicated runtime/static regression coverage and wired Upgrade 10 into Payroll frontend verification, production freeze, release tasks, and the production-E2E contract.
+
+# 1.0.117 — Supplier Timesheet Pack v3 New Documents UX Cutover (Upgrade 9/14)
+
+- Replaced the normal Rental **New Document** checkbox/multi-scope generator with a purpose-first workflow: Supplier Timesheet, Supplier Settlement Statement, Supplier Invoice Received, or Supplier Payment Advice.
+- Opening the Rental document drawer now renders immediately and only requests the lightweight `/api/documents/generator/types/` catalog; it no longer loads generation options or recent batch history before the user chooses a document purpose.
+- After choosing a purpose, the UI progressively lazy-loads bounded eligible suppliers, then supplier-scoped projects when required, then exact final source records. Normal creation no longer offers `All suppliers` / `All projects`.
+- Supplier Timesheet now creates the new immutable `supplier_timesheet_pack` through the dedicated type-first review/create endpoints. The existing generic `POST /api/documents/` route remains closed to direct v3 pack creation.
+- Project Timesheet is removed from the supplier-facing New Document purposes and explicitly routes users back to the Project Timesheets operational workspace.
+- Added an exact review screen before finalization with supplier/project/source identity, locked/source status and reconciled summary values. Existing final documents are opened instead of duplicated.
+- Supplier Invoice Received remains multipart/attachment-backed but now follows the same exact source review path before invoice metadata and file submission.
+- Added a wider, flat purpose-first drawer layout with progressive scope states and a concise source-authority explanation so the workflow has adequate breathing room without card-heavy UI.
+- Preserved the legacy generation-options/plan/execute code for later explicit bulk-generation work, but the normal **New Document** action no longer enters that path. No migration, historical-document rewrite, settlement formula change, payment formula change, or timesheet authority change is introduced.
+- Added dedicated UI regression/release certification and wired Upgrade 9 into Payroll frontend verification, production freeze, release tasks and the curated Payroll production-E2E contract.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Type-First Generator API (Upgrade 8/14)
+
+- Added a new purpose-first Rental document API for the normal single-document workflow: choose the document purpose first, then lazily query only eligible suppliers, projects and exact source records for the selected month.
+- Added dedicated bounded endpoints for document types, suppliers, projects, sources, review and create. Supplier/project/source selectors are capped at 25 rows per request and remain company/project-scope aware.
+- The lightweight type catalog performs no Rental timesheet/settlement/payment source discovery, so the future New Document drawer can open without scanning high-cardinality payroll data.
+- Activated `supplier_timesheet_pack` creation only through the new type-first create endpoint. The generic `POST /api/documents/` path remains closed to v3 pack creation, preventing accidental activation by old clients.
+- Review and create both bind the request to the selected supplier + project + month + exact source ID; create re-resolves the source inside the authoritative scope before finalization to reject stale or tampered source IDs.
+- Supplier Timesheet uses only Locked project timesheets; Settlement/Invoice use Approved-or-later settlements; Payment Advice uses Paid supplier payments. Existing finalized documents are surfaced during source/review discovery instead of silently creating duplicates.
+- Preserved the current generation-options/plan/execute APIs for explicit bulk-generation compatibility. Project Timesheet is intentionally excluded from the normal supplier-document catalog and remains an operational project output.
+- No frontend cutover, migration or historical-document rewrite is included in Upgrade 8. The existing Documents drawer remains unchanged until Upgrade 9.
+- Added dedicated regression/release certification and wired Upgrade 8 into production freeze, release tasks and Payroll production-E2E certification.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Derived Worker Timesheet Export (Upgrade 7/14)
+
+- Added a derived one-worker monthly timesheet print/export path from the finalized Supplier Monthly Timesheet Pack without creating a separate `BusinessDocument` per worker.
+- The parent v3 snapshot is integrity-verified and fully schema-validated first; the worker is then selected only by the worker ID frozen inside that immutable snapshot. No current worker/payroll table is queried to rebuild historical output.
+- Added authenticated worker-print and supplier-share worker-print routes. Supplier-share extraction is allowed only when the parent document is actually part of the signed delivery pack.
+- Refactored the worker monthly sheet into one shared template partial so full-pack printing and one-worker extraction use the same markup, complete calendar, monthly totals, signatures and monthly-only OT disclosure.
+- Added a Full pack return action and Print / Save PDF action. Derived output keeps the parent STP document number and visibly states that it is derived from the finalized supplier pack rather than pretending to be a new final document.
+- Worker exports are private/no-store/noindex, retain company/document permissions and snapshot fingerprint checks, fail closed for unknown workers/non-pack documents, and do not create additional business-document rows.
+- Rates, VAT, settlement/payable values and invented daily overtime remain excluded. No migration, data rewrite, generic Documents API activation or frontend creation-UI cutover is introduced.
+- Added dedicated regression/release certification and wired Upgrade 7 into production freeze, release tasks and Payroll production-E2E certification.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Production Print Renderer (Upgrade 6/14)
+
+- Added the production A4 renderer for the new immutable Supplier Monthly Timesheet Pack while keeping v3 creation internal-only until the later type-first generator cutover.
+- Prints supplier summary pages first with supplier/project/period/locked-revision identity, worker-level attendance/hour totals, overall worker/regular/OT/total-hour figures, and the frozen Prepared by / Project-Site Approval / Supplier Acknowledgement signature roles.
+- Chunks large supplier summaries into bounded 18-row render pages so large suppliers do not create one uncontrolled summary sheet; all rows remain ordered and reconciled to the finalized v3 snapshot.
+- Renders one worker-month render unit per worker with the complete calendar, attendance/status, trade, regular hours, remarks, assignment/trade segments, monthly totals, and monthly OT disclosure. Daily OT is not invented.
+- Worker sheets target one A4 page for normal month data but deliberately allow table flow onto another physical page when unusually long remarks require it; rows are never clipped by a fixed-height/hidden-overflow worker page. Table headers repeat on continuation pages.
+- Reuses the exact same print-context builder for authenticated printing and supplier shared-document printing, so internal and supplier-facing output cannot drift. The renderer performs no database queries and reads only the immutable snapshot.
+- Keeps rates, VAT, settlement amounts, payable/net/gross values and other commercial data out of the Supplier Timesheet Pack renderer. Legacy v2 document rendering remains unchanged.
+- Added dedicated print-renderer regression and release certification and wired it into production freeze, release tasks, and Payroll production-E2E certification. No migration or historical-document rewrite is introduced.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Supplier Summary Contract (Upgrade 5/14)
+
+- Added the supplier-facing summary contract that will drive the first pages of the future Supplier Monthly Timesheet Pack, while keeping v3 generation internal-only and introducing no database migration or historical-document rewrite.
+- Materializes exactly one summary row per worker with worker identity, ordered monthly trade display, Work/Absent/Leave/Off/No Scope counts, regular hours, monthly OT and total hours.
+- Freezes the document-level identity boundary as supplier + project + service period + locked timesheet revision and preserves Prepared by, Project / Site Approval, and Supplier Representative / Acknowledgement signature roles for the later print renderer.
+- Adds strict reconciliation from every supplier-summary row back to its worker monthly sheet and from all summary rows back to the pack totals, preventing a printable summary from drifting from locked payroll evidence.
+- Keeps Rental overtime monthly-only and forbids commercial rate/payable/VAT fields from the supplier summary. Summary rows are built entirely in memory after the existing two supplier-filtered data reads, so there is still no query-per-worker behavior.
+- Preserves compatibility with internal v3 snapshots created through Upgrade 4 that do not yet carry the supplier-summary contract. All new Upgrade 5 snapshots carry contract version 1.0 and receive the stronger supplier-facing checks.
+- Added dedicated supplier-summary regression/release certification and wired it into production freeze, release tasks, and Payroll production-E2E certification. The generic Documents API and frontend creation UI remain closed until the later type-first generator cutover.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Worker Monthly Sheet Contract (Upgrade 4/14)
+
+- Formalized the real-world one-worker monthly timesheet contract inside the v3 Supplier Timesheet Pack while keeping generation internal-only and introducing no database migration or historical-document rewrite.
+- Every worker sheet now contains the complete calendar period. Locked assigned dates retain their authoritative attendance/status, regular hours, trade and remarks; dates outside that worker's project assignment are explicitly marked `Not assigned` instead of being fabricated as absence, off-day or work.
+- Added partial-assignment and in-month trade-change support through non-commercial contiguous assignment segments, so a worker who joins/leaves mid-month or changes trade can still be rendered correctly on one monthly sheet.
+- Preserved Rental OT as one monthly worker total and strengthened schema guards so daily OT distribution cannot be invented. Outside-assignment rows cannot carry fabricated hours, trade or remarks.
+- Added reconciled calendar/assigned/status/remark counts and frozen acknowledgement roles for Prepared by, Project / Site Approval and Supplier Representative / Acknowledgement.
+- Kept the two bounded supplier-filtered data reads from Upgrade 3; full-calendar materialization, assignment segmentation and count reconciliation happen in memory without per-worker database queries.
+- Kept compatibility for any internal Upgrade 3 v3 snapshots that predate the worker-sheet contract marker, while all new Upgrade 4 snapshots carry contract version 1.0 and receive the stricter calendar validation.
+- Added dedicated worker-sheet regression/release certification. The generic Documents API and frontend creation UI remain closed until the later type-first generator cutover.
+
+# 1.0.117 — Supplier Timesheet Pack v3 Snapshot Aggregator (Upgrade 3/14)
+
+- Added the authoritative v3 Supplier Timesheet Pack aggregator for one locked Rental project timesheet + one supplier + one month/revision.
+- Reads only two supplier-filtered operational datasets: daily regular attendance rows and monthly overtime rows. Worker grouping and all rollups happen in memory, so query count does not increase per worker.
+- Produces deterministic supplier/project summary totals plus worker-by-worker daily detail while keeping Rental overtime as one monthly worker total; no daily OT is invented.
+- Excludes commercial rate/rate-type/payable/amount fields from the pack and strengthens v3 validation so worker daily hours, worker summaries and supplier summaries must reconcile exactly.
+- Added supplier-qualified source identity and a source-content fingerprint for v3 packs so multiple suppliers can safely produce separate immutable STP documents from the same locked project period.
+- Internal service finalization now supports the new `supplier_timesheet_pack` type with `STP-` numbering and schema 3.0, while the generic Documents API and current frontend remain intentionally closed until the later type-first generator cutover.
+- Added bounded-query, supplier-isolation, deterministic aggregation, reconciliation, internal-finalization and API-closure regression coverage. No new migration and no historical document rewrite are introduced.
+
+# 1.0.117 — Supplier Timesheet Pack Type & Schema Foundation (Upgrade 2/14)
+
+- Added the new immutable stored document type `supplier_timesheet_pack` without rewriting or deleting any existing v2 BusinessDocument rows.
+- Added document migration `0003_supplier_timesheet_pack_type`, which only expands the document-type field/check constraint; it contains no RunPython/RunSQL data migration.
+- Added the v3 snapshot schema foundation: one supplier + one project + one month + one locked RentalTimesheetPeriod revision, supplier/project identity, summary totals and worker-detail collections.
+- Added hard schema guards preventing commercial rate/payable fields from leaking into Supplier Timesheet Packs and preventing invented daily overtime; Rental OT remains one monthly total per worker.
+- Preserved the current `supplier_timesheet` public alias and v2 generator during this staged upgrade. The new v3 type is not yet exposed as a creation path until the authoritative aggregator is implemented in Upgrade 3.
+- Extended document-history scoping so future v3 packs remain project-scope safe and the current Supplier Timesheet family can read both legacy v2 statements and v3 packs without changing today's UI.
+- Preserved the two frozen v2 document migrations byte-for-byte and added release/Django certification for the new type, migration and schema invariants.
+
+# 1.0.117 — Rental Document v3 Contract Freeze (Upgrade 1/14)
+
+- Froze the current Rental Manpower document authority before the Supplier Monthly Timesheet Pack redesign. This upgrade deliberately introduces **no database migration, no data rewrite, and no document rendering/UI change**.
+- Added a machine-readable v2 → v3 migration contract covering immutable historical documents, locked-timesheet authority, supplier-qualified legacy source identity, public document routes, current migration lineage and the target one-supplier/one-project/one-month pack boundary.
+- Explicitly freezes the current payroll fact that regular attendance is authoritative per worker/day while overtime is authoritative only as one monthly total per worker; future document rendering is therefore prohibited from inventing daily OT.
+- Added Django regression evidence that the seven stored v2 document types, supplier-timesheet alias/variants, daily-regular/monthly-OT model shape, existing API routes and current two-migration document lineage remain unchanged during this freeze stage.
+- Added a release verifier to hash the current document models/service/API/routes/renderer/frontend and Rental timesheet model so accidental changes cannot slip into the migration baseline before the additive v3 type/schema upgrade.
+- Wired the new verifier and Django contract tests into release tasks, production freeze and Payroll production-E2E certification.
+
+# 1.0.117 — Supplier Settlements Layout Breathing Hotfix
+
+- Restores **Settlement Control** to a dedicated full-width row on Supplier Settlements instead of compressing it beside the financial summary and filter controls.
+- Moves the settlement metrics, search and project/supplier filters to the next visual row, restoring the intended vertical rhythm and reading space on desktop.
+- Uses the recovered width to keep Draft → Calculated → Review → Approved → Payment → Closed on one lifecycle row on ordinary desktop widths, with deliberate 3-column and 2-column responsive fallbacks.
+- Changes presentation only; settlement calculations, lifecycle authority, API payloads, permissions and database state are unchanged.
+
 # 1.0.117 — Rental Finance PostgreSQL JSON Response Hotfix
 
 - Fixed the Rental Manpower finance failure that surfaced as **“The server returned an invalid response”** on Supplier Settlements and every page that reuses the selected-period settlement authority, including Supplier Payments, Rental Overview, Projects and project/supplier finance profiles.

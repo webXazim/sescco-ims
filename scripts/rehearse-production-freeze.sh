@@ -228,5 +228,5 @@ python3 "${ROOT}/scripts/compare-rehearsal-fingerprints.py" \
 )
 chmod 600 "${evidence_dir}"/*
 
-info "Upgrade 12 production-freeze rehearsal passed"
+info "Production-freeze rehearsal passed"
 printf 'Evidence: %s\n' "${evidence_dir}"

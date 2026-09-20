@@ -1,0 +1,58 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-worker-monthly-sheet-contract",
+  "upgrade_sequence": "4/14",
+  "state": "worker_monthly_sheet_contract_internal_only",
+  "schema_change": false,
+  "data_rewrite": false,
+  "stored_type": "supplier_timesheet_pack",
+  "document_schema_version": "3.0",
+  "worker_sheet_contract_version": "1.0",
+  "calendar": {
+    "basis": "full_period",
+    "one_row_per_calendar_date": true,
+    "outside_assignment_scope": "outside_assignment",
+    "outside_assignment_code": "NOT_ASSIGNED",
+    "outside_assignment_label": "Not assigned",
+    "outside_assignment_fabricated_hours_forbidden": true,
+    "outside_assignment_fabricated_trade_forbidden": true,
+    "outside_assignment_fabricated_remarks_forbidden": true
+  },
+  "attendance": {
+    "assigned_scope": "assigned",
+    "work_code": "WORK",
+    "supported_status_codes": ["WORK", "A", "N", "L", "OFF"],
+    "regular_hours_daily": true,
+    "overtime_basis": "monthly_worker_total",
+    "daily_overtime_allowed": false,
+    "locked_assigned_days_must_be_recorded": true
+  },
+  "worker_month": {
+    "partial_assignment_supported": true,
+    "trade_changes_supported": true,
+    "contiguous_trade_segments_recorded": true,
+    "daily_remarks_preserved": true,
+    "calendar_and_status_counts_reconciled": true,
+    "commercial_fields_forbidden": true
+  },
+  "acknowledgement": {
+    "signature_roles": [
+      {"key": "prepared_by", "label": "Prepared by"},
+      {"key": "project_approval", "label": "Project / Site Approval"},
+      {"key": "supplier_acknowledgement", "label": "Supplier Representative / Acknowledgement"}
+    ]
+  },
+  "compatibility": {
+    "upgrade3_internal_v3_without_worker_sheet_contract_remains_valid": true,
+    "legacy_v2_documents_rewritten": false,
+    "generic_documents_api": false,
+    "frontend_ui": false,
+    "query_count_increase": false
+  },
+  "implementation": {
+    "aggregator": "apps/documents/services/supplier_timesheet_pack.py",
+    "schema_validator": "apps/documents/schema.py",
+    "regression_tests": "apps/documents/tests/test_v3_worker_monthly_sheet_contract.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-supplier-summary-contract"
+}

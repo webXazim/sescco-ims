@@ -65,6 +65,7 @@
     "scripts/verify-payroll-output-e2e.py",
     "scripts/verify-payroll-scale-seed.py",
     "scripts/verify-payroll-performance.py",
+    "scripts/verify-payroll-document-v3-production-freeze.py",
     "scripts/verify-payroll-production-e2e.py",
     "scripts/verify-lifecycle-retention-contract.py",
     "scripts/verify-production-infrastructure.sh"
@@ -74,6 +75,7 @@
     "python manage.py makemigrations --check --dry-run",
     "python manage.py migrate --plan",
     "python manage.py merge_access_report --fail-on-errors",
+    "python manage.py merge_documents_management_report --fail-on-errors",
     "bash scripts/certify-payroll-production-e2e.sh",
     "python manage.py test apps.sourcing.tests.test_domain_foundation --noinput",
     "python manage.py test apps.sourcing.tests.test_access_control --noinput",
@@ -96,7 +98,8 @@
     "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
     "python scripts/certify-payroll-browser-scale.py --base-url <release-url> --username <benchmark-user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD",
     "python manage.py sourcing_scale_report --require-benchmark-volume --fail-on-limits",
-    "python scripts/certify-sourcing-browser-e2e.py --base-url <release-url> --username <sourcing-benchmark-user> --password-env IMS_SOURCING_BROWSER_PASSWORD"
+    "python scripts/certify-sourcing-browser-e2e.py --base-url <release-url> --username <sourcing-benchmark-user> --password-env IMS_SOURCING_BROWSER_PASSWORD",
+    "python manage.py supplier_timesheet_pack_scale_report --min-workers 250 --fail-on-limits"
   ],
   "required_seed_profiles": [
     "functional",
@@ -115,5 +118,8 @@
   "sourcing_https_test_transport_contract": "merge/sourcing-https-test-transport-hotfix.json",
   "sourcing_https_test_transport_runtime_gate": "python manage.py test apps.sourcing.tests.test_access_control --noinput",
   "sourcing_static_manifest_contract": "merge/sourcing-static-manifest-deployment-hotfix.json",
-  "sourcing_static_manifest_runtime_gate": "python manage.py verify_sourcing_static_manifest"
+  "sourcing_static_manifest_runtime_gate": "python manage.py verify_sourcing_static_manifest",
+  "payroll_document_v3_final_contract": "merge/payroll-document-v3-production-freeze.json",
+  "payroll_document_v3_reconciliation_runtime_gate": "python manage.py merge_documents_management_report --fail-on-errors",
+  "payroll_document_v3_scale_benchmark_gate": "python manage.py supplier_timesheet_pack_scale_report --min-workers 250 --fail-on-limits"
 }

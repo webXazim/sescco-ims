@@ -1,0 +1,63 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-supplier-summary-contract",
+  "upgrade_sequence": "5/14",
+  "state": "supplier_summary_contract_internal_only",
+  "schema_change": false,
+  "data_rewrite": false,
+  "stored_type": "supplier_timesheet_pack",
+  "document_schema_version": "3.0",
+  "supplier_summary_contract_version": "1.0",
+  "identity": {
+    "scope": "supplier_project_period_locked_revision",
+    "fields": ["supplier", "project", "period", "locked_revision"],
+    "locked_source_required": true
+  },
+  "summary_rows": {
+    "basis": "one_worker_month",
+    "ordered_with_worker_details": true,
+    "fields": [
+      "worker_id",
+      "worker_number",
+      "worker_name",
+      "trades",
+      "trade_display",
+      "work_days",
+      "absent_days",
+      "leave_days",
+      "off_days",
+      "no_scope_days",
+      "regular_hours",
+      "overtime_hours",
+      "total_hours"
+    ],
+    "worker_reconciliation_required": true,
+    "pack_total_reconciliation_required": true,
+    "commercial_values_allowed": false,
+    "daily_overtime_allowed": false
+  },
+  "acknowledgement": {
+    "signature_roles": [
+      {"key": "prepared_by", "label": "Prepared by"},
+      {"key": "project_approval", "label": "Project / Site Approval"},
+      {"key": "supplier_acknowledgement", "label": "Supplier Representative / Acknowledgement"}
+    ]
+  },
+  "performance": {
+    "supplier_data_queries": 2,
+    "summary_rows_materialized_in_memory": true,
+    "per_worker_queries": false
+  },
+  "compatibility": {
+    "upgrade4_internal_v3_without_supplier_summary_contract_remains_valid": true,
+    "legacy_v2_documents_rewritten": false,
+    "generic_documents_api": false,
+    "frontend_ui": false
+  },
+  "implementation": {
+    "aggregator": "apps/documents/services/supplier_timesheet_pack.py",
+    "schema_validator": "apps/documents/schema.py",
+    "regression_tests": "apps/documents/tests/test_v3_supplier_summary_contract.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-production-print-renderer"
+}

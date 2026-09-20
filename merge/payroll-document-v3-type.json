@@ -1,0 +1,45 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-type-and-schema-foundation",
+  "upgrade_sequence": "2/14",
+  "state": "additive_foundation_only",
+  "schema_change": true,
+  "data_rewrite": false,
+  "migration": "apps/documents/migrations/0003_supplier_timesheet_pack_type.py",
+  "legacy_schema_version": "2.0",
+  "new_schema_version": "3.0",
+  "stored_type": "supplier_timesheet_pack",
+  "production_label": "Supplier Monthly Timesheet Pack",
+  "numbering_reservation": {
+    "key": "document.supplier_timesheet_pack",
+    "prefix": "STP-"
+  },
+  "compatibility": {
+    "legacy_supplier_timesheet_alias": "supplier_timesheet",
+    "legacy_supplier_timesheet_stored_type": "rental_timesheet",
+    "legacy_supplier_timesheet_variant": "supplier_timesheet",
+    "legacy_generator_still_active": true,
+    "v3_generator_active": false,
+    "v2_documents_rewritten": false,
+    "current_documents_ui_changed": false,
+    "current_document_routes_changed": false
+  },
+  "v3_snapshot_foundation": {
+    "unit": "one supplier + one project + one month + one locked timesheet revision",
+    "requires_locked_source": true,
+    "requires_source_revision": true,
+    "summary_first": true,
+    "workers_collection": true,
+    "worker_daily_regular_attendance": true,
+    "worker_monthly_overtime_only": true,
+    "daily_overtime_forbidden": true,
+    "commercial_fields_forbidden": true,
+    "worker_extract_is_derived_view": true
+  },
+  "selector_compatibility": {
+    "project_scope_applies_to_new_type": true,
+    "supplier_timesheet_alias_reads_legacy_and_v3": true,
+    "type_counts_remain_under_supplier_timesheet_family_until_ui_cutover": true
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-snapshot-aggregator"
+}

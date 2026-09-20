@@ -1,0 +1,43 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-snapshot-aggregator",
+  "upgrade_sequence": "3/14",
+  "state": "authoritative_aggregator_internal_only",
+  "schema_change": false,
+  "data_rewrite": false,
+  "stored_type": "supplier_timesheet_pack",
+  "document_schema_version": "3.0",
+  "source_authority": {
+    "model": "rental_manpower.rentaltimesheetperiod",
+    "required_status": "locked",
+    "unit": "one supplier + one project + one month + one locked timesheet revision",
+    "supplier_qualified_source_identity": true,
+    "source_revision_captured": true
+  },
+  "aggregation": {
+    "daily_regular_query_count": 1,
+    "monthly_overtime_query_count": 1,
+    "source_dispatch_query_count": 3,
+    "queries_do_not_scale_with_worker_count": true,
+    "supplier_filtered": true,
+    "worker_grouped_in_memory": true,
+    "commercial_fields_forbidden": true,
+    "daily_overtime_forbidden": true,
+    "summary_reconciles_to_workers": true,
+    "worker_regular_hours_reconcile_to_days": true
+  },
+  "activation": {
+    "internal_service_finalization": true,
+    "generic_documents_api": false,
+    "frontend_ui": false,
+    "legacy_supplier_timesheet_generator": true,
+    "legacy_documents_rewritten": false
+  },
+  "implementation": {
+    "aggregator": "apps/documents/services/supplier_timesheet_pack.py",
+    "service_dispatch": "apps/documents/services/documents.py",
+    "schema_validator": "apps/documents/schema.py",
+    "regression_tests": "apps/documents/tests/test_v3_supplier_timesheet_pack_aggregator.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-worker-monthly-sheet-contract"
+}

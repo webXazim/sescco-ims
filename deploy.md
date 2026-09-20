@@ -1,3 +1,21 @@
+# Supplier Timesheet Pack v3 Supplier Delivery Cutover — Upgrade 12/14
+
+This package makes the v3 **Supplier Monthly Timesheet Pack** the primary outbound supplier timesheet without changing Payroll or financial authority. There is **no database migration** and no historical document rewrite. Supplier Invoice Received remains an inbound SESCCO record and is not available for outbound supplier issue.
+
+After deployment, smoke-test one finalized v3 Timesheet Pack through **Documents → Delivery**: confirm supplier master contact defaults, the suggested `SESCCO_<supplier>_<project>_<period>_Supplier-Timesheet-Pack_<STP-number>.pdf` filename, the secure **Open Full Pack** link, and that acknowledgement records receipt only. Also confirm a legacy Supplier Timesheet Statement still appears for a period/source where no v3 replacement exists.
+
+Production certification additionally runs `apps.documents.tests.test_v3_supplier_delivery_cutover` and `scripts/verify-payroll-document-v3-supplier-delivery-cutover.py` together with all earlier document-v3 gates.
+
+# Supplier Timesheet Pack v3 Financial Document Reconciliation — Upgrade 11/14
+
+This package reconciles the three Rental supplier-finance documents on top of the Upgrade 10 Documents workspace: **Supplier Settlement Statement**, **Supplier Invoice Received**, and **Supplier Payment Advice**. It introduces **no migration**, does not rewrite historical documents, and does not change Rental settlement, invoice-payable, payment, or accounting formulas.
+
+Newly finalized Settlement/Invoice documents freeze the approved Supplier Settlement revision/fingerprint and the Locked Rental Timesheet revision used by that settlement. Supplier Invoice Received explicitly matches its subtotal to the approved settlement net and remains a record of an invoice **received from the supplier**. Payment Advice now proves that all frozen allocations add exactly to the Paid supplier-payment amount and includes each allocation's settlement net, source-timesheet revision, and supplier-invoice reference when one exists.
+
+Historical v2 financial documents remain valid even though they predate the new optional reconciliation contract. Supplier settlement/payment financial authority remains independent of whether a Supplier Timesheet Pack has been generated.
+
+After deployment, `python manage.py showmigrations documents` should still end at `0003_supplier_timesheet_pack_type`. Production certification additionally runs `apps.documents.tests.test_v3_financial_document_reconciliation` and `scripts/verify-payroll-document-v3-financial-reconciliation.py` together with all earlier v3 suites.
+
 > Release 1.0.117 is a production static-manifest deployment hotfix over 1.0.116. It keeps production ManifestStaticFilesStorage and HTTPS enforcement unchanged, makes Sourcing HTTP tests independent of the not-yet-collected production manifest, and adds a post-collectstatic manifest check for every Sourcing CSS/JS asset before live cutover. No database, permission, Payroll, Inventory, Sourcing business-rule or production security-setting change is introduced.
 
 
@@ -460,6 +478,10 @@ sudo docker compose --env-file .env.production logs -f --tail=150 ims_web ims_ga
 # Django checks
 sudo ./scripts/manage.sh check
 sudo ./scripts/manage.sh showmigrations
+
+# Supplier Timesheet Pack production-scale check against the largest Locked supplier source
+sudo docker compose --env-file .env.production exec -T ims_web \
+  python manage.py supplier_timesheet_pack_scale_report --fail-on-limits
 
 # Create another administrator
 sudo ./scripts/create-admin.sh

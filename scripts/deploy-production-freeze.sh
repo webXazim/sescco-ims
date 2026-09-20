@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-printf '\n==> Verifying Upgrade 12 production freeze\n'
+printf '\n==> Verifying packaged production freeze\n'
 bash "${ROOT}/scripts/verify-production-freeze.sh"
 
-# Compatibility wrapper retained for operators that already use the Upgrade 12
-# command. The canonical deployment script now performs the same freeze check
-# itself before preflight, backup, release tasks and live smoke checks.
+# Compatibility wrapper retained for operators that already use the production-freeze command.
+# The canonical deployment script performs the same packaged freeze check before preflight,
+# backup, release tasks and live smoke checks.
 exec bash "${ROOT}/scripts/deploy-production.sh" "$@"

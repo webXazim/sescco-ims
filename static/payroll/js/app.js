@@ -885,9 +885,10 @@
 
     if (root === drawerBody && state.drawerType === 'document-generate') {
       drawer.classList.add('ui-v2-payroll-document-drawer');
+      drawer.classList.toggle('ui-v2-payroll-document-drawer--type-first',Boolean(state.drawerContext?.typeFirstGenerator));
       root.classList.add('ui-v2-payroll-document-form');
     } else if (root === drawerBody) {
-      drawer.classList.remove('ui-v2-payroll-document-drawer');
+      drawer.classList.remove('ui-v2-payroll-document-drawer','ui-v2-payroll-document-drawer--type-first');
       root.classList.remove('ui-v2-payroll-document-form');
     }
   }
@@ -8087,6 +8088,7 @@
     salary_payment_receipt:{label:'Salary Payment Receipt',code:'SR'},
     rental_timesheet:{label:'Project Timesheet',code:'PT'},
     supplier_timesheet:{label:'Supplier Timesheet Statement',code:'ST'},
+    supplier_timesheet_pack:{label:'Supplier Timesheet',code:'ST'},
     supplier_settlement:{label:'Supplier Settlement Statement',code:'SS'},
     supplier_invoice:{label:'Supplier Invoice Received',code:'IR'},
     supplier_payment_receipt:{label:'Supplier Payment Advice',code:'PA'}
@@ -8141,9 +8143,10 @@
 
   async function loadDocumentDetail(id,{render=true}={}) {
     if(!id||state.documentLoadingId===id)return;
-    if(state.documentDetails[id])return;
+    const existing=state.documentDetails[id];
+    if(existing?.preview || existing?.snapshot)return;
     state.documentLoadingId=id;
-    try{const payload=await appApi(`/api/documents/${encodeURIComponent(id)}/`);state.documentDetails[id]=payload.document;if(render&&currentRoute()==='documents')renderRoute();}
+    try{const payload=await appApi(`/api/documents/${encodeURIComponent(id)}/?view=summary`);state.documentDetails[id]=payload.document;if(render&&currentRoute()==='documents')renderRoute();}
     catch(error){showToast('Document unavailable',error.message);}
     finally{state.documentLoadingId=null;}
   }
@@ -8151,28 +8154,32 @@
   function documentPreviewSummaryValues(snapshot={}) {
     const rows=[];
     const add=(label,value)=>{if(value!==undefined&&value!==null&&String(value).trim()!==''&&String(value)!=='0.00')rows.push([label,String(value)]);};
+    const summary=snapshot.summary||{};
     if(snapshot.employee){add('Employee',snapshot.employee.name||snapshot.employee.number);add('Employee ID',snapshot.employee.number);}
     if(snapshot.supplier){add('Supplier',snapshot.supplier.name||snapshot.supplier.code);}
     if(snapshot.project){add('Project',snapshot.project.name||snapshot.project.code);}
-    add('Workers',snapshot.worker_count||snapshot.totals?.workers);
-    add('Regular hours',snapshot.regular_hours||snapshot.totals?.regular_hours);
-    add('Overtime hours',snapshot.overtime_hours||snapshot.totals?.overtime_hours);
-    if(snapshot.invoice){add('Invoice',snapshot.invoice.supplier_invoice_number);add('Invoice total',snapshot.invoice.total?formatCurrency(snapshot.invoice.total):'');}
+    add('Workers',snapshot.worker_count||summary.worker_count||snapshot.totals?.workers);
+    add('Regular hours',snapshot.regular_hours||summary.regular_hours||snapshot.totals?.regular_hours);
+    add('Overtime hours',snapshot.overtime_hours||summary.overtime_hours||snapshot.totals?.overtime_hours);
+    add('Total hours',summary.total_hours||snapshot.totals?.total_hours);
+    add('Source revision',snapshot.source?.revision||snapshot.revision);
+    if(snapshot.invoice){add('Invoice',snapshot.invoice.supplier_invoice_number||snapshot.invoice.invoice_number);add('Invoice total',snapshot.invoice.total?formatCurrency(snapshot.invoice.total):'');}
     if(snapshot.payment){add('Payment',snapshot.payment.number||snapshot.payment.transaction_reference);add('Amount',snapshot.payment.amount?formatCurrency(snapshot.payment.amount):'');}
     if(snapshot.totals?.net) add('Net',formatCurrency(snapshot.totals.net));
     if(snapshot.net) add('Net pay',formatCurrency(snapshot.net));
-    return rows.slice(0,6);
+    return rows.slice(0,8);
   }
 
   function documentNativePreview(doc) {
-    if(!doc)return '<div class="table-empty table-empty--card"><strong>No document selected</strong></div>';
+    if(!doc)return '<div class="table-empty table-empty--card"><strong>No document selected</strong><span>Select a final record to see its summary.</span></div>';
     const full=state.documentDetails[doc.id]||doc;
-    const snapshot=full.snapshot;
-    if(!snapshot){if(state.documentLoadingId!==doc.id)queueMicrotask(()=>loadDocumentDetail(doc.id));return '<div class="table-empty table-empty--card"><strong>Loading document…</strong></div>';}
+    const snapshot=full.preview||full.snapshot;
+    if(!snapshot){if(state.documentLoadingId!==doc.id)queueMicrotask(()=>loadDocumentDetail(doc.id));return '<div class="table-empty table-empty--card"><strong>Loading summary…</strong><span>The full immutable document is loaded only when you print or export it.</span></div>';}
     const label=documentRecordLabel(full);
     const values=documentPreviewSummaryValues(snapshot);
     const entity=snapshot.supplier?.name||snapshot.employee?.name||snapshot.project?.name||full.entityName||full.entityReference||'';
-    return `<article class="document-native-preview"><img class="document-native-preview__headpad" src="/static/payroll/assets/sescco-company-document-headpad-v2.png" alt=""><div class="document-native-preview__body"><header><div><span>${escapeHtml(label.toUpperCase())}</span><h2>${escapeHtml(full.number||'')}</h2></div><dl><dt>Period</dt><dd>${escapeHtml(full.period||'—')}</dd><dt>Status</dt><dd>${escapeHtml(full.status||'Final')}</dd><dt>Integrity</dt><dd>${full.integrityOk?'Verified':'Failed'}</dd></dl></header>${entity?`<div class="document-native-preview__entity">${escapeHtml(entity)}</div>`:''}<div class="document-native-preview__grid">${values.map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><footer><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(full.finalizedAt)||'—')}</strong><span>By</span><strong>${escapeHtml(full.finalizedBy||'System')}</strong></footer></div></article>`;
+    const integrity=full.integrityOk===true?'Verified':(full.integrityOk===false?'Failed':'Protected');
+    return `<article class="document-native-preview"><img class="document-native-preview__headpad" src="/static/payroll/assets/sescco-company-document-headpad-v2.png" alt=""><div class="document-native-preview__body"><header><div><span>${escapeHtml(label.toUpperCase())}</span><h2>${escapeHtml(full.number||'')}</h2></div><dl><dt>Period</dt><dd>${escapeHtml(full.period||'—')}</dd><dt>Status</dt><dd>${escapeHtml(full.status||'Final')}</dd><dt>Integrity</dt><dd>${escapeHtml(integrity)}</dd></dl></header>${entity?`<div class="document-native-preview__entity">${escapeHtml(entity)}</div>`:''}<div class="document-native-preview__grid">${values.map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div><footer><span>Finalized</span><strong>${escapeHtml(payrollTimestamp(full.finalizedAt)||'—')}</strong><span>By</span><strong>${escapeHtml(full.finalizedBy||'System')}</strong></footer>${full.previewMode==='summary'?'<p class="document-native-preview__note">Preview stays lightweight. The complete immutable snapshot is integrity-verified when opened for print/export.</p>':''}</div></article>`;
   }
 
   function recordKindLabel(kind) {
@@ -8208,7 +8215,7 @@
   function documentCanIssue(doc) {
     if(!doc || doc.workspace!=='rental')return false;
     if(doc.documentVariant==='supplier_timesheet')return true;
-    return ['supplier_settlement','supplier_payment_receipt'].includes(doc.type);
+    return ['supplier_timesheet_pack','supplier_settlement','supplier_payment_receipt'].includes(doc.type);
   }
 
   function documentDeliveryHistoryHtml(history=[],packs=[]) {
@@ -8237,7 +8244,9 @@
       if(state.drawerType!=='document-delivery')return;
       state.drawerContext={documentId:doc.id,payload};
       const recipient=payload.recipient||{},docs=payload.documents||[],history=payload.history||[],packs=payload.packs||[];
-      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>${escapeHtml(payload.supplier?.name||doc.entityName||'Supplier')}</strong><span>${escapeHtml(payload.supplier?.code||doc.entityReference||'')}</span></div><div class="form-grid"><label class="form-field"><span>Recipient name</span><input name="document-delivery-recipient" value="${escapeHtml(recipient.name||'')}" required></label><label class="form-field"><span>Channel</span><select name="document-delivery-channel"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="hand">Hand delivery</option><option value="portal">Portal</option><option value="other">Other</option></select></label><label class="form-field"><span>Email</span><input name="document-delivery-email" type="email" value="${escapeHtml(recipient.email||'')}"></label><label class="form-field"><span>Phone</span><input name="document-delivery-phone" value="${escapeHtml(recipient.phone||'')}"></label><label class="form-field"><span>Reference</span><input name="document-delivery-reference"></label><label class="form-field is-wide"><span>Note</span><textarea name="document-delivery-note" rows="2"></textarea></label></div></section><section class="form-section"><div class="form-section__head"><strong>Documents</strong><span>${docs.length.toLocaleString()}</span></div><div class="document-delivery-selection">${docs.map(item=>`<label><input type="checkbox" name="document-delivery-document" value="${escapeHtml(item.id)}" ${item.id===doc.id?'checked':''}><span><strong>${escapeHtml(item.number)}</strong><small>${escapeHtml(documentRecordLabel(item))} · ${escapeHtml(item.period||'')}</small></span></label>`).join('')}</div></section><section class="form-section"><div class="form-section__head"><strong>Issue history</strong></div>${documentDeliveryHistoryHtml(history,packs)}</section>`;
+      const defaultChannel=String(payload.defaultChannel||'email').toLowerCase();
+      const channelOptions=[['email','Email'],['whatsapp','WhatsApp'],['hand','Hand delivery'],['portal','Secure portal/link'],['other','Other']].map(([value,label])=>`<option value="${value}" ${value===defaultChannel?'selected':''}>${label}</option>`).join('');
+      drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>${escapeHtml(payload.supplier?.name||doc.entityName||'Supplier')}</strong><span>${escapeHtml(payload.supplier?.code||doc.entityReference||'')} · Recipient defaults from ${escapeHtml(payload.recipientSource==='supplier_master'?'Supplier master':'document record')}</span></div><div class="form-grid"><label class="form-field"><span>Recipient name</span><input name="document-delivery-recipient" value="${escapeHtml(recipient.name||'')}" required></label><label class="form-field"><span>Channel</span><select name="document-delivery-channel">${channelOptions}</select></label><label class="form-field"><span>Email</span><input name="document-delivery-email" type="email" value="${escapeHtml(recipient.email||'')}"></label><label class="form-field"><span>Phone</span><input name="document-delivery-phone" value="${escapeHtml(recipient.phone||'')}"></label><label class="form-field"><span>Reference</span><input name="document-delivery-reference"></label><label class="form-field is-wide"><span>Note</span><textarea name="document-delivery-note" rows="2"></textarea></label></div><div class="settings-policy-note"><span>${icon('info')}</span><p>The Supplier Monthly Timesheet Pack is the primary supplier timesheet. Acknowledgement confirms receipt only and does not change timesheet or settlement approval.</p></div></section><section class="form-section"><div class="form-section__head"><strong>Documents</strong><span>${docs.length.toLocaleString()}</span></div><div class="document-delivery-selection">${docs.map(item=>`<label class="${item.isPrimaryDelivery?'is-primary':''}"><input type="checkbox" name="document-delivery-document" value="${escapeHtml(item.id)}" ${item.id===doc.id?'checked':''}><span><strong>${escapeHtml(item.number)}${item.isPrimaryDelivery?' · Primary timesheet':''}</strong><small>${escapeHtml(item.deliveryLabel||documentRecordLabel(item))} · ${escapeHtml(item.period||'')}</small><small>${escapeHtml(item.deliveryFileName||'')}</small></span></label>`).join('')}</div></section><section class="form-section"><div class="form-section__head"><strong>Issue history</strong></div>${documentDeliveryHistoryHtml(history,packs)}</section>`;
       applyPayrollRequiredFields(drawerBody,'document-delivery');
       const update=()=>{const count=drawerBody.querySelectorAll('[name="document-delivery-document"]:checked').length;drawerSave.disabled=!count;drawerSave.textContent=`Issue ${count||''} Document${count===1?'':'s'}`.replace('  ',' ');};
       drawerBody.querySelectorAll('[name="document-delivery-document"]').forEach(input=>input.addEventListener('change',update));update();
@@ -8442,9 +8451,9 @@
     const groupHtml=groups.length?groups.map(group=>{
       const searchText=[group.supplierName,group.supplierCode,...(group.documents||[]).flatMap(item=>[item.number,item.title,item.sourceReference,item.entityName])].join(' ').toLowerCase();
       const recipient=group.recipient||{};
-      return `<section class="document-delivery-bulk-group" data-document-delivery-supplier="${escapeHtml(group.supplierCode||'')}" data-document-delivery-search="${escapeHtml(searchText)}"><header><label><input type="checkbox" name="document-delivery-bulk-supplier"><span><strong>${escapeHtml(group.supplierName||group.supplierCode||'Supplier')}</strong><small>${escapeHtml(group.supplierCode||'')} · ${escapeHtml(recipient.name||'No contact')}${recipient.email?` · ${escapeHtml(recipient.email)}`:''}</small></span></label><em>${Number(group.documents?.length||0).toLocaleString()}</em></header><div class="document-delivery-selection">${(group.documents||[]).map(item=>`<label><input type="checkbox" name="document-delivery-bulk-document" value="${escapeHtml(item.id)}"><span><strong>${escapeHtml(item.number)} · ${escapeHtml(documentRecordLabel(item))}</strong><small>${escapeHtml(item.sourceReference||item.entityName||'')} · ${escapeHtml(item.delivery?.status||'Not issued')}</small></span></label>`).join('')}</div></section>`;
+      return `<section class="document-delivery-bulk-group" data-document-delivery-supplier="${escapeHtml(group.supplierCode||'')}" data-document-delivery-search="${escapeHtml(searchText)}"><header><label><input type="checkbox" name="document-delivery-bulk-supplier"><span><strong>${escapeHtml(group.supplierName||group.supplierCode||'Supplier')}</strong><small>${escapeHtml(group.supplierCode||'')} · ${escapeHtml(recipient.name||'No contact')}${recipient.email?` · ${escapeHtml(recipient.email)}`:''}</small></span></label><em>${Number(group.documents?.length||0).toLocaleString()}</em></header><div class="document-delivery-selection">${(group.documents||[]).map(item=>`<label class="${item.isPrimaryDelivery?'is-primary':''}"><input type="checkbox" name="document-delivery-bulk-document" value="${escapeHtml(item.id)}" ${item.recommended?'checked':''}><span><strong>${escapeHtml(item.number)} · ${escapeHtml(item.deliveryLabel||documentRecordLabel(item))}${item.isPrimaryDelivery?' · Primary':''}</strong><small>${escapeHtml(item.sourceReference||item.entityName||'')} · ${escapeHtml(item.delivery?.status||'Not issued')}</small><small>${escapeHtml(item.deliveryFileName||'')}</small></span></label>`).join('')}</div></section>`;
     }).join(''):'<div class="table-empty table-empty--card"><strong>No supplier-facing documents</strong><span>No finalized supplier documents are available for this period.</span></div>';
-    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Delivery scope</strong><span>${Number(payload.meta?.suppliers||groups.length).toLocaleString()} suppliers</span></div><div class="form-grid"><label class="form-field"><span>Working period</span><select name="document-delivery-bulk-period">${periodKeys.map(key=>`<option value="${escapeHtml(key)}" ${key===period?'selected':''}>${escapeHtml(documentPeriodLabel(key))}</option>`).join('')}</select></label><label class="form-field"><span>Channel</span><select name="document-delivery-bulk-channel"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="hand">Hand delivery</option><option value="portal">Portal</option><option value="other">Other</option></select></label><label class="form-field is-wide"><span>Search</span><input type="search" name="document-delivery-bulk-search" placeholder="Supplier, project or document number"></label><label class="form-field"><span>Reference</span><input name="document-delivery-bulk-reference"></label><label class="form-field"><span>Note</span><input name="document-delivery-bulk-note"></label></div>${payload.meta?.truncated?'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>500 documents shown. Narrow the period or search before preparing packs.</p></div>':''}</section><section class="form-section"><div class="form-section__head"><label class="document-delivery-bulk-select-all"><input type="checkbox" name="document-delivery-bulk-all"><strong>Select all visible</strong></label><span>${Number(payload.meta?.documents||0).toLocaleString()} documents</span></div><div class="document-delivery-bulk-groups">${groupHtml}</div></section><section class="form-section"><div class="form-section__head"><strong>Recent issue packs</strong></div>${documentDeliveryRecentPacksHtml(payload.recentPacks||[])}</section>`;
+    drawerBody.innerHTML=`<section class="form-section"><div class="form-section__head"><strong>Delivery scope</strong><span>${Number(payload.meta?.suppliers||groups.length).toLocaleString()} suppliers</span></div><div class="form-grid"><label class="form-field"><span>Working period</span><select name="document-delivery-bulk-period">${periodKeys.map(key=>`<option value="${escapeHtml(key)}" ${key===period?'selected':''}>${escapeHtml(documentPeriodLabel(key))}</option>`).join('')}</select></label><label class="form-field"><span>Channel</span><select name="document-delivery-bulk-channel"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="hand">Hand delivery</option><option value="portal">Portal</option><option value="other">Other</option></select></label><label class="form-field is-wide"><span>Search</span><input type="search" name="document-delivery-bulk-search" placeholder="Supplier, project or document number"></label><label class="form-field"><span>Reference</span><input name="document-delivery-bulk-reference"></label><label class="form-field"><span>Note</span><input name="document-delivery-bulk-note"></label></div><div class="settings-policy-note"><span>${icon('info')}</span><p>${Number(payload.meta?.recommended||0).toLocaleString()} primary monthly timesheet pack${Number(payload.meta?.recommended||0)===1?' is':'s are'} preselected. Settlement statements and payment advices remain opt-in.</p></div>${payload.meta?.truncated?'<div class="settings-policy-note"><span>'+icon('info')+'</span><p>500 documents shown. Narrow the period or search before preparing packs.</p></div>':''}</section><section class="form-section"><div class="form-section__head"><label class="document-delivery-bulk-select-all"><input type="checkbox" name="document-delivery-bulk-all"><strong>Select all visible</strong></label><span>${Number(payload.meta?.documents||0).toLocaleString()} documents</span></div><div class="document-delivery-bulk-groups">${groupHtml}</div></section><section class="form-section"><div class="form-section__head"><strong>Recent issue packs</strong></div>${documentDeliveryRecentPacksHtml(payload.recentPacks||[])}</section>`;
     wireBulkDocumentDeliveryActions();
   }
 
@@ -8511,21 +8520,36 @@
   }
 
   function documentsTemplate() {
-    const allowedTypes=state.workspace==='rental'?['supplier_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt','rental_timesheet']:['salary_slip','internal_timesheet','salary_payment_receipt'];
+    const rentalFamilies=[
+      {key:'supplier_timesheet',label:'Supplier Timesheets',kpi:'Timesheet Packs'},
+      {key:'supplier_settlement',label:'Settlement Statements',kpi:'Settlements'},
+      {key:'supplier_invoice',label:'Supplier Invoices',kpi:'Supplier Invoices'},
+      {key:'supplier_payment_receipt',label:'Payment Advices',kpi:'Payment Advices'}
+    ];
+    const internalFamilies=[
+      {key:'salary_slip',label:'Salary Slips',kpi:'Salary Slips'},
+      {key:'internal_timesheet',label:'Internal Timesheets',kpi:'Timesheets'},
+      {key:'salary_payment_receipt',label:'Payment Receipts',kpi:'Payment Receipts'}
+    ];
+    const families=state.workspace==='rental'?rentalFamilies:internalFamilies;
+    const allowedTypes=families.map(item=>item.key);
     if(state.documentTab!=='all'&&!allowedTypes.includes(state.documentTab)){state.documentTab='all';state.documentPage=1;}
     const request=documentRequest();const context=state.documentContext;const server=state.documentServer;
     if((!context || server.key!==request.key) && server.pendingKey!==request.key)queueMicrotask(()=>loadDocumentList());
     const all=context?.documents||[];const summary=context?.summary||{};const meta=context?.meta||server.meta||{};
-    const periodKeys=context?.filters?.periods||[];const statuses=context?.filters?.statuses||['Final'];
+    const periodKeys=context?.filters?.periods||[];
     const counts=summary.typeCounts||{};const totalCount=Number(summary.count||0);const matchingCount=Number(meta.count||0);
+    const operationalCount=state.workspace==='rental'?Number(counts.rental_timesheet||0):0;
     let selected=all.find(item=>item.id===state.selectedDocumentId)||all[0]||null;
     if(selected&&state.selectedDocumentId!==selected.id)state.selectedDocumentId=selected.id;
+    const selectedFull=selected?(state.documentDetails[selected.id]||selected):null;
     const page=Number(meta.page||state.documentPage||1),pageSize=Number(meta.pageSize||state.documentPageSize||50),totalPages=Math.max(1,Number(meta.totalPages||1));
     const startRow=Number(meta.rangeStart||0),endRow=Number(meta.rangeEnd||0);
     const loading=server.loading && server.pendingKey===request.key;
-    const listHtml=server.error?`<div class="table-empty table-empty--card"><strong>Documents unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-document-retry>Retry</button></div>`:all.length?all.map(doc=>`<button class="document-list-item ${doc.id===selected?.id?'is-active':''}" data-document-select="${escapeHtml(doc.id)}"><span class="document-list-item__icon">${escapeHtml(documentRecordCode(doc))}</span><span class="document-list-item__body"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.number)} · ${escapeHtml(doc.entityName||doc.entityReference||'Company')}</small><em>${escapeHtml(doc.period||'No period')} · ${escapeHtml(doc.sourceReference||'Source')}</em></span><span class="document-list-item__status">${documentStatusBadge(doc.status)}</span></button>`).join(''):`<div class="table-empty table-empty--card"><strong>${loading?'Loading…':'No documents'}</strong></div>`;
+    const listHtml=server.error?`<div class="table-empty table-empty--card"><strong>Documents unavailable</strong><span>${escapeHtml(server.error)}</span><button class="btn btn--secondary btn--sm" data-document-retry>Retry</button></div>`:all.length?all.map(doc=>{const legacy=doc.documentVariant==='supplier_timesheet'?' · Legacy v2':'';const operational=doc.type==='rental_timesheet'&&doc.documentVariant!=='supplier_timesheet'?' · Project archive':'';return `<button class="document-list-item ${doc.id===selected?.id?'is-active':''}" data-document-select="${escapeHtml(doc.id)}"><span class="document-list-item__icon">${escapeHtml(documentRecordCode(doc))}</span><span class="document-list-item__body"><strong>${escapeHtml(doc.number)}</strong><small>${escapeHtml(documentRecordLabel(doc))} · ${escapeHtml(doc.entityName||doc.entityReference||'Company')}</small><em>${escapeHtml(doc.period||'No period')} · ${escapeHtml(doc.sourceReference||'Source')}${escapeHtml(legacy||operational)}</em></span><span class="document-list-item__status">${documentStatusBadge(doc.status)}</span></button>`;}).join(''):`<div class="table-empty table-empty--card"><strong>${loading?'Loading…':'No documents'}</strong><span>${loading?'Loading only the current result page.':'No final records match these filters.'}</span></div>`;
     const preview=documentNativePreview(selected);
-    return `<section class="page documents-page"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1></div><div class="page-head__actions">${state.workspace==='rental'?`<button class="btn btn--secondary" data-document-delivery-status>${icon('document')} Delivery</button><button class="btn btn--secondary" data-document-bulk-delivery>${icon('document')} Issue Documents</button>`:''}<button class="btn btn--primary" data-document-generate>${icon('plus')} New Document</button></div></div><div class="document-kpis">${allowedTypes.map(type=>`<div><span>${escapeHtml(documentTypeLabel(type))}</span><strong>${Number(counts[type]||0).toLocaleString()}</strong></div>`).join('')}</div><div class="document-tabs"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All Documents</span><em>${totalCount.toLocaleString()}</em></button>${allowedTypes.map(type=>`<button class="${state.documentTab===type?'is-active':''}" data-document-tab="${type}"><span>${escapeHtml(documentTypeLabel(type))}</span><em>${Number(counts[type]||0).toLocaleString()}</em></button>`).join('')}</div><div class="document-toolbar"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search number, employee, project, supplier…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><select class="select" id="documentStatusFilter"><option>All statuses</option>${statuses.map(status=>`<option ${state.documentStatusFilter===status?'selected':''}>${escapeHtml(status)}</option>`).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} document${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="New document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document'}</strong><span>${selected?`${escapeHtml(documentRecordLabel(selected))} · ${escapeHtml(selected.period||'')}`:''}</span></div><div class="document-preview-toolbar__actions">${selected?.delivery?.status&&selected.delivery.status!=='Not issued'?`<span class="status status--${selected.delivery.status==='Delivered'?'success':'neutral'}"><span></span>${escapeHtml(selected.delivery.status)}</span>`:''}${documentCanIssue(selected)?`<button class="btn btn--secondary btn--sm" data-document-delivery="${escapeHtml(selected.id)}">Issue</button>`:''}${selected?.sourceAttachmentUrl?`<button class="btn btn--secondary btn--sm" data-document-source-attachment="${escapeHtml(selected.id)}">${icon('document')} Supplier Invoice</button>`:''}<button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${preview}</div></section></div></section>`;
+    const workspaceNote=state.workspace==='rental'?`<div class="document-workspace-note"><span>Supplier-facing final records live here. ${operationalCount?`${operationalCount.toLocaleString()} archived project timesheet document${operationalCount===1?'':'s'} remain searchable in All records. `:''}New project timesheets are printed from the Project Timesheets workspace.</span><button class="btn btn--ghost btn--sm" type="button" data-document-project-timesheets>Open Project Timesheets</button></div>`:'';
+    return `<section class="page documents-page documents-page--clean"><div class="page-head"><div class="page-head__copy"><span class="eyebrow">${escapeHtml(workspaceLabel())} · Final Records</span><h1>Documents</h1><p class="document-page-intro">${state.workspace==='rental'?'Supplier timesheets, settlements, received invoices and payment advices.':'Final payroll documents and employee payment records.'}</p></div><div class="page-head__actions">${state.workspace==='rental'?`<button class="btn btn--secondary" data-document-delivery-status>${icon('document')} Delivery</button><button class="btn btn--secondary" data-document-bulk-delivery>${icon('document')} Issue Documents</button>`:''}<button class="btn btn--primary" data-document-generate>${icon('plus')} New Document</button></div></div><div class="document-kpis document-kpis--primary">${families.map(item=>`<div><span>${escapeHtml(item.kpi)}</span><strong>${Number(counts[item.key]||0).toLocaleString()}</strong><small>Final records</small></div>`).join('')}</div><div class="document-tabs document-tabs--business"><button class="${state.documentTab==='all'?'is-active':''}" data-document-tab="all"><span>All records</span><em>${totalCount.toLocaleString()}</em></button>${families.map(item=>`<button class="${state.documentTab===item.key?'is-active':''}" data-document-tab="${item.key}"><span>${escapeHtml(item.label)}</span><em>${Number(counts[item.key]||0).toLocaleString()}</em></button>`).join('')}</div>${workspaceNote}<div class="document-toolbar document-toolbar--clean"><div class="search-field">${icon('search')}<input id="documentSearch" type="search" value="${escapeHtml(state.documentSearch)}" placeholder="Search document number, supplier, project or source…"></div><select class="select" id="documentPeriodFilter"><option>All periods</option>${periodKeys.map(key=>{const label=documentPeriodLabel(key);return `<option ${state.documentPeriodFilter===label?'selected':''}>${escapeHtml(label)}</option>`}).join('')}</select><button class="btn btn--ghost" data-document-reset>Reset</button></div><div class="document-workspace"><aside class="document-list-panel"><div class="document-list-head"><div><strong>${matchingCount.toLocaleString()} record${matchingCount===1?'':'s'}</strong><span>${state.documentPeriodFilter}${loading?' · Loading…':''}</span></div><button class="icon-btn icon-btn--sm" data-document-generate aria-label="New document">${icon('plus')}</button></div><div class="document-list">${listHtml}</div><div class="ui-v2-payroll-timesheet-footer ui-v2-payroll-directory-footer"><span class="ui-v2-payroll-timesheet-footer-status"><strong>${startRow.toLocaleString()}</strong>–<strong>${endRow.toLocaleString()}</strong> of <strong>${matchingCount.toLocaleString()}</strong></span><div class="ui-v2-payroll-timesheet-pagination"><div class="ui-v2-payroll-timesheet-pagination__pages"><button type="button" data-document-page="${page-1}" ${page<=1?'disabled':''} aria-label="Previous page">‹</button><span>Page <strong>${page}</strong> / ${totalPages}</span><button type="button" data-document-page="${page+1}" ${page>=totalPages?'disabled':''} aria-label="Next page">›</button></div><label class="ui-v2-payroll-timesheet-pagination__size">Rows <select id="documentPageSize" class="ui-v2-select ui-v2-payroll-dense-select">${[25,50,100].map(value=>`<option value="${value}" ${pageSize===value?'selected':''}>${value}</option>`).join('')}</select></label></div></div></aside><section class="document-preview-panel"><div class="document-preview-toolbar"><div class="document-preview-toolbar__meta"><strong>${selected?escapeHtml(selected.number):'Document summary'}</strong><span>${selected?`${escapeHtml(documentRecordLabel(selected))} · ${escapeHtml(selected.period||'')}`:'Select a final record'}</span></div><div class="document-preview-toolbar__actions">${selectedFull?.delivery?.status&&selectedFull.delivery.status!=='Not issued'?`<span class="status status--${selectedFull.delivery.status==='Delivered'?'success':'neutral'}"><span></span>${escapeHtml(selectedFull.delivery.status)}</span>`:''}${documentCanIssue(selectedFull)?`<button class="btn btn--secondary btn--sm" data-document-delivery="${escapeHtml(selectedFull.id)}">Issue</button>`:''}${selectedFull?.sourceAttachmentUrl?`<button class="btn btn--secondary btn--sm" data-document-source-attachment="${escapeHtml(selectedFull.id)}">${icon('document')} Supplier Invoice</button>`:''}<button class="btn btn--secondary btn--sm" data-document-print ${selected?'':'disabled'}>${icon('document')} Print / Save PDF</button></div></div><div class="document-preview-stage">${preview}</div></section></div></section>`;
   }
 
   function documentSourceTypesForWorkspace(){return state.workspace==='rental'?['supplier_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt','rental_timesheet']:['salary_slip','internal_timesheet','salary_payment_receipt'];}
@@ -8547,7 +8571,7 @@
   function documentCreateActionLabel(type, employeeScoped=false) {
     if(employeeScoped)return 'Finalize Salary Slip';
     if(type==='supplier_invoice')return 'Record Supplier Invoice';
-    if(type==='supplier_timesheet')return 'Create Supplier Timesheet';
+    if(type==='supplier_timesheet'||type==='supplier_timesheet_pack')return 'Create Supplier Timesheet';
     if(type==='supplier_settlement')return 'Create Settlement Statement';
     if(type==='supplier_payment_receipt')return 'Create Payment Advice';
     if(type==='rental_timesheet')return 'Create Project Timesheet';
@@ -8593,6 +8617,155 @@
     const syncType=()=>{const box=drawerBody.querySelector('[data-bounded-drawer-lookup="document-source"]');box?._lookupUiController?.abort();if(box){box.querySelector('input[type="hidden"]').value='';box.querySelector('[data-adjustment-combobox-value]').textContent='Select source record';box.querySelector('[data-adjustment-combobox-trigger]').classList.remove('has-value');const search=box.querySelector('[data-adjustment-combobox-search]');if(search)search.value='';box.querySelector('[data-adjustment-combobox-results]').innerHTML=`<div class="adjustment-combobox__empty">${['salary_slip','salary_payment_receipt'].includes(typeControlNode.value)?'Type at least 2 characters to search.':'Open to browse eligible source records.'}</div>`;}state.drawerContext={...(state.drawerContext||{}),type:typeControlNode.value,selectedSource:null};drawerSave.textContent=documentCreateActionLabel(typeControlNode.value,employeeScoped);renderDocumentTypeSpecificFields(typeControlNode.value);setupDocumentSourceCombobox();};
     if(!employeeScoped)typeControlNode.addEventListener('change',syncType);
     renderDocumentTypeSpecificFields(preferred);applyPayrollRequiredFields(drawerBody,'document-generate');setupDocumentSourceCombobox();
+  }
+
+
+  const rentalTypeFirstFallbackCatalog = [
+    {key:'supplier_timesheet_pack',label:'Supplier Timesheet',description:'Monthly supplier/project pack with a worker summary and one monthly sheet per worker.',supplierRequired:true,projectRequired:true,sourceRequired:true,sourceLabel:'Locked project timesheet',creationMode:'json'},
+    {key:'supplier_settlement',label:'Supplier Settlement Statement',description:'Approved supplier/project financial reconciliation for the selected month.',supplierRequired:true,projectRequired:true,sourceRequired:true,sourceLabel:'Approved settlement',creationMode:'json'},
+    {key:'supplier_invoice',label:'Supplier Invoice Received',description:'Record the supplier invoice received against an approved supplier settlement.',supplierRequired:true,projectRequired:true,sourceRequired:true,sourceLabel:'Approved settlement',creationMode:'multipart',requiresInvoiceAttachment:true},
+    {key:'supplier_payment_receipt',label:'Supplier Payment Advice',description:'Supplier-facing advice for a completed supplier payment.',supplierRequired:true,projectRequired:false,sourceRequired:true,sourceLabel:'Paid supplier payment',creationMode:'json'}
+  ];
+
+  function rentalTypeFirstTypeKey(value='') {
+    const normalized=documentTypeKey(value);
+    if(normalized==='supplier_timesheet')return 'supplier_timesheet_pack';
+    return rentalTypeFirstFallbackCatalog.some(row=>row.key===normalized)?normalized:'';
+  }
+
+  function rentalTypeFirstCatalog() {
+    const rows=state.drawerContext?.generatorTypes;
+    return Array.isArray(rows)&&rows.length?rows:rentalTypeFirstFallbackCatalog;
+  }
+
+  function rentalTypeFirstMeta(type=state.drawerContext?.selectedType) {
+    return rentalTypeFirstCatalog().find(row=>row.key===type)||rentalTypeFirstFallbackCatalog.find(row=>row.key===type)||rentalTypeFirstFallbackCatalog[0];
+  }
+
+  function rentalTypeFirstPeriodKey() {
+    return String(state.drawerContext?.periodKey||periodKeyFromLabel(state.drawerContext?.period||state.period)||'').slice(0,7);
+  }
+
+  function rentalTypeFirstPurposeIcon(type) {
+    if(type==='supplier_timesheet_pack')return 'TS';
+    if(type==='supplier_settlement')return 'SS';
+    if(type==='supplier_invoice')return 'IN';
+    if(type==='supplier_payment_receipt')return 'PA';
+    return 'DC';
+  }
+
+  function renderRentalTypeFirstPurpose() {
+    if(state.drawerType!=='document-generate'||!state.drawerContext?.typeFirstGenerator)return;
+    state.drawerContext={...state.drawerContext,stage:'purpose'};
+    drawer.classList.add('ui-v2-payroll-document-drawer--type-first');
+    configureDrawerPresentation({eyebrow:'Rental documents',ariaLabel:'Create supplier document'});
+    drawerTitle.textContent='New document';
+    drawerSave.hidden=true;drawerSave.disabled=true;
+    const catalog=rentalTypeFirstCatalog();
+    drawerBody.innerHTML=`<section class="document-type-first-intro"><strong>Choose what you need to create</strong><p>Each action follows its own authoritative Rental Manpower source. Supplier timesheets contain hours only; settlement remains the financial record.</p></section><section class="document-purpose-list">${catalog.map(row=>`<button type="button" class="document-purpose-option" data-document-purpose="${escapeHtml(row.key)}"><span class="document-purpose-option__code">${escapeHtml(rentalTypeFirstPurposeIcon(row.key))}</span><span class="document-purpose-option__body"><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.description||'')}</small></span><span class="document-purpose-option__arrow">${icon('chevron')}</span></button>`).join('')}</section><section class="document-type-first-project-note"><div><strong>Need a Project Timesheet?</strong><span>Project Timesheets are operational records and are printed from the Project Timesheets workspace.</span></div><button type="button" class="btn btn--secondary btn--sm" data-document-open-project-timesheets>Open Project Timesheets</button></section>`;
+    drawerBody.querySelectorAll('[data-document-purpose]').forEach(button=>button.addEventListener('click',()=>{
+      const type=button.dataset.documentPurpose;
+      state.drawerContext={...state.drawerContext,stage:'scope',selectedType:type,periodKey:rentalTypeFirstPeriodKey(),selectedSupplier:null,selectedProject:null,selectedSource:null,review:null};
+      renderRentalTypeFirstScope();
+    }));
+    drawerBody.querySelector('[data-document-open-project-timesheets]')?.addEventListener('click',()=>{closeDrawer();navigate('timesheets');});
+  }
+
+  async function loadRentalTypeFirstCatalog() {
+    try{
+      const payload=await appApi('/api/documents/generator/types/');
+      if(state.drawerType!=='document-generate'||!state.drawerContext?.typeFirstGenerator)return;
+      state.drawerContext={...state.drawerContext,generatorTypes:payload.types||rentalTypeFirstFallbackCatalog,selectorMaxPageSize:Number(payload.selectorMaxPageSize||25)};
+      if(state.drawerContext.stage==='purpose')renderRentalTypeFirstPurpose();
+    }catch(error){
+      if(state.drawerType==='document-generate'&&state.drawerContext?.typeFirstGenerator)showToast('Document catalog unavailable',`${error.message} Using the built-in document actions.`);
+    }
+  }
+
+  function rentalTypeFirstScopeReady(context=state.drawerContext||{}) {
+    const meta=rentalTypeFirstMeta(context.selectedType);
+    return Boolean(/^\d{4}-\d{2}$/.test(String(context.periodKey||'')) && context.selectedSupplier && (!meta.projectRequired||context.selectedProject) && context.selectedSource);
+  }
+
+  function rentalTypeFirstExistingNote(source) {
+    if(!source?.existing)return '<div class="document-type-first-source-state" data-document-type-first-existing><span>Eligible source</span><strong>A final document has not been created from this source yet.</strong></div>';
+    return `<div class="document-type-first-source-state is-existing" data-document-type-first-existing><span>Already finalized</span><strong>${escapeHtml(source.existing.number||'Existing document')}</strong><small>The source is already protected by a final document. Review will open that record instead of creating a duplicate.</small></div>`;
+  }
+
+  function renderRentalTypeFirstScope() {
+    const context=state.drawerContext||{};if(!context.typeFirstGenerator)return;
+    const type=context.selectedType||rentalTypeFirstFallbackCatalog[0].key;const meta=rentalTypeFirstMeta(type);const periodKey=rentalTypeFirstPeriodKey();
+    const supplier=context.selectedSupplier||null,project=context.selectedProject||null,source=context.selectedSource||null;const periodReady=/^\d{4}-\d{2}$/.test(periodKey);
+    state.drawerContext={...context,stage:'scope',selectedType:type,periodKey};
+    drawerTitle.textContent=meta.label||'New supplier document';drawerSave.hidden=false;drawerSave.textContent='Review';drawerSave.disabled=!rentalTypeFirstScopeReady(state.drawerContext);
+    const supplierField=periodReady?boundedDrawerLookupField({label:'Supplier',name:'document-generator-supplier',key:'document-generator-supplier',required:true,wide:true,placeholder:'Search supplier code or name',emptyLabel:'Select supplier',initialId:supplier?.code||'',initialLabel:supplier?.label||supplier?.name||'',prompt:'Open to browse eligible suppliers.'}):'<div class="document-type-first-pending"><span>1</span><div><strong>Supplier</strong><small>Choose a working month first.</small></div></div>';
+    const projectArea=meta.projectRequired?(supplier?boundedDrawerLookupField({label:'Project',name:'document-generator-project',key:'document-generator-project',required:true,wide:true,placeholder:'Search eligible project',emptyLabel:'Select project',initialId:project?.id||'',initialLabel:project?.label||project?.name||'',prompt:'Open to browse eligible projects for this supplier.'}):'<div class="document-type-first-pending"><span>2</span><div><strong>Project</strong><small>Select a supplier first. Only eligible projects for that supplier and month will be returned.</small></div></div>'):'';
+    const sourceReady=Boolean(periodReady&&supplier&&(!meta.projectRequired||project));
+    const sourceField=sourceReady?boundedDrawerLookupField({label:meta.sourceLabel||'Source record',name:'document-generator-source',key:'document-generator-source',required:true,wide:true,placeholder:'Search eligible source',emptyLabel:`Select ${String(meta.sourceLabel||'source record').toLowerCase()}`,initialId:source?.sourceId||'',initialLabel:source?.label||'',prompt:'Open to browse eligible final source records.'}):'<div class="document-type-first-pending"><span>'+String(meta.projectRequired?'3':'2')+'</span><div><strong>'+escapeHtml(meta.sourceLabel||'Source record')+'</strong><small>Complete the selection above to load the authoritative source.</small></div></div>';
+    drawerBody.innerHTML=`<section class="document-type-first-header"><button type="button" class="btn btn--ghost btn--sm" data-document-type-first-back>${icon('chevron')} Back</button><div><span>${escapeHtml(meta.label||'Document')}</span><p>${escapeHtml(meta.description||'')}</p></div></section><section class="form-section"><div class="form-section__head"><strong>Document scope</strong><span>One supplier document from one authoritative source.</span></div><div class="form-grid"><label class="form-field form-field--full"><span class="required">Working month</span><input class="input" type="month" name="document-generator-period" value="${escapeHtml(periodKey)}" required></label>${supplierField}${projectArea}${sourceField}</div>${source?rentalTypeFirstExistingNote(source):''}</section><section class="document-type-first-rule"><strong>${type==='supplier_timesheet_pack'?'Timesheet evidence':'Source authority'}</strong><span>${type==='supplier_timesheet_pack'?'This pack contains attendance and hours only. Rates, VAT and payable values remain in Settlement.':escapeHtml(meta.sourceLabel||'The selected final source controls this document.')}</span></section>`;
+    drawerBody.querySelector('[data-document-type-first-back]')?.addEventListener('click',()=>{state.drawerContext={...state.drawerContext,stage:'purpose',selectedType:null,selectedSupplier:null,selectedProject:null,selectedSource:null,review:null};renderRentalTypeFirstPurpose();});
+    drawerBody.querySelector('[name="document-generator-period"]')?.addEventListener('change',event=>{const next=String(event.target.value||'').slice(0,7);state.drawerContext={...state.drawerContext,periodKey:next,selectedSupplier:null,selectedProject:null,selectedSource:null,review:null};renderRentalTypeFirstScope();});
+    if(periodReady)setupBoundedDrawerLookup({key:'document-generator-supplier',endpoint:'/api/documents/generator/suppliers/',baseParams:()=>({type,period:rentalTypeFirstPeriodKey()}),allowEmpty:true,minChars:0,idKey:'code',label:row=>row.label||`${row.code||''} · ${row.name||''}`,meta:()=>'',emptyMessage:'No eligible suppliers for this document and month.',autoLoad:true,onSelect:row=>{state.drawerContext={...state.drawerContext,selectedSupplier:row||null,selectedProject:null,selectedSource:null,review:null};renderRentalTypeFirstScope();}});
+    if(meta.projectRequired&&supplier)setupBoundedDrawerLookup({key:'document-generator-project',endpoint:'/api/documents/generator/projects/',baseParams:()=>({type,period:rentalTypeFirstPeriodKey(),supplier_code:state.drawerContext?.selectedSupplier?.code||''}),allowEmpty:true,minChars:0,idKey:'id',label:row=>row.label||`${row.code||''} · ${row.name||''}`,meta:()=>'',emptyMessage:'No eligible projects for this supplier and month.',autoLoad:true,onSelect:row=>{state.drawerContext={...state.drawerContext,selectedProject:row||null,selectedSource:null,review:null};renderRentalTypeFirstScope();}});
+    if(sourceReady)setupBoundedDrawerLookup({key:'document-generator-source',endpoint:'/api/documents/generator/sources/',baseParams:()=>({type,period:rentalTypeFirstPeriodKey(),supplier_code:state.drawerContext?.selectedSupplier?.code||'',...(meta.projectRequired?{project_id:state.drawerContext?.selectedProject?.id||''}:{})}),allowEmpty:true,minChars:0,idKey:'sourceId',label:row=>row.label||row.reference||'Eligible source',meta:row=>`${row.status||'Eligible'}${row.existing?` · ${row.existing.number} already finalized`:''}`,emptyMessage:'No eligible final source records for this selection.',autoLoad:true,autoSelectSingle:true,onSelect:row=>{state.drawerContext={...state.drawerContext,selectedSource:row||null,review:null};drawerSave.disabled=!row;const host=drawerBody.querySelector('[data-document-type-first-existing]');if(host)host.outerHTML=rentalTypeFirstExistingNote(row);else if(row)drawerBody.querySelector('.form-section')?.insertAdjacentHTML('beforeend',rentalTypeFirstExistingNote(row));}});
+    applyPayrollRequiredFields(drawerBody,'document-generate');
+  }
+
+  function rentalTypeFirstSummaryRows(review={}) {
+    const summary=review.summary||{};const rows=[];const add=(label,value)=>{if(value!==undefined&&value!==null&&String(value)!=='')rows.push([label,String(value)]);};
+    add('Workers',summary.workerCount);add('Regular hours',summary.regularHours);add('Monthly OT',summary.overtimeHours);add('Total hours',summary.totalHours);if(summary.amount!==undefined)add('Amount',formatCurrency(Number(summary.amount||0)));if(summary.allocationCount!==undefined)add('Allocations',summary.allocationCount);return rows;
+  }
+
+  function renderRentalTypeFirstReview(review) {
+    const context=state.drawerContext||{};const type=context.selectedType;const meta=rentalTypeFirstMeta(type);const existing=review?.existing||null;state.drawerContext={...context,stage:'review',review};
+    drawerTitle.textContent=`Review ${meta.label||'document'}`;drawerSave.hidden=false;drawerSave.disabled=false;drawerSave.textContent=existing?'Open Existing':documentCreateActionLabel(type,false);
+    const project=review.project;const projects=review.projects||[];const projectLabel=project?`${project.code||''} · ${project.name||''}`:projects.length?projects.map(row=>row.code||row.name).join(', '):'Not required';const source=review.source||{};const rows=rentalTypeFirstSummaryRows(review);
+    const invoiceFields=type==='supplier_invoice'&&!existing?`<section class="form-section"><div class="form-section__head"><strong>Supplier invoice details</strong><span>Record the invoice received against this approved settlement.</span></div><div class="form-grid"><label class="form-field"><span>Supplier invoice number</span><input name="document-invoice-number" autocomplete="off"></label><label class="form-field"><span>Issue date</span><input name="document-issue-date" type="date" value="${rentalTodayIso()}"></label><label class="form-field"><span>Settlement subtotal (${escapeHtml(currencyCode())})</span><strong>${escapeHtml(formatCurrency(Number(review.summary?.amount||0)))}</strong></label><label class="form-field"><span>VAT amount (${escapeHtml(currencyCode())})</span><input name="document-vat-amount" type="number" min="0" step="0.01" value="0"></label><label class="form-field form-field--full"><span>Supplier invoice file</span><input name="document-invoice-file" type="file" accept="application/pdf,image/png,image/jpeg"></label></div></section>`:'';
+    drawerBody.innerHTML=`<section class="document-type-first-header"><button type="button" class="btn btn--ghost btn--sm" data-document-type-first-review-back>${icon('chevron')} Back</button><div><span>Review before finalizing</span><p>The source is revalidated again when you create the document.</p></div></section><section class="document-type-first-review"><div class="document-type-first-review__identity"><div><span>Document</span><strong>${escapeHtml(meta.label||review.documentLabel||'Document')}</strong></div><div><span>Month</span><strong>${escapeHtml(review.period||rentalTypeFirstPeriodKey())}</strong></div><div><span>Supplier</span><strong>${escapeHtml(`${review.supplier?.code||''} · ${review.supplier?.name||''}`)}</strong></div><div><span>Project</span><strong>${escapeHtml(projectLabel)}</strong></div><div><span>Source</span><strong>${escapeHtml(source.reference||source.status||meta.sourceLabel||'Final source')}</strong><small>${source.revision!==undefined?`Locked revision ${escapeHtml(source.revision)}`:escapeHtml(source.status||'')}</small></div></div>${rows.length?`<div class="document-type-first-review__summary">${rows.map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}</div>`:''}${existing?`<div class="document-type-first-existing-final"><span>Existing final document</span><strong>${escapeHtml(existing.number||'Existing document')}</strong><small>${escapeHtml(existing.title||'This source has already been finalized.')} No duplicate will be created.</small></div>`:''}</section>${invoiceFields}`;
+    drawerBody.querySelector('[data-document-type-first-review-back]')?.addEventListener('click',()=>{state.drawerContext={...state.drawerContext,stage:'scope',review:null};renderRentalTypeFirstScope();});
+    applyPayrollRequiredFields(drawerBody,'document-generate');
+  }
+
+  async function reviewRentalTypeFirstDocument() {
+    const context=state.drawerContext||{};const meta=rentalTypeFirstMeta(context.selectedType);
+    if(!/^\d{4}-\d{2}$/.test(rentalTypeFirstPeriodKey())){showToast('Working month required','Choose the month for this supplier document.');return false;}
+    if(!context.selectedSupplier){showToast('Supplier required','Choose an eligible supplier.');return false;}
+    if(meta.projectRequired&&!context.selectedProject){showToast('Project required','Choose an eligible project for this supplier.');return false;}
+    if(!context.selectedSource){showToast('Source required',`Choose an eligible ${String(meta.sourceLabel||'source record').toLowerCase()}.`);return false;}
+    drawerSave.disabled=true;drawerSave.textContent='Reviewing…';
+    try{
+      const payload=await appApi('/api/documents/generator/review/',{method:'POST',body:{document_type:context.selectedType,period:rentalTypeFirstPeriodKey(),supplier_code:context.selectedSupplier.code,project_id:context.selectedProject?.id||'',source_id:context.selectedSource.sourceId}});
+      renderRentalTypeFirstReview(payload.review||{});return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent='Review';showToast('Document review unavailable',error.message);return false;}
+  }
+
+  async function openExistingRentalTypeFirstDocument(existing) {
+    if(!existing?.id)return false;
+    state.documentTab='all';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';state.documentSearch=existing.number||'';state.documentPage=1;state.selectedDocumentId=existing.id;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';closeDrawer();
+    if(currentRoute()!=='documents')navigate('documents');else await loadDocumentList({render:true,force:true});
+    showToast('Existing document',`${existing.number||'The final document'} is already finalized for this source.`);return true;
+  }
+
+  async function executeRentalTypeFirstDocument(get) {
+    const context=state.drawerContext||{};const review=context.review||{};if(review.existing)return openExistingRentalTypeFirstDocument(review.existing);
+    const body={document_type:context.selectedType,period:rentalTypeFirstPeriodKey(),supplier_code:context.selectedSupplier?.code||'',project_id:context.selectedProject?.id||'',source_id:context.selectedSource?.sourceId||review.sourceId||''};let requestPromise;
+    if(context.selectedType==='supplier_invoice'){
+      const invoiceNumber=get('document-invoice-number').trim(),issueDate=get('document-issue-date'),vat=Number(get('document-vat-amount')||0),subtotal=Number(review.summary?.amount||0),invoiceFile=drawerBody.querySelector('[name="document-invoice-file"]')?.files?.[0]||null;
+      if(!invoiceNumber||!issueDate||vat<0||!invoiceFile){showToast('Supplier invoice required','Enter the invoice number, issue date, VAT amount and attach the supplier invoice file.');return false;}
+      const formData=new FormData();Object.entries(body).forEach(([key,value])=>formData.set(key,String(value??'')));formData.set('invoice_number',invoiceNumber);formData.set('issue_date',issueDate);formData.set('subtotal',subtotal.toFixed(2));formData.set('vat_amount',vat.toFixed(2));formData.set('total',(subtotal+vat).toFixed(2));formData.set('invoice_file',invoiceFile);requestPromise=appMultipartApi('/api/documents/generator/create/',{method:'POST',formData});
+    }else requestPromise=appApi('/api/documents/generator/create/',{method:'POST',body});
+    drawerSave.disabled=true;drawerSave.textContent=context.selectedType==='supplier_invoice'?'Recording…':'Creating…';
+    try{
+      const payload=await requestPromise;const doc=payload.document;replaceStateRecord(state.businessDocuments,doc);state.documentDetails[doc.id]=doc;state.selectedDocumentId=doc.id;state.documentTab='all';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';state.documentSearch='';state.documentPage=1;cancelDocumentListRequest();state.documentContext=null;state.documentServer.key='';closeDrawer();if(currentRoute()!=='documents')navigate('documents');else await loadDocumentList({render:true,force:true});showToast(context.selectedType==='supplier_invoice'?'Supplier invoice recorded':'Document created',doc.number);return true;
+    }catch(error){drawerSave.disabled=false;drawerSave.textContent=documentCreateActionLabel(context.selectedType,false);showToast(context.selectedType==='supplier_invoice'?'Supplier invoice could not be recorded':'Document could not be created',error.message);return false;}
+  }
+
+  async function openRentalTypeFirstDocumentDrawer(preferredType='') {
+    const selectedType=rentalTypeFirstTypeKey(preferredType);
+    state.drawerType='document-generate';state.drawerContext={typeFirstGenerator:true,stage:'purpose',period:state.period,periodKey:periodKeyFromLabel(state.period),generatorTypes:rentalTypeFirstFallbackCatalog,selectorMaxPageSize:25,selectedType:null,selectedSupplier:null,selectedProject:null,selectedSource:null,review:null};
+    drawer.classList.add('ui-v2-payroll-document-drawer--type-first','is-open');drawerScrim.classList.add('is-open');drawer.setAttribute('aria-hidden','false');
+    if(selectedType){state.drawerContext={...state.drawerContext,stage:'scope',selectedType};renderRentalTypeFirstScope();}else renderRentalTypeFirstPurpose();
+    void loadRentalTypeFirstCatalog();
   }
 
 
@@ -8740,7 +8913,7 @@
   }
 
   async function openDocumentGenerateDrawer(preferredType='', context={}) {
-    if(state.workspace==='rental' && preferredType!=='supplier_invoice')return openRentalDocumentGeneratorDrawer(documentTypeKey(preferredType));
+    if(state.workspace==='rental')return openRentalTypeFirstDocumentDrawer(preferredType);
     return openSingleDocumentGenerateDrawer(preferredType,context);
   }
 
@@ -8773,6 +8946,11 @@
 
   async function generateDocumentFromDrawer(get) {
     const drawerContext=state.drawerContext||{};
+    if(drawerContext.typeFirstGenerator){
+      if(drawerContext.stage==='review')return executeRentalTypeFirstDocument(get);
+      if(drawerContext.stage==='scope')return reviewRentalTypeFirstDocument();
+      return false;
+    }
     if(drawerContext.flexibleGenerator){
       if(drawerContext.stage==='review')return executeRentalDocumentGeneration();
       return reviewRentalDocumentGeneration();
@@ -9128,7 +9306,7 @@
     if (route === 'timesheets') state.timesheetWorkspace = state.workspace === 'rental' ? 'rental' : 'internal';
     if (route === 'payments') state.paymentTab = state.workspace === 'rental' ? 'supplier' : 'internal';
     if (route === 'adjustments') state.adjustmentWorkforce = state.workspace === 'rental' ? 'Rental' : 'Internal';
-    if (route === 'documents') state.documentTab = state.workspace === 'rental' ? (state.documentTab === 'salary-slips' ? 'timesheets' : state.documentTab) : (['timesheets','settlements','invoices'].includes(state.documentTab) ? 'salary-slips' : state.documentTab);
+    if (route === 'documents') { const rentalTabs=['all','supplier_timesheet','supplier_settlement','supplier_invoice','supplier_payment_receipt']; const internalTabs=['all','salary_slip','internal_timesheet','salary_payment_receipt']; state.documentTab=(state.workspace==='rental'?rentalTabs:internalTabs).includes(state.documentTab)?state.documentTab:'all'; }
     renderWorkspaceShell();
 
     if (route === 'overview') pageRoot.innerHTML = overviewTemplate();
@@ -9375,6 +9553,7 @@
     document.querySelectorAll('[data-document-reset]').forEach(btn=>btn.addEventListener('click',()=>{cancelDocumentListRequest();state.documentSearch='';state.documentPeriodFilter='All periods';state.documentStatusFilter='All statuses';state.documentPage=1;localStorage.setItem('payroll-ui-document-period',state.documentPeriodFilter);renderRoute();}));
     document.querySelectorAll('[data-document-select]').forEach(btn=>btn.addEventListener('click',()=>{state.selectedDocumentId=btn.dataset.documentSelect;localStorage.setItem('payroll-ui-selected-document',state.selectedDocumentId);renderRoute();}));
     document.querySelectorAll('[data-document-generate]').forEach(btn=>btn.addEventListener('click',()=>openDocumentGenerateDrawer()));
+    document.querySelectorAll('[data-document-project-timesheets]').forEach(btn=>btn.addEventListener('click',()=>navigate('timesheets')));
     document.querySelectorAll('[data-document-delivery-status]').forEach(btn=>btn.addEventListener('click',()=>openDocumentDeliveryStatusDrawer()));
     document.querySelectorAll('[data-document-bulk-delivery]').forEach(btn=>btn.addEventListener('click',()=>openBulkDocumentDeliveryDrawer()));
     document.querySelectorAll('[data-document-batch-timesheets]').forEach(btn=>btn.addEventListener('click',createSupplierTimesheetStatementBatch));
@@ -10841,7 +11020,8 @@
       'document-generate': ['document-source'],
     };
     const names = [...(fixed[type] || [])];
-    if(type==='document-generate' && state.drawerContext?.flexibleGenerator) names.splice(0,names.length);
+    if(type==='document-generate' && (state.drawerContext?.flexibleGenerator||state.drawerContext?.typeFirstGenerator)) names.splice(0,names.length);
+    if(type==='document-generate' && state.drawerContext?.typeFirstGenerator && state.drawerContext?.stage==='review' && state.drawerContext?.selectedType==='supplier_invoice') names.push('document-invoice-number','document-issue-date','document-vat-amount','document-invoice-file');
 
     if (type === 'advance' && state.workspace === 'rental') names.push('adjustment-project');
     if (type === 'salary-component' && state.drawerContext) names.push('salary-component-code');
@@ -11035,7 +11215,7 @@
     // Preserve server-independent initial display provided by the template.
     if(hidden.value)box._initialValueLabel=value.textContent;
     const render=(rows,metaInfo,message=emptyMessage)=>{rowsById=new Map((rows||[]).map(row=>[String(row[idKey]),row]));results.innerHTML=rows?.length?rows.map(row=>{const id=String(row[idKey]);const selected=id===hidden.value;const secondary=meta(row);return `<button type="button" class="adjustment-combobox__option${selected?' is-selected':''}" role="option" aria-selected="${selected?'true':'false'}" data-bounded-lookup-option="${escapeHtml(id)}"><span><strong>${escapeHtml(label(row))}</strong>${secondary?`<small>${escapeHtml(secondary)}</small>`:''}</span>${selected?icon('check'):''}</button>`;}).join(''):`<div class="adjustment-combobox__empty">${escapeHtml(message)}</div>`;page=Number(metaInfo?.page||page||1);const hasPrevious=Boolean(metaInfo?.hasPrevious),hasNext=Boolean(metaInfo?.hasNext);pager.hidden=!(hasPrevious||hasNext);pageLabel.textContent=`Page ${page}`;prev.disabled=!hasPrevious;next.disabled=!hasNext;results.querySelectorAll('[data-bounded-lookup-option]').forEach(btn=>btn.addEventListener('click',()=>{const row=rowsById.get(btn.dataset.boundedLookupOption);if(row)setSelected(row);},{signal}));if(autoSelectSingle&&rows?.length===1&&!hidden.value)setSelected(rows[0]);onResults(rows||[],metaInfo||{},box);};
-    const lookup=async({query=search?.value||'',pageNumber=1}={})=>{const q=String(query||'').trim();page=pageNumber;if(!allowEmpty&&q.length<minChars){render([],{page:1,hasNext:false,hasPrevious:false},`Type at least ${minChars} characters to search.`);return false;}try{box._lookupRequestController?.abort();}catch{/* settled */}const controller=new AbortController();box._lookupRequestController=controller;results.innerHTML='<div class="adjustment-combobox__empty">Searching…</div>';pager.hidden=true;try{const params=new URLSearchParams({...baseParams(),page:String(pageNumber),page_size:'10'});if(q)params.set('q',q);const payload=await appApi(`${endpoint}?${params.toString()}`,{signal:controller.signal});if(box._lookupRequestController!==controller)return false;render(payload.results||payload.sources||[],payload.meta||{},emptyMessage);return true;}catch(error){if(error?.name!=='AbortError'){render([],{page:1,hasNext:false,hasPrevious:false},'Search unavailable. Try again.');showToast('Lookup unavailable',error.message);}return false;}finally{if(box._lookupRequestController===controller)box._lookupRequestController=null;}};
+    const lookup=async({query=search?.value||'',pageNumber=1}={})=>{const q=String(query||'').trim();page=pageNumber;if(!allowEmpty&&q.length<minChars){render([],{page:1,hasNext:false,hasPrevious:false},`Type at least ${minChars} characters to search.`);return false;}try{box._lookupRequestController?.abort();}catch{/* settled */}const controller=new AbortController();box._lookupRequestController=controller;results.innerHTML='<div class="adjustment-combobox__empty">Searching…</div>';pager.hidden=true;try{const params=new URLSearchParams({...baseParams(),page:String(pageNumber),page_size:'10'});if(q)params.set('q',q);const payload=await appApi(`${endpoint}?${params.toString()}`,{signal:controller.signal});if(box._lookupRequestController!==controller)return false;render(payload.results||payload.sources||payload.suppliers||payload.projects||[],payload.meta||{},emptyMessage);return true;}catch(error){if(error?.name!=='AbortError'){render([],{page:1,hasNext:false,hasPrevious:false},'Search unavailable. Try again.');showToast('Lookup unavailable',error.message);}return false;}finally{if(box._lookupRequestController===controller)box._lookupRequestController=null;}};
     box._lookup=lookup;box._lookupSelect=setSelected;
     const openMenu=()=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');if((allowEmpty||String(search?.value||'').trim().length>=minChars)&&!rowsById.size)lookup({pageNumber:1});queueMicrotask(()=>search?.focus());};
     trigger.addEventListener('click',()=>menu.hidden?openMenu():closeMenu(),{signal});search?.addEventListener('input',()=>{clearTimeout(timer);page=1;timer=setTimeout(()=>lookup({query:search.value,pageNumber:1}),260);},{signal});prev.addEventListener('click',()=>lookup({pageNumber:Math.max(1,page-1)}),{signal});next.addEventListener('click',()=>lookup({pageNumber:page+1}),{signal});document.addEventListener('pointerdown',event=>{if(!drawerBody.isConnected){uiController.abort();return;}if(!box.contains(event.target))closeMenu();},{signal});drawerBody.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenu();},{signal});if(autoLoad&&allowEmpty)queueMicrotask(()=>lookup({query:'',pageNumber:1}));return box;
@@ -11486,7 +11666,7 @@
     state.assignmentProjectLookupUiController=null;
     cancelDocumentSourceRequest();
     clearTimeout(documentSourceTimer);documentSourceTimer=null;
-    drawer.classList.remove('is-open');
+    drawer.classList.remove('is-open','ui-v2-payroll-document-drawer--type-first');
     drawerScrim.classList.remove('is-open');
     drawer.setAttribute('aria-hidden', 'true');
     state.drawerType = null;

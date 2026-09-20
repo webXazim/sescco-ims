@@ -1,0 +1,60 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-type-first-generator-api",
+  "upgrade_sequence": "8/14",
+  "state": "type_first_api_ready_frontend_not_cut_over",
+  "schema_change": false,
+  "data_rewrite": false,
+  "selector_max_page_size": 25,
+  "normal_generator": {
+    "purpose_first": true,
+    "all_suppliers_default": false,
+    "all_projects_default": false,
+    "source_queries_on_type_catalog": false,
+    "supplier_before_project": true,
+    "exact_source_review_before_create": true,
+    "source_revalidated_at_create": true
+  },
+  "document_types": [
+    "supplier_timesheet_pack",
+    "supplier_settlement",
+    "supplier_invoice",
+    "supplier_payment_receipt"
+  ],
+  "project_timesheet_in_normal_generator": false,
+  "supplier_timesheet_pack": {
+    "creation_path": "type_first_only",
+    "generic_documents_post": false,
+    "stored_type": "supplier_timesheet_pack",
+    "allow_internal_finalizer_flag": true
+  },
+  "bulk_compatibility": {
+    "generation_options_preserved": true,
+    "generation_plan_preserved": true,
+    "generation_execute_preserved": true,
+    "current_frontend_still_legacy_until_upgrade_9": true
+  },
+  "routes": {
+    "types": "/api/documents/generator/types/",
+    "suppliers": "/api/documents/generator/suppliers/",
+    "projects": "/api/documents/generator/projects/",
+    "sources": "/api/documents/generator/sources/",
+    "review": "/api/documents/generator/review/",
+    "create": "/api/documents/generator/create/"
+  },
+  "security": {
+    "rental_document_finalize_permission": true,
+    "company_scope": true,
+    "project_scope": true,
+    "supplier_project_period_binding": true,
+    "source_id_revalidation": true,
+    "existing_document_discovery": true
+  },
+  "implementation": {
+    "api": "apps/documents/api.py",
+    "urls": "apps/documents/urls.py",
+    "service": "apps/documents/services/type_first_generator.py",
+    "regression_tests": "apps/documents/tests/test_v3_type_first_generator_api.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-new-documents-ux-cutover"
+}

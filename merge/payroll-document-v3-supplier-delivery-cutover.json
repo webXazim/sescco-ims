@@ -1,0 +1,63 @@
+{
+  "release": "1.0.117",
+  "upgrade": "supplier-timesheet-pack-v3-supplier-delivery-cutover",
+  "upgrade_sequence": "12/14",
+  "state": "supplier_delivery_cutover_to_v3_pack",
+  "schema_change": false,
+  "data_rewrite": false,
+  "delivery_contract_version": "2.0",
+  "primary_supplier_document": "supplier_timesheet_pack",
+  "outbound_documents": [
+    "supplier_timesheet_pack",
+    "legacy_supplier_timesheet_when_no_v3_equivalent_exists",
+    "supplier_settlement",
+    "supplier_payment_advice"
+  ],
+  "excluded_outbound_documents": [
+    "supplier_invoice_received"
+  ],
+  "legacy_compatibility": {
+    "legacy_supplier_timesheet_deliverable_when_no_v3_equivalent": true,
+    "legacy_supplier_timesheet_suppressed_when_exact_v3_source_exists": true,
+    "historical_delivery_pack_links_remain_readable": true
+  },
+  "recipient_defaults": {
+    "source": "manpower_supplier_master",
+    "channel_priority": ["email", "whatsapp", "portal"],
+    "single_document_issue_does_not_auto_bundle_financial_documents": true,
+    "bulk_delivery_preselects_primary_timesheets_only": true
+  },
+  "delivery_manifest": {
+    "frozen_at_issue": true,
+    "includes_role": true,
+    "includes_label": true,
+    "includes_suggested_filename": true,
+    "includes_primary_marker": true
+  },
+  "acknowledgement_scope": "receipt_only",
+  "acknowledgement_does_not_change": [
+    "locked_timesheet_authority",
+    "approved_settlement_authority",
+    "supplier_invoice_authority",
+    "supplier_payment_authority"
+  ],
+  "security": {
+    "signed_expiring_links": true,
+    "revocation_and_reissue_preserved": true,
+    "shared_pages_private_no_store": true,
+    "shared_pages_noindex": true,
+    "shared_pages_no_referrer": true,
+    "shared_pages_nosniff": true
+  },
+  "filename_policy": "SESCCO_supplier_project_period_role_document-number.pdf",
+  "implementation": {
+    "delivery_policy": "apps/documents/delivery.py",
+    "delivery_api": "apps/documents/api.py",
+    "supplier_share": "templates/documents/delivery_share.html",
+    "delivery_cover": "templates/documents/delivery_pack.html",
+    "frontend": "static/payroll/js/app.js",
+    "tests": "apps/documents/tests/test_v3_supplier_delivery_cutover.py",
+    "verifier": "scripts/verify-payroll-document-v3-supplier-delivery-cutover.py"
+  },
+  "next_upgrade": "supplier-timesheet-pack-v3-scale-production-certification"
+}

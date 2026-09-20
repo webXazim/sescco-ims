@@ -29,14 +29,28 @@ from apps.core.services.audit import record_audit_event
 from apps.core.services.numbering import allocate_number
 
 from .models import BusinessDocument, DocumentType
-from .selectors import document_page_context, documents_for_company, serialize_document
+from .selectors import document_page_context, document_preview_fragment, documents_for_company, serialize_document
 from .services import finalize_business_document, verify_document_snapshot
 from .services.documents import SUPPLIER_TIMESHEET_ALIAS, SUPPLIER_TIMESHEET_VARIANT
+from .services.type_first_generator import (
+    TYPE_FIRST_SELECTOR_MAX_PAGE_SIZE,
+    eligible_projects,
+    eligible_sources,
+    eligible_suppliers,
+    normalize_type_first_document_type,
+    review_type_first_source,
+    selector_page,
+    type_first_generator_catalog,
+    type_first_meta,
+)
 from .delivery import (
     DELIVERY_SHARE_REISSUED_ACTION, DELIVERY_SHARE_REVOKED_ACTION,
+    SUPPLIER_DELIVERY_ACKNOWLEDGEMENT_SCOPE, SUPPLIER_DELIVERY_CONTRACT_VERSION,
     delivery_share_generation, delivery_share_is_revoked, delivery_share_revoked_event,
     delivery_share_expires_at, delivery_share_is_expired,
     make_delivery_share_token, delivery_share_ttl_seconds,
+    prefer_v3_supplier_timesheets, supplier_delivery_document_label, supplier_delivery_document_role,
+    supplier_delivery_filename, supplier_delivery_is_primary, supplier_delivery_manifest_entry,
 )
 
 
@@ -124,6 +138,219 @@ def _period(value: str):
     except ValueError as exc:
         raise ValidationError({"period": "Period must use YYYY-MM format."}) from exc
     return parsed.replace(day=1)
+
+
+def _type_first_period(request: HttpRequest, body: dict[str, object] | None = None):
+    value = (body or {}).get("period") if body is not None else request.GET.get("period", "")
+    period_start = _period(str(value or ""))
+    if period_start is None:
+        raise ValidationError({"period": "Period is required."})
+    return period_start
+
+
+def _type_first_selector_meta(*, page: int, page_size: int, has_next: bool, query: str, document_type: str) -> dict[str, object]:
+    return {
+        "page": page,
+        "pageSize": page_size,
+        "maxPageSize": TYPE_FIRST_SELECTOR_MAX_PAGE_SIZE,
+        "hasPrevious": page > 1,
+        "hasNext": bool(has_next),
+        "query": query,
+        "documentType": document_type,
+    }
+
+
+@require_http_methods(["GET"])
+@api_company_required
+def document_generator_types_api(request: HttpRequest) -> JsonResponse:
+    """Return the lightweight purpose-first Rental document catalog.
+
+    This endpoint deliberately performs no Payroll/Rental source discovery. Opening the future
+    generator therefore does not scan suppliers, projects, settlements or timesheet rows.
+    """
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        return JsonResponse({
+            "ok": True,
+            "types": type_first_generator_catalog(),
+            "selectorMaxPageSize": TYPE_FIRST_SELECTOR_MAX_PAGE_SIZE,
+            "bulk": {
+                "generationPlanEndpoint": reverse("documents:document-generation-plan-api"),
+                "generationExecuteEndpoint": reverse("documents:document-generation-execute-api"),
+            },
+        })
+    except Exception as exc:
+        return _errors(exc)
+
+
+@require_http_methods(["GET"])
+@api_company_required
+def document_generator_suppliers_api(request: HttpRequest) -> JsonResponse:
+    """Bounded eligible suppliers for one already-selected document purpose and month."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        document_type = normalize_type_first_document_type(request.GET.get("type", ""))
+        period_start = _type_first_period(request)
+        query = request.GET.get("q", "").strip()
+        page, page_size = selector_page(request.GET.get("page"), request.GET.get("page_size"))
+        payload = eligible_suppliers(
+            company=request.company, membership=request.company_membership, document_type=document_type,
+            period_start=period_start, query=query, page=page, page_size=page_size,
+        )
+        return JsonResponse({
+            "ok": True,
+            "suppliers": payload["results"],
+            "period": period_start.strftime("%Y-%m"),
+            "meta": _type_first_selector_meta(page=page, page_size=page_size, has_next=payload["hasNext"], query=query, document_type=document_type),
+        })
+    except Exception as exc:
+        return _errors(exc)
+
+
+@require_http_methods(["GET"])
+@api_company_required
+def document_generator_projects_api(request: HttpRequest) -> JsonResponse:
+    """Bounded projects that are actually eligible for the chosen supplier/type/month."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        document_type = normalize_type_first_document_type(request.GET.get("type", ""))
+        period_start = _type_first_period(request)
+        supplier_code = request.GET.get("supplier_code", "").strip()
+        query = request.GET.get("q", "").strip()
+        page, page_size = selector_page(request.GET.get("page"), request.GET.get("page_size"))
+        payload = eligible_projects(
+            company=request.company, membership=request.company_membership, document_type=document_type,
+            period_start=period_start, supplier_code=supplier_code, query=query, page=page, page_size=page_size,
+        )
+        return JsonResponse({
+            "ok": True,
+            "projects": payload["results"],
+            "supplierCode": supplier_code.upper(),
+            "period": period_start.strftime("%Y-%m"),
+            "meta": _type_first_selector_meta(page=page, page_size=page_size, has_next=payload["hasNext"], query=query, document_type=document_type),
+        })
+    except Exception as exc:
+        return _errors(exc)
+
+
+@require_http_methods(["GET"])
+@api_company_required
+def document_generator_sources_api(request: HttpRequest) -> JsonResponse:
+    """Return only the final source records matching the selected type/supplier/project/month."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        document_type = normalize_type_first_document_type(request.GET.get("type", ""))
+        period_start = _type_first_period(request)
+        supplier_code = request.GET.get("supplier_code", "").strip()
+        project_id = request.GET.get("project_id", "").strip()
+        query = request.GET.get("q", "").strip()
+        page, page_size = selector_page(request.GET.get("page"), request.GET.get("page_size"))
+        payload = eligible_sources(
+            company=request.company, membership=request.company_membership, document_type=document_type,
+            period_start=period_start, supplier_code=supplier_code, project_id=project_id, query=query,
+            page=page, page_size=page_size,
+        )
+        return JsonResponse({
+            "ok": True,
+            "sources": payload["results"],
+            "supplierCode": supplier_code.upper(),
+            "projectId": project_id,
+            "period": period_start.strftime("%Y-%m"),
+            "meta": _type_first_selector_meta(page=page, page_size=page_size, has_next=payload["hasNext"], query=query, document_type=document_type),
+        })
+    except Exception as exc:
+        return _errors(exc)
+
+
+@require_http_methods(["POST"])
+@api_company_required
+def document_generator_review_api(request: HttpRequest) -> JsonResponse:
+    """Review exactly one source after type -> supplier -> project/source selection."""
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        body = _body(request)
+        document_type = normalize_type_first_document_type(body.get("document_type"))
+        period_start = _type_first_period(request, body)
+        review = review_type_first_source(
+            company=request.company, membership=request.company_membership, document_type=document_type,
+            period_start=period_start, supplier_code=str(body.get("supplier_code") or ""),
+            project_id=str(body.get("project_id") or ""), source_id=body.get("source_id"),
+        )
+        return JsonResponse({"ok": True, "review": review, "type": type_first_meta(document_type)})
+    except Exception as exc:
+        return _errors(exc)
+
+
+@require_http_methods(["POST"])
+@api_company_required
+def document_generator_create_api(request: HttpRequest) -> JsonResponse:
+    """Finalize exactly one reviewed supplier-facing document from the type-first path."""
+    stored_attachment = None
+    try:
+        if not _has_document_permission(request.company_membership, "rental", finalize=True):
+            raise PermissionDenied("Your access profile cannot finalize Rental Manpower documents.")
+        body = _body(request)
+        document_type = normalize_type_first_document_type(body.get("document_type"))
+        period_start = _type_first_period(request, body)
+        supplier_code = str(body.get("supplier_code") or "").strip().upper()
+        project_id = str(body.get("project_id") or "").strip()
+        source_id = body.get("source_id")
+        # Re-resolve the exact source at commit time. This prevents a stale/tampered source id
+        # from escaping the selected supplier, project, period or project-access scope.
+        review = review_type_first_source(
+            company=request.company, membership=request.company_membership, document_type=document_type,
+            period_start=period_start, supplier_code=supplier_code, project_id=project_id, source_id=source_id,
+        )
+
+        invoice = None
+        if document_type == DocumentType.SUPPLIER_INVOICE:
+            raw_date = str(body.get("issue_date") or "")
+            try:
+                issue_date = date.fromisoformat(raw_date)
+            except ValueError as exc:
+                raise ValidationError({"issue_date": "Enter a valid issue date."}) from exc
+            stored_attachment = _store_supplier_invoice_attachment(request)
+            if stored_attachment is None:
+                raise ValidationError({"invoice_file": "Supplier invoice file is required."})
+            invoice = {
+                "invoice_number": body.get("invoice_number"),
+                "issue_date": issue_date,
+                "subtotal": body.get("subtotal"),
+                "vat_amount": body.get("vat_amount", "0"),
+                "total": body.get("total"),
+                "attachment": stored_attachment,
+            }
+
+        document = finalize_business_document(
+            actor_membership=request.company_membership,
+            document_type=document_type,
+            source_id=source_id,
+            invoice=invoice,
+            supplier_code=supplier_code,
+            request=request,
+            allow_supplier_timesheet_pack=document_type == DocumentType.SUPPLIER_TIMESHEET_PACK,
+        )
+        if stored_attachment:
+            actual_attachment = (((document.snapshot or {}).get("invoice") or {}).get("attachment") or {})
+            if actual_attachment.get("storage_key") != stored_attachment.get("storage_key"):
+                default_storage.delete(stored_attachment["storage_key"])
+        return JsonResponse({
+            "ok": True,
+            "document": serialize_document(document, include_snapshot=True),
+            "review": review,
+        }, status=201)
+    except Exception as exc:
+        try:
+            if stored_attachment and default_storage.exists(stored_attachment.get("storage_key", "")):
+                default_storage.delete(stored_attachment["storage_key"])
+        except Exception:
+            pass
+        return _errors(exc)
 
 
 @require_http_methods(["GET", "POST"])
@@ -989,12 +1216,33 @@ def _record_delivery_dispatched(*, request: HttpRequest, pack_event: AuditEvent,
 
 
 def _supplier_delivery_document(document: BusinessDocument) -> bool:
-    snapshot = document.snapshot or {}
-    variant = str(snapshot.get("document_variant") or "").strip()
-    return document.workspace == "rental" and (
-        (document.document_type == DocumentType.RENTAL_TIMESHEET and variant == SUPPLIER_TIMESHEET_VARIANT)
-        or document.document_type in {DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_PAYMENT_RECEIPT}
-    )
+    return document.workspace == "rental" and bool(supplier_delivery_document_role(document))
+
+
+def _supplier_delivery_document_payload(document: BusinessDocument, *, recommended: bool = False) -> dict[str, object]:
+    payload = serialize_document(document)
+    payload.update({
+        "deliveryRole": supplier_delivery_document_role(document),
+        "deliveryLabel": supplier_delivery_document_label(document),
+        "deliveryFileName": supplier_delivery_filename(document),
+        "isPrimaryDelivery": supplier_delivery_is_primary(document),
+        "recommended": bool(recommended),
+    })
+    return payload
+
+
+def _supplier_delivery_recommendations(rows: list[BusinessDocument]) -> set[str]:
+    """Prefer one authoritative timesheet document per locked source for supplier issue.
+
+    v3 Supplier Timesheet Packs are recommended. A legacy Supplier Timesheet Statement is
+    recommended only where the source does not yet have a v3 pack. Settlement/payment documents
+    remain opt-in because they belong to later commercial steps.
+    """
+    return {
+        str(row.id)
+        for row in prefer_v3_supplier_timesheets(rows)
+        if supplier_delivery_document_role(row) in {"supplier_timesheet_pack", "legacy_supplier_timesheet"}
+    }
 
 
 def _document_supplier_code(document: BusinessDocument) -> str:
@@ -1069,6 +1317,11 @@ def _serialize_delivery_pack(event: AuditEvent, *, request: HttpRequest | None =
         "note": metadata.get("note", ""),
         "documentIds": metadata.get("document_ids", []),
         "documentNumbers": metadata.get("document_numbers", []),
+        "documents": metadata.get("document_manifest", []),
+        "primaryDocumentIds": metadata.get("primary_document_ids", []),
+        "primaryTimesheetNumbers": metadata.get("primary_timesheet_numbers", []),
+        "deliveryContractVersion": metadata.get("delivery_contract_version", "1.0"),
+        "acknowledgementScope": metadata.get("acknowledgement_scope", "receipt_only"),
         "issuedAt": metadata.get("issued_at", event.created_at.isoformat()),
         "issuedBy": event.actor_display_name or event.actor_username or "System",
         "status": status,
@@ -1113,7 +1366,9 @@ def document_delivery_options_api(request: HttpRequest, document_id) -> JsonResp
             company=request.company, membership=request.company_membership, workspace="rental",
             period_start=document.period_start, entity_reference=supplier_code,
         ).order_by("document_type", "document_number")
-        compatible_rows = [row for row in compatible[:120] if _supplier_delivery_document(row)]
+        compatible_rows = prefer_v3_supplier_timesheets([row for row in compatible[:120] if _supplier_delivery_document(row)])
+        recommended_ids = _supplier_delivery_recommendations(compatible_rows)
+        default_channel = "email" if (supplier and supplier.email) else ("whatsapp" if (supplier and supplier.phone) else "portal")
         history = _delivery_history(company=request.company, document_id=document.id)
         pack_ids = []
         for item in history:
@@ -1130,7 +1385,14 @@ def document_delivery_options_api(request: HttpRequest, document_id) -> JsonResp
             "ok": True,
             "supplier": {"code": supplier_code, "name": (supplier.name if supplier else document.entity_name)},
             "recipient": recipient,
-            "documents": [serialize_document(row) for row in compatible_rows],
+            "recipientSource": "supplier_master" if supplier else "document_snapshot",
+            "defaultChannel": default_channel,
+            "deliveryContractVersion": SUPPLIER_DELIVERY_CONTRACT_VERSION,
+            "documents": [
+                _supplier_delivery_document_payload(row, recommended=str(row.id) in recommended_ids)
+                for row in compatible_rows
+            ],
+            "recommendedDocumentIds": sorted(recommended_ids),
             "history": history,
             "packs": [_serialize_delivery_pack(row, request=request) for row in packs],
         })
@@ -1146,6 +1408,8 @@ def _issue_delivery_pack(*, request: HttpRequest, rows: list[BusinessDocument], 
         raise ValidationError({"document_ids": "A supplier issue pack is limited to 25 documents."})
     if any(not _supplier_delivery_document(row) for row in rows):
         raise ValidationError("Issue packs may contain only supplier-facing finalized documents.")
+    if len(prefer_v3_supplier_timesheets(rows)) != len(rows):
+        raise ValidationError("Do not issue a legacy Supplier Timesheet Statement together with its v3 Supplier Monthly Timesheet Pack.")
     if any(not verify_document_snapshot(row) for row in rows):
         raise ValidationError("One or more selected documents failed integrity verification.")
     supplier_codes = {_document_supplier_code(row) for row in rows}
@@ -1172,6 +1436,9 @@ def _issue_delivery_pack(*, request: HttpRequest, rows: list[BusinessDocument], 
     if channel == "whatsapp" and not recipient_phone:
         raise ValidationError({"recipient_phone": f"Recipient phone is required for {supplier_name or supplier_code}."})
     issued_at = timezone.now().isoformat()
+    document_manifest = [supplier_delivery_manifest_entry(row) for row in rows]
+    primary_document_ids = [row["id"] for row in document_manifest if row.get("primary")]
+    primary_timesheet_numbers = [row["number"] for row in document_manifest if row.get("primary")]
     pack_number = allocate_number(company=request.company, key="document.delivery_pack", prefix="DIP-", padding=7)
     pack_event = record_audit_event(
         company=request.company, area=AuditArea.DOCUMENTS, action="documents.delivery_pack_issued",
@@ -1181,7 +1448,11 @@ def _issue_delivery_pack(*, request: HttpRequest, rows: list[BusinessDocument], 
             "supplier_code": supplier_code, "supplier_name": supplier_name,
             "recipient_name": recipient_name, "recipient_email": recipient_email, "recipient_phone": recipient_phone,
             "channel": channel, "reference": reference, "note": note, "issued_at": issued_at,
+            "delivery_contract_version": SUPPLIER_DELIVERY_CONTRACT_VERSION,
+            "acknowledgement_scope": SUPPLIER_DELIVERY_ACKNOWLEDGEMENT_SCOPE,
             "document_ids": [str(row.id) for row in rows], "document_numbers": [row.document_number for row in rows],
+            "document_manifest": document_manifest,
+            "primary_document_ids": primary_document_ids, "primary_timesheet_numbers": primary_timesheet_numbers,
             "periods": sorted({row.period_start.strftime("%Y-%m") for row in rows if row.period_start}),
         },
     )
@@ -1195,6 +1466,10 @@ def _issue_delivery_pack(*, request: HttpRequest, rows: list[BusinessDocument], 
                 "supplier_code": supplier_code, "recipient_name": recipient_name,
                 "recipient_email": recipient_email, "recipient_phone": recipient_phone,
                 "channel": channel, "reference": reference, "note": note, "issued_at": issued_at,
+                "delivery_contract_version": SUPPLIER_DELIVERY_CONTRACT_VERSION,
+                "acknowledgement_scope": SUPPLIER_DELIVERY_ACKNOWLEDGEMENT_SCOPE,
+                "delivery_role": supplier_delivery_document_role(row),
+                "delivery_file_name": supplier_delivery_filename(row),
             },
         )
     return pack_event
@@ -1204,7 +1479,7 @@ def _delivery_center_document_queryset(*, request: HttpRequest, period_start, qu
     qs = documents_for_company(
         company=request.company, membership=request.company_membership, workspace="rental", period_start=period_start,
     ).filter(
-        Q(document_type__in=[DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_PAYMENT_RECEIPT])
+        Q(document_type__in=[DocumentType.SUPPLIER_TIMESHEET_PACK, DocumentType.SUPPLIER_SETTLEMENT, DocumentType.SUPPLIER_PAYMENT_RECEIPT])
         | Q(document_type=DocumentType.RENTAL_TIMESHEET, snapshot__document_variant=SUPPLIER_TIMESHEET_VARIANT)
     )
     q = str(query or "").strip()[:120]
@@ -1230,7 +1505,8 @@ def document_delivery_center_api(request: HttpRequest) -> JsonResponse:
             request=request, period_start=period_start, query=request.GET.get("q", ""),
         )[:501])
         truncated = len(rows) > 500
-        rows = rows[:500]
+        rows = prefer_v3_supplier_timesheets(rows[:500])
+        recommended_ids = _supplier_delivery_recommendations(rows)
         supplier_codes = sorted({_document_supplier_code(row) for row in rows if _document_supplier_code(row)})
         from apps.rental_manpower.models import ManpowerSupplier
         suppliers = {
@@ -1266,7 +1542,7 @@ def document_delivery_center_api(request: HttpRequest) -> JsonResponse:
                 "documents": [],
             })
             delivery = latest_delivery.get(str(row.id))
-            item = serialize_document(row)
+            item = _supplier_delivery_document_payload(row, recommended=str(row.id) in recommended_ids)
             item["delivery"] = {
                 "status": (delivery or {}).get("action", "Not issued"),
                 "packNumber": (delivery or {}).get("packNumber", ""),
@@ -1283,7 +1559,11 @@ def document_delivery_center_api(request: HttpRequest) -> JsonResponse:
             "period": period_key,
             "groups": list(groups.values()),
             "recentPacks": [_serialize_delivery_pack(event, request=request) for event in recent],
-            "meta": {"documents": len(rows), "suppliers": len(groups), "truncated": truncated, "limit": 500},
+            "deliveryContractVersion": SUPPLIER_DELIVERY_CONTRACT_VERSION,
+            "meta": {
+                "documents": len(rows), "suppliers": len(groups), "recommended": len(recommended_ids),
+                "truncated": truncated, "limit": 500,
+            },
         })
     except Exception as exc:
         return _errors(exc)
@@ -1509,21 +1789,43 @@ def _dispatch_delivery_pack_email(*, request: HttpRequest, pack_event: AuditEven
         pack_number = pack_event.object_label
         reference = str(metadata.get("reference") or "").strip()
         document_numbers = [str(value) for value in metadata.get("document_numbers", [])]
-        subject = f"SESCCO documents · {pack_number} · {supplier_name}"
+        manifest = metadata.get("document_manifest") or []
+        primary_numbers = [str(value) for value in metadata.get("primary_timesheet_numbers", [])]
+        periods = [str(value) for value in metadata.get("periods", []) if value]
+        period_label = ", ".join(periods)
+        if len(manifest) == 1 and primary_numbers:
+            subject = f"SESCCO Supplier Timesheet · {period_label or pack_number} · {supplier_name}"
+        else:
+            subject = f"SESCCO supplier documents · {period_label or pack_number} · {supplier_name}"
+        document_lines = [
+            f"- {row.get('label') or row.get('number')}: {row.get('file_name') or row.get('number')}"
+            for row in manifest if isinstance(row, dict)
+        ]
+        if not document_lines and document_numbers:
+            document_lines = [f"- {value}" for value in document_numbers]
         lines = [
             supplier_name,
-            pack_number,
-            f"Documents: {', '.join(document_numbers)}" if document_numbers else "",
+            f"Issue pack: {pack_number}",
+            f"Service period: {period_label}" if period_label else "",
             f"Reference: {reference}" if reference else "",
             "",
-            f"Open documents: {share_url}",
+            "Documents:",
+            *document_lines,
+            "",
+            f"Open secure documents: {share_url}",
+            "Acknowledgement confirms receipt only; it does not change timesheet or settlement approval authority.",
         ]
         body = "\n".join(line for line in lines if line is not None)
+        html_docs = "".join(
+            f"<li>{escape(str(row.get('label') or row.get('number') or 'Document'))}<br><small>{escape(str(row.get('file_name') or row.get('number') or ''))}</small></li>"
+            for row in manifest if isinstance(row, dict)
+        )
         html = (
             f"<p><strong>{escape(supplier_name)}</strong></p>"
-            f"<p>{escape(pack_number)}</p>"
-            f"<p>{escape('Documents: ' + ', '.join(document_numbers) if document_numbers else '')}</p>"
-            f"<p><a href=\"{escape(share_url)}\">Open documents</a></p>"
+            f"<p>{escape(pack_number)}{(' · ' + escape(period_label)) if period_label else ''}</p>"
+            f"<ul>{html_docs}</ul>"
+            f"<p><a href=\"{escape(share_url)}\">Open secure documents</a></p>"
+            f"<p><small>Acknowledgement confirms receipt only; it does not change timesheet or settlement approval authority.</small></p>"
         )
         message = EmailMultiAlternatives(subject=subject, body=body, from_email=settings.DEFAULT_FROM_EMAIL, to=[recipient_email])
         message.attach_alternative(html, "text/html")
@@ -1800,7 +2102,12 @@ def document_delivery_mark_delivered_api(request: HttpRequest, pack_event_id) ->
 @api_company_required
 def document_detail_api(request: HttpRequest, document_id) -> JsonResponse:
     try:
-        row = documents_for_company(company=request.company, membership=request.company_membership).get(pk=document_id)
+        summary_only = request.GET.get("view", "").strip().lower() == "summary"
+        row_qs = documents_for_company(company=request.company, membership=request.company_membership)
+        # Summary previews deliberately defer the immutable snapshot. Full detail remains
+        # available for existing API consumers, while print/share routes independently verify
+        # the snapshot before rendering authoritative output.
+        row = (row_qs.defer("snapshot") if summary_only else row_qs).get(pk=document_id)
         history = _delivery_history(company=request.company, document_id=row.id) if row.workspace == "rental" else []
         delivery = history[0] if history else None
         if delivery:
@@ -1809,8 +2116,27 @@ def document_detail_api(request: HttpRequest, document_id) -> JsonResponse:
                 "issuedAt": delivery["issuedAt"], "deliveredAt": delivery["createdAt"] if delivery["action"] == "Delivered" else "",
                 "recipient": delivery["recipientName"], "channel": delivery["channel"],
             }
-        payload = serialize_document(row, include_snapshot=True, delivery=delivery)
+        if summary_only:
+            preview = document_preview_fragment(company=request.company, membership=request.company_membership, document_id=row.id)
+            invoice = preview.get("invoice") or {}
+            attachment = (invoice.get("attachment") or {}) if isinstance(invoice, dict) else {}
+            if isinstance(invoice, dict) and "attachment" in invoice:
+                preview["invoice"] = {key: value for key, value in invoice.items() if key != "attachment"}
+            payload = serialize_document(
+                row,
+                include_snapshot=False,
+                delivery=delivery,
+                verify_integrity=False,
+                document_variant=str(preview.get("documentVariant") or ""),
+                attachment=attachment,
+            )
+            payload["preview"] = preview
+            payload["previewMode"] = "summary"
+        else:
+            payload = serialize_document(row, include_snapshot=True, delivery=delivery)
+            payload["previewMode"] = "full"
         payload["deliveryHistory"] = history
         return JsonResponse({"ok": True, "document": payload})
     except Exception as exc:
         return _errors(exc)
+

@@ -95,6 +95,12 @@ fi
 
 printf 'Checking Payroll browser/API URL contract...\n'
 python3 scripts/verify_payroll_frontend_contract.py
+python3 scripts/verify-payroll-document-v3-new-documents-ux.py
+python3 scripts/verify-payroll-document-v3-documents-workspace.py
+python3 scripts/verify-payroll-document-v3-financial-reconciliation.py
+python3 scripts/verify-payroll-document-v3-supplier-delivery-cutover.py
+python3 scripts/verify-payroll-document-v3-scale-production-certification.py
+python3 scripts/verify-payroll-document-v3-production-freeze.py
 python3 scripts/verify-payroll-directory-runtime.py
 python3 scripts/verify-payroll-action-parity.py
 python3 scripts/verify-payroll-data-authority.py

@@ -407,6 +407,15 @@ def _assert_settlement_integrity(settlement: SupplierSettlement) -> None:
         raise ValidationError("Settlement snapshot integrity check failed. Recalculate before continuing.")
 
 
+def assert_supplier_settlement_integrity(settlement: SupplierSettlement) -> None:
+    """Public read-side guard for immutable documents and downstream finance evidence.
+
+    This does not change settlement calculations. It only reuses the settlement authority's
+    existing source/snapshot fingerprints before another immutable artefact is finalized.
+    """
+    _assert_settlement_integrity(settlement)
+
+
 def _delete_snapshot(settlement: SupplierSettlement) -> None:
     SupplierSettlementAdjustmentLine.objects.filter(company=settlement.company, settlement_line__settlement=settlement).delete()
     SupplierSettlementRateLine.objects.filter(company=settlement.company, settlement_line__settlement=settlement).delete()
