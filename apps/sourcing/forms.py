@@ -24,46 +24,67 @@ class SourcingVendorForm(forms.ModelForm):
             "code",
             "name",
             "display_name",
-            "primary_contact_name",
-            "phone",
-            "mobile",
-            "email",
-            "city",
-            "region",
             "cr_number",
             "vat_number",
+            "company_phone",
+            "company_email",
             "website",
+            "primary_contact_name",
+            "mobile",
+            "email",
+            "address",
+            "street_number",
+            "district",
+            "city",
+            "region",
+            "postal_code",
             "notes",
         )
         widgets = {
             "code": forms.TextInput(attrs={"placeholder": "VND-XXXXXX", "autocomplete": "off"}),
             "name": forms.TextInput(attrs={"placeholder": "Legal / company name", "autocomplete": "organization"}),
             "display_name": forms.TextInput(attrs={"placeholder": "Name shown in Sourcing Directory"}),
-            "primary_contact_name": forms.TextInput(attrs={"placeholder": "Primary contact person", "autocomplete": "name"}),
-            "phone": forms.TextInput(attrs={"placeholder": "+966 ...", "autocomplete": "tel"}),
-            "mobile": forms.TextInput(attrs={"placeholder": "+966 ...", "autocomplete": "tel"}),
-            "email": forms.EmailInput(attrs={"placeholder": "vendor@example.com", "autocomplete": "email"}),
-            "city": forms.TextInput(attrs={"placeholder": "City"}),
-            "region": forms.TextInput(attrs={"placeholder": "Region"}),
             "cr_number": forms.TextInput(attrs={"placeholder": "Commercial Registration"}),
             "vat_number": forms.TextInput(attrs={"placeholder": "VAT number"}),
+            "company_phone": forms.TextInput(attrs={"placeholder": "+966 ...", "autocomplete": "tel"}),
+            "company_email": forms.EmailInput(attrs={"placeholder": "info@vendor.com", "autocomplete": "email"}),
             "website": forms.URLInput(attrs={"placeholder": "https://"}),
+            "primary_contact_name": forms.TextInput(attrs={"placeholder": "Primary contact person", "autocomplete": "name"}),
+            "mobile": forms.TextInput(attrs={"placeholder": "+966 ...", "autocomplete": "tel"}),
+            "email": forms.EmailInput(attrs={"placeholder": "contact@vendor.com", "autocomplete": "email"}),
+            "address": forms.TextInput(attrs={"placeholder": "Street / building / address line", "autocomplete": "street-address"}),
+            "street_number": forms.TextInput(attrs={"placeholder": "Street number", "autocomplete": "address-line2"}),
+            "district": forms.TextInput(attrs={"placeholder": "District"}),
+            "city": forms.TextInput(attrs={"placeholder": "City", "autocomplete": "address-level2"}),
+            "region": forms.TextInput(attrs={"placeholder": "Region / Province", "autocomplete": "address-level1"}),
+            "postal_code": forms.TextInput(attrs={"placeholder": "Postal code", "autocomplete": "postal-code"}),
             "notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Reference-only sourcing notes"}),
         }
         labels = {
             "name": "Company / Vendor Name",
             "display_name": "Display Name",
-            "primary_contact_name": "Primary Contact",
             "cr_number": "CR Number",
             "vat_number": "VAT Number",
+            "company_phone": "Company Official Number",
+            "company_email": "Company Email",
+            "primary_contact_name": "Primary Contact",
+            "mobile": "Mobile Number",
+            "email": "Email Address",
+            "address": "Address",
+            "street_number": "Street Number",
+            "postal_code": "Postal Code",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "sourcing-input")
+        for required_name in ("name", "display_name", "mobile", "email", "cr_number", "vat_number", "address"):
+            self.fields[required_name].required = True
         self.fields["code"].help_text = "Reference code unique inside this company."
-        self.fields["display_name"].help_text = "Leave blank to use the company/vendor name."
+        self.fields["display_name"].help_text = "Required name shown throughout the Sourcing Directory."
+        self.fields["company_phone"].help_text = "Vendor company switchboard or official business number."
+        self.fields["company_email"].help_text = "Vendor company general or official email address."
 
 
 class SourcingVendorContactForm(forms.ModelForm):

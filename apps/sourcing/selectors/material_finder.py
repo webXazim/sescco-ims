@@ -144,7 +144,7 @@ def material_finder_page(*, company, params) -> MaterialFinderResult:
             | Q(vendor__display_name__icontains=vendor)
         )
     if location:
-        qs = qs.filter(Q(vendor__city__icontains=location) | Q(vendor__region__icontains=location))
+        qs = qs.filter(Q(vendor__address__icontains=location) | Q(vendor__district__icontains=location) | Q(vendor__city__icontains=location) | Q(vendor__region__icontains=location) | Q(vendor__postal_code__icontains=location))
     if rate_min is not None:
         qs = qs.filter(rate__gte=rate_min)
     if rate_max is not None:

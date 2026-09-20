@@ -12,6 +12,8 @@ SETTLEMENTS = (ROOT / "apps/rental_manpower/services/settlements.py").read_text(
 PRINT = (ROOT / "templates/documents/print.html").read_text(encoding="utf-8")
 TYPE_FIRST = (ROOT / "apps/documents/services/type_first_generator.py").read_text(encoding="utf-8")
 TESTS = (ROOT / "apps/documents/tests/test_v3_financial_document_reconciliation.py").read_text(encoding="utf-8")
+RENTAL_TESTS = (ROOT / "apps/rental_manpower/tests/test_settlements.py").read_text(encoding="utf-8")
+SCALE_SEED = (ROOT / "apps/core/management/payroll_seed_scale.py").read_text(encoding="utf-8")
 
 
 def fail(message: str) -> None:
@@ -62,10 +64,28 @@ for needle, message in (
     ("PAYABLE_SETTLEMENT_STATUSES", "Approved-or-later settlement documents are not using the frozen-authority branch"),
     ("settlement_snapshot_fingerprint(settlement)", "Approved settlement documents no longer verify the frozen snapshot"),
     ("_assert_settlement_integrity(settlement)", "Pre-approval settlement workflow no longer retains strict live-source integrity"),
+    ("_normalize_legacy_scale_seed_integrity(settlement)", "Legacy scale-seed financial history no longer has its narrowly-scoped compatibility normalization"),
 ):
     require(public_guard_source, needle, message)
 if "settlement_source_fingerprint(" in public_guard_source:
     fail("Approved document read-side guard recomputes mutable live source fingerprint")
+
+for needle, message in (
+    ('_SCALE_SEED_SETTLEMENT_PREFIX = "DEMO-SCALE-SET-"', "Scale-seed compatibility is not restricted to the synthetic settlement namespace"),
+    ('_SCALE_SEED_REVIEW_MARKER = "DEMO SCALE SEED"', "Scale-seed compatibility lost its synthetic reviewer marker"),
+    ('settlement.source_fingerprint == expected_source', "Scale-seed compatibility no longer requires the exact legacy source placeholder"),
+    ('settlement.snapshot_fingerprint == expected_snapshot', "Scale-seed compatibility no longer requires the exact legacy snapshot placeholder"),
+    ('_assert_scale_seed_snapshot_reconciles(', "Scale-seed placeholders can be canonicalized without reconciling frozen rows/source"),
+    ('source_workers != seen_workers', "Scale-seed source/worker scope reconciliation is missing"),
+):
+    require(SETTLEMENTS, needle, message)
+
+for needle, message in (
+    ('source_fingerprint=_stable_sha256("rental", project_id, supplier_id, period_start)', "Scale seed no longer creates synthetic history with the legacy source placeholder"),
+    ('snapshot_fingerprint=_stable_sha256("rental-snapshot", project_id, supplier_id, period_start, net)', "Scale seed no longer creates synthetic history with the legacy snapshot placeholder"),
+    ('settlement.snapshot_fingerprint = _stable_sha256(', "Scale seed reconciliation no longer resets the synthetic snapshot placeholder when benchmark history expands"),
+):
+    require(SCALE_SEED, needle, message)
 
 for needle, message in (
     ("Received from supplier", "Supplier Invoice Received direction is ambiguous in print output"),
@@ -121,4 +141,12 @@ required_tests = (
 for method in required_tests:
     require(TESTS, f"def {method}", f"Regression evidence missing: {method}")
 
-print("Verified Rental financial document reconciliation without changing settlement/payment authority.")
+required_rental_tests = (
+    "test_legacy_scale_seed_placeholder_integrity_is_canonicalized_once_for_financial_documents",
+    "test_legacy_scale_seed_normalization_fails_closed_when_frozen_line_totals_are_tampered",
+    "test_non_seed_approved_settlement_with_snapshot_drift_still_fails_closed",
+)
+for method in required_rental_tests:
+    require(RENTAL_TESTS, f"def {method}", f"Scale-seed settlement integrity regression evidence missing: {method}")
+
+print("Verified Rental financial document reconciliation, including legacy scale-seed integrity normalization, without changing settlement/payment formulas.")

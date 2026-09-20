@@ -6,7 +6,7 @@
     "archive_sha256": "4fba174a74f472ef419b62a05082ceb12625a439d925c6006e3f1582d388db88"
   },
   "schema_change": true,
-  "schema_change_scope": "Adds sourcing.SourcingVendorContact only; existing SourcingVendor identity is preserved.",
+  "schema_change_scope": "Adds sourcing.SourcingVendorContact and extends SourcingVendor with separated company official contact fields plus structured primary-contact address fields; legacy vendor phone data is preserved as company_phone.",
   "payroll_formula_change": false,
   "inventory_quantity_formula_change": false,
   "operational_integration": false,
@@ -63,5 +63,36 @@
   "migration": "apps/sourcing/migrations/0002_vendor_directory_master.py",
   "runtime_test_label": "apps.sourcing.tests.test_vendor_master",
   "release_gate": "scripts/verify-sourcing-vendor-master.py",
-  "operator_guide": "docs/SOURCING_VENDOR_MASTER.md"
+  "operator_guide": "docs/SOURCING_VENDOR_MASTER.md",
+  "profile_migration": "apps/sourcing/migrations/0009_vendor_profile_structure.py",
+  "required_vendor_fields": [
+    "name",
+    "display_name",
+    "mobile",
+    "email",
+    "address",
+    "cr_number",
+    "vat_number"
+  ],
+  "vendor_identity_fields": [
+    "code",
+    "name",
+    "display_name",
+    "cr_number",
+    "vat_number",
+    "company_phone",
+    "company_email",
+    "website"
+  ],
+  "primary_contact_fields": [
+    "primary_contact_name",
+    "mobile",
+    "email",
+    "address",
+    "street_number",
+    "district",
+    "city",
+    "region",
+    "postal_code"
+  ]
 }

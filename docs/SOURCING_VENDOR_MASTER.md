@@ -10,13 +10,15 @@ All Vendor pages require `sourcing.vendors.view`. Create, edit, contact maintena
 
 ## Vendor directory
 
-`/app/sourcing/vendors/` uses server-side company-scoped search, status filters, deterministic sorting and bounded pagination. The default is 50 rows with 25/50/100 choices. Search covers Vendor code/name/display name, primary contact, phone/mobile/email, city/region, CR/VAT and active contact-person identity fields. Trashed records are excluded from normal filters and have a dedicated Trash view.
+`/app/sourcing/vendors/` uses server-side company-scoped search, status filters, deterministic sorting and bounded pagination. The default is 50 rows with 25/50/100 choices. Search covers Vendor code/name/display name, company official phone/email, primary contact name/mobile/email, full address fields (address, street number, district, city, region, postal code), CR/VAT and active contact-person identity fields. Trashed records are excluded from normal filters and have a dedicated Trash view.
 
 The browser receives only the requested page; it does not preload the Vendor register. Optional table columns are hidden locally in the browser and do not change backend authority.
 
 ## Vendor profile and contacts
 
-The Vendor master stores reference identity, primary contact summary, location and commercial identifiers. `SourcingVendorContact` stores additional contact persons inside the same company boundary. A Vendor can have one active primary contact person; adding or editing a primary contact demotes the previous primary contact. Contacts are deactivated rather than destructively erased from normal application workflows.
+The Vendor master is now deliberately split into three UI sections: **Vendor Identity**, **Primary Contact**, and **Remarks**. Vendor Identity owns the legal/display name, CR/VAT, company official number, company email and website. Primary Contact owns the named person, mobile/email and structured address/location fields (address, street number, district, city, region and postal code). The old Vendor `phone` column is migrated in place to `company_phone`, preserving existing data while removing it from the Primary Contact UI. `SourcingVendorContact` stores additional contact persons inside the same company boundary. A Vendor can have one active primary contact person; adding or editing a primary contact demotes the previous primary contact. Contacts are deactivated rather than destructively erased from normal application workflows.
+
+New and edited Vendor records require Vendor name, display name, primary-contact mobile, primary-contact email, address, CR number and VAT number. Import uses the same required business fields, and Vendor export/search includes all newly separated identity and address data. Historical incomplete records remain deployable and lifecycle-safe; they are brought to the new completeness standard when edited.
 
 ## Lifecycle
 
@@ -39,3 +41,5 @@ Run `python3 scripts/verify-sourcing-vendor-master.py`, `python3 scripts/verify-
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.
+
+> Vendor profile structure upgraded in SESCCO MS 1.0.117 with migration `0009_vendor_profile_structure.py`; the change is Sourcing-only and preserves the reference-only authority boundary.

@@ -14,7 +14,7 @@
 
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar" method="get" action="{% url 'sourcing:vendor_list' %}">
-    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, contact, phone, email, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
+    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, contact, company details, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
     <div class="sourcing-toolbar__actions">
       <select class="sourcing-select" name="status" onchange="this.form.submit()" aria-label="Vendor status">
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>
@@ -31,8 +31,8 @@
         <div class="sourcing-popover__panel">
           <strong>Visible columns</strong>
           <label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label>
-          <label><input type="checkbox" data-column-toggle="email" checked> Email</label>
-          <label><input type="checkbox" data-column-toggle="phone" checked> Phone</label>
+          <label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label>
+          <label><input type="checkbox" data-column-toggle="mobile" checked> Mobile</label>
           <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
           <label><input type="checkbox" data-column-toggle="items" checked> Items</label>
           <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
@@ -54,8 +54,8 @@
       <thead><tr>
         <th>Vendor</th>
         <th data-column="contact">Primary Contact</th>
-        <th data-column="email">Email</th>
-        <th data-column="phone">Phone</th>
+        <th data-column="email">Contact Email</th>
+        <th data-column="mobile">Mobile</th>
         <th data-column="location">Location</th>
         <th data-column="items" class="num">Items</th>
         <th>Status</th>
@@ -68,8 +68,8 @@
           <td class="sourcing-vendor-cell"><a href="{% url 'sourcing:vendor_detail' vendor.id %}"><strong>{{ vendor.display_name|default:vendor.name }}</strong><small>{{ vendor.code }}{% if vendor.cr_number %} · CR {{ vendor.cr_number }}{% endif %}</small></a></td>
           <td data-column="contact">{{ vendor.primary_contact_name|default:'—' }}{% if vendor.contact_count %}<small class="cell-note">{{ vendor.contact_count }} saved contact{{ vendor.contact_count|pluralize }}</small>{% endif %}</td>
           <td data-column="email">{% if vendor.email %}<a class="plain-link" href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</td>
-          <td data-column="phone">{{ vendor.phone|default:vendor.mobile|default:'—' }}</td>
-          <td data-column="location">{% if vendor.city or vendor.region %}{{ vendor.city }}{% if vendor.city and vendor.region %}, {% endif %}{{ vendor.region }}{% else %}—{% endif %}</td>
+          <td data-column="mobile">{{ vendor.mobile|default:'—' }}</td>
+          <td data-column="location">{% if vendor.district or vendor.city or vendor.region %}{% if vendor.district %}{{ vendor.district }}{% endif %}{% if vendor.district and vendor.city %}, {% endif %}{% if vendor.city %}{{ vendor.city }}{% endif %}{% if vendor.region and vendor.city %}, {% elif vendor.region and vendor.district %}, {% endif %}{% if vendor.region %}{{ vendor.region }}{% endif %}{% if vendor.address %}<small class="cell-note">{{ vendor.address }}{% if vendor.postal_code %} · {{ vendor.postal_code }}{% endif %}</small>{% endif %}{% elif vendor.address %}{{ vendor.address }}{% if vendor.postal_code %}<small class="cell-note">{{ vendor.postal_code }}</small>{% endif %}{% else %}—{% endif %}</td>
           <td data-column="items" class="num">{{ vendor.supply_item_count }}</td>
           <td>
             {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>

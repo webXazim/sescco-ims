@@ -13,7 +13,7 @@ from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditArea, AuditEvent, Company
-from apps.sourcing.exchange import import_sourcing_rows
+from apps.sourcing.exchange import HEADERS, import_sourcing_rows
 from apps.sourcing.models import (
     SourcingMaterial,
     SourcingManpowerSupplier,
@@ -46,7 +46,10 @@ class SourcingDataExchangeTests(TestCase):
 
     def test_vendor_import_dry_run_rolls_back_and_commit_is_audited(self):
         self.client.force_login(self.owner_user)
-        body = "code,name,city,status\nVND-100,Test Vendor,Dammam,active\n"
+        body = (
+            "code,name,display_name,mobile,email,address,city,region,cr_number,vat_number,status\n"
+            "VND-100,Test Vendor,Test Vendor,+966500000100,test.vendor@example.com,King Fahd Road,Dammam,Eastern Province,CR-100,VAT-100,active\n"
+        )
         response = self.client.post(reverse("sourcing:data_exchange"), {"dataset": "vendors", "dry_run": "on", "file": self._upload(body)})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(SourcingVendor.objects.filter(company=self.company, code="VND-100").exists())
@@ -109,4 +112,5 @@ class SourcingDataExchangeTests(TestCase):
         sheet = workbook.active
         values = list(sheet.iter_rows(values_only=True))
         workbook.close()
-        self.assertTrue(str(values[1][13]).startswith("'="))
+        notes_index = HEADERS["vendors"].index("notes")
+        self.assertTrue(str(values[1][notes_index]).startswith("'="))

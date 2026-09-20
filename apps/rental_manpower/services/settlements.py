@@ -396,6 +396,160 @@ def settlement_snapshot_fingerprint(settlement: SupplierSettlement) -> str:
     return _canonical_hash(_snapshot_payload(settlement))
 
 
+_SCALE_SEED_SETTLEMENT_PREFIX = "DEMO-SCALE-SET-"
+_SCALE_SEED_PROJECT_PREFIX = "DEMO-SCALE-P-"
+_SCALE_SEED_SUPPLIER_PREFIX = "DEMO-SCALE-SUP-"
+_SCALE_SEED_REVIEW_MARKER = "DEMO SCALE SEED"
+
+
+def _legacy_scale_seed_hash(*parts: object) -> str:
+    raw = "|".join(str(part) for part in parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _is_legacy_scale_seed_integrity_pair(settlement: SupplierSettlement) -> bool:
+    """Return True only for the old synthetic scale-seed placeholder fingerprints.
+
+    Scale benchmark settlements predate the canonical settlement fingerprint contract.
+    They were intentionally inserted as already-Closed history and used deterministic
+    placeholder hashes rather than hashes over the frozen source/snapshot payloads.
+    Never apply this compatibility path to ordinary production settlements.
+    """
+    if not str(settlement.settlement_number or "").startswith(_SCALE_SEED_SETTLEMENT_PREFIX):
+        return False
+    if not str(settlement.project_code or "").startswith(_SCALE_SEED_PROJECT_PREFIX):
+        return False
+    if not str(settlement.supplier_code or "").startswith(_SCALE_SEED_SUPPLIER_PREFIX):
+        return False
+    if not str(settlement.reviewer_note or "").startswith(_SCALE_SEED_REVIEW_MARKER):
+        return False
+    expected_source = _legacy_scale_seed_hash(
+        "rental", settlement.project_id, settlement.supplier_id, settlement.period_start
+    )
+    expected_snapshot = _legacy_scale_seed_hash(
+        "rental-snapshot",
+        settlement.project_id,
+        settlement.supplier_id,
+        settlement.period_start,
+        settlement.total_net,
+    )
+    return (
+        settlement.source_fingerprint == expected_source
+        and settlement.snapshot_fingerprint == expected_snapshot
+    )
+
+
+def _assert_scale_seed_snapshot_reconciles(
+    settlement: SupplierSettlement, *, snapshot_payload: dict[str, object], source_payload: dict[str, object]
+) -> None:
+    """Fail closed unless legacy scale history still reconciles to its frozen rows/source.
+
+    This is deliberately stronger than merely recognizing a DEMO prefix. It prevents a
+    modified synthetic settlement from being silently blessed with a new canonical hash.
+    """
+    if settlement.source_timesheet_revision != settlement.source_timesheet.revision:
+        raise ValidationError("Synthetic scale settlement source revision no longer matches the Locked timesheet.")
+
+    lines = list(snapshot_payload.get("lines") or [])
+    if len(lines) != settlement.worker_count:
+        raise ValidationError("Synthetic scale settlement worker count does not match its frozen settlement lines.")
+
+    seen_workers: set[str] = set()
+    decimal_totals = {
+        "regular_hours": Decimal("0"),
+        "overtime_hours": Decimal("0"),
+        "base_amount": Decimal("0"),
+        "overtime_amount": Decimal("0"),
+        "gross_amount": Decimal("0"),
+        "adjustment_earnings": Decimal("0"),
+        "adjustment_deductions": Decimal("0"),
+        "net_amount": Decimal("0"),
+    }
+    work_days = 0
+    for line in lines:
+        worker_id = str(line.get("worker_id") or "")
+        if not worker_id or worker_id in seen_workers:
+            raise ValidationError("Synthetic scale settlement contains duplicate or missing worker snapshot identity.")
+        seen_workers.add(worker_id)
+        if line.get("project_code") != settlement.project_code or line.get("supplier_code") != settlement.supplier_code:
+            raise ValidationError("Synthetic scale settlement line scope does not match its project/supplier authority.")
+        work_days += int(line.get("work_days") or 0)
+        for key in decimal_totals:
+            decimal_totals[key] += Decimal(str(line.get(key) or "0"))
+
+    expected_decimal = {
+        "regular_hours": Decimal(settlement.total_regular_hours),
+        "overtime_hours": Decimal(settlement.total_overtime_hours),
+        "base_amount": Decimal(settlement.total_base),
+        "overtime_amount": Decimal(settlement.total_overtime),
+        "gross_amount": Decimal(settlement.total_gross),
+        "adjustment_earnings": Decimal(settlement.total_adjustment_earnings),
+        "adjustment_deductions": Decimal(settlement.total_adjustment_deductions),
+        "net_amount": Decimal(settlement.total_net),
+    }
+    for key, expected in expected_decimal.items():
+        if decimal_totals[key] != expected:
+            raise ValidationError(f"Synthetic scale settlement {key} does not reconcile to its frozen worker lines.")
+    if work_days != settlement.total_work_days:
+        raise ValidationError("Synthetic scale settlement work-day total does not reconcile to its frozen worker lines.")
+
+    entries = list(source_payload.get("entries") or [])
+    overtime = list(source_payload.get("overtime") or [])
+    source_regular = sum((Decimal(str(row.get("regular_hours") or "0")) for row in entries), Decimal("0"))
+    source_overtime = sum((Decimal(str(row.get("hours") or "0")) for row in overtime), Decimal("0"))
+    source_workers = {str(row.get("worker_id")) for row in entries if row.get("worker_id")}
+    source_workers.update(str(row.get("worker_id")) for row in overtime if row.get("worker_id"))
+    if source_regular != Decimal(settlement.total_regular_hours):
+        raise ValidationError("Synthetic scale settlement regular hours no longer reconcile to the Locked timesheet.")
+    if source_overtime != Decimal(settlement.total_overtime_hours):
+        raise ValidationError("Synthetic scale settlement overtime no longer reconciles to the Locked timesheet.")
+    if source_workers != seen_workers:
+        raise ValidationError("Synthetic scale settlement worker scope no longer reconciles to the Locked timesheet.")
+
+
+def _normalize_legacy_scale_seed_integrity(settlement: SupplierSettlement) -> bool:
+    """Upgrade one untouched legacy scale-seed settlement to canonical fingerprints.
+
+    Existing production test databases can already contain DEMO-SCALE-SET rows created by
+    older `deploy-production.sh --seed` runs. Those rows are intentionally synthetic but
+    their placeholder hashes cannot satisfy the newer financial-document integrity guard.
+    If—and only if—the row still carries the exact old placeholder pair and its frozen
+    rows/source reconcile, replace the legacy snapshot placeholder with the canonical frozen-snapshot hash.
+    A row that was already canonicalized and later changed does *not* enter this path.
+    """
+    if not _is_legacy_scale_seed_integrity_pair(settlement):
+        return False
+
+    snapshot_payload = _snapshot_payload(settlement)
+    source_payload = _source_payload(period=settlement.source_timesheet, supplier=settlement.supplier)
+    _assert_scale_seed_snapshot_reconciles(
+        settlement, snapshot_payload=snapshot_payload, source_payload=source_payload
+    )
+    canonical_snapshot = _canonical_hash(snapshot_payload)
+    old_source = settlement.source_fingerprint
+    old_snapshot = settlement.snapshot_fingerprint
+    updated = (
+        SupplierSettlement.objects.for_company(settlement.company)
+        .filter(
+            pk=settlement.pk,
+            source_fingerprint=old_source,
+            snapshot_fingerprint=old_snapshot,
+        )
+        .update(snapshot_fingerprint=canonical_snapshot)
+    )
+    if not updated:
+        current = SupplierSettlement.objects.for_company(settlement.company).only(
+            "source_fingerprint", "snapshot_fingerprint"
+        ).get(pk=settlement.pk)
+        if current.source_fingerprint != old_source or current.snapshot_fingerprint != canonical_snapshot:
+            raise ValidationError("Synthetic scale settlement integrity changed while it was being normalized.")
+    # Keep the legacy source proof untouched. These benchmark rows were inserted directly as
+    # historical Closed settlements, so we can prove their current Locked source scope but
+    # cannot truthfully claim that a newly computed live-source hash was captured at approval.
+    settlement.snapshot_fingerprint = canonical_snapshot
+    return True
+
+
 def _assert_settlement_integrity(settlement: SupplierSettlement) -> None:
     if settlement.source_timesheet.status != RentalTimesheetStatus.LOCKED:
         raise ValidationError("The source rental timesheet is no longer Locked.")
@@ -425,7 +579,14 @@ def assert_supplier_settlement_integrity(settlement: SupplierSettlement) -> None
             raise ValidationError("Settlement source integrity proof is missing.")
         current_snapshot = settlement_snapshot_fingerprint(settlement)
         if not settlement.snapshot_fingerprint or current_snapshot != settlement.snapshot_fingerprint:
-            raise ValidationError("Settlement snapshot integrity check failed. The approved settlement record may have changed.")
+            # Compatibility-only repair for untouched synthetic scale history created by
+            # older --seed runs. Real production settlements and any already-canonicalized
+            # seed row still fail closed on fingerprint drift.
+            if not _normalize_legacy_scale_seed_integrity(settlement):
+                raise ValidationError("Settlement snapshot integrity check failed. The approved settlement record may have changed.")
+            current_snapshot = settlement_snapshot_fingerprint(settlement)
+            if current_snapshot != settlement.snapshot_fingerprint:
+                raise ValidationError("Settlement snapshot integrity check failed after synthetic seed normalization.")
         return
 
     # Calculated/Review rows are still mutable financial work-in-progress. Keep the strict

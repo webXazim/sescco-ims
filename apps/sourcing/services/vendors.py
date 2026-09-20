@@ -25,11 +25,16 @@ def _vendor_snapshot(vendor: SourcingVendor) -> dict[str, object]:
         "name": vendor.name,
         "displayName": vendor.display_name,
         "primaryContactName": vendor.primary_contact_name,
-        "phone": vendor.phone,
+        "companyPhone": vendor.company_phone,
+        "companyEmail": vendor.company_email,
         "mobile": vendor.mobile,
         "email": vendor.email,
+        "address": vendor.address,
+        "streetNumber": vendor.street_number,
+        "district": vendor.district,
         "city": vendor.city,
         "region": vendor.region,
+        "postalCode": vendor.postal_code,
         "crNumber": vendor.cr_number,
         "vatNumber": vendor.vat_number,
         "website": vendor.website,
@@ -61,13 +66,11 @@ def _sync_primary_contact_summary(vendor: SourcingVendor, contact: SourcingVendo
     if not contact.is_primary or not contact.is_active:
         return
     vendor.primary_contact_name = contact.full_name
-    if contact.email and not vendor.email:
+    if contact.email:
         vendor.email = contact.email
-    if contact.work_phone and not vendor.phone:
-        vendor.phone = contact.work_phone
-    if contact.mobile and not vendor.mobile:
+    if contact.mobile:
         vendor.mobile = contact.mobile
-    vendor.save(update_fields=["primary_contact_name", "email", "phone", "mobile", "updated_at"])
+    vendor.save(update_fields=["primary_contact_name", "email", "mobile", "updated_at"])
 
 def _audit(*, vendor, actor_membership, action: str, before=None, after=None, metadata=None, request=None):
     return record_audit_event(

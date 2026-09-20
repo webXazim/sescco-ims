@@ -69,7 +69,7 @@ IMPORT_DATASETS = (
 EXPORT_DATASETS = IMPORT_DATASETS
 
 HEADERS = {
-    "vendors": ["code", "name", "display_name", "primary_contact_name", "phone", "mobile", "email", "city", "region", "cr_number", "vat_number", "website", "status", "notes", "last_verified_at"],
+    "vendors": ["code", "name", "display_name", "cr_number", "vat_number", "company_phone", "company_email", "website", "primary_contact_name", "mobile", "email", "address", "street_number", "district", "city", "region", "postal_code", "status", "notes", "last_verified_at"],
     "materials": ["code", "name", "category", "default_unit", "aliases", "is_active", "notes"],
     "vendor_catalog": ["vendor_code", "material_code", "specification", "brand", "model", "availability", "available_quantity", "unit", "minimum_quantity", "rate", "currency", "rate_valid_until", "lead_time", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
     "manpower_suppliers": ["code", "name", "primary_contact_name", "phone", "mobile", "email", "city", "region", "cr_number", "vat_number", "status", "notes", "last_verified_at"],
@@ -78,7 +78,7 @@ HEADERS = {
 }
 
 REQUIRED_HEADERS = {
-    "vendors": {"code", "name"},
+    "vendors": {"code", "name", "display_name", "mobile", "email", "address", "cr_number", "vat_number"},
     "materials": {"code", "name"},
     "vendor_catalog": {"vendor_code", "material_code"},
     "manpower_suppliers": {"code", "name"},
@@ -296,20 +296,37 @@ def _require_headers(dataset: str, headers: Iterable[str]) -> None:
 def _upsert_vendor(*, actor_membership, row, request):
     company = actor_membership.company
     code = _text(row.get("code")).upper()
+    required_values = {
+        "name": "Vendor name",
+        "display_name": "Display name",
+        "mobile": "Primary contact mobile number",
+        "email": "Primary contact email address",
+        "address": "Address",
+        "cr_number": "CR number",
+        "vat_number": "VAT number",
+    }
+    missing_values = [label for field, label in required_values.items() if not _text(row.get(field))]
+    if missing_values:
+        raise ValidationError({"vendor": f"Required value(s) missing: {', '.join(missing_values)}."})
     existing = SourcingVendor.objects.for_company(company).filter(code=code).first()
     data = {
         "code": code,
         "name": _text(row.get("name")),
         "display_name": _text(row.get("display_name")),
-        "primary_contact_name": _text(row.get("primary_contact_name")),
-        "phone": _text(row.get("phone")),
-        "mobile": _text(row.get("mobile")),
-        "email": _text(row.get("email")),
-        "city": _text(row.get("city")),
-        "region": _text(row.get("region")),
         "cr_number": _text(row.get("cr_number")),
         "vat_number": _text(row.get("vat_number")),
+        "company_phone": _text(row.get("company_phone") or row.get("phone")),
+        "company_email": _text(row.get("company_email")),
         "website": _text(row.get("website")),
+        "primary_contact_name": _text(row.get("primary_contact_name")),
+        "mobile": _text(row.get("mobile")),
+        "email": _text(row.get("email")),
+        "address": _text(row.get("address")),
+        "street_number": _text(row.get("street_number")),
+        "district": _text(row.get("district")),
+        "city": _text(row.get("city")),
+        "region": _text(row.get("region")),
+        "postal_code": _text(row.get("postal_code")),
         "notes": str(row.get("notes") or "").strip(),
     }
     obj = update_vendor(actor_membership=actor_membership, vendor_id=existing.pk, cleaned_data=data, request=request) if existing else create_vendor(actor_membership=actor_membership, cleaned_data=data, request=request)
@@ -568,9 +585,31 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             elif status == "archived":
                 qs = qs.filter(archived_at__isnull=False)
         if q:
-            qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(display_name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q))
+            qs = qs.filter(
+                Q(code__icontains=q)
+                | Q(name__icontains=q)
+                | Q(display_name__icontains=q)
+                | Q(company_phone__icontains=q)
+                | Q(company_email__icontains=q)
+                | Q(primary_contact_name__icontains=q)
+                | Q(mobile__icontains=q)
+                | Q(email__icontains=q)
+                | Q(address__icontains=q)
+                | Q(street_number__icontains=q)
+                | Q(district__icontains=q)
+                | Q(city__icontains=q)
+                | Q(region__icontains=q)
+                | Q(postal_code__icontains=q)
+                | Q(cr_number__icontains=q)
+                | Q(vat_number__icontains=q)
+            )
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
-            rows.append([obj.code, obj.name, obj.display_name, obj.primary_contact_name, obj.phone, obj.mobile, obj.email, obj.city, obj.region, obj.cr_number, obj.vat_number, obj.website, obj.status, obj.notes, obj.last_verified_at])
+            rows.append([
+                obj.code, obj.name, obj.display_name, obj.cr_number, obj.vat_number,
+                obj.company_phone, obj.company_email, obj.website, obj.primary_contact_name,
+                obj.mobile, obj.email, obj.address, obj.street_number, obj.district, obj.city,
+                obj.region, obj.postal_code, obj.status, obj.notes, obj.last_verified_at,
+            ])
     elif dataset == "materials":
         qs = SourcingMaterial.objects.for_company(company)
         status = _text(params.get("status")).casefold()
@@ -607,7 +646,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
         if category:
             qs = qs.filter(material__category__iexact=category)
         if location:
-            qs = qs.filter(Q(vendor__city__icontains=location) | Q(vendor__region__icontains=location))
+            qs = qs.filter(Q(vendor__address__icontains=location) | Q(vendor__district__icontains=location) | Q(vendor__city__icontains=location) | Q(vendor__region__icontains=location) | Q(vendor__postal_code__icontains=location))
         if availability in {value for value, _ in SourcingAvailability.choices}:
             qs = qs.filter(availability=availability)
         if rate_min is not None:

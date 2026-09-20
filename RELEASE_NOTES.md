@@ -1,3 +1,21 @@
+# 1.0.117 — Vendor Master Identity & Primary Contact Profile Upgrade
+
+- Reorganized Vendor create/edit into exactly three sections: **Vendor Identity**, **Primary Contact**, and **Remarks**.
+- Vendor Identity now contains CR/VAT commercial references plus company official number, company email and website. The former generic Vendor `phone` database field is migrated in place to `company_phone` so existing values are preserved.
+- Primary Contact now contains contact name, mandatory mobile/email, mandatory address, and structured Street Number, District, City, Region and Postal Code fields; the old work-phone field is removed from this primary-contact surface.
+- Vendor name, display name, mobile, email, address, CR number and VAT number are mandatory in create/edit UI and Vendor import. Historical incomplete records remain readable and lifecycle-safe until edited.
+- Updated Vendor profile/list/search, Material Finder location filtering, audit snapshots, scale seed data, CSV/XLSX import-export and regression coverage so the new fields flow through the rest of Sourcing instead of being form-only data.
+- Adds `sourcing` migration `0009_vendor_profile_structure.py`. No Inventory, Payroll, Accounting, pricing, settlement or document authority is changed.
+
+# 1.0.117 — Settlement Statement Scale-Seed Integrity Compatibility Hotfix
+
+- Fixed Supplier Settlement Statement creation for existing synthetic `DEMO-SCALE-SET-*` benchmark history created by earlier `deploy-production.sh --seed` runs. Those Closed benchmark settlements intentionally used deterministic placeholder integrity hashes rather than the later canonical frozen-snapshot hash, so the new financial-document integrity guard rejected them even though their seeded settlement rows were internally consistent.
+- The compatibility path is deliberately restricted to the exact synthetic namespace and marker (`DEMO-SCALE-SET-*`, `DEMO-SCALE-P-*`, `DEMO-SCALE-SUP-*`, reviewer note beginning `DEMO SCALE SEED`) and only runs when both stored hashes exactly match the legacy seed algorithm. Ordinary production settlements never enter this path.
+- Before accepting a legacy seed placeholder, the service reconciles worker count, worker identity/scope, work days, regular/OT hours, every frozen financial aggregate, and the Locked source worker/hour scope against the stored settlement rows. Any tampering or mismatch still fails closed.
+- A successfully reconciled legacy seed row is atomically upgraded only from the old synthetic **snapshot** placeholder to the canonical frozen-settlement snapshot fingerprint. The original synthetic source proof is intentionally retained because these benchmark rows were inserted directly as historical Closed records; the code does not pretend a newly computed live-source hash was captured at their approval time.
+- Concurrent retries converge safely on the same canonical snapshot fingerprint. A later scale-seed expansion can deliberately reset the synthetic snapshot placeholder, after which the same reconciliation/canonicalization runs again. No settlement amount, line, payment, status, revision, or finalized document is rewritten.
+- Added regression coverage proving untouched legacy scale history self-normalizes, tampered scale history still fails closed, and non-seed Approved/Closed settlements with snapshot drift remain blocked. No database migration or Payroll/settlement/payment formula change is introduced.
+
 # 1.0.117 — Settlement Statement Frozen-Source Integrity Hotfix
 
 - Fixed Supplier Settlement Statement creation for Approved, Payment Processing, Partially Paid, Paid, and Closed settlements when the live operational timesheet source has changed after Finance approval.

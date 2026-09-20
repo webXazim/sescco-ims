@@ -213,7 +213,10 @@
           "test_reversal_reopens_paid_settlement",
           "test_supplier_payment_dates_follow_approval_chronology",
           "test_rental_settlement_and_payment_actions_are_server_authoritative_and_revisioned",
-          "test_operational_stop_does_not_block_historical_rental_finance_completion"
+          "test_operational_stop_does_not_block_historical_rental_finance_completion",
+          "test_legacy_scale_seed_placeholder_integrity_is_canonicalized_once_for_financial_documents",
+          "test_legacy_scale_seed_normalization_fails_closed_when_frozen_line_totals_are_tampered",
+          "test_non_seed_approved_settlement_with_snapshot_drift_still_fails_closed"
         ]
       }
     },

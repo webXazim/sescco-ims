@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import hashlib
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -28,6 +29,7 @@ from apps.rental_manpower.selectors.settlements import (
     settlements_for_period,
 )
 from apps.rental_manpower.services import (
+    assert_supplier_settlement_integrity,
     assign_worker,
     calculate_project_settlements,
     change_supplier_lifecycle,
@@ -44,6 +46,8 @@ from apps.rental_manpower.services import (
     transition_timesheet,
     update_project,
 )
+from apps.rental_manpower.services.settlements import settlement_snapshot_fingerprint
+
 
 
 class RentalSettlementTests(TestCase):
@@ -422,6 +426,81 @@ class RentalSettlementTests(TestCase):
         self.assertEqual(Decimal(project_master["netCost"]), Decimal("90.00"))
         self.assertEqual(Decimal(supplier_master["currentCost"]), Decimal("90.00"))
         self.assertEqual(Decimal(supplier_master["outstanding"]), Decimal("50.00"))
+
+    def test_legacy_scale_seed_placeholder_integrity_is_canonicalized_once_for_financial_documents(self):
+        worker = self._worker("RW-SCALE-FP", "Scale Fingerprint Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        settlement = self._approve_settlements()[0]
+
+        settlement.settlement_number = "DEMO-SCALE-SET-202608-001-001"
+        settlement.project_code = "DEMO-SCALE-P-001"
+        settlement.supplier_code = "DEMO-SCALE-SUP-001"
+        settlement.reviewer_note = "DEMO SCALE SEED approved synthetic benchmark history"
+        SupplierSettlementLine.objects.filter(settlement=settlement).update(
+            project_code=settlement.project_code, supplier_code=settlement.supplier_code
+        )
+        legacy_source = hashlib.sha256(
+            f"rental|{settlement.project_id}|{settlement.supplier_id}|{settlement.period_start}".encode("utf-8")
+        ).hexdigest()
+        legacy_snapshot = hashlib.sha256(
+            (
+                f"rental-snapshot|{settlement.project_id}|{settlement.supplier_id}|"
+                f"{settlement.period_start}|{settlement.total_net}"
+            ).encode("utf-8")
+        ).hexdigest()
+        settlement.source_fingerprint = legacy_source
+        settlement.snapshot_fingerprint = legacy_snapshot
+        settlement.save(
+            update_fields=(
+                "settlement_number", "project_code", "supplier_code", "reviewer_note",
+                "source_fingerprint", "snapshot_fingerprint", "updated_at",
+            )
+        )
+
+        assert_supplier_settlement_integrity(settlement)
+        settlement.refresh_from_db()
+        self.assertEqual(settlement.source_fingerprint, legacy_source)
+        self.assertNotEqual(settlement.snapshot_fingerprint, legacy_snapshot)
+        self.assertEqual(settlement.snapshot_fingerprint, settlement_snapshot_fingerprint(settlement))
+
+    def test_legacy_scale_seed_normalization_fails_closed_when_frozen_line_totals_are_tampered(self):
+        worker = self._worker("RW-SCALE-BAD", "Scale Tamper Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        settlement = self._approve_settlements()[0]
+        settlement.settlement_number = "DEMO-SCALE-SET-202608-001-001"
+        settlement.project_code = "DEMO-SCALE-P-001"
+        settlement.supplier_code = "DEMO-SCALE-SUP-001"
+        settlement.reviewer_note = "DEMO SCALE SEED approved synthetic benchmark history"
+        SupplierSettlementLine.objects.filter(settlement=settlement).update(
+            project_code=settlement.project_code, supplier_code=settlement.supplier_code, net_amount=Decimal("999.00")
+        )
+        settlement.source_fingerprint = hashlib.sha256(
+            f"rental|{settlement.project_id}|{settlement.supplier_id}|{settlement.period_start}".encode("utf-8")
+        ).hexdigest()
+        settlement.snapshot_fingerprint = hashlib.sha256(
+            (
+                f"rental-snapshot|{settlement.project_id}|{settlement.supplier_id}|"
+                f"{settlement.period_start}|{settlement.total_net}"
+            ).encode("utf-8")
+        ).hexdigest()
+        settlement.save(
+            update_fields=(
+                "settlement_number", "project_code", "supplier_code", "reviewer_note",
+                "source_fingerprint", "snapshot_fingerprint", "updated_at",
+            )
+        )
+
+        with self.assertRaisesMessage(ValidationError, "does not reconcile to its frozen worker lines"):
+            assert_supplier_settlement_integrity(settlement)
+
+    def test_non_seed_approved_settlement_with_snapshot_drift_still_fails_closed(self):
+        worker = self._worker("RW-PROD-FP", "Production Fingerprint Worker", "Hourly", "10")
+        self._lock_timesheet([(worker, 1, {1: "8"})])
+        settlement = self._approve_settlements()[0]
+        settlement.snapshot_fingerprint = "f" * 64
+        settlement.save(update_fields=("snapshot_fingerprint", "updated_at"))
+        with self.assertRaisesMessage(ValidationError, "approved settlement record may have changed"):
+            assert_supplier_settlement_integrity(settlement)
 
     def test_supplier_invoice_string_total_is_postgresql_safe_in_finance_context(self):
         """Finalized invoice snapshots store money as JSON strings; reads must not cast JSONB directly."""

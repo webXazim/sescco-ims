@@ -50,9 +50,13 @@ for forbidden in ("from apps.inventory", "from apps.rental_manpower", "from apps
         fail(f"Vendor model leaked operational dependency: {forbidden}")
 
 migration = text("apps/sourcing/migrations/0002_vendor_directory_master.py")
+profile_migration = text("apps/sourcing/migrations/0009_vendor_profile_structure.py")
 for marker in ('name="SourcingVendorContact"', 'name="src_vendor_one_primary_contact_uq"', 'name="src_vcontact_vendor_active_idx"'):
     if marker not in migration:
         fail(f"Vendor directory migration missing: {marker}")
+for marker in ('old_name="phone"', 'new_name="company_phone"', 'name="company_email"', 'name="address"', 'name="street_number"', 'name="district"', 'name="postal_code"'):
+    if marker not in profile_migration:
+        fail(f"Vendor profile migration missing: {marker}")
 for forbidden in ('to="inventory.', 'to="rental_manpower.', 'to="internal_payroll.'):
     if forbidden in migration:
         fail(f"Vendor migration contains operational FK: {forbidden}")
@@ -109,7 +113,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, contact, phone, email, CR or VAT", "Columns", "page_obj.paginator.count", "New Vendor"):
+for marker in ("Search vendor, contact, company details, address, CR or VAT", "Columns", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")
@@ -126,6 +130,7 @@ for rel in (
     "apps/sourcing/urls.py",
     "apps/sourcing/tests/test_vendor_master.py",
     "apps/sourcing/migrations/0002_vendor_directory_master.py",
+    "apps/sourcing/migrations/0009_vendor_profile_structure.py",
 ):
     try:
         ast.parse(text(rel))

@@ -10,25 +10,41 @@
 <form class="sourcing-form-shell" method="post" novalidate>
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
-  <section class="sourcing-form-section"><header><h2>Vendor Identity</h2><p>Basic reference information used throughout the Sourcing Directory.</p></header><div class="sourcing-form-grid">
-    {% include "sourcing/vendors/field.html" with field=form.code %}
-    {% include "sourcing/vendors/field.html" with field=form.name %}
-    {% include "sourcing/vendors/field.html" with field=form.display_name %}
-  </div></section>
-  <section class="sourcing-form-section"><header><h2>Primary Contact</h2><p>The quickest contact details shown in the Vendor listing.</p></header><div class="sourcing-form-grid">
-    {% include "sourcing/vendors/field.html" with field=form.primary_contact_name %}
-    {% include "sourcing/vendors/field.html" with field=form.email %}
-    {% include "sourcing/vendors/field.html" with field=form.phone %}
-    {% include "sourcing/vendors/field.html" with field=form.mobile %}
-  </div></section>
-  <section class="sourcing-form-section"><header><h2>Location & Commercial Reference</h2><p>Reference identifiers only; these fields do not create Accounting or procurement records.</p></header><div class="sourcing-form-grid">
-    {% include "sourcing/vendors/field.html" with field=form.city %}
-    {% include "sourcing/vendors/field.html" with field=form.region %}
-    {% include "sourcing/vendors/field.html" with field=form.cr_number %}
-    {% include "sourcing/vendors/field.html" with field=form.vat_number %}
-    {% include "sourcing/vendors/field.html" with field=form.website %}
-  </div></section>
-  <section class="sourcing-form-section"><header><h2>Remarks</h2></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+
+  <section class="sourcing-form-section">
+    <header><h2>Vendor Identity</h2><p>Legal, commercial, and official company contact information used throughout the Sourcing Directory.</p></header>
+    <div class="sourcing-form-grid">
+      {% include "sourcing/vendors/field.html" with field=form.code %}
+      {% include "sourcing/vendors/field.html" with field=form.name %}
+      {% include "sourcing/vendors/field.html" with field=form.display_name %}
+      {% include "sourcing/vendors/field.html" with field=form.cr_number %}
+      {% include "sourcing/vendors/field.html" with field=form.vat_number %}
+      {% include "sourcing/vendors/field.html" with field=form.company_phone %}
+      {% include "sourcing/vendors/field.html" with field=form.company_email %}
+      {% include "sourcing/vendors/field.html" with field=form.website %}
+    </div>
+  </section>
+
+  <section class="sourcing-form-section">
+    <header><h2>Primary Contact</h2><p>Main contact person and the address/location details used when reaching this Vendor.</p></header>
+    <div class="sourcing-form-grid">
+      {% include "sourcing/vendors/field.html" with field=form.primary_contact_name %}
+      {% include "sourcing/vendors/field.html" with field=form.email %}
+      {% include "sourcing/vendors/field.html" with field=form.mobile %}
+      {% include "sourcing/vendors/field.html" with field=form.address full=True %}
+      {% include "sourcing/vendors/field.html" with field=form.street_number %}
+      {% include "sourcing/vendors/field.html" with field=form.district %}
+      {% include "sourcing/vendors/field.html" with field=form.city %}
+      {% include "sourcing/vendors/field.html" with field=form.region %}
+      {% include "sourcing/vendors/field.html" with field=form.postal_code %}
+    </div>
+  </section>
+
+  <section class="sourcing-form-section">
+    <header><h2>Remarks</h2><p>Internal reference notes for the Sourcing team.</p></header>
+    <div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div>
+  </section>
+
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}

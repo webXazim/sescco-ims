@@ -89,20 +89,30 @@ class VendorSourcingMasterTests(TestCase):
                 "code": "VND-1001",
                 "name": "Eastern Material Source",
                 "display_name": "Eastern Material",
-                "primary_contact_name": "Ahmed Saleh",
-                "phone": "+966500000001",
-                "mobile": "",
-                "email": "sales@example.com",
-                "city": "Dammam",
-                "region": "Eastern Province",
                 "cr_number": "CR1001",
                 "vat_number": "VAT1001",
+                "company_phone": "+966133000001",
+                "company_email": "info@example.com",
                 "website": "https://example.com",
+                "primary_contact_name": "Ahmed Saleh",
+                "mobile": "+966500000001",
+                "email": "sales@example.com",
+                "address": "King Fahd Road, Building 12",
+                "street_number": "2451",
+                "district": "Al Faisaliyah",
+                "city": "Dammam",
+                "region": "Eastern Province",
+                "postal_code": "32271",
                 "notes": "Reference vendor only",
             },
         )
         self.assertEqual(create.status_code, 302)
         vendor = SourcingVendor.objects.get(company=self.company, code="VND-1001")
+        self.assertEqual(vendor.company_phone, "+966133000001")
+        self.assertEqual(vendor.company_email, "info@example.com")
+        self.assertEqual(vendor.address, "King Fahd Road, Building 12")
+        self.assertEqual(vendor.district, "Al Faisaliyah")
+        self.assertEqual(vendor.postal_code, "32271")
         self.assertTrue(AuditEvent.objects.filter(company=self.company, area=AuditArea.SOURCING, action="sourcing.vendor.created", object_id=str(vendor.pk)).exists())
 
         contact = self.client.post(
@@ -124,6 +134,16 @@ class VendorSourcingMasterTests(TestCase):
         self.assertTrue(saved.is_primary)
         self.assertEqual(saved.full_name, "Mohammed Ali")
         self.assertTrue(AuditEvent.objects.filter(action="sourcing.vendor.contact_created", object_id=str(vendor.pk)).exists())
+
+    def test_vendor_form_requires_new_master_contact_and_commercial_fields(self):
+        self.client.force_login(self.owner_user)
+        response = self.client.post(
+            reverse("sourcing:vendor_create"),
+            {"code": "VND-REQ", "name": "Required Vendor"},
+        )
+        self.assertEqual(response.status_code, 400)
+        for field_name in ("display_name", "mobile", "email", "address", "cr_number", "vat_number"):
+            self.assertIn(field_name, response.context["form"].errors)
 
     def test_vendor_lifecycle_is_reference_only_and_recoverable(self):
         self.client.force_login(self.owner_user)
