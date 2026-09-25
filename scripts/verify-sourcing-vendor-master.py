@@ -81,7 +81,12 @@ for marker in (
     "TRASH_RETENTION_DAYS = 30",
     "select_for_update()",
     "purge_after = now + timedelta(days=TRASH_RETENTION_DAYS)",
-    "Type {expected} to confirm deletion.",
+    "def delete_vendor(",
+    "def delete_vendor_contact(",
+    'action="sourcing.vendor.deleted"',
+    'action="sourcing.vendor.contact_deleted"',
+    "status = SourcingEntityStatus.INACTIVE",
+    "Type {expected} to confirm permanent deletion.",
 ):
     if marker not in services:
         fail(f"Vendor lifecycle safety missing: {marker}")
@@ -95,11 +100,13 @@ for marker in (
     "vendor_contact_create",
     "vendor_contact_edit",
     "vendor_contact_deactivate",
+    "vendor_contact_delete",
+    "vendor_delete",
 ):
     if marker not in views:
         fail(f"Vendor view authority missing: {marker}")
 urls = text("apps/sourcing/urls.py")
-for route in ("vendors/", "vendors/new/", "restore-archive/", "restore-trash/", "contacts/new/"):
+for route in ("vendors/", "vendors/new/", "delete/", "restore-archive/", "restore-trash/", "contacts/new/", "contacts/<uuid:contact_id>/delete/"):
     if route not in urls:
         fail(f"Vendor route missing: {route}")
 
@@ -117,7 +124,7 @@ for marker in ("Search vendor, contact, company details, address, CR or VAT", "C
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")
-for marker in ("Supply Catalog", "Contact Persons", "Activity", "Move to Trash", "Lifecycle"):
+for marker in ("Supply Catalog", "Contact Persons", "Activity", "Delete Vendor Permanently", "Archived · Inactive", "Lifecycle"):
     if marker not in detail_template:
         fail(f"Vendor profile UI missing: {marker}")
 
@@ -137,7 +144,16 @@ for rel in (
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
 
+retention = json.loads(text("merge/lifecycle-retention-contract.json"))
+expected_modes = {
+    "sourcing.SourcingVendor": "reference_master_archive_hard_delete_legacy_trash",
+    "sourcing.SourcingVendorContact": "reference_contact_inactive_hard_delete",
+}
+for model, mode in expected_modes.items():
+    if retention.get("models", {}).get(model, {}).get("mode") != mode:
+        fail(f"retention classification changed for {model}")
+
 if "1.0.117" not in text("docs/SOURCING_VENDOR_MASTER.md"):
     fail("Vendor master operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.117 Vendor Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and operational isolation.")
+print("PASS: SESCCO MS 1.0.117 Vendor Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible inactive/archive lifecycle, permanent live-record delete semantics, immutable audit evidence and operational isolation.")

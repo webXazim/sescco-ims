@@ -151,6 +151,43 @@ class ManpowerSourcingMasterTests(TestCase):
         self.assertIsNone(supplier.purge_after)
         self.assertTrue(AuditEvent.objects.filter(action="sourcing.manpower_supplier.trash_restored", object_id=str(supplier.pk)).exists())
 
+
+    def test_archive_forces_inactive_and_contact_delete_is_permanent(self):
+        self.client.force_login(self.owner_user)
+        supplier = SourcingManpowerSupplier.objects.create(
+            company=self.company, code="MPS-DEST", name="Destructive Lifecycle Supplier"
+        )
+        contact = SourcingManpowerContact.objects.create(
+            company=self.company, supplier=supplier, first_name="Delete", last_name="Me", is_active=True
+        )
+
+        archived = self.client.post(
+            reverse("sourcing:manpower_supplier_archive", args=[supplier.pk]),
+            {"reason": "Temporarily not used"},
+        )
+        self.assertEqual(archived.status_code, 302)
+        supplier.refresh_from_db()
+        self.assertIsNotNone(supplier.archived_at)
+        self.assertEqual(supplier.status, SourcingEntityStatus.INACTIVE)
+
+        self.client.post(reverse("sourcing:manpower_supplier_restore_archive", args=[supplier.pk]))
+        supplier.refresh_from_db()
+        self.assertIsNone(supplier.archived_at)
+        self.assertEqual(supplier.status, SourcingEntityStatus.INACTIVE)
+
+        deleted = self.client.post(
+            reverse("sourcing:manpower_contact_delete", args=[supplier.pk, contact.pk])
+        )
+        self.assertEqual(deleted.status_code, 302)
+        self.assertFalse(SourcingManpowerContact.objects.filter(pk=contact.pk).exists())
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                company=self.company,
+                action="sourcing.manpower_supplier.contact_deleted",
+                object_id=str(supplier.pk),
+            ).exists()
+        )
+
     def test_manpower_contact_cannot_cross_company_boundary(self):
         supplier = SourcingManpowerSupplier.objects.create(company=self.company, code="MPS-BOUND", name="Boundary Manpower")
         contact = SourcingManpowerContact(

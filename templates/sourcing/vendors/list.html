@@ -20,7 +20,7 @@
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>
         <option value="inactive" {% if directory.status == 'inactive' %}selected{% endif %}>Inactive ({{ counts.inactive }})</option>
         <option value="archived" {% if directory.status == 'archived' %}selected{% endif %}>Archived ({{ counts.archived }})</option>
-        <option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Trash ({{ counts.trash }})</option>
+        <option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Legacy Trash ({{ counts.trash }})</option>
         <option value="all" {% if directory.status == 'all' %}selected{% endif %}>All current Vendors</option>
       </select>
       <select class="sourcing-select sourcing-select--small" name="page_size" onchange="this.form.submit()" aria-label="Rows per page">
@@ -72,7 +72,7 @@
           <td data-column="location">{% if vendor.district or vendor.city or vendor.region %}{% if vendor.district %}{{ vendor.district }}{% endif %}{% if vendor.district and vendor.city %}, {% endif %}{% if vendor.city %}{{ vendor.city }}{% endif %}{% if vendor.region and vendor.city %}, {% elif vendor.region and vendor.district %}, {% endif %}{% if vendor.region %}{{ vendor.region }}{% endif %}{% if vendor.address %}<small class="cell-note">{{ vendor.address }}{% if vendor.postal_code %} · {{ vendor.postal_code }}{% endif %}</small>{% endif %}{% elif vendor.address %}{{ vendor.address }}{% if vendor.postal_code %}<small class="cell-note">{{ vendor.postal_code }}</small>{% endif %}{% else %}—{% endif %}</td>
           <td data-column="items" class="num">{{ vendor.supply_item_count }}</td>
           <td>
-            {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>
+            {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>
             {% elif vendor.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>
             {% elif vendor.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>
             {% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}

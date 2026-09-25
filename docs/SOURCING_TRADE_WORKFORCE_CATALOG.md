@@ -54,15 +54,15 @@ When `Verified now` is selected, SESCCO records the current user and time on the
 ## Permissions
 
 - `sourcing.masters.view` — view Worker Types / Trades.
-- `sourcing.masters.manage` — create/edit/activate/deactivate Trades.
+- `sourcing.masters.manage` — create/edit/activate/deactivate and permanently delete Trades.
 - `sourcing.manpower.view` — view Manpower Supplier Workforce Catalog rows.
-- `sourcing.manpower.manage` — create/edit/activate/deactivate Workforce Catalog rows.
+- `sourcing.manpower.manage` — create/edit/activate/deactivate and permanently delete Workforce Catalog rows.
 
 A Manpower Editor can choose an existing active Trade without being allowed to edit the Trade master.
 
 ## Lifecycle
 
-Trades and Workforce Catalog rows use **Active / Inactive** reference lifecycle. Existing inactive records remain historical evidence and are not destructively deleted by the application. Manpower Supplier Archive/Trash lifecycle remains unchanged from 1.0.105.
+Trades and Workforce Catalog rows use **Active / Inactive** as their reversible reference lifecycle. Marking a Trade or Workforce row Inactive never deletes it. **Delete** is separate and permanent: deleting a Trade physically removes that Trade and its Sourcing Workforce Catalog rows; deleting a Workforce row removes only that live row. Immutable Workforce verification revisions and audit evidence remain detached from the deleted live offer. Manpower Supplier Archive remains reversible, while Supplier Delete now permanently removes the live Sourcing Supplier and Sourcing-owned children; legacy Trash rows from older releases remain restore-compatible.
 
 ## Deployment gate
 
@@ -77,3 +77,5 @@ The release is bound to exact predecessor SHA-256 `ab85b97e9fa9f60467799c6c158e9
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.
+
+> Permanent-delete lifecycle semantics upgraded in SESCCO MS 1.0.117 while keeping Active/Inactive and Supplier Archive as separate non-destructive controls.

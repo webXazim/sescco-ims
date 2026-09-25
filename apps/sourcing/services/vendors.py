@@ -10,7 +10,13 @@ from django.utils import timezone
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 
-from ..models import SourcingEntityStatus, SourcingVendor, SourcingVendorContact
+from ..models import (
+    SourcingEntityStatus,
+    SourcingVendor,
+    SourcingVendorContact,
+    SourcingVendorOffer,
+    SourcingVendorOfferRevision,
+)
 
 TRASH_RETENTION_DAYS = 30
 
@@ -131,11 +137,25 @@ def archive_vendor(*, actor_membership, vendor_id, reason: str, request=None) ->
         raise ValidationError({"reason": "A reason is required to archive a Vendor."})
     vendor = SourcingVendor.objects.select_for_update().for_company(actor_membership.company).get(pk=vendor_id, deleted_at__isnull=True)
     before = _vendor_snapshot(vendor)
+    changed_fields = []
     if not vendor.archived_at:
         vendor.archived_at = timezone.now()
         vendor.archived_reason = reason[:300]
-        vendor.save(update_fields=["archived_at", "archived_reason", "updated_at"])
-        _audit(vendor=vendor, actor_membership=actor_membership, action="sourcing.vendor.archived", before=before, after=_vendor_snapshot(vendor), metadata={"reason": reason[:300]}, request=request)
+        changed_fields.extend(["archived_at", "archived_reason"])
+    if vendor.status != SourcingEntityStatus.INACTIVE:
+        vendor.status = SourcingEntityStatus.INACTIVE
+        changed_fields.append("status")
+    if changed_fields:
+        vendor.save(update_fields=[*changed_fields, "updated_at"])
+        _audit(
+            vendor=vendor,
+            actor_membership=actor_membership,
+            action="sourcing.vendor.archived",
+            before=before,
+            after=_vendor_snapshot(vendor),
+            metadata={"reason": reason[:300], "statusForcedInactive": True},
+            request=request,
+        )
     return vendor
 
 
@@ -183,6 +203,77 @@ def restore_vendor_trash(*, actor_membership, vendor_id, request=None) -> Sourci
     return vendor
 
 
+
+
+@transaction.atomic
+def delete_vendor(*, actor_membership, vendor_id, confirmation: str, reason: str, request=None) -> dict[str, object]:
+    """Permanently delete one Sourcing Vendor and its Sourcing-owned children.
+
+    Archive and Inactive remain reversible lifecycle states. Permanent deletion removes
+    the live Vendor row, contacts, and Supply Catalog rows immediately. Immutable
+    verification snapshots are intentionally retained with their offer FK detached, and
+    operational Inventory/Payroll/Accounting records are never touched.
+    """
+    reason = str(reason or "").strip()
+    vendor = (
+        SourcingVendor.objects.select_for_update()
+        .for_company(actor_membership.company)
+        .get(pk=vendor_id)
+    )
+    expected = vendor.code
+    if str(confirmation or "").strip().casefold() != expected.casefold():
+        raise ValidationError({"confirmation": f"Type {expected} to confirm permanent deletion."})
+    if not reason:
+        raise ValidationError({"reason": "A reason is required to permanently delete a Vendor."})
+
+    before = _vendor_snapshot(vendor)
+    offer_ids = list(
+        SourcingVendorOffer.objects.select_for_update()
+        .for_company(vendor.company)
+        .filter(vendor=vendor)
+        .values_list("pk", flat=True)
+    )
+    contact_count = SourcingVendorContact.objects.for_company(vendor.company).filter(vendor=vendor).count()
+    revision_count = 0
+    if offer_ids:
+        revisions = SourcingVendorOfferRevision._base_manager.filter(
+            company_id=vendor.company_id, offer_id__in=offer_ids
+        )
+        revision_count = revisions.count()
+        # Keep immutable verification evidence while removing the live catalog rows.
+        revisions.update(offer=None)
+
+    label = vendor.display_name or vendor.name
+    _audit(
+        vendor=vendor,
+        actor_membership=actor_membership,
+        action="sourcing.vendor.deleted",
+        before=before,
+        after=None,
+        metadata={
+            "reason": reason[:500],
+            "permanent": True,
+            "cascadeContacts": contact_count,
+            "cascadeSupplyOffers": len(offer_ids),
+            "retainedVerificationRevisions": revision_count,
+        },
+        request=request,
+    )
+    if offer_ids:
+        SourcingVendorOffer.objects.for_company(vendor.company).filter(pk__in=offer_ids).delete()
+    # Contacts are CASCADE children, but deleting explicitly makes the destructive scope
+    # deterministic before the parent row is removed.
+    SourcingVendorContact.objects.for_company(vendor.company).filter(vendor=vendor).delete()
+    vendor.delete()
+    return {
+        "label": label,
+        "code": expected,
+        "contacts_deleted": contact_count,
+        "offers_deleted": len(offer_ids),
+        "revisions_retained": revision_count,
+    }
+
+
 @transaction.atomic
 def create_vendor_contact(*, actor_membership, vendor_id, cleaned_data: dict[str, object], request=None) -> SourcingVendorContact:
     vendor = SourcingVendor.objects.select_for_update().for_company(actor_membership.company).get(pk=vendor_id, deleted_at__isnull=True)
@@ -223,3 +314,34 @@ def deactivate_vendor_contact(*, actor_membership, vendor_id, contact_id, reques
     contact.save(update_fields=["is_active", "is_primary", "updated_at"])
     _audit(vendor=vendor, actor_membership=actor_membership, action="sourcing.vendor.contact_deactivated", before=before, after=_contact_snapshot(contact), metadata={"contactId": str(contact.pk)}, request=request)
     return contact
+
+
+@transaction.atomic
+def delete_vendor_contact(*, actor_membership, vendor_id, contact_id, request=None) -> dict[str, str]:
+    """Permanently delete one Vendor contact; deactivation remains reversible."""
+    vendor = (
+        SourcingVendor.objects.select_for_update()
+        .for_company(actor_membership.company)
+        .get(pk=vendor_id, deleted_at__isnull=True)
+    )
+    if vendor.archived_at:
+        raise ValidationError("Restore the archived Vendor before deleting a contact.")
+    contact = (
+        SourcingVendorContact.objects.select_for_update()
+        .for_company(vendor.company)
+        .get(pk=contact_id, vendor=vendor)
+    )
+    before = _contact_snapshot(contact)
+    contact_id_text = str(contact.pk)
+    label = contact.full_name
+    _audit(
+        vendor=vendor,
+        actor_membership=actor_membership,
+        action="sourcing.vendor.contact_deleted",
+        before=before,
+        after=None,
+        metadata={"contactId": contact_id_text, "permanent": True},
+        request=request,
+    )
+    contact.delete()
+    return {"label": label, "contact_id": contact_id_text}

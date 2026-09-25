@@ -13,3 +13,5 @@
 /* Sourcing profile overview previews */
 .sourcing-overview-card{overflow:hidden}.sourcing-overview-card>.sourcing-card-head{align-items:flex-start}.sourcing-overview-table-wrap{min-height:0;margin:16px -20px -20px;border-top:1px solid var(--src-border)}.sourcing-overview-table{min-width:760px}.sourcing-overview-table--workforce{min-width:920px}.sourcing-overview-table th{position:static}.sourcing-overview-table tbody tr:last-child td{border-bottom:0}.sourcing-overview-empty{margin:16px -20px -20px;border-top:1px solid var(--src-border)}
 @media(max-width:640px){.sourcing-overview-card>.sourcing-card-head{align-items:stretch;flex-direction:column}.sourcing-overview-card .sourcing-card-actions{align-items:flex-start}.sourcing-overview-card .sourcing-btn{width:auto}}
+
+.sourcing-row-action--danger{color:var(--src-danger)!important}

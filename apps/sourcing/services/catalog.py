@@ -81,7 +81,7 @@ def _offer_snapshot(offer: SourcingVendorOffer) -> dict[str, object]:
     }
 
 
-def _audit_material(*, material, actor_membership, action: str, before=None, after=None, request=None):
+def _audit_material(*, material, actor_membership, action: str, before=None, after=None, metadata=None, request=None):
     return record_audit_event(
         company=material.company,
         area=AuditArea.SOURCING,
@@ -92,6 +92,7 @@ def _audit_material(*, material, actor_membership, action: str, before=None, aft
         actor_membership=actor_membership,
         before=before,
         after=after,
+        metadata=metadata,
         request=request,
     )
 
@@ -197,6 +198,53 @@ def set_material_active(*, actor_membership, material_id, is_active: bool, reque
         request=request,
     )
     return material
+
+
+
+
+@transaction.atomic
+def delete_material(*, actor_membership, material_id, confirmation: str, request=None) -> dict[str, object]:
+    """Permanently remove a Sourcing Material and every Sourcing Vendor offer using it."""
+    material = (
+        SourcingMaterial.objects.select_for_update()
+        .for_company(actor_membership.company)
+        .get(pk=material_id)
+    )
+    expected = material.code
+    if str(confirmation or "").strip().casefold() != expected.casefold():
+        raise ValidationError({"confirmation": f"Type {expected} to confirm permanent deletion."})
+    before = _material_snapshot(material)
+    offer_ids = list(
+        SourcingVendorOffer.objects.select_for_update()
+        .for_company(material.company)
+        .filter(material=material)
+        .values_list("pk", flat=True)
+    )
+    revision_count = 0
+    if offer_ids:
+        revisions = SourcingVendorOfferRevision._base_manager.filter(
+            company_id=material.company_id, offer_id__in=offer_ids
+        )
+        revision_count = revisions.count()
+        revisions.update(offer=None)
+    label = material.name
+    _audit_material(
+        material=material,
+        actor_membership=actor_membership,
+        action="sourcing.material.deleted",
+        before=before,
+        after=None,
+        metadata={
+            "permanent": True,
+            "cascadeSupplyOffers": len(offer_ids),
+            "retainedVerificationRevisions": revision_count,
+        },
+        request=request,
+    )
+    if offer_ids:
+        SourcingVendorOffer.objects.for_company(material.company).filter(pk__in=offer_ids).delete()
+    material.delete()
+    return {"label": label, "code": expected, "offers_deleted": len(offer_ids), "revisions_retained": revision_count}
 
 
 @transaction.atomic
@@ -317,6 +365,40 @@ def set_vendor_offer_active(*, actor_membership, vendor_id, offer_id, is_active:
         request=request,
     )
     return offer
+
+
+
+@transaction.atomic
+def delete_vendor_offer(*, actor_membership, vendor_id, offer_id, request=None) -> dict[str, object]:
+    """Permanently remove one live Supply Catalog row while retaining immutable history."""
+    vendor = _usable_vendor(company=actor_membership.company, vendor_id=vendor_id)
+    offer = (
+        SourcingVendorOffer.objects.select_for_update()
+        .select_related("material", "vendor")
+        .for_company(vendor.company)
+        .get(pk=offer_id, vendor=vendor)
+    )
+    before = _offer_snapshot(offer)
+    label = offer.material.name
+    revision_count = SourcingVendorOfferRevision._base_manager.filter(
+        company_id=vendor.company_id, offer_id=offer.pk
+    ).count()
+    _audit_offer(
+        offer=offer,
+        actor_membership=actor_membership,
+        action="sourcing.vendor_offer.deleted",
+        before=before,
+        after=None,
+        metadata={"permanent": True, "retainedVerificationRevisions": revision_count},
+        request=request,
+    )
+    if revision_count:
+        SourcingVendorOfferRevision._base_manager.filter(
+            company_id=vendor.company_id, offer_id=offer.pk
+        ).update(offer=None)
+    offer.delete()
+    return {"label": label, "revisions_retained": revision_count}
+
 
 @transaction.atomic
 def verify_vendor_offer(

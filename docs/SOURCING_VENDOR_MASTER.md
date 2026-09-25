@@ -6,29 +6,29 @@ Upgrade 1.0.101 makes the Vendor half of the independent Sourcing Directory usab
 
 `SourcingVendor` is a reference company SESCCO may call when it needs material. It is not `inventory.Supplier`, does not own stock, does not create purchasing or payable records, and does not post to Payroll or Accounting. Sourcing data may later be copied/snapshotted into a real operational transaction, but this release performs no such integration.
 
-All Vendor pages require `sourcing.vendors.view`. Create, edit, contact maintenance, status changes, Archive, Trash and restore require `sourcing.vendors.manage`. Existing Inventory, Storekeeper, Payroll, Foreman and Finance roles receive no implicit Vendor access.
+All Vendor pages require `sourcing.vendors.view`. Create, edit, contact maintenance, status changes, Archive, permanent Delete and legacy-Trash restore require `sourcing.vendors.manage`. Existing Inventory, Storekeeper, Payroll, Foreman and Finance roles receive no implicit Vendor access.
 
 ## Vendor directory
 
-`/app/sourcing/vendors/` uses server-side company-scoped search, status filters, deterministic sorting and bounded pagination. The default is 50 rows with 25/50/100 choices. Search covers Vendor code/name/display name, company official phone/email, primary contact name/mobile/email, full address fields (address, street number, district, city, region, postal code), CR/VAT and active contact-person identity fields. Trashed records are excluded from normal filters and have a dedicated Trash view.
+`/app/sourcing/vendors/` uses server-side company-scoped search, status filters, deterministic sorting and bounded pagination. The default is 50 rows with 25/50/100 choices. Search covers Vendor code/name/display name, company official phone/email, primary contact name/mobile/email, full address fields (address, street number, district, city, region, postal code), CR/VAT and active contact-person identity fields. Legacy pre-upgrade Trash records are excluded from normal filters and remain available through a clearly labeled **Legacy Trash** compatibility view for restore or permanent deletion. New Delete actions do not create Trash rows.
 
 The browser receives only the requested page; it does not preload the Vendor register. Optional table columns are hidden locally in the browser and do not change backend authority.
 
 ## Vendor profile and contacts
 
-The Vendor master is now deliberately split into three UI sections: **Vendor Identity**, **Primary Contact**, and **Remarks**. Vendor Identity owns the legal/display name, CR/VAT, company official number, company email and website. Primary Contact owns the named person, mobile/email and structured address/location fields (address, street number, district, city, region and postal code). The old Vendor `phone` column is migrated in place to `company_phone`, preserving existing data while removing it from the Primary Contact UI. `SourcingVendorContact` stores additional contact persons inside the same company boundary. A Vendor can have one active primary contact person; adding or editing a primary contact demotes the previous primary contact. Contacts are deactivated rather than destructively erased from normal application workflows.
+The Vendor master is now deliberately split into three UI sections: **Vendor Identity**, **Primary Contact**, and **Remarks**. Vendor Identity owns the legal/display name, CR/VAT, company official number, company email and website. Primary Contact owns the named person, mobile/email and structured address/location fields (address, street number, district, city, region and postal code). The old Vendor `phone` column is migrated in place to `company_phone`, preserving existing data while removing it from the Primary Contact UI. `SourcingVendorContact` stores additional contact persons inside the same company boundary. A Vendor can have one active primary contact person; adding or editing a primary contact demotes the previous primary contact. Contacts support two distinct actions: **Deactivate** preserves the contact as inactive reference data, while **Delete** permanently removes the contact row and records the destructive action in the Vendor audit trail.
 
 New and edited Vendor records require Vendor name, display name, primary-contact mobile, primary-contact email, address, CR number and VAT number. Import uses the same required business fields, and Vendor export/search includes all newly separated identity and address data. Historical incomplete records remain deployable and lifecycle-safe; they are brought to the new completeness standard when edited.
 
 ## Lifecycle
 
-Vendor operational visibility uses Active / Inactive. Archive removes the Vendor from the normal active/inactive working lists but is reversible. Delete means soft move to Trash for 30 days after exact Vendor-code confirmation and a reason; it is also reversible during retention. The application exposes no hard-delete action for Vendor masters.
+Vendor operational visibility uses **Active / Inactive**. **Archive** is reversible, removes the Vendor from normal working lists, and forces the Vendor status to Inactive; restoring an archive leaves the Vendor Inactive until explicitly reactivated. **Delete** is permanent: after exact Vendor-code confirmation and a reason, the live Vendor row, Sourcing contacts and Supply Catalog rows are physically deleted. Immutable Sourcing audit/verification evidence is retained with deleted live-offer links detached. Legacy 30-day Trash records created by older releases remain restorable for compatibility, but new Delete actions never move a Vendor to Trash.
 
 Lifecycle changes affect Sourcing only. They never cascade into Inventory, Rental Manpower, Payroll, Documents or Accounting.
 
 ## Audit evidence
 
-Every Vendor/contact mutation appends an immutable `AuditArea.SOURCING` event against `sourcing.SourcingVendor`. The Vendor profile Activity tab reads a bounded recent history. Audit events remain the authority for who changed a Vendor and when; they are not editable through this module.
+Every Vendor/contact mutation, including permanent deletion, appends an immutable `AuditArea.SOURCING` event against `sourcing.SourcingVendor`. The Vendor profile Activity tab reads a bounded recent history. Audit events remain the authority for who changed a Vendor and when; they are not editable through this module.
 
 ## Release checks
 
@@ -43,3 +43,5 @@ Run `python3 scripts/verify-sourcing-vendor-master.py`, `python3 scripts/verify-
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.
 
 > Vendor profile structure upgraded in SESCCO MS 1.0.117 with migration `0009_vendor_profile_structure.py`; the change is Sourcing-only and preserves the reference-only authority boundary.
+
+> Permanent-delete lifecycle semantics upgraded in SESCCO MS 1.0.117: Inactive/Archive remain reversible, while Delete now removes the live Sourcing record instead of changing its status or creating a new Trash record.

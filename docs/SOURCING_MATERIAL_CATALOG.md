@@ -9,7 +9,7 @@ Upgrade 1.0.102 activates the material/capability portion of the independent Sou
 Material authority is separate from Vendor authority:
 
 - `sourcing.masters.view` — list/search Sourcing Materials.
-- `sourcing.masters.manage` — create, edit, activate and deactivate them.
+- `sourcing.masters.manage` — create, edit, activate/deactivate, and permanently delete them.
 
 A Sourcing Material is **not** an Inventory item and has no stock balance.
 
@@ -29,9 +29,13 @@ A Vendor profile now has a live Supply Catalog. Each row records the Vendor's la
 Vendor Catalog read/write follows the existing Vendor permissions:
 
 - `sourcing.vendors.view` — see Vendor Supply Catalog rows.
-- `sourcing.vendors.manage` — add/edit/activate/deactivate rows.
+- `sourcing.vendors.manage` — add/edit/activate/deactivate rows and permanently delete a Supply Catalog row.
 
 A Vendor Editor does not automatically gain Material Master edit authority. It may select existing active Sourcing Materials; creating or changing master vocabulary requires the separate Master permission.
+
+## Lifecycle and deletion
+
+Materials and Supply Catalog rows keep **Active / Inactive** as a reversible reference state. Marking a record Inactive never deletes it. **Delete** is a separate permanent action. Deleting a Material physically removes the Material and any Sourcing Vendor Offer rows that reference it; deleting a Supply Catalog row physically removes only that live offer row. Immutable `SourcingVendorOfferRevision` history and Sourcing audit evidence are retained with the live offer link detached. These operations never delete or mutate Inventory items, stock, purchasing, Accounting or Payroll records.
 
 ## Verification and history
 
@@ -68,3 +72,5 @@ The Django runtime test remains part of the production release runner and migrat
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.107.
 
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.
+
+> Permanent-delete semantics were added in SESCCO MS 1.0.117 while preserving Active/Inactive as the non-destructive lifecycle control.

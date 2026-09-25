@@ -110,14 +110,19 @@ for marker in (
     "Restore the archived Manpower Supplier before changing its Workforce Catalog.",
     "Inactive Sourcing Trades cannot be added",
     "select_for_update()",
+    "def delete_trade(",
+    "def delete_workforce_offer(",
+    'action="sourcing.trade.deleted"',
+    'action="sourcing.workforce_offer.deleted"',
+    "retainedVerificationRevisions",
 ):
     if marker not in services:
         fail(f"Workforce service safety/evidence missing: {marker}")
 
 views = text("apps/sourcing/views.py")
 for marker in (
-    "def trade_list(", "def trade_create(", "def trade_edit(", "def trade_status(",
-    "def workforce_offer_create(", "def workforce_offer_edit(", "def workforce_offer_status(",
+    "def trade_list(", "def trade_create(", "def trade_edit(", "def trade_status(", "def trade_delete(",
+    "def workforce_offer_create(", "def workforce_offer_edit(", "def workforce_offer_status(", "def workforce_offer_delete(",
     "_require_master_view(request)", "_require_master_manage(request)",
     "_require_manpower_manage(request)",
     "workforce_catalog_page(",
@@ -125,7 +130,7 @@ for marker in (
     if marker not in views:
         fail(f"Trade/Workforce view authority missing: {marker}")
 urls = text("apps/sourcing/urls.py")
-for route in ("trades/", "trades/new/", "workforce/new/", "workforce/<uuid:offer_id>/edit/", "workforce/<uuid:offer_id>/status/"):
+for route in ("trades/", "trades/new/", "trades/<uuid:trade_id>/delete/", "workforce/new/", "workforce/<uuid:offer_id>/edit/", "workforce/<uuid:offer_id>/status/", "workforce/<uuid:offer_id>/delete/"):
     if route not in urls:
         fail(f"Trade/Workforce route missing: {route}")
 
@@ -138,7 +143,7 @@ for rel in (
 ):
     text(rel)
 trade_list = text("templates/sourcing/trades/list.html")
-for marker in ("Search code, trade, category or alias", "New Trade", "Suppliers", "Capabilities"):
+for marker in ("Search code, trade, category or alias", "New Trade", "Suppliers", "Capabilities", "Delete permanently"):
     if marker not in trade_list:
         fail(f"Trade master UI missing: {marker}")
 manpower_detail = text("templates/sourcing/manpower/detail.html")
@@ -155,8 +160,8 @@ if "sourcing:trade_list" not in sidebar or "Worker Types / Trades" not in sideba
 
 retention = json.loads(text("merge/lifecycle-retention-contract.json"))
 expected_modes = {
-    "sourcing.SourcingTrade": "reference_master_deactivate_only",
-    "sourcing.SourcingWorkforceOffer": "reference_offer_deactivate_only",
+    "sourcing.SourcingTrade": "reference_master_inactive_hard_delete",
+    "sourcing.SourcingWorkforceOffer": "reference_offer_inactive_hard_delete",
     "sourcing.SourcingWorkforceOfferRevision": "immutable_reference_history",
 }
 for model, mode in expected_modes.items():

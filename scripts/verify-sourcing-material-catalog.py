@@ -114,7 +114,7 @@ for marker in (
     if marker not in views:
         fail(f"material/catalog view authority missing: {marker}")
 urls = text("apps/sourcing/urls.py")
-for route in ("materials/", "materials/new/", "catalog/new/", "catalog/<uuid:offer_id>/edit/", "catalog/<uuid:offer_id>/status/"):
+for route in ("materials/", "materials/new/", "materials/<uuid:material_id>/delete/", "catalog/new/", "catalog/<uuid:offer_id>/edit/", "catalog/<uuid:offer_id>/status/"):
     if route not in urls:
         fail(f"material/catalog route missing: {route}")
 
@@ -126,7 +126,7 @@ for rel in (
     "static/sourcing/css/directory.css",
 ):
     text(rel)
-for marker in ("Search code, material, category or alias", "Vendors", "Offers", "New Material"):
+for marker in ("Search code, material, category or alias", "Vendors", "Offers", "New Material", "Delete permanently"):
     if marker not in text("templates/sourcing/materials/list.html"):
         fail(f"Material Master UI missing: {marker}")
 for marker in ("Availability", "Reference Rate", "Verification", "Reference-only sourcing data"):
@@ -150,6 +150,16 @@ for rel in (
         ast.parse(text(rel))
     except SyntaxError as exc:
         fail(f"invalid Python in {rel}: {exc}")
+
+retention = json.loads(text("merge/lifecycle-retention-contract.json"))
+expected_modes = {
+    "sourcing.SourcingMaterial": "reference_master_inactive_hard_delete",
+    "sourcing.SourcingVendorOffer": "reference_offer_inactive_hard_delete",
+    "sourcing.SourcingVendorOfferRevision": "immutable_reference_history",
+}
+for model, mode in expected_modes.items():
+    if retention.get("models", {}).get(model, {}).get("mode") != mode:
+        fail(f"retention classification changed for {model}")
 
 if "1.0.117" not in text("docs/SOURCING_MATERIAL_CATALOG.md"):
     fail("Material Catalog operator guide is not version-bound")

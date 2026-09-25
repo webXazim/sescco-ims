@@ -82,7 +82,12 @@ for marker in (
     "TRASH_RETENTION_DAYS = 30",
     "select_for_update()",
     "purge_after = now + timedelta(days=TRASH_RETENTION_DAYS)",
-    "Type {expected} to confirm deletion.",
+    "def delete_manpower_supplier(",
+    "def delete_manpower_contact(",
+    'action="sourcing.manpower_supplier.deleted"',
+    'action="sourcing.manpower_supplier.contact_deleted"',
+    "status = SourcingEntityStatus.INACTIVE",
+    "Type {expected} to confirm permanent deletion.",
 ):
     if marker not in services:
         fail(f"Manpower lifecycle safety missing: {marker}")
@@ -96,11 +101,13 @@ for marker in (
     "manpower_contact_create",
     "manpower_contact_edit",
     "manpower_contact_deactivate",
+    "manpower_contact_delete",
+    "manpower_supplier_delete",
 ):
     if marker not in views:
         fail(f"Manpower view authority missing: {marker}")
 urls = text("apps/sourcing/urls.py")
-for route in ("manpower-suppliers/", "manpower-suppliers/new/", "restore-archive/", "restore-trash/", "contacts/new/"):
+for route in ("manpower-suppliers/", "manpower-suppliers/new/", "delete/", "restore-archive/", "restore-trash/", "contacts/new/", "contacts/<uuid:contact_id>/delete/"):
     if route not in urls:
         fail(f"Manpower route missing: {route}")
 
@@ -118,7 +125,7 @@ for marker in ("Search supplier, contact, phone, email, CR or VAT", "Columns", "
     if marker not in list_template:
         fail(f"Manpower directory UI missing: {marker}")
 detail_template = text("templates/sourcing/manpower/detail.html")
-for marker in ("Workforce Capability", "Contact Persons", "Activity", "Move to Trash", "Lifecycle"):
+for marker in ("Workforce Capability", "Contact Persons", "Activity", "Delete Manpower Supplier Permanently", "Archived · Inactive", "Lifecycle"):
     if marker not in detail_template:
         fail(f"Manpower profile UI missing: {marker}")
 if "Rental Payroll" not in detail_template:
@@ -145,10 +152,15 @@ for rel in (
         fail(f"invalid Python in {rel}: {exc}")
 
 retention = json.loads(text("merge/lifecycle-retention-contract.json"))
-if retention.get("models", {}).get("sourcing.SourcingManpowerContact", {}).get("mode") != "reference_master_deactivate_only":
-    fail("Manpower contact retention classification is missing")
+expected_modes = {
+    "sourcing.SourcingManpowerSupplier": "reference_master_archive_hard_delete_legacy_trash",
+    "sourcing.SourcingManpowerContact": "reference_contact_inactive_hard_delete",
+}
+for model, mode in expected_modes.items():
+    if retention.get("models", {}).get(model, {}).get("mode") != mode:
+        fail(f"retention classification changed for {model}")
 
 if "1.0.117" not in text("docs/SOURCING_MANPOWER_MASTER.md"):
     fail("Manpower master operator guide is not version-bound")
 
-print("PASS: SESCCO MS 1.0.117 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible lifecycle, immutable audit evidence and Rental Payroll isolation.")
+print("PASS: SESCCO MS 1.0.117 Manpower Sourcing Master verified: company-scoped server directory, view/edit enforcement, contacts, reversible inactive/archive lifecycle, permanent live-record delete semantics, immutable audit evidence and Rental Payroll isolation.")

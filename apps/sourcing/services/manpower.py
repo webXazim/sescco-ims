@@ -10,7 +10,13 @@ from django.utils import timezone
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 
-from ..models import SourcingEntityStatus, SourcingManpowerContact, SourcingManpowerSupplier
+from ..models import (
+    SourcingEntityStatus,
+    SourcingManpowerContact,
+    SourcingManpowerSupplier,
+    SourcingWorkforceOffer,
+    SourcingWorkforceOfferRevision,
+)
 
 TRASH_RETENTION_DAYS = 30
 
@@ -125,11 +131,25 @@ def archive_manpower_supplier(*, actor_membership, supplier_id, reason: str, req
         raise ValidationError({"reason": "A reason is required to archive a Manpower Supplier."})
     supplier = SourcingManpowerSupplier.objects.select_for_update().for_company(actor_membership.company).get(pk=supplier_id, deleted_at__isnull=True)
     before = _supplier_snapshot(supplier)
+    changed_fields = []
     if not supplier.archived_at:
         supplier.archived_at = timezone.now()
         supplier.archived_reason = reason[:300]
-        supplier.save(update_fields=["archived_at", "archived_reason", "updated_at"])
-        _audit(supplier=supplier, actor_membership=actor_membership, action="sourcing.manpower_supplier.archived", before=before, after=_supplier_snapshot(supplier), metadata={"reason": reason[:300]}, request=request)
+        changed_fields.extend(["archived_at", "archived_reason"])
+    if supplier.status != SourcingEntityStatus.INACTIVE:
+        supplier.status = SourcingEntityStatus.INACTIVE
+        changed_fields.append("status")
+    if changed_fields:
+        supplier.save(update_fields=[*changed_fields, "updated_at"])
+        _audit(
+            supplier=supplier,
+            actor_membership=actor_membership,
+            action="sourcing.manpower_supplier.archived",
+            before=before,
+            after=_supplier_snapshot(supplier),
+            metadata={"reason": reason[:300], "statusForcedInactive": True},
+            request=request,
+        )
     return supplier
 
 
@@ -177,6 +197,73 @@ def restore_manpower_supplier_trash(*, actor_membership, supplier_id, request=No
     return supplier
 
 
+
+
+@transaction.atomic
+def delete_manpower_supplier(*, actor_membership, supplier_id, confirmation: str, reason: str, request=None) -> dict[str, object]:
+    """Permanently delete one Sourcing Manpower Supplier and Sourcing children only.
+
+    Workforce capability rows and contacts are removed immediately. Immutable
+    verification snapshots remain detached for audit evidence; Rental Payroll suppliers,
+    workers, assignments, settlements and Accounting are intentionally untouched.
+    """
+    reason = str(reason or "").strip()
+    supplier = (
+        SourcingManpowerSupplier.objects.select_for_update()
+        .for_company(actor_membership.company)
+        .get(pk=supplier_id)
+    )
+    expected = supplier.code
+    if str(confirmation or "").strip().casefold() != expected.casefold():
+        raise ValidationError({"confirmation": f"Type {expected} to confirm permanent deletion."})
+    if not reason:
+        raise ValidationError({"reason": "A reason is required to permanently delete a Manpower Supplier."})
+
+    before = _supplier_snapshot(supplier)
+    offer_ids = list(
+        SourcingWorkforceOffer.objects.select_for_update()
+        .for_company(supplier.company)
+        .filter(supplier=supplier)
+        .values_list("pk", flat=True)
+    )
+    contact_count = SourcingManpowerContact.objects.for_company(supplier.company).filter(supplier=supplier).count()
+    revision_count = 0
+    if offer_ids:
+        revisions = SourcingWorkforceOfferRevision._base_manager.filter(
+            company_id=supplier.company_id, offer_id__in=offer_ids
+        )
+        revision_count = revisions.count()
+        revisions.update(offer=None)
+
+    label = supplier.name
+    _audit(
+        supplier=supplier,
+        actor_membership=actor_membership,
+        action="sourcing.manpower_supplier.deleted",
+        before=before,
+        after=None,
+        metadata={
+            "reason": reason[:500],
+            "permanent": True,
+            "cascadeContacts": contact_count,
+            "cascadeWorkforceOffers": len(offer_ids),
+            "retainedVerificationRevisions": revision_count,
+        },
+        request=request,
+    )
+    if offer_ids:
+        SourcingWorkforceOffer.objects.for_company(supplier.company).filter(pk__in=offer_ids).delete()
+    SourcingManpowerContact.objects.for_company(supplier.company).filter(supplier=supplier).delete()
+    supplier.delete()
+    return {
+        "label": label,
+        "code": expected,
+        "contacts_deleted": contact_count,
+        "offers_deleted": len(offer_ids),
+        "revisions_retained": revision_count,
+    }
+
+
 @transaction.atomic
 def create_manpower_contact(*, actor_membership, supplier_id, cleaned_data: dict[str, object], request=None) -> SourcingManpowerContact:
     supplier = SourcingManpowerSupplier.objects.select_for_update().for_company(actor_membership.company).get(pk=supplier_id, deleted_at__isnull=True)
@@ -217,3 +304,34 @@ def deactivate_manpower_contact(*, actor_membership, supplier_id, contact_id, re
     contact.save(update_fields=["is_active", "is_primary", "updated_at"])
     _audit(supplier=supplier, actor_membership=actor_membership, action="sourcing.manpower_supplier.contact_deactivated", before=before, after=_contact_snapshot(contact), metadata={"contactId": str(contact.pk)}, request=request)
     return contact
+
+
+@transaction.atomic
+def delete_manpower_contact(*, actor_membership, supplier_id, contact_id, request=None) -> dict[str, str]:
+    """Permanently delete one Manpower Supplier contact; deactivation remains reversible."""
+    supplier = (
+        SourcingManpowerSupplier.objects.select_for_update()
+        .for_company(actor_membership.company)
+        .get(pk=supplier_id, deleted_at__isnull=True)
+    )
+    if supplier.archived_at:
+        raise ValidationError("Restore the archived Manpower Supplier before deleting a contact.")
+    contact = (
+        SourcingManpowerContact.objects.select_for_update()
+        .for_company(supplier.company)
+        .get(pk=contact_id, supplier=supplier)
+    )
+    before = _contact_snapshot(contact)
+    contact_id_text = str(contact.pk)
+    label = contact.full_name
+    _audit(
+        supplier=supplier,
+        actor_membership=actor_membership,
+        action="sourcing.manpower_supplier.contact_deleted",
+        before=before,
+        after=None,
+        metadata={"contactId": contact_id_text, "permanent": True},
+        request=request,
+    )
+    contact.delete()
+    return {"label": label, "contact_id": contact_id_text}

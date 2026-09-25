@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership
@@ -13,6 +14,7 @@ from apps.inventory.models import Supplier as InventorySupplier
 from apps.sourcing.models import (
     SourcingMaterial,
     SourcingVendor,
+    SourcingVendorContact,
     SourcingVendorOffer,
     SourcingVendorOfferRevision,
 )
@@ -284,3 +286,64 @@ class MaterialCatalogTests(TestCase):
         self.material.refresh_from_db()
         self.assertFalse(self.material.is_active)
         self.assertTrue(SourcingVendorOffer.objects.filter(pk=offer.pk).exists())
+
+    def test_permanent_material_delete_cascades_live_offer_and_retains_revision(self):
+        manager, _ = self._member(
+            username="material-delete-manager",
+            permissions=(
+                AccessPermission.SOURCING_MASTERS_VIEW.value,
+                AccessPermission.SOURCING_MASTERS_MANAGE.value,
+            ),
+        )
+        offer = SourcingVendorOffer.objects.create(
+            company=self.company, vendor=self.vendor, material=self.material, availability="available"
+        )
+        revision = SourcingVendorOfferRevision.objects.create(
+            company=self.company, offer=offer, verified_at=timezone.now()
+        )
+        material_id = self.material.pk
+        offer_id = offer.pk
+        self.client.force_login(manager)
+
+        response = self.client.post(
+            reverse("sourcing:material_delete", args=[material_id]),
+            {"confirmation": self.material.code},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SourcingMaterial.objects.filter(pk=material_id).exists())
+        self.assertFalse(SourcingVendorOffer.objects.filter(pk=offer_id).exists())
+        revision.refresh_from_db()
+        self.assertIsNone(revision.offer_id)
+        self.assertTrue(
+            AuditEvent.objects.filter(company=self.company, action="sourcing.material.deleted", object_id=str(material_id)).exists()
+        )
+
+    def test_permanent_vendor_delete_removes_vendor_contacts_and_catalog_rows(self):
+        self.client.force_login(self.owner_user)
+        contact = SourcingVendorContact.objects.create(
+            company=self.company, vendor=self.vendor, first_name="Vendor", last_name="Contact"
+        )
+        offer = SourcingVendorOffer.objects.create(
+            company=self.company, vendor=self.vendor, material=self.material, availability="available"
+        )
+        revision = SourcingVendorOfferRevision.objects.create(
+            company=self.company, offer=offer, verified_at=timezone.now()
+        )
+        vendor_id = self.vendor.pk
+        contact_id = contact.pk
+        offer_id = offer.pk
+
+        response = self.client.post(
+            reverse("sourcing:vendor_delete", args=[vendor_id]),
+            {"confirmation": self.vendor.code, "reason": "Duplicate reference"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SourcingVendor.objects.filter(pk=vendor_id).exists())
+        self.assertFalse(SourcingVendorContact.objects.filter(pk=contact_id).exists())
+        self.assertFalse(SourcingVendorOffer.objects.filter(pk=offer_id).exists())
+        revision.refresh_from_db()
+        self.assertIsNone(revision.offer_id)
+        self.assertTrue(
+            AuditEvent.objects.filter(company=self.company, action="sourcing.vendor.deleted", object_id=str(vendor_id)).exists()
+        )
+

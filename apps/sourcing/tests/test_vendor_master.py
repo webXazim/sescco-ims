@@ -173,6 +173,37 @@ class VendorSourcingMasterTests(TestCase):
         self.assertIsNone(vendor.purge_after)
         self.assertTrue(AuditEvent.objects.filter(action="sourcing.vendor.trash_restored", object_id=str(vendor.pk)).exists())
 
+
+    def test_archive_forces_inactive_and_contact_delete_is_permanent(self):
+        self.client.force_login(self.owner_user)
+        vendor = SourcingVendor.objects.create(company=self.company, code="VND-DEST", name="Destructive Lifecycle Vendor")
+        contact = SourcingVendorContact.objects.create(
+            company=self.company, vendor=vendor, first_name="Delete", last_name="Me", is_active=True
+        )
+
+        archived = self.client.post(
+            reverse("sourcing:vendor_archive", args=[vendor.pk]),
+            {"reason": "Temporarily not used"},
+        )
+        self.assertEqual(archived.status_code, 302)
+        vendor.refresh_from_db()
+        self.assertIsNotNone(vendor.archived_at)
+        self.assertEqual(vendor.status, SourcingEntityStatus.INACTIVE)
+
+        self.client.post(reverse("sourcing:vendor_restore_archive", args=[vendor.pk]))
+        vendor.refresh_from_db()
+        self.assertIsNone(vendor.archived_at)
+        self.assertEqual(vendor.status, SourcingEntityStatus.INACTIVE)
+
+        deleted = self.client.post(reverse("sourcing:vendor_contact_delete", args=[vendor.pk, contact.pk]))
+        self.assertEqual(deleted.status_code, 302)
+        self.assertFalse(SourcingVendorContact.objects.filter(pk=contact.pk).exists())
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                company=self.company, action="sourcing.vendor.contact_deleted", object_id=str(vendor.pk)
+            ).exists()
+        )
+
     def test_vendor_contact_cannot_cross_company_boundary(self):
         vendor = SourcingVendor.objects.create(company=self.company, code="VND-BOUND", name="Boundary Vendor")
         contact = SourcingVendorContact(

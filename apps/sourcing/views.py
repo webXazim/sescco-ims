@@ -86,6 +86,8 @@ from .selectors.vendors import PAGE_SIZES, vendor_directory_page, vendor_history
 from .services.catalog import (
     create_material,
     create_vendor_offer,
+    delete_material,
+    delete_vendor_offer,
     set_material_active,
     set_vendor_offer_active,
     suggest_material_code,
@@ -98,7 +100,9 @@ from .services.manpower import (
     archive_manpower_supplier,
     create_manpower_contact,
     create_manpower_supplier,
+    delete_manpower_supplier,
     deactivate_manpower_contact,
+    delete_manpower_contact,
     restore_manpower_supplier_archive,
     restore_manpower_supplier_trash,
     set_manpower_supplier_status,
@@ -110,6 +114,8 @@ from .services.manpower import (
 from .services.workforce import (
     create_trade,
     create_workforce_offer,
+    delete_trade,
+    delete_workforce_offer,
     set_trade_active,
     set_workforce_offer_active,
     suggest_trade_code,
@@ -122,7 +128,9 @@ from .services.vendors import (
     archive_vendor,
     create_vendor,
     create_vendor_contact,
+    delete_vendor,
     deactivate_vendor_contact,
+    delete_vendor_contact,
     restore_vendor_archive,
     restore_vendor_trash,
     set_vendor_status,
@@ -466,6 +474,33 @@ def vendor_trash(request: HttpRequest, vendor_id) -> HttpResponse:
     return redirect("sourcing:vendor_list")
 
 
+
+
+@login_required
+def vendor_delete(request: HttpRequest, vendor_id) -> HttpResponse:
+    _require_vendor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Vendor permanent deletion requires POST.")
+    try:
+        result = delete_vendor(
+            actor_membership=_membership(request),
+            vendor_id=vendor_id,
+            confirmation=request.POST.get("confirmation", ""),
+            reason=request.POST.get("reason", ""),
+            request=request,
+        )
+    except (ValidationError, SourcingVendor.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+        if SourcingVendor.objects.for_company(request.company).filter(pk=vendor_id).exists():
+            return redirect("sourcing:vendor_detail", vendor_id=vendor_id)
+        return redirect("sourcing:vendor_list")
+    messages.success(
+        request,
+        f"{result['label']} was permanently deleted with {result['offers_deleted']} Supply Catalog row(s) and {result['contacts_deleted']} contact(s).",
+    )
+    return redirect("sourcing:vendor_list")
+
+
 @login_required
 def vendor_restore_trash(request: HttpRequest, vendor_id) -> HttpResponse:
     _require_vendor_manage(request)
@@ -559,6 +594,25 @@ def vendor_contact_deactivate(request: HttpRequest, vendor_id, contact_id) -> Ht
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.success(request, "Vendor contact was deactivated.")
+    return redirect("sourcing:vendor_detail", vendor_id=vendor_id)
+
+
+@login_required
+def vendor_contact_delete(request: HttpRequest, vendor_id, contact_id) -> HttpResponse:
+    _require_vendor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Vendor contact permanent deletion requires POST.")
+    try:
+        result = delete_vendor_contact(
+            actor_membership=_membership(request),
+            vendor_id=vendor_id,
+            contact_id=contact_id,
+            request=request,
+        )
+    except (ValidationError, SourcingVendor.DoesNotExist, SourcingVendorContact.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{result['label']} was permanently deleted from Vendor contacts.")
     return redirect("sourcing:vendor_detail", vendor_id=vendor_id)
 
 
@@ -772,6 +826,33 @@ def manpower_supplier_trash(request: HttpRequest, supplier_id) -> HttpResponse:
     return redirect("sourcing:manpower_supplier_list")
 
 
+
+
+@login_required
+def manpower_supplier_delete(request: HttpRequest, supplier_id) -> HttpResponse:
+    _require_manpower_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Manpower Supplier permanent deletion requires POST.")
+    try:
+        result = delete_manpower_supplier(
+            actor_membership=_membership(request),
+            supplier_id=supplier_id,
+            confirmation=request.POST.get("confirmation", ""),
+            reason=request.POST.get("reason", ""),
+            request=request,
+        )
+    except (ValidationError, SourcingManpowerSupplier.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+        if SourcingManpowerSupplier.objects.for_company(request.company).filter(pk=supplier_id).exists():
+            return redirect("sourcing:manpower_supplier_detail", supplier_id=supplier_id)
+        return redirect("sourcing:manpower_supplier_list")
+    messages.success(
+        request,
+        f"{result['label']} was permanently deleted with {result['offers_deleted']} Workforce row(s) and {result['contacts_deleted']} contact(s).",
+    )
+    return redirect("sourcing:manpower_supplier_list")
+
+
 @login_required
 def manpower_supplier_restore_trash(request: HttpRequest, supplier_id) -> HttpResponse:
     _require_manpower_manage(request)
@@ -865,6 +946,25 @@ def manpower_contact_deactivate(request: HttpRequest, supplier_id, contact_id) -
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.success(request, "Manpower Supplier contact was deactivated.")
+    return redirect("sourcing:manpower_supplier_detail", supplier_id=supplier_id)
+
+
+@login_required
+def manpower_contact_delete(request: HttpRequest, supplier_id, contact_id) -> HttpResponse:
+    _require_manpower_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Manpower contact permanent deletion requires POST.")
+    try:
+        result = delete_manpower_contact(
+            actor_membership=_membership(request),
+            supplier_id=supplier_id,
+            contact_id=contact_id,
+            request=request,
+        )
+    except (ValidationError, SourcingManpowerSupplier.DoesNotExist, SourcingManpowerContact.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{result['label']} was permanently deleted from Manpower Supplier contacts.")
     return redirect("sourcing:manpower_supplier_detail", supplier_id=supplier_id)
 
 
@@ -964,6 +1064,27 @@ def workforce_offer_status(request: HttpRequest, supplier_id, offer_id) -> HttpR
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.success(request, "Workforce capability status was updated.")
+    return redirect(f"{reverse('sourcing:manpower_supplier_detail', args=[supplier_id])}#workforce")
+
+
+
+
+@login_required
+def workforce_offer_delete(request: HttpRequest, supplier_id, offer_id) -> HttpResponse:
+    _require_manpower_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Workforce Catalog permanent deletion requires POST.")
+    try:
+        result = delete_workforce_offer(
+            actor_membership=_membership(request),
+            supplier_id=supplier_id,
+            offer_id=offer_id,
+            request=request,
+        )
+    except (ValidationError, SourcingManpowerSupplier.DoesNotExist, SourcingWorkforceOffer.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{result['label']} was permanently deleted from this Supplier's Workforce Catalog.")
     return redirect(f"{reverse('sourcing:manpower_supplier_detail', args=[supplier_id])}#workforce")
 
 
@@ -1199,6 +1320,30 @@ def material_status(request: HttpRequest, material_id) -> HttpResponse:
 
 
 
+
+
+@login_required
+def material_delete(request: HttpRequest, material_id) -> HttpResponse:
+    _require_master_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Material permanent deletion requires POST.")
+    try:
+        result = delete_material(
+            actor_membership=_membership(request),
+            material_id=material_id,
+            confirmation=request.POST.get("confirmation", ""),
+            request=request,
+        )
+    except (ValidationError, SourcingMaterial.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(
+            request,
+            f"{result['label']} was permanently deleted with {result['offers_deleted']} Vendor catalog row(s).",
+        )
+    return redirect("sourcing:material_list")
+
+
 @login_required
 def trade_list(request: HttpRequest) -> HttpResponse:
     _require_master_view(request)
@@ -1291,6 +1436,30 @@ def trade_status(request: HttpRequest, trade_id) -> HttpResponse:
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.success(request, f"{trade.name} is now {'Active' if trade.is_active else 'Inactive'}.")
+    return redirect("sourcing:trade_list")
+
+
+
+
+@login_required
+def trade_delete(request: HttpRequest, trade_id) -> HttpResponse:
+    _require_master_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Trade permanent deletion requires POST.")
+    try:
+        result = delete_trade(
+            actor_membership=_membership(request),
+            trade_id=trade_id,
+            confirmation=request.POST.get("confirmation", ""),
+            request=request,
+        )
+    except (ValidationError, SourcingTrade.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(
+            request,
+            f"{result['label']} was permanently deleted with {result['offers_deleted']} Workforce row(s).",
+        )
     return redirect("sourcing:trade_list")
 
 
@@ -1485,6 +1654,27 @@ def vendor_offer_status(request: HttpRequest, vendor_id, offer_id) -> HttpRespon
         messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
     else:
         messages.success(request, "Supply Catalog item status was updated.")
+    return redirect(f"{reverse('sourcing:vendor_detail', args=[vendor_id])}#catalog")
+
+
+
+
+@login_required
+def vendor_offer_delete(request: HttpRequest, vendor_id, offer_id) -> HttpResponse:
+    _require_vendor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Supply Catalog permanent deletion requires POST.")
+    try:
+        result = delete_vendor_offer(
+            actor_membership=_membership(request),
+            vendor_id=vendor_id,
+            offer_id=offer_id,
+            request=request,
+        )
+    except (ValidationError, SourcingVendor.DoesNotExist, SourcingVendorOffer.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{result['label']} was permanently deleted from this Vendor's Supply Catalog.")
     return redirect(f"{reverse('sourcing:vendor_detail', args=[vendor_id])}#catalog")
 
 

@@ -205,22 +205,28 @@
       "mode": "immutable_finalized_document"
     },
     "sourcing.SourcingVendor": {
-      "mode": "reference_master_archive_trash_30d"
+      "mode": "reference_master_archive_hard_delete_legacy_trash",
+      "notes": "Active/Inactive and Archive are reversible. New Delete actions hard-delete the live Sourcing Vendor and Sourcing-owned children; pre-upgrade Trash rows remain restorable for compatibility."
     },
     "sourcing.SourcingManpowerSupplier": {
-      "mode": "reference_master_archive_trash_30d"
+      "mode": "reference_master_archive_hard_delete_legacy_trash",
+      "notes": "Active/Inactive and Archive are reversible. New Delete actions hard-delete the live Sourcing Manpower Supplier and Sourcing-owned children; pre-upgrade Trash rows remain restorable for compatibility."
     },
     "sourcing.SourcingMaterial": {
-      "mode": "reference_master_deactivate_only"
+      "mode": "reference_master_inactive_hard_delete",
+      "notes": "Inactive preserves the reference. Delete permanently removes the Material and cascades only its Sourcing Vendor Offer rows."
     },
     "sourcing.SourcingTrade": {
-      "mode": "reference_master_deactivate_only"
+      "mode": "reference_master_inactive_hard_delete",
+      "notes": "Inactive preserves the reference. Delete permanently removes the Trade and cascades only its Sourcing Workforce Offer rows."
     },
     "sourcing.SourcingVendorOffer": {
-      "mode": "reference_offer_deactivate_only"
+      "mode": "reference_offer_inactive_hard_delete",
+      "notes": "Inactive preserves the Supply Catalog row. Delete permanently removes the live row while immutable verification revisions remain detached."
     },
     "sourcing.SourcingWorkforceOffer": {
-      "mode": "reference_offer_deactivate_only"
+      "mode": "reference_offer_inactive_hard_delete",
+      "notes": "Inactive preserves the Workforce Catalog row. Delete permanently removes the live row while immutable verification revisions remain detached."
     },
     "sourcing.SourcingVendorOfferRevision": {
       "mode": "immutable_reference_history"
@@ -232,12 +238,12 @@
       "mode": "system_singleton_no_delete"
     },
     "sourcing.SourcingVendorContact": {
-      "mode": "reference_master_deactivate_only",
-      "notes": "Sourcing-only Vendor contact person; application deactivates rather than destructively deleting contact evidence."
+      "mode": "reference_contact_inactive_hard_delete",
+      "notes": "Deactivate preserves the Vendor contact. Delete permanently removes the contact row and retains the parent audit event."
     },
     "sourcing.SourcingManpowerContact": {
-      "mode": "reference_master_deactivate_only",
-      "notes": "Sourcing-only Manpower Supplier contact person; application deactivates rather than destructively deleting contact evidence."
+      "mode": "reference_contact_inactive_hard_delete",
+      "notes": "Deactivate preserves the Manpower Supplier contact. Delete permanently removes the contact row and retains the parent audit event."
     }
   }
 }

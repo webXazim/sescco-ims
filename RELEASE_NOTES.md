@@ -1,3 +1,11 @@
+# 1.0.117 — Sourcing Permanent Delete & Archive Separation Hotfix
+
+- Separated Sourcing lifecycle actions so **Inactive**, **Archive**, and **Delete** no longer overlap: Inactive preserves the record, Archive is reversible and forces Vendor/Manpower Supplier status to Inactive, and Delete physically removes the live Sourcing record.
+- Vendor and Manpower Supplier permanent delete now removes their Sourcing contacts plus Supply Catalog/Workforce Catalog rows inside one transaction. Material and Trade permanent delete cascades only the Sourcing offer rows that depend on that reference master. Individual Supply Catalog, Workforce Catalog, Vendor-contact and Manpower-contact rows also have explicit permanent Delete actions.
+- Immutable Sourcing audit events and verification revisions remain retained as evidence; revisions are detached from deleted live offer rows. No Inventory, Rental Payroll, Internal Payroll, Projects, Documents or Accounting record is deleted or modified by these Sourcing actions.
+- Existing 30-day Trash rows created by earlier versions remain available as **Legacy Trash** for restore/permanent cleanup, but the current Delete UI never creates a new Trash row.
+- Updated the lifecycle-retention contract, Sourcing static certification gates, operator guides and destructive-lifecycle regression tests. No database migration is required.
+
 # 1.0.117 — Sourcing Profile Overview Catalog Preview Hotfix
 
 - Added a bounded **Materials** preview to each Vendor Overview so the profile immediately shows the Vendor's recorded supply items without requiring a tab switch.

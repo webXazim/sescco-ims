@@ -5,12 +5,14 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditArea, AuditEvent, Company
 from apps.sourcing.models import (
+    SourcingManpowerContact,
     SourcingManpowerSupplier,
     SourcingTrade,
     SourcingWorkforceOffer,
@@ -207,3 +209,59 @@ class TradeWorkforceCatalogTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             offer.full_clean()
+
+    def test_permanent_trade_delete_cascades_live_workforce_offer_and_retains_revision(self):
+        self.client.force_login(self.owner_user)
+        offer = SourcingWorkforceOffer.objects.create(
+            company=self.company, supplier=self.supplier, trade=self.trade, availability="available"
+        )
+        revision = SourcingWorkforceOfferRevision.objects.create(
+            company=self.company, offer=offer, verified_at=timezone.now()
+        )
+        trade_id = self.trade.pk
+        offer_id = offer.pk
+
+        response = self.client.post(
+            reverse("sourcing:trade_delete", args=[trade_id]),
+            {"confirmation": self.trade.code},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SourcingTrade.objects.filter(pk=trade_id).exists())
+        self.assertFalse(SourcingWorkforceOffer.objects.filter(pk=offer_id).exists())
+        revision.refresh_from_db()
+        self.assertIsNone(revision.offer_id)
+        self.assertTrue(
+            AuditEvent.objects.filter(company=self.company, action="sourcing.trade.deleted", object_id=str(trade_id)).exists()
+        )
+
+    def test_permanent_manpower_supplier_delete_removes_contacts_and_workforce_rows(self):
+        self.client.force_login(self.owner_user)
+        contact = SourcingManpowerContact.objects.create(
+            company=self.company, supplier=self.supplier, first_name="Supplier", last_name="Contact"
+        )
+        offer = SourcingWorkforceOffer.objects.create(
+            company=self.company, supplier=self.supplier, trade=self.trade, availability="available"
+        )
+        revision = SourcingWorkforceOfferRevision.objects.create(
+            company=self.company, offer=offer, verified_at=timezone.now()
+        )
+        supplier_id = self.supplier.pk
+        contact_id = contact.pk
+        offer_id = offer.pk
+
+        response = self.client.post(
+            reverse("sourcing:manpower_supplier_delete", args=[supplier_id]),
+            {"confirmation": self.supplier.code, "reason": "Duplicate reference"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SourcingManpowerSupplier.objects.filter(pk=supplier_id).exists())
+        self.assertFalse(SourcingManpowerContact.objects.filter(pk=contact_id).exists())
+        self.assertFalse(SourcingWorkforceOffer.objects.filter(pk=offer_id).exists())
+        revision.refresh_from_db()
+        self.assertIsNone(revision.offer_id)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                company=self.company, action="sourcing.manpower_supplier.deleted", object_id=str(supplier_id)
+            ).exists()
+        )
+

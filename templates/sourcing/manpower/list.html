@@ -20,7 +20,7 @@
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Suppliers ({{ counts.active }})</option>
         <option value="inactive" {% if directory.status == 'inactive' %}selected{% endif %}>Inactive ({{ counts.inactive }})</option>
         <option value="archived" {% if directory.status == 'archived' %}selected{% endif %}>Archived ({{ counts.archived }})</option>
-        <option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Trash ({{ counts.trash }})</option>
+        <option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Legacy Trash ({{ counts.trash }})</option>
         <option value="all" {% if directory.status == 'all' %}selected{% endif %}>All current Suppliers</option>
       </select>
       <select class="sourcing-select sourcing-select--small" name="page_size" onchange="this.form.submit()" aria-label="Rows per page">
@@ -60,7 +60,7 @@
           <td data-column="phone">{{ supplier.phone|default:supplier.mobile|default:'—' }}</td>
           <td data-column="location">{% if supplier.city or supplier.region %}{{ supplier.city }}{% if supplier.city and supplier.region %}, {% endif %}{{ supplier.region }}{% else %}—{% endif %}</td>
           <td data-column="trades" class="num">{{ supplier.workforce_type_count }}</td>
-          <td>{% if supplier.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>{% elif supplier.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif supplier.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
+          <td>{% if supplier.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>{% elif supplier.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif supplier.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
           <td data-column="updated"><time datetime="{{ supplier.updated_at|date:'c' }}">{{ supplier.updated_at|date:"d M Y" }}</time></td>
           <td class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Manpower Supplier actions">⋯</summary><div><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">View</a>{% if can_manage and not supplier.deleted_at and not supplier.archived_at %}<a href="{% url 'sourcing:manpower_supplier_edit' supplier.id %}">Edit</a>{% endif %}</div></details></td>
         </tr>
