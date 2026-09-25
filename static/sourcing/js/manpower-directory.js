@@ -24,12 +24,33 @@
   const tabs = [...document.querySelectorAll("[data-sourcing-tab]")];
   const panels = [...document.querySelectorAll("[data-sourcing-panel]")];
   if (tabs.length && panels.length) {
+    const hasTab = (key) => tabs.some((tab) => tab.dataset.sourcingTab === key);
     const activate = (key) => {
+      if (!hasTab(key)) return false;
       tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.sourcingTab === key));
       panels.forEach((panel) => { panel.hidden = panel.dataset.sourcingPanel !== key; });
+      return true;
     };
-    tabs.forEach((tab) => tab.addEventListener("click", () => activate(tab.dataset.sourcingTab)));
-    const requested = location.hash.replace("#", "");
-    if (tabs.some((tab) => tab.dataset.sourcingTab === requested)) activate(requested);
+    const defaultTab = tabs.find((tab) => tab.classList.contains("active"))?.dataset.sourcingTab || tabs[0].dataset.sourcingTab;
+    tabs.forEach((tab) => tab.addEventListener("click", () => {
+      const key = tab.dataset.sourcingTab;
+      if (activate(key) && location.hash !== `#${key}`) history.replaceState(null, "", `#${key}`);
+    }));
+    document.querySelectorAll("[data-sourcing-open-tab]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const key = link.dataset.sourcingOpenTab;
+        if (!activate(key)) return;
+        event.preventDefault();
+        if (location.hash !== `#${key}`) history.pushState(null, "", `#${key}`);
+        document.querySelector(`[data-sourcing-panel="${key}"]`)?.scrollIntoView({ block: "start" });
+      });
+    });
+    const activateHash = () => {
+      const requested = location.hash.replace("#", "");
+      activate(hasTab(requested) ? requested : defaultTab);
+    };
+    window.addEventListener("hashchange", activateHash);
+    window.addEventListener("popstate", activateHash);
+    activateHash();
   }
 })();

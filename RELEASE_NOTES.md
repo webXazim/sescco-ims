@@ -1,3 +1,11 @@
+# 1.0.117 — Sourcing Profile Overview Catalog Preview Hotfix
+
+- Added a bounded **Materials** preview to each Vendor Overview so the profile immediately shows the Vendor's recorded supply items without requiring a tab switch.
+- Added a bounded **Workforce** preview to each Manpower Supplier Overview so worker types, availability, quantities, rates, location, verification state and active status are visible at a glance.
+- Overview previews are capped at five rows and expose **View all** only when additional rows exist; the action switches directly to the complete Supply Catalog or Workforce tab.
+- Centralized Vendor/Workforce catalog queryset ordering so overview previews and full paginated tabs stay consistent, company-scoped and relation-efficient.
+- Added responsive preview-table styling and regression coverage for preview limits/counts. No database migration, Inventory/Payroll/Accounting authority change, or sourcing lifecycle change is introduced.
+
 # 1.0.117 — Vendor Master Identity & Primary Contact Profile Upgrade
 
 - Reorganized Vendor create/edit into exactly three sections: **Vendor Identity**, **Primary Contact**, and **Remarks**.

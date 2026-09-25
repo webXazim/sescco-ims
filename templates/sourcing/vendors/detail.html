@@ -17,6 +17,45 @@
     <article class="sourcing-card"><header><h2>Vendor Identity</h2></header><dl class="sourcing-data-list"><div><dt>Company / Vendor Name</dt><dd>{{ vendor.name }}</dd></div><div><dt>Display Name</dt><dd>{{ vendor.display_name|default:'—' }}</dd></div><div><dt>CR Number</dt><dd>{{ vendor.cr_number|default:'—' }}</dd></div><div><dt>VAT Number</dt><dd>{{ vendor.vat_number|default:'—' }}</dd></div><div><dt>Company Official Number</dt><dd>{{ vendor.company_phone|default:'—' }}</dd></div><div><dt>Company Email</dt><dd>{% if vendor.company_email %}<a href="mailto:{{ vendor.company_email }}">{{ vendor.company_email }}</a>{% else %}—{% endif %}</dd></div><div><dt>Website</dt><dd>{% if vendor.website %}<a href="{{ vendor.website }}" rel="noopener noreferrer">{{ vendor.website }}</a>{% else %}—{% endif %}</dd></div></dl></article>
     <article class="sourcing-card"><header><h2>Primary Contact</h2></header><dl class="sourcing-data-list"><div><dt>Name</dt><dd>{{ vendor.primary_contact_name|default:'—' }}</dd></div><div><dt>Email</dt><dd>{% if vendor.email %}<a href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</dd></div><div><dt>Mobile</dt><dd>{{ vendor.mobile|default:'—' }}</dd></div><div><dt>Address</dt><dd>{{ vendor.address|default:'—' }}</dd></div><div><dt>Street Number</dt><dd>{{ vendor.street_number|default:'—' }}</dd></div><div><dt>District</dt><dd>{{ vendor.district|default:'—' }}</dd></div><div><dt>City</dt><dd>{{ vendor.city|default:'—' }}</dd></div><div><dt>Region</dt><dd>{{ vendor.region|default:'—' }}</dd></div><div><dt>Postal Code</dt><dd>{{ vendor.postal_code|default:'—' }}</dd></div></dl></article>
   </div>
+
+  <article class="sourcing-card sourcing-card--spaced sourcing-overview-card">
+    <header class="sourcing-card-head">
+      <div>
+        <h2>Materials</h2>
+        <p>Reference material items currently recorded for this Vendor. Open the Supply Catalog for the complete list and management actions.</p>
+      </div>
+      <div class="sourcing-card-actions">
+        <span class="sourcing-count">{{ catalog_total_count }} item{{ catalog_total_count|pluralize }} · {{ active_catalog_count }} active</span>
+        {% if catalog_overview_has_more %}<a class="sourcing-btn" href="#catalog" data-sourcing-open-tab="catalog">View all</a>{% endif %}
+      </div>
+    </header>
+    {% if catalog_overview %}
+      <div class="sourcing-table-wrap sourcing-overview-table-wrap">
+        <table class="sourcing-table sourcing-overview-table">
+          <thead><tr><th>Material</th><th>Availability</th><th class="num">Qty</th><th class="num">Rate</th><th>Verified</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for offer in catalog_overview %}
+              <tr{% if not offer.is_active %} class="is-inactive"{% endif %}>
+                <td><strong>{{ offer.material.name }}</strong><small class="cell-note">{{ offer.material.code }}{% if offer.brand %} · {{ offer.brand }}{% endif %}{% if offer.model %} · {{ offer.model }}{% endif %}</small></td>
+                <td>{% if offer.availability == 'available' %}<span class="sourcing-pill sourcing-pill--success">Available</span>{% elif offer.availability == 'limited' %}<span class="sourcing-pill sourcing-pill--warning">Limited</span>{% elif offer.availability == 'unavailable' %}<span class="sourcing-pill sourcing-pill--danger">Unavailable</span>{% else %}<span class="sourcing-pill sourcing-pill--muted">Unknown</span>{% endif %}</td>
+                <td class="num">{% if offer.available_quantity != None %}{{ offer.available_quantity|floatformat:-3 }} {{ offer.unit|default:offer.material.default_unit }}{% else %}<span class="sourcing-muted-value">Unknown</span>{% endif %}</td>
+                <td class="num">{% if offer.rate != None %}{{ offer.currency }} {{ offer.rate|floatformat:-4 }}{% else %}<span class="sourcing-muted-value">Unknown</span>{% endif %}</td>
+                <td>{% if offer.last_verified_at %}{{ offer.last_verified_at|date:"d M Y" }}{% else %}<span class="sourcing-muted-value">Never</span>{% endif %}</td>
+                <td>{% if offer.is_active %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--muted">Inactive</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="sourcing-empty sourcing-overview-empty">
+        <strong>No material items recorded</strong>
+        <p>Add reference materials this Vendor may be able to supply.</p>
+        {% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">Add Supply Item</a>{% endif %}
+      </div>
+    {% endif %}
+  </article>
+
   {% if vendor.notes %}<article class="sourcing-card sourcing-card--spaced"><header><h2>Remarks</h2></header><p class="sourcing-notes">{{ vendor.notes|linebreaksbr }}</p></article>{% endif %}
 
   {% if can_manage %}<article class="sourcing-card sourcing-card--spaced sourcing-lifecycle"><header><h2>Lifecycle</h2><p>Lifecycle changes affect only this Sourcing reference. They never modify Inventory, Payroll or Accounting.</p></header>

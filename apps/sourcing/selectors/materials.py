@@ -84,23 +84,35 @@ def material_directory_page(*, company, params) -> MaterialDirectoryResult:
     )
 
 
-def vendor_catalog(*, company, vendor):
-    return list(
+OVERVIEW_PREVIEW_LIMIT = 5
+
+
+def _vendor_catalog_queryset(*, company, vendor):
+    return (
         SourcingVendorOffer.objects.for_company(company)
         .filter(vendor=vendor)
         .select_related("material", "verified_by")
         .order_by("-is_active", "material__category", "material__name", "specification", "brand", "model", "pk")
     )
+
+
+def vendor_catalog(*, company, vendor):
+    return list(_vendor_catalog_queryset(company=company, vendor=vendor))
+
+
+def vendor_catalog_overview(*, company, vendor, limit: int = OVERVIEW_PREVIEW_LIMIT):
+    """Return a small, deterministic catalog preview for the Vendor Overview panel."""
+    try:
+        requested_limit = int(limit or OVERVIEW_PREVIEW_LIMIT)
+    except (TypeError, ValueError):
+        requested_limit = OVERVIEW_PREVIEW_LIMIT
+    bounded_limit = max(1, min(requested_limit, 10))
+    return list(_vendor_catalog_queryset(company=company, vendor=vendor)[:bounded_limit])
 
 
 def vendor_catalog_page(*, company, vendor, page=1, page_size=25):
     size = _page_size(page_size)
-    queryset = (
-        SourcingVendorOffer.objects.for_company(company)
-        .filter(vendor=vendor)
-        .select_related("material", "verified_by")
-        .order_by("-is_active", "material__category", "material__name", "specification", "brand", "model", "pk")
-    )
+    queryset = _vendor_catalog_queryset(company=company, vendor=vendor)
     paginator = Paginator(queryset, size)
     try:
         number = max(1, int(str(page or "1")))

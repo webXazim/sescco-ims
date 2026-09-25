@@ -180,6 +180,9 @@ class MaterialCatalogTests(TestCase):
         detail = self.client.get(reverse("sourcing:vendor_detail", args=[self.vendor.pk]))
         self.assertEqual(detail.status_code, 200)
         self.assertContains(detail, "Rebar 12mm")
+        self.assertEqual(detail.context["catalog_total_count"], 1)
+        self.assertFalse(detail.context["catalog_overview_has_more"])
+        self.assertNotContains(detail, 'data-sourcing-open-tab="catalog"')
         self.assertEqual(self.client.get(reverse("sourcing:vendor_offer_create", args=[self.vendor.pk])).status_code, 403)
         self.assertEqual(
             self.client.post(
@@ -188,6 +191,39 @@ class MaterialCatalogTests(TestCase):
             ).status_code,
             403,
         )
+
+    def test_vendor_overview_previews_materials_and_only_offers_view_all_when_bounded(self):
+        self.client.force_login(self.owner_user)
+        materials = [self.material]
+        for index in range(1, 6):
+            materials.append(
+                SourcingMaterial.objects.create(
+                    company=self.company,
+                    code=f"MAT-PREVIEW-{index}",
+                    name=f"Preview Material {index}",
+                    category="Preview",
+                    default_unit="pcs",
+                )
+            )
+        for index, material in enumerate(materials, start=1):
+            SourcingVendorOffer.objects.create(
+                company=self.company,
+                vendor=self.vendor,
+                material=material,
+                availability="available",
+                available_quantity=index,
+                rate=str(100 + index),
+                currency="SAR",
+                unit=material.default_unit,
+            )
+
+        response = self.client.get(reverse("sourcing:vendor_detail", args=[self.vendor.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["catalog_total_count"], 6)
+        self.assertEqual(len(response.context["catalog_overview"]), 5)
+        self.assertTrue(response.context["catalog_overview_has_more"])
+        self.assertContains(response, "<h2>Materials</h2>", html=True)
+        self.assertContains(response, 'data-sourcing-open-tab="catalog"')
 
     def test_cross_company_material_cannot_be_assigned_to_vendor_offer(self):
         editor, _ = self._member(

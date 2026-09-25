@@ -149,6 +149,9 @@ class TradeWorkforceCatalogTests(TestCase):
         detail = self.client.get(reverse("sourcing:manpower_supplier_detail", args=[self.supplier.pk]))
         self.assertEqual(detail.status_code, 200)
         self.assertContains(detail, "AC Technician")
+        self.assertEqual(detail.context["workforce_total_count"], 1)
+        self.assertFalse(detail.context["workforce_overview_has_more"])
+        self.assertNotContains(detail, 'data-sourcing-open-tab="workforce"')
         self.assertEqual(self.client.get(reverse("sourcing:workforce_offer_create", args=[self.supplier.pk])).status_code, 403)
         self.assertEqual(
             self.client.post(
@@ -157,6 +160,38 @@ class TradeWorkforceCatalogTests(TestCase):
             ).status_code,
             403,
         )
+
+    def test_manpower_overview_previews_workforce_and_only_offers_view_all_when_bounded(self):
+        self.client.force_login(self.owner_user)
+        trades = [self.trade]
+        for index in range(1, 6):
+            trades.append(
+                SourcingTrade.objects.create(
+                    company=self.company,
+                    code=f"TRD-PREVIEW-{index}",
+                    name=f"Preview Trade {index}",
+                    category="Preview",
+                )
+            )
+        for index, trade in enumerate(trades, start=1):
+            SourcingWorkforceOffer.objects.create(
+                company=self.company,
+                supplier=self.supplier,
+                trade=trade,
+                availability="available",
+                available_quantity=index,
+                rate=str(3000 + index),
+                currency="SAR",
+                rate_basis="month",
+            )
+
+        response = self.client.get(reverse("sourcing:manpower_supplier_detail", args=[self.supplier.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["workforce_total_count"], 6)
+        self.assertEqual(len(response.context["workforce_overview"]), 5)
+        self.assertTrue(response.context["workforce_overview_has_more"])
+        self.assertContains(response, "<h2>Workforce</h2>", html=True)
+        self.assertContains(response, 'data-sourcing-open-tab="workforce"')
 
     def test_cross_company_trade_is_rejected_for_workforce_offer(self):
         foreign_trade = SourcingTrade.objects.create(

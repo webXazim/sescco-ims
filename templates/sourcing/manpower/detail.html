@@ -10,7 +10,48 @@
 <section data-sourcing-panel="overview"><div class="sourcing-profile-grid">
   <article class="sourcing-card"><header><h2>Supplier Details</h2></header><dl class="sourcing-data-list"><div><dt>Company / Supplier Name</dt><dd>{{ supplier.name }}</dd></div><div><dt>CR Number</dt><dd>{{ supplier.cr_number|default:'—' }}</dd></div><div><dt>VAT Number</dt><dd>{{ supplier.vat_number|default:'—' }}</dd></div><div><dt>Location</dt><dd>{% if supplier.city or supplier.region %}{{ supplier.city }}{% if supplier.city and supplier.region %}, {% endif %}{{ supplier.region }}{% else %}—{% endif %}</dd></div><div><dt>Workforce Types</dt><dd>{{ workforce_count }}</dd></div><div><dt>Last Verified</dt><dd>{% if supplier.last_verified_at %}{{ supplier.last_verified_at|date:"d M Y H:i" }}{% else %}Never verified{% endif %}</dd></div></dl></article>
   <article class="sourcing-card"><header><h2>Primary Contact</h2></header><dl class="sourcing-data-list"><div><dt>Name</dt><dd>{{ supplier.primary_contact_name|default:'—' }}</dd></div><div><dt>Email</dt><dd>{% if supplier.email %}<a href="mailto:{{ supplier.email }}">{{ supplier.email }}</a>{% else %}—{% endif %}</dd></div><div><dt>Work Phone</dt><dd>{{ supplier.phone|default:'—' }}</dd></div><div><dt>Mobile</dt><dd>{{ supplier.mobile|default:'—' }}</dd></div></dl></article>
-</div>{% if supplier.notes %}<article class="sourcing-card sourcing-card--spaced"><header><h2>Remarks</h2></header><p class="sourcing-notes">{{ supplier.notes|linebreaksbr }}</p></article>{% endif %}
+</div>
+
+<article class="sourcing-card sourcing-card--spaced sourcing-overview-card">
+  <header class="sourcing-card-head">
+    <div>
+      <h2>Workforce</h2>
+      <p>Reference worker types currently recorded for this Manpower Supplier. Open Workforce for the complete list and management actions.</p>
+    </div>
+    <div class="sourcing-card-actions">
+      <span class="sourcing-count">{{ workforce_total_count }} type{{ workforce_total_count|pluralize }} · {{ workforce_count }} active</span>
+      {% if workforce_overview_has_more %}<a class="sourcing-btn" href="#workforce" data-sourcing-open-tab="workforce">View all</a>{% endif %}
+    </div>
+  </header>
+  {% if workforce_overview %}
+    <div class="sourcing-table-wrap sourcing-overview-table-wrap">
+      <table class="sourcing-table sourcing-overview-table sourcing-overview-table--workforce">
+        <thead><tr><th>Worker Type / Trade</th><th>Availability</th><th class="num">Available</th><th class="num">Rate</th><th>Location</th><th>Verified</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for offer in workforce_overview %}
+            <tr{% if not offer.is_active %} class="is-inactive"{% endif %}>
+              <td><strong>{{ offer.trade.name }}</strong><small class="cell-note">{{ offer.trade.code }}{% if offer.trade.category %} · {{ offer.trade.category }}{% endif %}</small></td>
+              <td><span class="sourcing-pill{% if offer.availability == 'available' %} sourcing-pill--success{% elif offer.availability == 'limited' %} sourcing-pill--warning{% elif offer.availability == 'unavailable' %} sourcing-pill--danger{% else %} sourcing-pill--muted{% endif %}">{{ offer.get_availability_display }}</span></td>
+              <td class="num">{% if offer.available_quantity != None %}{{ offer.available_quantity }}{% else %}<span class="sourcing-muted-value">Unknown</span>{% endif %}</td>
+              <td class="num">{% if offer.rate != None %}{{ offer.currency }} {{ offer.rate|floatformat:2 }}<small class="cell-note">{{ offer.get_rate_basis_display }}</small>{% else %}<span class="sourcing-muted-value">Unknown</span>{% endif %}</td>
+              <td>{{ offer.work_location|default:'—' }}</td>
+              <td>{% if offer.last_verified_at %}{{ offer.last_verified_at|date:"d M Y" }}{% else %}<span class="sourcing-muted-value">Never</span>{% endif %}</td>
+              <td>{% if offer.is_active %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--muted">Inactive</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="sourcing-empty sourcing-overview-empty">
+      <strong>No workforce types recorded</strong>
+      <p>Add worker types this Manpower Supplier may be able to provide.</p>
+      {% if can_manage and not supplier.archived_at and not supplier.deleted_at %}<a class="sourcing-btn" href="{% url 'sourcing:workforce_offer_create' supplier.id %}">Add Worker Type</a>{% endif %}
+    </div>
+  {% endif %}
+</article>
+
+{% if supplier.notes %}<article class="sourcing-card sourcing-card--spaced"><header><h2>Remarks</h2></header><p class="sourcing-notes">{{ supplier.notes|linebreaksbr }}</p></article>{% endif %}
 {% if can_manage %}<article class="sourcing-card sourcing-card--spaced sourcing-lifecycle"><header><h2>Lifecycle</h2><p>Lifecycle changes affect only this Sourcing reference. They never modify Rental Payroll suppliers, workers, assignments, settlements or Accounting.</p></header>
 {% if supplier.deleted_at %}<div class="sourcing-action-row"><div><strong>In Trash</strong><small>Recoverable until {{ supplier.purge_after|date:"d M Y H:i" }}.</small></div><form method="post" action="{% url 'sourcing:manpower_supplier_restore_trash' supplier.id %}">{% csrf_token %}<button class="sourcing-btn" type="submit">Restore from Trash</button></form></div>
 {% elif supplier.archived_at %}<div class="sourcing-action-row"><div><strong>Archived</strong><small>{{ supplier.archived_reason|default:'Removed from normal working lists.' }}</small></div><form method="post" action="{% url 'sourcing:manpower_supplier_restore_archive' supplier.id %}">{% csrf_token %}<button class="sourcing-btn" type="submit">Restore Archive</button></form></div>

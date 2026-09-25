@@ -57,10 +57,21 @@ from .selectors.material_finder import (
     material_finder_categories,
     material_finder_page,
 )
-from .selectors.materials import PAGE_SIZES as MATERIAL_PAGE_SIZES, material_directory_page, vendor_catalog, vendor_catalog_page
+from .selectors.materials import (
+    OVERVIEW_PREVIEW_LIMIT as MATERIAL_OVERVIEW_PREVIEW_LIMIT,
+    PAGE_SIZES as MATERIAL_PAGE_SIZES,
+    material_directory_page,
+    vendor_catalog_overview,
+    vendor_catalog_page,
+)
 from .selectors.manpower import PAGE_SIZES as MANPOWER_PAGE_SIZES, manpower_directory_page, manpower_history
 from .selectors.trades import PAGE_SIZES as TRADE_PAGE_SIZES, trade_directory_page
-from .selectors.workforce import PAGE_SIZES as WORKFORCE_CATALOG_PAGE_SIZES, workforce_catalog, workforce_catalog_page
+from .selectors.workforce import (
+    OVERVIEW_PREVIEW_LIMIT as WORKFORCE_OVERVIEW_PREVIEW_LIMIT,
+    PAGE_SIZES as WORKFORCE_CATALOG_PAGE_SIZES,
+    workforce_catalog_overview,
+    workforce_catalog_page,
+)
 from .selectors.workforce_finder import (
     PAGE_SIZES as WORKFORCE_FINDER_PAGE_SIZES,
     workforce_finder_categories,
@@ -309,9 +320,17 @@ def vendor_detail(request: HttpRequest, vendor_id) -> HttpResponse:
     vendor = get_object_or_404(SourcingVendor.objects.for_company(request.company), pk=vendor_id)
     contacts = list(vendor.contacts.order_by("-is_active", "-is_primary", "first_name", "last_name"))
     catalog_page_obj, catalog, catalog_page_size = vendor_catalog_page(
-        company=request.company, vendor=vendor,
-        page=request.GET.get("catalog_page", 1), page_size=request.GET.get("catalog_page_size", 25),
+        company=request.company,
+        vendor=vendor,
+        page=request.GET.get("catalog_page", 1),
+        page_size=request.GET.get("catalog_page_size", 25),
     )
+    catalog_overview = (
+        catalog[:MATERIAL_OVERVIEW_PREVIEW_LIMIT]
+        if catalog_page_obj.number == 1
+        else vendor_catalog_overview(company=request.company, vendor=vendor)
+    )
+    catalog_total_count = catalog_page_obj.paginator.count
     context = _base_context(
         request,
         page_key="sourcing-vendors",
@@ -324,6 +343,9 @@ def vendor_detail(request: HttpRequest, vendor_id) -> HttpResponse:
         active_contacts=[item for item in contacts if item.is_active],
         contact_form=SourcingVendorContactForm(),
         catalog=catalog,
+        catalog_overview=catalog_overview,
+        catalog_total_count=catalog_total_count,
+        catalog_overview_has_more=catalog_total_count > len(catalog_overview),
         active_catalog_count=vendor.supply_offers.filter(is_active=True).count(),
         catalog_page_obj=catalog_page_obj,
         catalog_page_size=catalog_page_size,
@@ -603,9 +625,17 @@ def manpower_supplier_detail(request: HttpRequest, supplier_id) -> HttpResponse:
     supplier = get_object_or_404(SourcingManpowerSupplier.objects.for_company(request.company), pk=supplier_id)
     contacts = list(supplier.contacts.order_by("-is_active", "-is_primary", "first_name", "last_name"))
     workforce_page_obj, workforce, workforce_page_size = workforce_catalog_page(
-        company=request.company, supplier=supplier,
-        page=request.GET.get("workforce_page", 1), page_size=request.GET.get("workforce_page_size", 25),
+        company=request.company,
+        supplier=supplier,
+        page=request.GET.get("workforce_page", 1),
+        page_size=request.GET.get("workforce_page_size", 25),
     )
+    workforce_overview = (
+        workforce[:WORKFORCE_OVERVIEW_PREVIEW_LIMIT]
+        if workforce_page_obj.number == 1
+        else workforce_catalog_overview(company=request.company, supplier=supplier)
+    )
+    workforce_total_count = workforce_page_obj.paginator.count
     workforce_count = supplier.workforce_offers.filter(is_active=True).count()
     context = _base_context(
         request,
@@ -619,6 +649,9 @@ def manpower_supplier_detail(request: HttpRequest, supplier_id) -> HttpResponse:
         active_contacts=[item for item in contacts if item.is_active],
         contact_form=SourcingManpowerContactForm(),
         workforce=workforce,
+        workforce_overview=workforce_overview,
+        workforce_total_count=workforce_total_count,
+        workforce_overview_has_more=workforce_total_count > len(workforce_overview),
         workforce_count=workforce_count,
         workforce_page_obj=workforce_page_obj,
         workforce_page_size=workforce_page_size,
