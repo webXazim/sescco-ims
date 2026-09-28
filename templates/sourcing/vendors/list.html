@@ -14,7 +14,7 @@
 
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar" method="get" action="{% url 'sourcing:vendor_list' %}">
-    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, contact, company details, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
+    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material type, contact, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
     <div class="sourcing-toolbar__actions">
       <select class="sourcing-select" name="status" onchange="this.form.submit()" aria-label="Vendor status">
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>
@@ -34,7 +34,7 @@
           <label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label>
           <label><input type="checkbox" data-column-toggle="mobile" checked> Mobile</label>
           <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
-          <label><input type="checkbox" data-column-toggle="items" checked> Items</label>
+          <label><input type="checkbox" data-column-toggle="materials" checked> Material Types</label>
           <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
         </div>
       </details>
@@ -57,7 +57,7 @@
         <th data-column="email">Contact Email</th>
         <th data-column="mobile">Mobile</th>
         <th data-column="location">Location</th>
-        <th data-column="items" class="num">Items</th>
+        <th data-column="materials">Material Types</th>
         <th>Status</th>
         <th data-column="updated">Updated</th>
         <th class="row-menu-col"><span class="sr-only">Actions</span></th>
@@ -70,7 +70,14 @@
           <td data-column="email">{% if vendor.email %}<a class="plain-link" href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</td>
           <td data-column="mobile">{{ vendor.mobile|default:'—' }}</td>
           <td data-column="location">{% if vendor.district or vendor.city or vendor.region %}{% if vendor.district %}{{ vendor.district }}{% endif %}{% if vendor.district and vendor.city %}, {% endif %}{% if vendor.city %}{{ vendor.city }}{% endif %}{% if vendor.region and vendor.city %}, {% elif vendor.region and vendor.district %}, {% endif %}{% if vendor.region %}{{ vendor.region }}{% endif %}{% if vendor.address %}<small class="cell-note">{{ vendor.address }}{% if vendor.postal_code %} · {{ vendor.postal_code }}{% endif %}</small>{% endif %}{% elif vendor.address %}{{ vendor.address }}{% if vendor.postal_code %}<small class="cell-note">{{ vendor.postal_code }}</small>{% endif %}{% else %}—{% endif %}</td>
-          <td data-column="items" class="num">{{ vendor.supply_item_count }}</td>
+          <td data-column="materials" class="sourcing-material-types-cell">
+            {% if vendor.material_type_preview %}
+              <a class="sourcing-material-types" href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog" aria-label="Open {{ vendor.display_name|default:vendor.name }} Supply Catalog">
+                {% for material_type in vendor.material_type_preview %}<span>{{ material_type }}</span>{% endfor %}
+                {% if vendor.material_type_more_count %}<small>+{{ vendor.material_type_more_count }} more</small>{% endif %}
+              </a>
+            {% else %}<span class="sourcing-muted-value">—</span>{% endif %}
+          </td>
           <td>
             {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>
             {% elif vendor.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>
@@ -104,4 +111,4 @@
   {% endif %}
 </section>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-mtypes"></script>{% endblock %}

@@ -43,7 +43,18 @@ def vendor_directory_scale_annotations(*, company, queryset, contact_query: str 
             | Q(mobile__icontains=contact_query)
             | Q(work_phone__icontains=contact_query)
         )
-        queryset = queryset.annotate(_contact_match=Exists(contact_match))
+        material_match = (
+            SourcingVendorOffer.objects.for_company(company)
+            .filter(vendor_id=OuterRef("pk"), is_active=True, material__is_active=True)
+            .filter(
+                Q(material__name__icontains=contact_query)
+                | Q(material__category__icontains=contact_query)
+            )
+        )
+        queryset = queryset.annotate(
+            _contact_match=Exists(contact_match),
+            _material_match=Exists(material_match),
+        )
     return queryset
 
 

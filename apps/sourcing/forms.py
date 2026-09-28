@@ -18,6 +18,17 @@ from .models import (
 
 
 class SourcingVendorForm(forms.ModelForm):
+    materials = forms.ModelMultipleChoiceField(
+        queryset=SourcingMaterial.objects.none(),
+        required=False,
+        label="Materials",
+        widget=forms.CheckboxSelectMultiple,
+        help_text=(
+            "Select the material types this Vendor can supply. They are added to the Vendor Supply Catalog "
+            "with availability left as Unknown so details can be completed later."
+        ),
+    )
+
     class Meta:
         model = SourcingVendor
         fields = (
@@ -75,16 +86,55 @@ class SourcingVendorForm(forms.ModelForm):
             "postal_code": "Postal Code",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, include_materials=False, **kwargs):
         super().__init__(*args, **kwargs)
-        for field in self.fields.values():
-            field.widget.attrs.setdefault("class", "sourcing-input")
-        for required_name in ("name", "display_name", "mobile", "email", "cr_number", "vat_number", "address"):
-            self.fields[required_name].required = True
-        self.fields["code"].help_text = "Reference code unique inside this company."
-        self.fields["display_name"].help_text = "Required name shown throughout the Sourcing Directory."
+        # Vendor onboarding is intentionally progressive: operators can save a partial
+        # reference record and complete commercial/contact details later. Code/name are
+        # normalized in clean() so the model still receives a safe unique identity.
+        for name, field in self.fields.items():
+            field.required = False
+            if name != "materials":
+                field.widget.attrs.setdefault("class", "sourcing-input")
+        if include_materials:
+            if company is None:
+                self.fields["materials"].queryset = SourcingMaterial.objects.none()
+            else:
+                self.fields["materials"].queryset = (
+                    SourcingMaterial.objects.for_company(company)
+                    .filter(is_active=True)
+                    .order_by("category", "name", "code")
+                )
+            material_field = self.fields["materials"]
+            material_field.label_from_instance = lambda material: (
+                f"{material.category} · {material.name} · {material.code}"
+                if material.category
+                else f"{material.name} · {material.code}"
+            )
+        else:
+            self.fields.pop("materials", None)
+        self.fields["code"].help_text = "Optional. A unique Vendor code is generated automatically when left blank."
+        self.fields["name"].help_text = "Optional. If blank, Display Name is used; if both are blank, a temporary name is generated."
+        self.fields["display_name"].help_text = "Optional directory name. If blank, Company / Vendor Name is used."
         self.fields["company_phone"].help_text = "Vendor company switchboard or official business number."
         self.fields["company_email"].help_text = "Vendor company general or official email address."
+
+    def clean(self):
+        cleaned = super().clean()
+        code = str(cleaned.get("code") or "").strip().upper()
+        if not code:
+            from .services.vendors import suggest_vendor_code
+
+            code = suggest_vendor_code()
+        name = " ".join(str(cleaned.get("name") or "").split())
+        display_name = " ".join(str(cleaned.get("display_name") or "").split())
+        if not name:
+            name = display_name or f"Vendor {code}"
+        if not display_name:
+            display_name = name
+        cleaned["code"] = code
+        cleaned["name"] = name
+        cleaned["display_name"] = display_name
+        return cleaned
 
 
 class SourcingVendorContactForm(forms.ModelForm):

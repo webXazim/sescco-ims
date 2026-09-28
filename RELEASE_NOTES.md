@@ -1,3 +1,12 @@
+# 1.0.117 — Vendor Material Types & Progressive Onboarding Hotfix
+
+- Replaced the Vendor directory numeric **Items** column with **Material Types**, showing up to three unique active material categories per Vendor (falling back to Material name where category is blank) and a `+N more` indicator linking to the full Supply Catalog.
+- Vendor directory search now also matches active Supply Catalog material names and categories while preserving bounded server pagination and company isolation.
+- Upgraded **New Vendor** to support selecting multiple active Sourcing Materials during onboarding. Each selection creates the normal audited Supply Catalog link with Unknown availability; detailed quantity, rate, specification, brand and verification remain editable later from the Vendor profile.
+- Removed the browser completeness gate from Vendor onboarding: code, commercial references, contact fields and address fields are optional; code is generated when blank, and a safe temporary Vendor name is generated only when both name fields are omitted.
+- Added searchable material selection UI, responsive styling, cache-busting for the updated Sourcing assets, and regression coverage for optional creation, material linking, three-type previews and material-type search.
+- No database migration, Inventory stock/supplier transaction, Payroll, Accounting, Documents or purchasing authority is changed.
+
 # 1.0.117 — Sourcing Permanent Delete & Archive Separation Hotfix
 
 - Separated Sourcing lifecycle actions so **Inactive**, **Archive**, and **Delete** no longer overlap: Inactive preserves the record, Archive is reversible and forces Vendor/Manpower Supplier status to Inactive, and Delete physically removes the live Sourcing record.

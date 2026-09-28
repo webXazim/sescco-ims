@@ -9,7 +9,13 @@ from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.core.models import AuditArea, AuditEvent, Company
-from apps.sourcing.models import SourcingEntityStatus, SourcingVendor, SourcingVendorContact
+from apps.sourcing.models import (
+    SourcingEntityStatus,
+    SourcingMaterial,
+    SourcingVendor,
+    SourcingVendorContact,
+    SourcingVendorOffer,
+)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
@@ -135,15 +141,67 @@ class VendorSourcingMasterTests(TestCase):
         self.assertEqual(saved.full_name, "Mohammed Ali")
         self.assertTrue(AuditEvent.objects.filter(action="sourcing.vendor.contact_created", object_id=str(vendor.pk)).exists())
 
-    def test_vendor_form_requires_new_master_contact_and_commercial_fields(self):
+    def test_vendor_create_is_progressive_and_can_seed_materials(self):
         self.client.force_login(self.owner_user)
+        civil = SourcingMaterial.objects.create(
+            company=self.company, code="MAT-CIV", name="Rebar", category="Civil", default_unit="ton"
+        )
+        electrical = SourcingMaterial.objects.create(
+            company=self.company, code="MAT-ELC", name="Power Cable", category="Electrical", default_unit="m"
+        )
+
         response = self.client.post(
             reverse("sourcing:vendor_create"),
-            {"code": "VND-REQ", "name": "Required Vendor"},
+            {
+                "display_name": "Quick Source",
+                "materials": [str(civil.pk), str(electrical.pk)],
+            },
         )
-        self.assertEqual(response.status_code, 400)
-        for field_name in ("display_name", "mobile", "email", "address", "cr_number", "vat_number"):
-            self.assertIn(field_name, response.context["form"].errors)
+        self.assertEqual(response.status_code, 302)
+        vendor = SourcingVendor.objects.get(company=self.company, display_name="Quick Source")
+        self.assertTrue(vendor.code.startswith("VND-"))
+        self.assertEqual(vendor.name, "Quick Source")
+        self.assertEqual(vendor.mobile, "")
+        self.assertEqual(vendor.email, "")
+        self.assertEqual(vendor.cr_number, "")
+        self.assertEqual(vendor.vat_number, "")
+        self.assertEqual(
+            set(SourcingVendorOffer.objects.filter(vendor=vendor, is_active=True).values_list("material_id", flat=True)),
+            {civil.pk, electrical.pk},
+        )
+
+        # Even a completely blank create remains safe: the form generates a unique
+        # reference identity so operators can complete the record later.
+        blank = self.client.post(reverse("sourcing:vendor_create"), {})
+        self.assertEqual(blank.status_code, 302)
+        blank_vendor = SourcingVendor.objects.exclude(pk=vendor.pk).get(company=self.company)
+        self.assertTrue(blank_vendor.code.startswith("VND-"))
+        self.assertTrue(blank_vendor.name.startswith("Vendor VND-"))
+
+    def test_vendor_directory_shows_only_three_unique_material_types_and_searches_them(self):
+        self.client.force_login(self.owner_user)
+        vendor = SourcingVendor.objects.create(company=self.company, code="VND-TYPES", name="Typed Vendor")
+        materials = [
+            SourcingMaterial.objects.create(company=self.company, code="MAT-C1", name="Rebar", category="Civil"),
+            SourcingMaterial.objects.create(company=self.company, code="MAT-C2", name="Cement", category="Civil"),
+            SourcingMaterial.objects.create(company=self.company, code="MAT-E1", name="Cable", category="Electrical"),
+            SourcingMaterial.objects.create(company=self.company, code="MAT-H1", name="Duct", category="HVAC"),
+            SourcingMaterial.objects.create(company=self.company, code="MAT-P1", name="Gloves", category="PPE"),
+        ]
+        for material in materials:
+            SourcingVendorOffer.objects.create(company=self.company, vendor=vendor, material=material)
+
+        response = self.client.get(reverse("sourcing:vendor_list"))
+        self.assertEqual(response.status_code, 200)
+        listed = next(item for item in response.context["vendors"] if item.pk == vendor.pk)
+        self.assertEqual(listed.material_type_preview, ["Civil", "Electrical", "HVAC"])
+        self.assertEqual(listed.material_type_more_count, 1)
+        self.assertContains(response, "Material Types")
+        self.assertContains(response, "+1 more")
+
+        search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Electrical"})
+        self.assertEqual(search.context["page_obj"].paginator.count, 1)
+        self.assertContains(search, "Typed Vendor")
 
     def test_vendor_lifecycle_is_reference_only_and_recoverable(self):
         self.client.force_login(self.owner_user)

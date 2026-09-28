@@ -106,6 +106,41 @@ def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=
 
 
 @transaction.atomic
+def create_vendor_with_materials(
+    *, actor_membership, cleaned_data: dict[str, object], materials=(), request=None
+) -> SourcingVendor:
+    """Create a Vendor and optionally seed its Supply Catalog in one transaction.
+
+    Material selection during Vendor onboarding creates lightweight catalog links only;
+    availability, quantities, rates and verification remain unknown until explicitly
+    completed later.  Reusing the normal catalog service keeps audit/revision evidence
+    identical to material links added from the Vendor profile.
+    """
+    vendor = create_vendor(
+        actor_membership=actor_membership,
+        cleaned_data=cleaned_data,
+        request=request,
+    )
+    from .catalog import create_vendor_offer
+
+    seen = set()
+    for material in materials or ():
+        material_id = getattr(material, "pk", None)
+        if material_id in seen:
+            continue
+        seen.add(material_id)
+        create_vendor_offer(
+            actor_membership=actor_membership,
+            vendor_id=vendor.pk,
+            cleaned_data={"material": material},
+            verified_now=False,
+            contact_name="",
+            request=request,
+        )
+    return vendor
+
+
+@transaction.atomic
 def update_vendor(*, actor_membership, vendor_id, cleaned_data: dict[str, object], request=None) -> SourcingVendor:
     vendor = SourcingVendor.objects.select_for_update().for_company(actor_membership.company).get(pk=vendor_id, deleted_at__isnull=True)
     before = _vendor_snapshot(vendor)

@@ -1,4 +1,5 @@
 {% extends "sourcing/base.html" %}
+{% load static %}
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact">
@@ -40,6 +41,30 @@
     </div>
   </section>
 
+  {% if show_materials %}
+  <section class="sourcing-form-section">
+    <header><h2>Materials</h2><p>Select the material types this Vendor can supply now. Detailed quantity, rate, brand, specification and verification can be completed later from the Vendor Supply Catalog.</p></header>
+    <div class="sourcing-form-grid sourcing-form-grid--single">
+      <div class="sourcing-field sourcing-field--full{% if form.materials.errors %} has-error{% endif %}" data-material-picker>
+        <div class="sourcing-material-picker-head">
+          <div>
+            <label for="vendor-material-search">Material Types</label>
+            <small>{{ material_master_count }} active material{{ material_master_count|pluralize }} available · <span data-material-selected-count>0 selected</span></small>
+          </div>
+          {% if material_master_count %}<input id="vendor-material-search" class="sourcing-input sourcing-material-picker-search" type="search" placeholder="Filter materials or categories" autocomplete="off" data-material-picker-search>{% endif %}
+        </div>
+        {% if material_master_count %}
+          <div class="sourcing-material-picker-options">{{ form.materials }}</div>
+          {% if form.materials.help_text %}<small>{{ form.materials.help_text }}</small>{% endif %}
+          {% for error in form.materials.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        {% else %}
+          <div class="sourcing-material-picker-empty">No active Sourcing Materials exist yet. <a href="{% url 'sourcing:material_create' %}">Create a material</a> first, or save the Vendor now and add Supply Catalog items later.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="sourcing-form-section">
     <header><h2>Remarks</h2><p>Internal reference notes for the Sourcing team.</p></header>
     <div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div>
@@ -48,3 +73,4 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-mtypes"></script>{% endblock %}

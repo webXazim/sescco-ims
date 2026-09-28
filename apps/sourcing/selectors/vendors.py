@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from apps.core.models import AuditArea, AuditEvent
 
-from ..models import SourcingEntityStatus, SourcingVendor
+from ..models import SourcingEntityStatus, SourcingVendor, SourcingVendorOffer
 from .scale import vendor_directory_scale_annotations
 
 
@@ -85,7 +85,20 @@ def vendor_directory_page(*, company, params) -> VendorDirectoryResult:
             | Q(cr_number__icontains=query)
             | Q(vat_number__icontains=query)
             | Q(_contact_match=True)
+            | Q(_material_match=True)
         )
+
+    # One bounded relation query per page gives the list enough information to render
+    # up to three material-type labels without an N+1 query per Vendor.
+    active_material_offers = (
+        SourcingVendorOffer.objects.for_company(company)
+        .filter(is_active=True, material__is_active=True)
+        .select_related("material")
+        .order_by("material__category", "material__normalized_name", "pk")
+    )
+    qs = qs.prefetch_related(
+        Prefetch("supply_offers", queryset=active_material_offers, to_attr="directory_active_material_offers")
+    )
 
     field = ALLOWED_SORTS[sort]
     order = f"-{field}" if direction == "desc" else field

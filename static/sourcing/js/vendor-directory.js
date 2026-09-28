@@ -21,6 +21,33 @@
     }));
   }
 
+  const materialPicker = document.querySelector("[data-material-picker]");
+  if (materialPicker) {
+    const search = materialPicker.querySelector("[data-material-picker-search]");
+    const count = materialPicker.querySelector("[data-material-selected-count]");
+    const checkboxes = [...materialPicker.querySelectorAll('input[type="checkbox"]')];
+    const optionRows = checkboxes.map((checkbox) => {
+      const label = checkbox.closest("label") || materialPicker.querySelector(`label[for="${checkbox.id}"]`);
+      return { checkbox, label, row: label?.parentElement || label };
+    });
+    const updateCount = () => {
+      if (!count) return;
+      const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+      count.textContent = `${selected} selected`;
+    };
+    const filterOptions = () => {
+      const term = String(search?.value || "").trim().toLocaleLowerCase();
+      optionRows.forEach(({ label, row }) => {
+        if (!row) return;
+        const text = String(label?.textContent || "").toLocaleLowerCase();
+        row.classList.toggle("sourcing-material-picker-option-hidden", !!term && !text.includes(term));
+      });
+    };
+    checkboxes.forEach((checkbox) => checkbox.addEventListener("change", updateCount));
+    search?.addEventListener("input", filterOptions);
+    updateCount();
+  }
+
   const tabs = [...document.querySelectorAll("[data-sourcing-tab]")];
   const panels = [...document.querySelectorAll("[data-sourcing-panel]")];
   if (tabs.length && panels.length) {

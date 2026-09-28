@@ -126,7 +126,7 @@ from .services.workforce import (
 from .services.vendors import (
     TRASH_RETENTION_DAYS,
     archive_vendor,
-    create_vendor,
+    create_vendor_with_materials,
     create_vendor_contact,
     delete_vendor,
     deactivate_vendor_contact,
@@ -282,10 +282,28 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
         page_title="Vendors",
         page_subtitle="Reference vendors SESCCO may call for materials. This directory does not create Inventory suppliers or stock.",
     )
+    vendors = list(directory.page_obj.object_list)
+    # The directory is a quick sourcing reference. Show at most three unique material
+    # types (Material category, falling back to Material name) and keep the full catalog
+    # behind the Vendor profile. The related offers/materials are prefetched by selector.
+    for vendor in vendors:
+        labels = []
+        seen = set()
+        for offer in getattr(vendor, "directory_active_material_offers", ()):
+            material = offer.material
+            label = str(material.category or material.name or "").strip()
+            key = label.casefold()
+            if label and key not in seen:
+                labels.append(label)
+                seen.add(key)
+        vendor.material_type_preview = labels[:3]
+        vendor.material_type_more_count = max(0, len(labels) - 3)
+        vendor.material_type_count = len(labels)
+    directory.page_obj.object_list = vendors
     context.update(
         directory=directory,
         page_obj=directory.page_obj,
-        vendors=directory.page_obj.object_list,
+        vendors=vendors,
         counts=counts,
         page_sizes=PAGE_SIZES,
         can_manage=membership_can_manage_vendor_sourcing(_membership(request)),
@@ -297,28 +315,48 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
 def vendor_create(request: HttpRequest) -> HttpResponse:
     _require_vendor_manage(request)
     if request.method == "POST":
-        form = SourcingVendorForm(request.POST)
+        form = SourcingVendorForm(request.POST, company=request.company, include_materials=True)
         if form.is_valid():
+            cleaned_data = {key: value for key, value in form.cleaned_data.items() if key != "materials"}
+            materials = list(form.cleaned_data.get("materials") or ())
             try:
-                vendor = create_vendor(
+                vendor = create_vendor_with_materials(
                     actor_membership=_membership(request),
-                    cleaned_data=form.cleaned_data,
+                    cleaned_data=cleaned_data,
+                    materials=materials,
                     request=request,
                 )
             except ValidationError as exc:
                 _apply_validation_error(form, exc)
             else:
-                messages.success(request, f"Vendor {vendor.display_name or vendor.name} was created.")
+                if materials:
+                    messages.success(
+                        request,
+                        f"Vendor {vendor.display_name or vendor.name} was created with {len(materials)} material "
+                        f"type{'s' if len(materials) != 1 else ''}.",
+                    )
+                else:
+                    messages.success(request, f"Vendor {vendor.display_name or vendor.name} was created.")
                 return redirect("sourcing:vendor_detail", vendor_id=vendor.pk)
     else:
-        form = SourcingVendorForm(initial={"code": suggest_vendor_code()})
+        form = SourcingVendorForm(
+            initial={"code": suggest_vendor_code()},
+            company=request.company,
+            include_materials=True,
+        )
     context = _base_context(
         request,
         page_key="sourcing-vendors",
         page_title="New Vendor",
         page_subtitle="Add a reference-only sourcing Vendor. Nothing here creates purchasing, stock or accounting activity.",
     )
-    context.update(form=form, submit_label="Create Vendor", cancel_url="sourcing:vendor_list")
+    context.update(
+        form=form,
+        submit_label="Create Vendor",
+        cancel_url="sourcing:vendor_list",
+        show_materials=True,
+        material_master_count=form.fields["materials"].queryset.count(),
+    )
     return render(request, "sourcing/vendors/form.html", context, status=400 if request.method == "POST" and form.errors else 200)
 
 
@@ -376,7 +414,7 @@ def vendor_edit(request: HttpRequest, vendor_id) -> HttpResponse:
         messages.error(request, "Restore this Vendor before editing its master data.")
         return redirect("sourcing:vendor_detail", vendor_id=vendor.pk)
     if request.method == "POST":
-        form = SourcingVendorForm(request.POST, instance=vendor)
+        form = SourcingVendorForm(request.POST, instance=vendor, company=request.company)
         if form.is_valid():
             try:
                 vendor = update_vendor(
@@ -391,7 +429,7 @@ def vendor_edit(request: HttpRequest, vendor_id) -> HttpResponse:
                 messages.success(request, "Vendor details were updated.")
                 return redirect("sourcing:vendor_detail", vendor_id=vendor.pk)
     else:
-        form = SourcingVendorForm(instance=vendor)
+        form = SourcingVendorForm(instance=vendor, company=request.company)
     context = _base_context(
         request,
         page_key="sourcing-vendors",

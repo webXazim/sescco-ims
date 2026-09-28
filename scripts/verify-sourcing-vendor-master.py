@@ -69,6 +69,8 @@ for marker in (
     "SourcingVendor.objects.for_company(company)",
     "vendor_directory_scale_annotations",
     "Q(_contact_match=True)",
+    'Prefetch("supply_offers"',
+    "Q(_material_match=True)",
 ):
     if marker not in selectors:
         fail(f"server-side Vendor directory authority missing: {marker}")
@@ -87,6 +89,7 @@ for marker in (
     'action="sourcing.vendor.contact_deleted"',
     "status = SourcingEntityStatus.INACTIVE",
     "Type {expected} to confirm permanent deletion.",
+    "def create_vendor_with_materials(",
 ):
     if marker not in services:
         fail(f"Vendor lifecycle safety missing: {marker}")
@@ -102,6 +105,8 @@ for marker in (
     "vendor_contact_deactivate",
     "vendor_contact_delete",
     "vendor_delete",
+    "create_vendor_with_materials",
+    "material_type_preview",
 ):
     if marker not in views:
         fail(f"Vendor view authority missing: {marker}")
@@ -120,7 +125,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, contact, company details, address, CR or VAT", "Columns", "page_obj.paginator.count", "New Vendor"):
+for marker in ("Search vendor, material type, contact, address, CR or VAT", "Material Types", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")
