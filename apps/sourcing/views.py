@@ -320,6 +320,10 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
             )
         ]
         vendor.material_type_preview = labels[:3]
+        # Keep the complete ranked list on the paginated Vendor object as well. The
+        # table renders only three compact labels, while hover/focus can expose every
+        # material type without making the directory row taller.
+        vendor.material_type_all = labels
         vendor.material_type_more_count = max(0, len(labels) - 3)
         vendor.material_type_count = len(labels)
     directory.page_obj.object_list = vendors

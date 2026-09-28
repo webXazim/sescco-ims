@@ -9,6 +9,7 @@
   "post_collectstatic_manifest_gate": "python manage.py verify_sourcing_static_manifest",
   "required_manifest_assets": [
     "sourcing/css/directory.css",
+    "sourcing/js/directory-menus.js",
     "sourcing/js/finder-scale.js",
     "sourcing/js/manpower-directory.js",
     "sourcing/js/vendor-directory.js"

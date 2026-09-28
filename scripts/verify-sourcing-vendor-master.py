@@ -143,7 +143,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, material, material type/category, contact, address, CR or VAT", "Material Types", "page_obj.paginator.count", "New Vendor"):
+for marker in ("Search vendor, material, material type/category, contact, address, CR or VAT", "Material Types", "data-material-types-tooltip", "data-material-types-all", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")
@@ -159,7 +159,7 @@ for marker in ("class SourcingVendorNewMaterialForm", "SourcingVendorNewMaterial
     if marker not in forms:
         fail(f"Vendor inline-material form contract missing: {marker}")
 inline_js = text("static/sourcing/js/vendor-directory.js")
-for marker in ("dynamicMaterialCategories", "registerDynamicCategory", "data-new-material-formset", "data-add-new-material"):
+for marker in ("dynamicMaterialCategories", "registerDynamicCategory", "data-new-material-formset", "data-add-new-material", "materialTypeTriggers", "sourcing-material-types-tooltip"):
     if marker not in inline_js:
         fail(f"Vendor inline-material browser behavior missing: {marker}")
 

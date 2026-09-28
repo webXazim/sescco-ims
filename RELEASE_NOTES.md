@@ -415,6 +415,13 @@
 
 # 1.0.117 — Sourcing Static Manifest Deployment Hotfix
 
+## Vendor Material Type Compact Hover Follow-up
+
+- Vendor rows keep the top three ranked material types on one compact line instead of increasing table row height.
+- Hovering or keyboard-focusing the material-type preview reveals every ranked material type for that Vendor in a floating tooltip; the complete Supply Catalog remains one click away.
+- Long preview labels are truncated visually only; their full values remain available in the tooltip and accessible label.
+
+
 - Fixes the production Sourcing 500 / focused-test failure where `ManifestStaticFilesStorage` raised `Missing staticfiles manifest entry for 'sourcing/css/directory.css'` before the deployment reached `collectstatic`.
 - Keeps the safe deployment order intact: focused application tests still run before the shared production static volume is mutated; production `collectstatic` still runs only after those tests pass.
 - Makes the ten Sourcing HTTP test classes use `StaticFilesStorage` only inside their test setting override, while production continues to use `ManifestStaticFilesStorage` and `SECURE_SSL_REDIRECT=True` by default.
@@ -1423,3 +1430,7 @@
 - Extends release verification to reject putting the Bank/WPS template picker back into the generic toolbar selector and to enforce the compact Internal Payments empty-state height.
 - Updates the final Payroll control asset cache-buster to `1.0.25`.
 - No payroll calculations, attendance logic, salary-payment workflow, Bank/WPS data generation, APIs, database schema, permissions, authorization or tenant isolation are changed.
+
+## 1.0.117 — Sourcing row-action menu overflow hotfix
+- Sourcing table row action menus now float at viewport level while open, so Supply Catalog, Material Finder, Materials, Manpower, Workforce Finder, Trades, and directory action menus are not clipped by horizontal or vertical table scrolling containers.
+- Menus automatically flip above the trigger when there is not enough room below, clamp to the viewport, remain positioned during nested scrolling/resizing, close on outside click/Escape, and retain a no-JavaScript native-details fallback.

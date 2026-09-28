@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
-  <link rel="stylesheet" href="{% static 'sourcing/css/directory.css' %}?v=1.0.117-vendor-material-types-ranked">
+  <link rel="stylesheet" href="{% static 'sourcing/css/directory.css' %}?v=1.0.117-row-menu-overflow">
   {% block extra_head %}{% endblock %}
 </head>
 <body class="inventory-shell-v2 sourcing-shell-v1" data-page="{{ page_key }}">
@@ -37,6 +37,7 @@
 </div>
 <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
 <script src="{% static 'platform/js/inventory-shell.js' %}"></script>
+<script src="{% static 'sourcing/js/directory-menus.js' %}?v=1.0.117-row-menu-overflow"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

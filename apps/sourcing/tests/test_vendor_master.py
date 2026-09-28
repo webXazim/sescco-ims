@@ -318,9 +318,11 @@ class VendorSourcingMasterTests(TestCase):
         self.assertEqual(response.status_code, 200)
         listed = next(item for item in response.context["vendors"] if item.pk == vendor.pk)
         self.assertEqual(listed.material_type_preview, ["PPE", "Electrical", "HVAC"])
+        self.assertEqual(listed.material_type_all, ["PPE", "Electrical", "HVAC", "Civil"])
         self.assertEqual(listed.material_type_more_count, 1)
         self.assertContains(response, "Material Types")
-        self.assertContains(response, "+1 more")
+        self.assertContains(response, 'data-material-types-all="PPE, Electrical, HVAC, Civil"')
+        self.assertContains(response, "+1")
 
         type_search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Electrical"})
         self.assertEqual(type_search.context["page_obj"].paginator.count, 1)

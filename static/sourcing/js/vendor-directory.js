@@ -21,6 +21,60 @@
     }));
   }
 
+  const materialTypeTriggers = [...document.querySelectorAll("[data-material-types-tooltip]")];
+  if (materialTypeTriggers.length) {
+    const tooltip = document.createElement("div");
+    tooltip.className = "sourcing-material-types-tooltip";
+    tooltip.id = "sourcing-material-types-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.hidden = true;
+    document.body.appendChild(tooltip);
+
+    let activeTrigger = null;
+    const positionTooltip = () => {
+      if (!activeTrigger || tooltip.hidden) return;
+      const triggerRect = activeTrigger.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const gap = 8;
+      const edge = 8;
+      let left = triggerRect.left;
+      let top = triggerRect.bottom + gap;
+      if (top + tooltipRect.height > window.innerHeight - edge) {
+        top = triggerRect.top - tooltipRect.height - gap;
+      }
+      left = Math.max(edge, Math.min(left, window.innerWidth - tooltipRect.width - edge));
+      top = Math.max(edge, top);
+      tooltip.style.left = `${Math.round(left)}px`;
+      tooltip.style.top = `${Math.round(top)}px`;
+    };
+    const showTooltip = (trigger) => {
+      const allTypes = String(trigger.dataset.materialTypesAll || "").trim();
+      if (!allTypes) return;
+      activeTrigger = trigger;
+      tooltip.textContent = `All material types: ${allTypes}`;
+      tooltip.hidden = false;
+      trigger.setAttribute("aria-describedby", tooltip.id);
+      // The title is a no-JS fallback. Remove it once the instant floating tooltip
+      // is active so browsers do not display a second delayed native tooltip.
+      trigger.removeAttribute("title");
+      requestAnimationFrame(positionTooltip);
+    };
+    const hideTooltip = (trigger) => {
+      if (trigger) trigger.removeAttribute("aria-describedby");
+      if (activeTrigger === trigger || !trigger) activeTrigger = null;
+      tooltip.hidden = true;
+    };
+
+    materialTypeTriggers.forEach((trigger) => {
+      trigger.addEventListener("mouseenter", () => showTooltip(trigger));
+      trigger.addEventListener("mouseleave", () => hideTooltip(trigger));
+      trigger.addEventListener("focus", () => showTooltip(trigger));
+      trigger.addEventListener("blur", () => hideTooltip(trigger));
+    });
+    window.addEventListener("scroll", () => hideTooltip(), true);
+    window.addEventListener("resize", () => hideTooltip());
+  }
+
   const materialPicker = document.querySelector("[data-material-picker]");
   if (materialPicker) {
     const search = materialPicker.querySelector("[data-material-picker-search]");

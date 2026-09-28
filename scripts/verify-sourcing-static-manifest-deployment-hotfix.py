@@ -24,6 +24,7 @@ HTTP_TESTS = (
 )
 ASSETS = (
     "sourcing/css/directory.css",
+    "sourcing/js/directory-menus.js",
     "sourcing/js/finder-scale.js",
     "sourcing/js/manpower-directory.js",
     "sourcing/js/vendor-directory.js",

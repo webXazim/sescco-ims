@@ -102,6 +102,43 @@ for forbidden in ("/payroll/", "/inventory/", "/projects/", "/accounting/"):
     if forbidden in runner:
         fail(f"browser runner must not navigate operational module: {forbidden}")
 
+
+menu_js = text("static/sourcing/js/directory-menus.js")
+for needle in (
+    'document.addEventListener("toggle"',
+    'document.body.appendChild(panel)',
+    'sourcing-row-menu__floating-panel',
+    'availableBelow',
+    'availableAbove',
+    'document.addEventListener("scroll", schedulePosition, true)',
+    'event.key !== "Escape"',
+):
+    if needle not in menu_js:
+        fail(f"Sourcing unclipped row-menu behavior missing: {needle}")
+
+base_template = text("templates/sourcing/base.html")
+if "sourcing/js/directory-menus.js" not in base_template:
+    fail("global Sourcing row-menu controller is not loaded from the Sourcing base template")
+
+menu_templates = (
+    "templates/sourcing/vendors/list.html",
+    "templates/sourcing/vendors/detail.html",
+    "templates/sourcing/material_finder/list.html",
+    "templates/sourcing/materials/list.html",
+    "templates/sourcing/manpower/list.html",
+    "templates/sourcing/manpower/detail.html",
+    "templates/sourcing/workforce_finder/list.html",
+    "templates/sourcing/trades/list.html",
+)
+for rel in menu_templates:
+    if "sourcing-row-menu" not in text(rel):
+        fail(f"expected Sourcing row-action menu marker missing from {rel}")
+
+menu_css = text("static/sourcing/css/directory.css")
+for needle in (".sourcing-row-menu__floating-panel", "position:fixed!important", "z-index:1400", "overflow-y:auto"):
+    if needle not in menu_css:
+        fail(f"Sourcing unclipped row-menu CSS missing: {needle}")
+
 finder_js = text("static/sourcing/js/finder-scale.js")
 for needle in ("new AbortController()", 'timer = setTimeout(() => run(submitUrl(), { push: false }), 350)', "serial !== requestSerial"):
     if needle not in finder_js:

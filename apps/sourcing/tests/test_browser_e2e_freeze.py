@@ -40,3 +40,28 @@ class SourcingBrowserE2EFreezeContractTests(SimpleTestCase):
             self.assertIn(needle, runner)
         for forbidden in ("/payroll/", "/inventory/", "/projects/", "/accounting/"):
             self.assertNotIn(forbidden, runner)
+
+
+    def test_row_action_menus_escape_table_overflow(self):
+        base = (ROOT / "templates/sourcing/base.html").read_text(encoding="utf-8")
+        script = (ROOT / "static/sourcing/js/directory-menus.js").read_text(encoding="utf-8")
+        css = (ROOT / "static/sourcing/css/directory.css").read_text(encoding="utf-8")
+        self.assertIn("sourcing/js/directory-menus.js", base)
+        self.assertIn("document.body.appendChild(panel)", script)
+        self.assertIn("availableBelow", script)
+        self.assertIn("availableAbove", script)
+        self.assertIn('document.addEventListener("scroll", schedulePosition, true)', script)
+        self.assertIn("sourcing-row-menu__floating-panel", css)
+        self.assertIn("position:fixed!important", css)
+
+        for rel in (
+            "templates/sourcing/vendors/list.html",
+            "templates/sourcing/vendors/detail.html",
+            "templates/sourcing/material_finder/list.html",
+            "templates/sourcing/materials/list.html",
+            "templates/sourcing/manpower/list.html",
+            "templates/sourcing/manpower/detail.html",
+            "templates/sourcing/workforce_finder/list.html",
+            "templates/sourcing/trades/list.html",
+        ):
+            self.assertIn("sourcing-row-menu", (ROOT / rel).read_text(encoding="utf-8"))
