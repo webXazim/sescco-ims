@@ -119,6 +119,26 @@ class MaterialFinderTests(TestCase):
         self.client.force_login(master_only)
         self.assertEqual(self.client.get(reverse("sourcing:material_finder")).status_code, 403)
 
+    def test_free_text_search_matches_material_name_and_category_type(self):
+        viewer, _ = self._member(
+            username="finder-material-type-viewer",
+            permissions=(AccessPermission.SOURCING_VENDORS_VIEW.value,),
+        )
+        self._offer(vendor=self.vendor_a, material=self.rebar, days=1)
+        self._offer(vendor=self.vendor_b, material=self.cable, days=1, rate="25", qty="500")
+
+        self.client.force_login(viewer)
+
+        material_response = self.client.get(reverse("sourcing:material_finder"), {"q": "Rebar 12mm"})
+        self.assertEqual(material_response.context["page_obj"].paginator.count, 1)
+        self.assertContains(material_response, "Eastern Steel")
+        self.assertNotContains(material_response, "Jubail Material Source")
+
+        type_response = self.client.get(reverse("sourcing:material_finder"), {"q": "Electrical"})
+        self.assertEqual(type_response.context["page_obj"].paginator.count, 1)
+        self.assertContains(type_response, "Jubail Material Source")
+        self.assertNotContains(type_response, "Eastern Steel")
+
     def test_alias_search_and_company_vendor_lifecycle_isolation(self):
         viewer, _ = self._member(
             username="finder-alias-viewer",

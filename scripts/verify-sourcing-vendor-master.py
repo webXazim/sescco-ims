@@ -75,6 +75,19 @@ for marker in (
     if marker not in selectors:
         fail(f"server-side Vendor directory authority missing: {marker}")
 
+scale_selectors = text("apps/sourcing/selectors/scale.py")
+for marker in (
+    "Q(material__code__icontains=contact_query)",
+    "Q(material__name__icontains=contact_query)",
+    "Q(material__category__icontains=contact_query)",
+    "Q(material__normalized_aliases__icontains=normalized_material_query)",
+    "Q(specification__icontains=contact_query)",
+    "Q(brand__icontains=contact_query)",
+    "Q(model__icontains=contact_query)",
+):
+    if marker not in scale_selectors:
+        fail(f"Vendor material search authority missing: {marker}")
+
 services = text("apps/sourcing/services/vendors.py")
 for action in contract.get("audit_actions", []):
     if f'"{action}"' not in services:
@@ -130,7 +143,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, material type, contact, address, CR or VAT", "Material Types", "page_obj.paginator.count", "New Vendor"):
+for marker in ("Search vendor, material, material type/category, contact, address, CR or VAT", "Material Types", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")

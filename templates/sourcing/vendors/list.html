@@ -14,7 +14,7 @@
 
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar" method="get" action="{% url 'sourcing:vendor_list' %}">
-    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material type, contact, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
+    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material, material type/category, contact, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
     <div class="sourcing-toolbar__actions">
       <select class="sourcing-select" name="status" onchange="this.form.submit()" aria-label="Vendor status">
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>

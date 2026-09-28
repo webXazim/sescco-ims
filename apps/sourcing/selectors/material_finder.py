@@ -125,6 +125,7 @@ def material_finder_page(*, company, params) -> MaterialFinderResult:
         qs = qs.filter(
             Q(material__code__icontains=query)
             | Q(material__name__icontains=query)
+            | Q(material__category__icontains=query)
             | Q(material__normalized_aliases__icontains=normalized_query)
             | Q(specification__icontains=query)
             | Q(brand__icontains=query)

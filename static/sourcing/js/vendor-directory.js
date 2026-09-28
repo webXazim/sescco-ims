@@ -46,12 +46,23 @@
       const category = String(categoryFilter?.value || "").trim();
       optionRows.forEach(({ label, row }) => {
         if (!row) return;
-        const text = String(label?.textContent || "").toLocaleLowerCase();
+        // CheckboxSelectMultiple renders labels with template whitespace around the
+        // human-readable value. Normalize it before prefix matching so selecting a
+        // category never hides every material just because the label starts with a
+        // newline/indentation or contains repeated whitespace.
+        const text = String(label?.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLocaleLowerCase();
+        const normalizedCategory = category.replace(/\s+/g, " ").trim().toLocaleLowerCase();
         let categoryMatches = true;
         if (category === "__uncategorized__") {
-          categoryMatches = !knownCategories.some((known) => text.startsWith(`${known.toLocaleLowerCase()} ·`));
-        } else if (category) {
-          categoryMatches = text.startsWith(`${category.toLocaleLowerCase()} ·`);
+          categoryMatches = !knownCategories.some((known) => {
+            const normalizedKnown = String(known).replace(/\s+/g, " ").trim().toLocaleLowerCase();
+            return text.startsWith(`${normalizedKnown} ·`);
+          });
+        } else if (normalizedCategory) {
+          categoryMatches = text.startsWith(`${normalizedCategory} ·`);
         }
         row.classList.toggle(
           "sourcing-material-picker-option-hidden",

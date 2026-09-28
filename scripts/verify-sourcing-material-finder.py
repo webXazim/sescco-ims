@@ -64,6 +64,13 @@ for marker in (
 ):
     if marker not in selector:
         fail(f"Material Finder selector authority missing: {marker}")
+for marker in (
+    "Q(material__name__icontains=query)",
+    "Q(material__category__icontains=query)",
+    "Q(material__normalized_aliases__icontains=normalized_query)",
+):
+    if marker not in selector:
+        fail(f"Material Finder relation search missing: {marker}")
 for forbidden in ("apps.inventory", "apps.rental_manpower", "apps.internal_payroll", "apps.accounting"):
     if forbidden in selector or forbidden in freshness:
         fail(f"Finder leaked operational dependency: {forbidden}")
@@ -89,7 +96,7 @@ if "{% url 'sourcing:material_finder' %}" not in sidebar or "sourcing-material-f
 
 template = text("templates/sourcing/material_finder/list.html")
 for marker in (
-    "Search material, code, alias, specification, brand, model or vendor",
+    "Search material, type/category, code, alias, specification, brand, model or vendor",
     "Available Qty",
     "Reference Rate",
     "Freshness",

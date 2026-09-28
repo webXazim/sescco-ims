@@ -11,6 +11,7 @@ from ..models import (
     SourcingVendorOffer,
     SourcingWorkforceOffer,
 )
+from ..models.base import normalize_text
 
 
 def vendor_directory_scale_annotations(*, company, queryset, contact_query: str = ""):
@@ -43,12 +44,18 @@ def vendor_directory_scale_annotations(*, company, queryset, contact_query: str 
             | Q(mobile__icontains=contact_query)
             | Q(work_phone__icontains=contact_query)
         )
+        normalized_material_query = normalize_text(contact_query)
         material_match = (
             SourcingVendorOffer.objects.for_company(company)
             .filter(vendor_id=OuterRef("pk"), is_active=True, material__is_active=True)
             .filter(
-                Q(material__name__icontains=contact_query)
+                Q(material__code__icontains=contact_query)
+                | Q(material__name__icontains=contact_query)
                 | Q(material__category__icontains=contact_query)
+                | Q(material__normalized_aliases__icontains=normalized_material_query)
+                | Q(specification__icontains=contact_query)
+                | Q(brand__icontains=contact_query)
+                | Q(model__icontains=contact_query)
             )
         )
         queryset = queryset.annotate(

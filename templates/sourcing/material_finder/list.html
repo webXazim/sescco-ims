@@ -19,7 +19,7 @@
 <section class="sourcing-directory-card sourcing-finder-card" data-sourcing-finder-root>
   <form class="sourcing-finder-toolbar" data-sourcing-live-finder method="get" action="{% url 'sourcing:material_finder' %}">
     <div class="sourcing-finder-search-row">
-      <label class="sourcing-search sourcing-search--finder"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ finder.query }}" placeholder="Search material, code, alias, specification, brand, model or vendor" autocomplete="off"><button type="submit">Find</button></label>
+      <label class="sourcing-search sourcing-search--finder"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ finder.query }}" placeholder="Search material, type/category, code, alias, specification, brand, model or vendor" autocomplete="off"><button type="submit">Find</button></label>
       <select class="sourcing-select sourcing-select--small" name="page_size" aria-label="Rows per page">{% for size in page_sizes %}<option value="{{ size }}"{% if finder.page_size == size %} selected{% endif %}>{{ size }} / page</option>{% endfor %}</select>
     </div>
 

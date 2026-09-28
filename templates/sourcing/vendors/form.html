@@ -130,4 +130,4 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials-filter-remove"></script>{% endblock %}

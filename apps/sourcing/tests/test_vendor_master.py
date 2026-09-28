@@ -300,9 +300,17 @@ class VendorSourcingMasterTests(TestCase):
         self.assertContains(response, "Material Types")
         self.assertContains(response, "+1 more")
 
-        search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Electrical"})
-        self.assertEqual(search.context["page_obj"].paginator.count, 1)
-        self.assertContains(search, "Typed Vendor")
+        type_search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Electrical"})
+        self.assertEqual(type_search.context["page_obj"].paginator.count, 1)
+        self.assertContains(type_search, "Typed Vendor")
+
+        material_search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Cable"})
+        self.assertEqual(material_search.context["page_obj"].paginator.count, 1)
+        self.assertContains(material_search, "Typed Vendor")
+
+        code_search = self.client.get(reverse("sourcing:vendor_list"), {"q": "MAT-E1"})
+        self.assertEqual(code_search.context["page_obj"].paginator.count, 1)
+        self.assertContains(code_search, "Typed Vendor")
 
     def test_vendor_lifecycle_is_reference_only_and_recoverable(self):
         self.client.force_login(self.owner_user)
