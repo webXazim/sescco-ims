@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -285,19 +287,38 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
         page_subtitle="Reference vendors SESCCO may call for materials. This directory does not create Inventory suppliers or stock.",
     )
     vendors = list(directory.page_obj.object_list)
-    # The directory is a quick sourcing reference. Show at most three unique material
-    # types (Material category, falling back to Material name) and keep the full catalog
-    # behind the Vendor profile. The related offers/materials are prefetched by selector.
+    # The directory is a quick sourcing reference. Show at most three DIFFERENT
+    # material types (Material category, falling back to Material name). Rank each
+    # type deterministically by the latest activity recorded for any of its active
+    # offers; quantity is only a tie-break because quantities may use different units.
+    # The full catalog stays behind the Vendor profile and is already prefetched.
     for vendor in vendors:
-        labels = []
-        seen = set()
+        ranked_types = {}
         for offer in getattr(vendor, "directory_active_material_offers", ()):
             material = offer.material
             label = str(material.category or material.name or "").strip()
+            if not label:
+                continue
             key = label.casefold()
-            if label and key not in seen:
-                labels.append(label)
-                seen.add(key)
+            activity_at = max(
+                timestamp
+                for timestamp in (offer.updated_at, offer.last_verified_at)
+                if timestamp is not None
+            )
+            quantity = offer.available_quantity if offer.available_quantity is not None else Decimal("-1")
+            score = (activity_at, quantity)
+            current = ranked_types.get(key)
+            if current is None or score > current[1]:
+                ranked_types[key] = (label, score)
+
+        labels = [
+            label
+            for label, _score in sorted(
+                ranked_types.values(),
+                key=lambda item: (item[1][0], item[1][1], item[0].casefold()),
+                reverse=True,
+            )
+        ]
         vendor.material_type_preview = labels[:3]
         vendor.material_type_more_count = max(0, len(labels) - 3)
         vendor.material_type_count = len(labels)

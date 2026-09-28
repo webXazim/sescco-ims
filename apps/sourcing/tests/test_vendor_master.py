@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership
@@ -289,13 +292,32 @@ class VendorSourcingMasterTests(TestCase):
             SourcingMaterial.objects.create(company=self.company, code="MAT-H1", name="Duct", category="HVAC"),
             SourcingMaterial.objects.create(company=self.company, code="MAT-P1", name="Gloves", category="PPE"),
         ]
-        for material in materials:
+        offers = [
             SourcingVendorOffer.objects.create(company=self.company, vendor=vendor, material=material)
+            for material in materials
+        ]
+        now = timezone.now()
+        # Preview ordering is deterministic: newest sourcing activity first. When two
+        # types have the same activity timestamp, the higher recorded quantity wins.
+        # Civil deliberately has the largest quantity but older activity, so it should
+        # not crowd out more recently maintained material types.
+        activity = [
+            (now - timedelta(days=4), "100"),
+            (now - timedelta(days=5), "150"),
+            (now, "5"),
+            (now - timedelta(days=1), "10"),
+            (now, "50"),
+        ]
+        for offer, (updated_at, quantity) in zip(offers, activity, strict=True):
+            SourcingVendorOffer.objects.filter(pk=offer.pk).update(
+                updated_at=updated_at,
+                available_quantity=quantity,
+            )
 
         response = self.client.get(reverse("sourcing:vendor_list"))
         self.assertEqual(response.status_code, 200)
         listed = next(item for item in response.context["vendors"] if item.pk == vendor.pk)
-        self.assertEqual(listed.material_type_preview, ["Civil", "Electrical", "HVAC"])
+        self.assertEqual(listed.material_type_preview, ["PPE", "Electrical", "HVAC"])
         self.assertEqual(listed.material_type_more_count, 1)
         self.assertContains(response, "Material Types")
         self.assertContains(response, "+1 more")

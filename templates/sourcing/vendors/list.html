@@ -72,7 +72,7 @@
           <td data-column="location">{% if vendor.district or vendor.city or vendor.region %}{% if vendor.district %}{{ vendor.district }}{% endif %}{% if vendor.district and vendor.city %}, {% endif %}{% if vendor.city %}{{ vendor.city }}{% endif %}{% if vendor.region and vendor.city %}, {% elif vendor.region and vendor.district %}, {% endif %}{% if vendor.region %}{{ vendor.region }}{% endif %}{% if vendor.address %}<small class="cell-note">{{ vendor.address }}{% if vendor.postal_code %} · {{ vendor.postal_code }}{% endif %}</small>{% endif %}{% elif vendor.address %}{{ vendor.address }}{% if vendor.postal_code %}<small class="cell-note">{{ vendor.postal_code }}</small>{% endif %}{% else %}—{% endif %}</td>
           <td data-column="materials" class="sourcing-material-types-cell">
             {% if vendor.material_type_preview %}
-              <a class="sourcing-material-types" href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog" aria-label="Open {{ vendor.display_name|default:vendor.name }} Supply Catalog">
+              <a class="sourcing-material-types" href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog" aria-label="Open {{ vendor.display_name|default:vendor.name }} Supply Catalog" title="Up to 3 different material types, newest sourcing activity first">
                 {% for material_type in vendor.material_type_preview %}<span>{{ material_type }}</span>{% endfor %}
                 {% if vendor.material_type_more_count %}<small>+{{ vendor.material_type_more_count }} more</small>{% endif %}
               </a>
