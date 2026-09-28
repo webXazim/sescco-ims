@@ -126,8 +126,7 @@ for asset in \
   /static/platform/js/form-validation.js \
   /static/payroll/css/v2/index.css \
   /static/payroll/js/app.js \
-  /static/sourcing/js/finder-scale.js \
-  /static/sourcing/js/directory-menus.js; do
+  /static/sourcing/js/finder-scale.js; do
   curl --fail --silent --show-error \
     --header "Host: ${public_domain}" \
     --header 'X-Forwarded-Proto: https' \
