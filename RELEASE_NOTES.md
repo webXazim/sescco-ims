@@ -1,3 +1,12 @@
+# 1.0.117 — Inline Vendor Material Creation & Category/Type Selection Hotfix
+
+- Upgraded **New Vendor → Materials** so operators with Sourcing Reference Masters edit authority can create one or more new Sourcing Material masters without leaving Vendor onboarding, while still selecting any existing active materials.
+- New inline materials use the normal audited Sourcing Material service, receive an automatic material code when blank, and are linked to the new Vendor through the normal Supply Catalog service in the same database transaction. A failed material or Vendor save rolls the whole onboarding operation back.
+- Material **Category / Type** is now a selectable vocabulary sourced from categories already used by the company. Operators can choose an existing category/type or select **+ Add new category / type**; a newly entered category becomes available to later material forms and is also propagated live to other new-material rows on the Vendor page.
+- Added category/type filtering to the Existing Materials picker, multi-row **+ Add another material** support (bounded to 20 rows), duplicate-name/code validation, responsive UI, and permission-safe behavior for Vendor editors who do not have Reference Masters edit authority.
+- The standalone New/Edit Sourcing Material form now uses the same existing-or-new Category / Type control, preserving backwards-compatible posted category values and the existing text-backed data model.
+- Added regression coverage for inline creation, existing/new category reuse, automatic codes, audited material creation, Supply Catalog linking, and permission enforcement. No database migration, Inventory stock/supplier transaction, purchasing, Payroll, Documents or Accounting authority is changed.
+
 # 1.0.117 — Vendor Material Types & Progressive Onboarding Hotfix
 
 - Replaced the Vendor directory numeric **Items** column with **Material Types**, showing up to three unique active material categories per Vendor (falling back to Material name where category is blank) and a `+N more` indicator linking to the full Supply Catalog.

@@ -178,6 +178,107 @@ class VendorSourcingMasterTests(TestCase):
         self.assertTrue(blank_vendor.code.startswith("VND-"))
         self.assertTrue(blank_vendor.name.startswith("Vendor VND-"))
 
+    def test_vendor_create_can_add_new_materials_with_existing_or_new_category_type(self):
+        self.client.force_login(self.owner_user)
+        existing = SourcingMaterial.objects.create(
+            company=self.company,
+            code="MAT-EXISTING",
+            name="Existing Cable",
+            category="Electrical",
+            default_unit="m",
+        )
+
+        response = self.client.post(
+            reverse("sourcing:vendor_create"),
+            {
+                "display_name": "Inline Material Vendor",
+                "materials": [str(existing.pk)],
+                "new_materials-TOTAL_FORMS": "3",
+                "new_materials-INITIAL_FORMS": "0",
+                "new_materials-MIN_NUM_FORMS": "0",
+                "new_materials-MAX_NUM_FORMS": "20",
+                "new_materials-0-name": "Flexible Conduit",
+                "new_materials-0-category": "Electrical",
+                "new_materials-0-new_category": "",
+                "new_materials-0-default_unit": "m",
+                "new_materials-0-code": "",
+                "new_materials-1-name": "Fire Blanket",
+                "new_materials-1-category": "__new__",
+                "new_materials-1-new_category": "Fire & Safety",
+                "new_materials-1-default_unit": "pcs",
+                "new_materials-1-code": "",
+                # The browser immediately propagates a newly typed category/type to
+                # the other inline rows.  This third row submits that same value as a
+                # normal selection before it exists in the database.
+                "new_materials-2-name": "Fire Extinguisher",
+                "new_materials-2-category": "Fire & Safety",
+                "new_materials-2-new_category": "",
+                "new_materials-2-default_unit": "pcs",
+                "new_materials-2-code": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        vendor = SourcingVendor.objects.get(company=self.company, display_name="Inline Material Vendor")
+        conduit = SourcingMaterial.objects.get(company=self.company, name="Flexible Conduit")
+        fire_blanket = SourcingMaterial.objects.get(company=self.company, name="Fire Blanket")
+        extinguisher = SourcingMaterial.objects.get(company=self.company, name="Fire Extinguisher")
+        self.assertEqual(conduit.category, "Electrical")
+        self.assertEqual(conduit.default_unit, "m")
+        self.assertTrue(conduit.code.startswith("MAT-"))
+        self.assertEqual(fire_blanket.category, "Fire & Safety")
+        self.assertEqual(fire_blanket.default_unit, "pcs")
+        self.assertEqual(extinguisher.category, "Fire & Safety")
+        self.assertEqual(extinguisher.default_unit, "pcs")
+        self.assertEqual(
+            set(SourcingVendorOffer.objects.filter(vendor=vendor).values_list("material_id", flat=True)),
+            {existing.pk, conduit.pk, fire_blanket.pk, extinguisher.pk},
+        )
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                company=self.company,
+                area=AuditArea.SOURCING,
+                action="sourcing.material.created",
+                object_id=str(conduit.pk),
+            ).exists()
+        )
+
+        create_page = self.client.get(reverse("sourcing:vendor_create"))
+        self.assertEqual(create_page.status_code, 200)
+        self.assertContains(create_page, "All categories / types")
+        self.assertContains(create_page, "Fire &amp; Safety")
+        self.assertContains(create_page, "+ Add another material")
+
+    def test_vendor_editor_without_master_manage_cannot_inline_create_material(self):
+        editor, _membership = self._member(
+            username="vendor-only-inline-editor",
+            permissions=(
+                AccessPermission.SOURCING_VENDORS_VIEW.value,
+                AccessPermission.SOURCING_VENDORS_MANAGE.value,
+            ),
+        )
+        self.client.force_login(editor)
+        page = self.client.get(reverse("sourcing:vendor_create"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "requires Reference Masters edit access")
+        self.assertNotContains(page, "+ Add another material")
+
+        response = self.client.post(
+            reverse("sourcing:vendor_create"),
+            {
+                "display_name": "Should Not Save",
+                "new_materials-TOTAL_FORMS": "1",
+                "new_materials-INITIAL_FORMS": "0",
+                "new_materials-MIN_NUM_FORMS": "0",
+                "new_materials-MAX_NUM_FORMS": "20",
+                "new_materials-0-name": "Unauthorized Material",
+                "new_materials-0-category": "__new__",
+                "new_materials-0-new_category": "Unauthorized Category",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Should Not Save").exists())
+        self.assertFalse(SourcingMaterial.objects.filter(company=self.company, name="Unauthorized Material").exists())
+
     def test_vendor_directory_shows_only_three_unique_material_types_and_searches_them(self):
         self.client.force_login(self.owner_user)
         vendor = SourcingVendor.objects.create(company=self.company, code="VND-TYPES", name="Typed Vendor")

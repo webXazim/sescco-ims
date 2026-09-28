@@ -42,25 +42,82 @@
   </section>
 
   {% if show_materials %}
-  <section class="sourcing-form-section">
-    <header><h2>Materials</h2><p>Select the material types this Vendor can supply now. Detailed quantity, rate, brand, specification and verification can be completed later from the Vendor Supply Catalog.</p></header>
-    <div class="sourcing-form-grid sourcing-form-grid--single">
+  <section class="sourcing-form-section sourcing-material-onboarding">
+    <header><h2>Materials</h2><p>Select existing Sourcing Materials or create new material masters here while adding the Vendor. Every selected or newly created material is linked to this Vendor's Supply Catalog with availability left as Unknown until detailed sourcing information is recorded.</p></header>
+    <div class="sourcing-material-onboarding-body">
       <div class="sourcing-field sourcing-field--full{% if form.materials.errors %} has-error{% endif %}" data-material-picker>
         <div class="sourcing-material-picker-head">
           <div>
-            <label for="vendor-material-search">Material Types</label>
+            <label for="vendor-material-search">Existing Materials</label>
             <small>{{ material_master_count }} active material{{ material_master_count|pluralize }} available · <span data-material-selected-count>0 selected</span></small>
           </div>
-          {% if material_master_count %}<input id="vendor-material-search" class="sourcing-input sourcing-material-picker-search" type="search" placeholder="Filter materials or categories" autocomplete="off" data-material-picker-search>{% endif %}
+          {% if material_master_count %}
+          <div class="sourcing-material-picker-tools">
+            <select class="sourcing-select" aria-label="Filter existing materials by category or type" data-material-category-filter>
+              <option value="">All categories / types</option>
+              {% for category in material_picker_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}
+              <option value="__uncategorized__">Uncategorized</option>
+            </select>
+            <input id="vendor-material-search" class="sourcing-input sourcing-material-picker-search" type="search" placeholder="Search existing materials" autocomplete="off" data-material-picker-search>
+          </div>
+          {% endif %}
         </div>
         {% if material_master_count %}
           <div class="sourcing-material-picker-options">{{ form.materials }}</div>
           {% if form.materials.help_text %}<small>{{ form.materials.help_text }}</small>{% endif %}
           {% for error in form.materials.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
         {% else %}
-          <div class="sourcing-material-picker-empty">No active Sourcing Materials exist yet. <a href="{% url 'sourcing:material_create' %}">Create a material</a> first, or save the Vendor now and add Supply Catalog items later.</div>
+          <div class="sourcing-material-picker-empty">No active Sourcing Materials exist yet.{% if can_create_materials %} You can create the first material below while creating this Vendor.{% endif %}</div>
         {% endif %}
       </div>
+
+      {% if can_create_materials and new_material_formset %}
+      <div class="sourcing-inline-materials" data-new-material-formset>
+        {{ new_material_formset.management_form }}
+        <div class="sourcing-inline-materials-head">
+          <div>
+            <strong>New Materials</strong>
+            <small>Create company-wide Sourcing Material masters and link them to this Vendor in the same save. Choose a previously used category/type or add a new one.</small>
+          </div>
+          <button class="sourcing-btn" type="button" data-add-new-material>+ Add another material</button>
+        </div>
+        {% for error in new_material_formset.non_form_errors %}<div class="sourcing-form-errors">{{ error }}</div>{% endfor %}
+        <div class="sourcing-inline-material-rows" data-new-material-rows>
+          {% for material_form in new_material_formset.forms %}
+          <div class="sourcing-inline-material-row{% if material_form.errors %} has-error{% endif %}" data-new-material-row{% if material_form.DELETE.value %} hidden{% endif %}>
+            <div class="sourcing-inline-material-row-head"><strong>New material <span data-new-material-row-number>{{ forloop.counter }}</span></strong><button class="sourcing-inline-material-remove" type="button" data-remove-new-material aria-label="Remove new material row">Remove</button></div>
+            <span hidden>{{ material_form.DELETE }}</span>
+            <div class="sourcing-inline-material-grid">
+              {% include "sourcing/vendors/field.html" with field=material_form.name %}
+              <div data-material-category-scope>
+                {% include "sourcing/vendors/field.html" with field=material_form.category %}
+                <div data-new-material-category-field{% if material_form.category.value != '__new__' %} hidden{% endif %}>{% include "sourcing/vendors/field.html" with field=material_form.new_category %}</div>
+              </div>
+              {% include "sourcing/vendors/field.html" with field=material_form.default_unit %}
+              {% include "sourcing/vendors/field.html" with field=material_form.code %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <template data-new-material-template>
+          <div class="sourcing-inline-material-row" data-new-material-row>
+            <div class="sourcing-inline-material-row-head"><strong>New material <span data-new-material-row-number></span></strong><button class="sourcing-inline-material-remove" type="button" data-remove-new-material aria-label="Remove new material row">Remove</button></div>
+            <span hidden>{{ new_material_formset.empty_form.DELETE }}</span>
+            <div class="sourcing-inline-material-grid">
+              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.name %}
+              <div data-material-category-scope>
+                {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.category %}
+                <div data-new-material-category-field hidden>{% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.new_category %}</div>
+              </div>
+              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.default_unit %}
+              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.code %}
+            </div>
+          </div>
+        </template>
+      </div>
+      {% elif not can_create_materials %}
+      <div class="sourcing-material-permission-note">You can select existing materials for this Vendor. Creating a new Sourcing Material requires Reference Masters edit access.</div>
+      {% endif %}
     </div>
   </section>
   {% endif %}
@@ -73,4 +130,4 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-mtypes"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endblock %}

@@ -113,6 +113,53 @@ class MaterialCatalogTests(TestCase):
         self.assertEqual(collision.status_code, 400)
         self.assertFalse(SourcingMaterial.objects.filter(company=self.company, code="MAT-CBL-2").exists())
 
+    def test_material_form_reuses_existing_category_type_or_creates_new_one(self):
+        self.client.force_login(self.owner_user)
+
+        create_page = self.client.get(reverse("sourcing:material_create"))
+        self.assertEqual(create_page.status_code, 200)
+        self.assertContains(create_page, "Material Category / Type")
+        self.assertContains(create_page, "Civil")
+        self.assertContains(create_page, "+ Add new category / type")
+
+        reused = self.client.post(
+            reverse("sourcing:material_create"),
+            {
+                "code": "MAT-CIV-2",
+                "name": "Cement Board",
+                "category": "Civil",
+                "new_category": "",
+                "default_unit": "sheet",
+                "aliases": "",
+                "notes": "",
+            },
+        )
+        self.assertEqual(reused.status_code, 302)
+        self.assertEqual(
+            SourcingMaterial.objects.get(company=self.company, code="MAT-CIV-2").category,
+            "Civil",
+        )
+
+        new_type = self.client.post(
+            reverse("sourcing:material_create"),
+            {
+                "code": "MAT-HVAC-1",
+                "name": "GI Duct",
+                "category": "__new__",
+                "new_category": "HVAC",
+                "default_unit": "m2",
+                "aliases": "",
+                "notes": "",
+            },
+        )
+        self.assertEqual(new_type.status_code, 302)
+        self.assertEqual(
+            SourcingMaterial.objects.get(company=self.company, code="MAT-HVAC-1").category,
+            "HVAC",
+        )
+        later_page = self.client.get(reverse("sourcing:material_create"))
+        self.assertContains(later_page, "HVAC")
+
     def test_vendor_editor_adds_reference_offer_and_revision_without_inventory_supplier(self):
         editor, _ = self._member(
             username="vendor-catalog-editor",

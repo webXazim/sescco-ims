@@ -90,6 +90,8 @@ for marker in (
     "status = SourcingEntityStatus.INACTIVE",
     "Type {expected} to confirm permanent deletion.",
     "def create_vendor_with_materials(",
+    "new_materials=()",
+    "create_material(",
 ):
     if marker not in services:
         fail(f"Vendor lifecycle safety missing: {marker}")
@@ -107,6 +109,9 @@ for marker in (
     "vendor_delete",
     "create_vendor_with_materials",
     "material_type_preview",
+    "SourcingVendorNewMaterialFormSet",
+    "can_create_materials",
+    "new_material_formset",
 ):
     if marker not in views:
         fail(f"Vendor view authority missing: {marker}")
@@ -132,6 +137,18 @@ detail_template = text("templates/sourcing/vendors/detail.html")
 for marker in ("Supply Catalog", "Contact Persons", "Activity", "Delete Vendor Permanently", "Archived · Inactive", "Lifecycle"):
     if marker not in detail_template:
         fail(f"Vendor profile UI missing: {marker}")
+form_template = text("templates/sourcing/vendors/form.html")
+for marker in ("Existing Materials", "New Materials", "+ Add another material", "data-material-category-filter"):
+    if marker not in form_template:
+        fail(f"Vendor inline-material onboarding UI missing: {marker}")
+forms = text("apps/sourcing/forms.py")
+for marker in ("class SourcingVendorNewMaterialForm", "SourcingVendorNewMaterialFormSet", "NEW_MATERIAL_CATEGORY_VALUE"):
+    if marker not in forms:
+        fail(f"Vendor inline-material form contract missing: {marker}")
+inline_js = text("static/sourcing/js/vendor-directory.js")
+for marker in ("dynamicMaterialCategories", "registerDynamicCategory", "data-new-material-formset", "data-add-new-material"):
+    if marker not in inline_js:
+        fail(f"Vendor inline-material browser behavior missing: {marker}")
 
 for rel in (
     "apps/sourcing/models/vendors.py",

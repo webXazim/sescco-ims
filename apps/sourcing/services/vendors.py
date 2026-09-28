@@ -107,24 +107,35 @@ def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=
 
 @transaction.atomic
 def create_vendor_with_materials(
-    *, actor_membership, cleaned_data: dict[str, object], materials=(), request=None
+    *, actor_membership, cleaned_data: dict[str, object], materials=(), new_materials=(), request=None
 ) -> SourcingVendor:
     """Create a Vendor and optionally seed its Supply Catalog in one transaction.
 
-    Material selection during Vendor onboarding creates lightweight catalog links only;
-    availability, quantities, rates and verification remain unknown until explicitly
-    completed later.  Reusing the normal catalog service keeps audit/revision evidence
-    identical to material links added from the Vendor profile.
+    Existing-material selection creates lightweight catalog links.  Inline new-material
+    rows first create normal company Sourcing Material masters and then link them to the
+    Vendor.  Availability, quantities, rates and verification remain unknown until
+    explicitly completed later.  Reusing the normal material/catalog services keeps
+    audit and revision evidence identical to records created from their dedicated pages.
     """
     vendor = create_vendor(
         actor_membership=actor_membership,
         cleaned_data=cleaned_data,
         request=request,
     )
-    from .catalog import create_vendor_offer
+    from .catalog import create_material, create_vendor_offer
+
+    resolved_materials = list(materials or ())
+    for material_data in new_materials or ():
+        resolved_materials.append(
+            create_material(
+                actor_membership=actor_membership,
+                cleaned_data=dict(material_data),
+                request=request,
+            )
+        )
 
     seen = set()
-    for material in materials or ():
+    for material in resolved_materials:
         material_id = getattr(material, "pk", None)
         if material_id in seen:
             continue

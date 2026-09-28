@@ -61,6 +61,10 @@ for forbidden in ('to="inventory.', 'to="rental_manpower.', 'to="internal_payrol
 forms = text("apps/sourcing/forms.py")
 for marker in (
     "class SourcingMaterialForm",
+    "sourcing_material_categories",
+    "NEW_MATERIAL_CATEGORY_VALUE",
+    'label="Material Category / Type"',
+    'label="New Category / Type"',
     "class SourcingVendorOfferForm",
     'label="Verified now"',
     'label="Spoke With"',
@@ -132,6 +136,9 @@ for marker in ("Search code, material, category or alias", "Vendors", "Offers", 
 for marker in ("Availability", "Reference Rate", "Verification", "Reference-only sourcing data"):
     if marker not in text("templates/sourcing/vendors/offer_form.html"):
         fail(f"Vendor offer form UI missing: {marker}")
+for marker in ("data-material-category-scope", "data-new-material-category-field"):
+    if marker not in text("templates/sourcing/materials/form.html"):
+        fail(f"Material category/type selector UI missing: {marker}")
 for marker in ("Supply Catalog", "Never verified", "Available quantity and rate are reference snapshots only"):
     if marker not in text("templates/sourcing/vendors/detail.html"):
         fail(f"Vendor Supply Catalog UI missing: {marker}")

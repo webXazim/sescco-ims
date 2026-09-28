@@ -15,6 +15,68 @@ from .models import (
     SourcingVendorContact,
     SourcingVendorOffer,
 )
+from .models.base import clean_text, normalize_text
+
+
+NEW_MATERIAL_CATEGORY_VALUE = "__new__"
+
+
+def sourcing_material_categories(company) -> list[str]:
+    """Return the company's controlled material category/type vocabulary.
+
+    ``SourcingMaterial.category`` intentionally remains a simple text field so this
+    upgrade does not introduce a schema migration.  The UI treats the distinct
+    values already used by the company as the selectable category/type master.
+    """
+    if company is None:
+        return []
+    raw_values = (
+        SourcingMaterial.objects.for_company(company)
+        .exclude(category="")
+        .order_by("category")
+        .values_list("category", flat=True)
+        .distinct()
+    )
+    categories: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        value = clean_text(raw)
+        key = value.casefold()
+        if value and key not in seen:
+            categories.append(value)
+            seen.add(key)
+    return categories
+
+
+def _material_category_choices(*, categories=(), current: str = "", posted: str = ""):
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw in [*categories, current, posted]:
+        value = clean_text(raw)
+        if not value or value == NEW_MATERIAL_CATEGORY_VALUE:
+            continue
+        key = value.casefold()
+        if key not in seen:
+            values.append(value)
+            seen.add(key)
+    values.sort(key=str.casefold)
+    return [
+        ("", "No category / type"),
+        *((value, value) for value in values),
+        (NEW_MATERIAL_CATEGORY_VALUE, "+ Add new category / type"),
+    ]
+
+
+def _canonical_material_category(value: object, categories=()) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    key = cleaned.casefold()
+    for existing in categories:
+        candidate = clean_text(existing)
+        if candidate and candidate.casefold() == key:
+            return candidate
+    return cleaned
 
 
 class SourcingVendorForm(forms.ModelForm):
@@ -435,6 +497,25 @@ class SourcingWorkforceOfferVerificationForm(forms.ModelForm):
 
 
 class SourcingMaterialForm(forms.ModelForm):
+    category = forms.ChoiceField(
+        required=False,
+        label="Material Category / Type",
+        choices=(),
+        widget=forms.Select(attrs={"data-material-category-select": ""}),
+    )
+    new_category = forms.CharField(
+        required=False,
+        max_length=120,
+        label="New Category / Type",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Enter a new material category / type",
+                "autocomplete": "off",
+                "data-new-material-category-input": "",
+            }
+        ),
+        help_text="The new category/type becomes available for later materials as soon as this material is saved.",
+    )
     aliases = forms.CharField(
         required=False,
         widget=forms.Textarea(
@@ -452,19 +533,43 @@ class SourcingMaterialForm(forms.ModelForm):
         widgets = {
             "code": forms.TextInput(attrs={"placeholder": "MAT-XXXX", "autocomplete": "off"}),
             "name": forms.TextInput(attrs={"placeholder": "Material / item name", "autocomplete": "off"}),
-            "category": forms.TextInput(attrs={"placeholder": "Civil, Electrical, HVAC, PPE ..."}),
             "default_unit": forms.TextInput(attrs={"placeholder": "pcs, box, kg, m, ton ..."}),
             "notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Reference notes for this Sourcing Material"}),
         }
         labels = {"default_unit": "Default Unit"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, categories=None, **kwargs):
         super().__init__(*args, **kwargs)
+        current_category = clean_text(getattr(self.instance, "category", "")) if self.instance else ""
+        posted_category = ""
+        if self.is_bound:
+            posted_category = clean_text(self.data.get(self.add_prefix("category"), ""))
+        category_values = list(categories) if categories is not None else sourcing_material_categories(company)
+        self.category_values = category_values
+        self.fields["category"].choices = _material_category_choices(
+            categories=category_values,
+            current=current_category,
+            posted=posted_category,
+        )
         if self.instance and self.instance.pk and not self.is_bound:
             self.initial["aliases"] = "\n".join(self.instance.aliases or [])
+            self.initial["category"] = current_category
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "sourcing-input")
         self.fields["code"].help_text = "Independent Sourcing code; it is not an Inventory item code."
+
+    def clean(self):
+        cleaned = super().clean()
+        category = clean_text(cleaned.get("category"))
+        new_category = clean_text(cleaned.get("new_category"))
+        if category == NEW_MATERIAL_CATEGORY_VALUE:
+            if not new_category:
+                self.add_error("new_category", "Enter the new material category / type.")
+            else:
+                cleaned["category"] = _canonical_material_category(new_category, self.category_values)
+        else:
+            cleaned["category"] = _canonical_material_category(category, self.category_values)
+        return cleaned
 
     def clean_aliases(self):
         raw = str(self.cleaned_data.get("aliases") or "")
@@ -477,6 +582,140 @@ class SourcingMaterialForm(forms.ModelForm):
                 values.append(value)
                 seen.add(key)
         return values
+
+
+class SourcingVendorNewMaterialForm(forms.Form):
+    """Small material-master form embedded in New Vendor onboarding.
+
+    It deliberately creates the same ``SourcingMaterial`` records as the normal
+    Reference > Materials page; there is no vendor-private material vocabulary.
+    """
+
+    name = forms.CharField(
+        max_length=200,
+        label="Material Name",
+        widget=forms.TextInput(attrs={"placeholder": "Material / item name", "autocomplete": "off"}),
+    )
+    category = forms.ChoiceField(
+        required=False,
+        label="Material Category / Type",
+        choices=(),
+        widget=forms.Select(attrs={"data-material-category-select": ""}),
+    )
+    new_category = forms.CharField(
+        required=False,
+        max_length=120,
+        label="New Category / Type",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Enter a new category / type",
+                "autocomplete": "off",
+                "data-new-material-category-input": "",
+            }
+        ),
+    )
+    default_unit = forms.CharField(
+        required=False,
+        max_length=40,
+        label="Default Unit",
+        widget=forms.TextInput(attrs={"placeholder": "pcs, box, kg, m, ton ...", "autocomplete": "off"}),
+    )
+    code = forms.CharField(
+        required=False,
+        max_length=40,
+        label="Material Code",
+        widget=forms.TextInput(attrs={"placeholder": "Auto-generated if blank", "autocomplete": "off"}),
+        help_text="Optional. A Sourcing material code is generated automatically when blank.",
+    )
+
+    def __init__(self, *args, company=None, categories=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.company = company
+        posted_category = ""
+        if self.is_bound:
+            posted_category = clean_text(self.data.get(self.add_prefix("category"), ""))
+        category_values = list(categories) if categories is not None else sourcing_material_categories(company)
+        self.category_values = category_values
+        self.fields["category"].choices = _material_category_choices(
+            categories=category_values,
+            posted=posted_category,
+        )
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "sourcing-input")
+
+    def clean(self):
+        cleaned = super().clean()
+        name = clean_text(cleaned.get("name"))
+        code = clean_text(cleaned.get("code")).upper()
+        category = clean_text(cleaned.get("category"))
+        new_category = clean_text(cleaned.get("new_category"))
+        default_unit = clean_text(cleaned.get("default_unit"))
+
+        if category == NEW_MATERIAL_CATEGORY_VALUE:
+            if not new_category:
+                self.add_error("new_category", "Enter the new material category / type.")
+            else:
+                category = _canonical_material_category(new_category, self.category_values)
+        else:
+            category = _canonical_material_category(category, self.category_values)
+
+        cleaned["name"] = name
+        cleaned["code"] = code
+        cleaned["category"] = category
+        cleaned["default_unit"] = default_unit
+
+        if self.company is not None and name:
+            normalized_name = normalize_text(name)
+            if SourcingMaterial.objects.for_company(self.company).filter(normalized_name=normalized_name).exists():
+                self.add_error("name", "A Sourcing Material with this name already exists. Select it from Existing Materials instead.")
+        if self.company is not None and code:
+            if SourcingMaterial.objects.for_company(self.company).filter(code__iexact=code).exists():
+                self.add_error("code", "A Sourcing Material with this code already exists.")
+        return cleaned
+
+    def material_data(self) -> dict[str, object]:
+        return {
+            "code": clean_text(self.cleaned_data.get("code")).upper(),
+            "name": clean_text(self.cleaned_data.get("name")),
+            "category": clean_text(self.cleaned_data.get("category")),
+            "default_unit": clean_text(self.cleaned_data.get("default_unit")),
+            "aliases": [],
+            "notes": "",
+        }
+
+
+class BaseSourcingVendorNewMaterialFormSet(forms.BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        seen_names: set[str] = set()
+        seen_codes: set[str] = set()
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data") or not form.cleaned_data:
+                continue
+            if self.can_delete and form.cleaned_data.get("DELETE"):
+                continue
+            name = normalize_text(form.cleaned_data.get("name"))
+            code = clean_text(form.cleaned_data.get("code")).upper()
+            if name:
+                if name in seen_names:
+                    form.add_error("name", "This material is already included in another new-material row.")
+                seen_names.add(name)
+            if code:
+                if code in seen_codes:
+                    form.add_error("code", "This material code is already included in another new-material row.")
+                seen_codes.add(code)
+
+
+SourcingVendorNewMaterialFormSet = forms.formset_factory(
+    SourcingVendorNewMaterialForm,
+    formset=BaseSourcingVendorNewMaterialFormSet,
+    extra=1,
+    can_delete=True,
+    max_num=20,
+    validate_max=True,
+)
 
 
 class SourcingVendorOfferForm(forms.ModelForm):

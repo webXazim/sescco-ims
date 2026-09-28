@@ -74,3 +74,5 @@ The Django runtime test remains part of the production release runner and migrat
 > Carried forward and reverified unchanged where applicable in SESCCO MS 1.0.117.
 
 > Permanent-delete semantics were added in SESCCO MS 1.0.117 while preserving Active/Inactive as the non-destructive lifecycle control.
+
+> Category/type selection was upgraded in SESCCO MS 1.0.117. New/Edit Material now lists category/type values already used by the company and provides **+ Add new category / type** without introducing a separate schema table. The same control is used by inline material creation during New Vendor onboarding, so previously used categories remain selectable and a new category entered during onboarding can be reused by another new-material row in that same save.

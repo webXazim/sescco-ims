@@ -23,6 +23,7 @@ from .forms import (
     SourcingMaterialForm,
     SourcingManpowerSupplierForm,
     SourcingManpowerContactForm,
+    SourcingVendorNewMaterialFormSet,
     SourcingTradeForm,
     SourcingWorkforceOfferForm,
     SourcingWorkforceOfferVerificationForm,
@@ -31,6 +32,7 @@ from .forms import (
     SourcingVendorOfferForm,
     SourcingVendorOfferVerificationForm,
     SourcingImportUploadForm,
+    sourcing_material_categories,
 )
 from .exchange import (
     EXPORT_DATASETS,
@@ -314,26 +316,74 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
 @login_required
 def vendor_create(request: HttpRequest) -> HttpResponse:
     _require_vendor_manage(request)
+    membership = _membership(request)
+    can_create_materials = membership_can_manage_sourcing_masters(membership)
+    category_values = sourcing_material_categories(request.company)
+    formset_kwargs = {
+        "prefix": "new_materials",
+        "form_kwargs": {"company": request.company, "categories": category_values},
+    }
     if request.method == "POST":
         form = SourcingVendorForm(request.POST, company=request.company, include_materials=True)
-        if form.is_valid():
+        inline_formset_submitted = "new_materials-TOTAL_FORMS" in request.POST
+        new_material_formset = None
+        if can_create_materials:
+            new_material_formset = (
+                SourcingVendorNewMaterialFormSet(request.POST, **formset_kwargs)
+                if inline_formset_submitted
+                else SourcingVendorNewMaterialFormSet(**formset_kwargs)
+            )
+        if not can_create_materials:
+            inline_material_requested = any(
+                key.startswith("new_materials-")
+                and key.rsplit("-", 1)[-1] in {"name", "code", "category", "new_category", "default_unit"}
+                and str(value or "").strip()
+                for key, value in request.POST.items()
+            )
+            if inline_material_requested:
+                form.add_error(None, "Sourcing Reference Masters edit authority is required to create new materials.")
+
+        form_valid = form.is_valid()
+        formset_valid = (
+            new_material_formset.is_valid()
+            if new_material_formset is not None and inline_formset_submitted
+            else True
+        )
+        if form_valid and formset_valid:
             cleaned_data = {key: value for key, value in form.cleaned_data.items() if key != "materials"}
             materials = list(form.cleaned_data.get("materials") or ())
+            new_materials = []
+            if new_material_formset is not None and inline_formset_submitted:
+                new_materials = [
+                    material_form.material_data()
+                    for material_form in new_material_formset.forms
+                    if material_form.cleaned_data
+                    and not material_form.cleaned_data.get("DELETE")
+                    and material_form.cleaned_data.get("name")
+                ]
             try:
                 vendor = create_vendor_with_materials(
-                    actor_membership=_membership(request),
+                    actor_membership=membership,
                     cleaned_data=cleaned_data,
                     materials=materials,
+                    new_materials=new_materials,
                     request=request,
                 )
             except ValidationError as exc:
                 _apply_validation_error(form, exc)
             else:
-                if materials:
+                linked_material_count = len(materials) + len(new_materials)
+                if linked_material_count:
+                    new_material_detail = ""
+                    if new_materials:
+                        new_material_detail = (
+                            f", including {len(new_materials)} new material master "
+                            f"record{'s' if len(new_materials) != 1 else ''}"
+                        )
                     messages.success(
                         request,
-                        f"Vendor {vendor.display_name or vendor.name} was created with {len(materials)} material "
-                        f"type{'s' if len(materials) != 1 else ''}.",
+                        f"Vendor {vendor.display_name or vendor.name} was created with {linked_material_count} material "
+                        f"type{'s' if linked_material_count != 1 else ''}{new_material_detail}.",
                     )
                 else:
                     messages.success(request, f"Vendor {vendor.display_name or vendor.name} was created.")
@@ -344,6 +394,10 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
             company=request.company,
             include_materials=True,
         )
+        new_material_formset = SourcingVendorNewMaterialFormSet(**formset_kwargs) if can_create_materials else None
+    active_category_values = list(
+        form.fields["materials"].queryset.exclude(category="").order_by("category").values_list("category", flat=True).distinct()
+    )
     context = _base_context(
         request,
         page_key="sourcing-vendors",
@@ -356,8 +410,17 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
         cancel_url="sourcing:vendor_list",
         show_materials=True,
         material_master_count=form.fields["materials"].queryset.count(),
+        material_picker_categories=active_category_values,
+        can_create_materials=can_create_materials,
+        new_material_formset=new_material_formset,
     )
-    return render(request, "sourcing/vendors/form.html", context, status=400 if request.method == "POST" and form.errors else 200)
+    has_form_errors = bool(form.errors) or bool(new_material_formset and new_material_formset.errors)
+    return render(
+        request,
+        "sourcing/vendors/form.html",
+        context,
+        status=400 if request.method == "POST" and has_form_errors else 200,
+    )
 
 
 @login_required
@@ -1280,13 +1343,15 @@ def material_list(request: HttpRequest) -> HttpResponse:
 @login_required
 def material_create(request: HttpRequest) -> HttpResponse:
     _require_master_manage(request)
+    category_values = sourcing_material_categories(request.company)
     if request.method == "POST":
-        form = SourcingMaterialForm(request.POST)
+        form = SourcingMaterialForm(request.POST, company=request.company, categories=category_values)
         if form.is_valid():
+            material_data = {key: value for key, value in form.cleaned_data.items() if key != "new_category"}
             try:
                 material = create_material(
                     actor_membership=_membership(request),
-                    cleaned_data=form.cleaned_data,
+                    cleaned_data=material_data,
                     request=request,
                 )
             except ValidationError as exc:
@@ -1295,7 +1360,11 @@ def material_create(request: HttpRequest) -> HttpResponse:
                 messages.success(request, f"Sourcing Material {material.name} was created.")
                 return redirect("sourcing:material_list")
     else:
-        form = SourcingMaterialForm(initial={"code": suggest_material_code()})
+        form = SourcingMaterialForm(
+            initial={"code": suggest_material_code()},
+            company=request.company,
+            categories=category_values,
+        )
     context = _base_context(
         request,
         page_key="sourcing-materials",
@@ -1310,14 +1379,21 @@ def material_create(request: HttpRequest) -> HttpResponse:
 def material_edit(request: HttpRequest, material_id) -> HttpResponse:
     _require_master_manage(request)
     material = get_object_or_404(SourcingMaterial.objects.for_company(request.company), pk=material_id)
+    category_values = sourcing_material_categories(request.company)
     if request.method == "POST":
-        form = SourcingMaterialForm(request.POST, instance=material)
+        form = SourcingMaterialForm(
+            request.POST,
+            instance=material,
+            company=request.company,
+            categories=category_values,
+        )
         if form.is_valid():
+            material_data = {key: value for key, value in form.cleaned_data.items() if key != "new_category"}
             try:
                 material = update_material(
                     actor_membership=_membership(request),
                     material_id=material.pk,
-                    cleaned_data=form.cleaned_data,
+                    cleaned_data=material_data,
                     request=request,
                 )
             except ValidationError as exc:
@@ -1326,7 +1402,11 @@ def material_edit(request: HttpRequest, material_id) -> HttpResponse:
                 messages.success(request, "Sourcing Material was updated.")
                 return redirect("sourcing:material_list")
     else:
-        form = SourcingMaterialForm(instance=material)
+        form = SourcingMaterialForm(
+            instance=material,
+            company=request.company,
+            categories=category_values,
+        )
     context = _base_context(
         request,
         page_key="sourcing-materials",
