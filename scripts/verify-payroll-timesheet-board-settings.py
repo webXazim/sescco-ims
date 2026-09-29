@@ -16,10 +16,14 @@ def require(path: str, *needles: str) -> None:
 
 
 require(
-    "apps/rental_manpower/models/timesheets.py",
+    "apps/rental_manpower/models/timesheet_settings.py",
     "class RentalTimesheetProjectSettings",
     "off_weekdays = models.JSONField",
     "default_rental_timesheet_off_weekdays",
+)
+require(
+    "apps/rental_manpower/models/__init__.py",
+    "from .timesheet_settings import RentalTimesheetProjectSettings",
 )
 require(
     "apps/rental_manpower/migrations/0010_rental_timesheet_project_settings.py",

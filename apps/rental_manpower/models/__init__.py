@@ -44,7 +44,14 @@ __all__ = [
     "rental_adjustment_effect",
 ]
 
-from .timesheets import RentalAttendanceCode, RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetPeriod, RentalTimesheetProjectSettings, RentalTimesheetStatus
+from .timesheets import (
+    RentalAttendanceCode,
+    RentalTimesheetEntry,
+    RentalTimesheetOvertime,
+    RentalTimesheetPeriod,
+    RentalTimesheetStatus,
+)
+from .timesheet_settings import RentalTimesheetProjectSettings
 
 from .settlements import (
     RentalAdjustment, RentalAdjustmentEffect, RentalAdjustmentStatus, RentalAdjustmentType,
