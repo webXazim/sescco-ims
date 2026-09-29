@@ -19,6 +19,7 @@ from apps.rental_manpower.models import (
     RentalSettlementStatus,
     SupplierPaymentStatus,
     SupplierSettlementLine,
+    RentalTimesheetProjectSettings,
 )
 from apps.rental_manpower.selectors.masters import rental_master_context
 from apps.rental_manpower.selectors.settlements import (
@@ -170,6 +171,23 @@ class RentalSettlementTests(TestCase):
         self.assertEqual(lines[hourly.pk].base_amount, Decimal("120.00"))
         self.assertEqual(lines[daily.pk].base_amount, Decimal("200.00"))
         self.assertEqual(lines[monthly.pk].base_amount, Decimal("1600.00"))  # 16/31 × SAR 3,100
+
+    def test_daily_excess_hours_become_policy_overtime_in_supplier_settlement(self):
+        worker = self._worker("RW-OT", "Policy OT Worker", "Hourly", "10")
+        RentalTimesheetProjectSettings.objects.create(
+            company=self.company, project=self.project, regular_hours_per_day=Decimal("10.00"),
+            overtime_multiplier=Decimal("1.5000"), automatic_overtime=True,
+        )
+        self._lock_timesheet([(worker, 1, {1: "12"})])
+        settlement = calculate_project_settlements(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026, 8, 1),
+        )[0]
+        line = SupplierSettlementLine.objects.get(settlement=settlement, worker=worker)
+        self.assertEqual(line.regular_hours, Decimal("10.00"))
+        self.assertEqual(line.overtime_hours, Decimal("2.00"))
+        self.assertEqual(line.base_amount, Decimal("100.00"))
+        self.assertEqual(line.overtime_amount, Decimal("30.00"))
+        self.assertEqual(line.gross_amount, Decimal("130.00"))
 
     def test_approved_adjustments_are_snapshotted(self):
         worker = self._worker("RW-A", "Adjusted Worker", "Hourly", "10")

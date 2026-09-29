@@ -400,3 +400,84 @@ body.timesheet-focus-mode .ui-v2-prs-rental-timesheet-workspace.is-fullscreen {
   .ui-v2-prs-timesheet-weekdays label:nth-last-child(-n+3) { border-bottom: 1px solid var(--ui-v2-border); }
   .ui-v2-prs-timesheet-weekdays label:last-child { border-bottom: 0; }
 }
+
+/* Project-period working-hours and overtime policy. */
+.ui-v2-prs-timesheet-policy-settings { display: grid; gap: 12px; }
+.ui-v2-prs-timesheet-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ui-v2-prs-timesheet-policy-grid > label,
+.ui-v2-prs-timesheet-policy-presets {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.ui-v2-prs-timesheet-policy-grid > label > span:first-child,
+.ui-v2-prs-timesheet-policy-presets > span {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ui-v2-text);
+}
+.ui-v2-prs-timesheet-policy-grid small,
+.ui-v2-prs-rental-ot-rate-help {
+  color: var(--ui-v2-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.ui-v2-prs-timesheet-policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface);
+}
+.ui-v2-prs-timesheet-policy-toggle strong { font-size: 12px; }
+.ui-v2-prs-timesheet-policy-presets > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ui-v2-prs-timesheet-policy-presets button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface);
+  color: var(--ui-v2-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ui-v2-prs-timesheet-policy-presets button:hover:not(:disabled),
+.ui-v2-prs-timesheet-policy-presets button:focus-visible:not(:disabled) {
+  border-color: var(--ui-v2-text-muted);
+}
+.ui-v2-prs-timesheet-policy-presets button:disabled { opacity: .5; cursor: not-allowed; }
+.ui-v2-prs-timesheet-policy-example {
+  padding: 10px 11px;
+  border-left: 3px solid var(--ui-v2-text);
+  background: var(--ui-v2-surface-subtle);
+  color: var(--ui-v2-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ui-v2-prs-timesheet-policy-lock {
+  display: inline-flex;
+  margin-left: 8px;
+  color: var(--ui-v2-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+.ui-v2-prs-rental-ot-rate-help { display: block; margin-top: 4px; }
+.ui-v2-root .ui-v2-payroll-timesheet-legend i.is-overtime {
+  border-color: #a66b14;
+  background: #fff7e8;
+}
+
+@media (max-width: 720px) {
+  .ui-v2-prs-timesheet-policy-grid { grid-template-columns: 1fr; }
+}

@@ -27,6 +27,7 @@ __all__ = [
     "RentalTimesheetOvertime",
     "RentalTimesheetPeriod",
     "RentalTimesheetProjectSettings",
+    "RentalTimesheetPeriodPolicy",
     "RentalTimesheetStatus",
     "RentalAdjustment",
     "RentalAdjustmentEffect",
@@ -51,7 +52,7 @@ from .timesheets import (
     RentalTimesheetPeriod,
     RentalTimesheetStatus,
 )
-from .timesheet_settings import RentalTimesheetProjectSettings
+from .timesheet_settings import RentalTimesheetPeriodPolicy, RentalTimesheetProjectSettings
 
 from .settlements import (
     RentalAdjustment, RentalAdjustmentEffect, RentalAdjustmentStatus, RentalAdjustmentType,

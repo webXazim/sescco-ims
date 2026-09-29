@@ -205,6 +205,10 @@
       "mode": "system_singleton_no_delete",
       "notes": "One shared configuration row per project. It has no ordinary archive/delete lifecycle; settings are updated in place and remain bound to the project lifecycle."
     },
+    "rental_manpower.RentalTimesheetPeriodPolicy": {
+      "mode": "workflow_record_no_delete",
+      "notes": "Project-period working-hours/off-day/OT policy snapshot. It is editable only while the source timesheet is Draft and retained permanently with the timesheet so historical regular/OT splits remain reproducible."
+    },
     "documents.BusinessDocument": {
       "mode": "immutable_finalized_document"
     },

@@ -34,6 +34,9 @@ from apps.rental_manpower.models import (
 from apps.rental_manpower.project_adapter import rental_project_for_company
 from apps.rental_manpower.selectors.timesheets import _project_worker_queryset
 from apps.rental_manpower.services.timesheets import month_bounds
+from apps.rental_manpower.services.timesheet_policy import (
+    effective_timesheet_policy, overtime_bill_rate, split_daily_hours,
+)
 
 
 EXPORT_MAX_ROWS = 5000
@@ -87,6 +90,7 @@ _STATIC_COLUMNS: tuple[ExportColumn, ...] = (
     ExportColumn("project_location", "Project location", "Project", 24, 34),
     ExportColumn("project_manager", "Project manager", "Project", 22, 32),
     ExportColumn("period", "Period", "Project", 15, 22, default=True),
+    ExportColumn("regular_hours_limit", "Regular hours / day", "Project", 18, 26, kind="number"),
 
     ExportColumn("assignment_trade", "Trade / role", "Assignment", 24, 34, default=True),
     ExportColumn("assignment_rate_type", "Rate type", "Assignment", 16, 24),
@@ -108,6 +112,9 @@ _STATIC_COLUMNS: tuple[ExportColumn, ...] = (
     ExportColumn("daily_notes", "Daily remarks", "Totals & exceptions", 40, 56),
 
     ExportColumn("overtime_hours", "OT hours", "Overtime", 14, 20, kind="number", default=True),
+    ExportColumn("automatic_overtime_hours", "Auto OT hours", "Overtime", 16, 23, kind="number"),
+    ExportColumn("additional_overtime_hours", "Additional OT hours", "Overtime", 19, 27, kind="number"),
+    ExportColumn("overtime_multiplier", "OT multiplier", "Overtime", 15, 22, kind="number", permission="commercial"),
     ExportColumn("overtime_rate", "OT hourly rate", "Overtime", 16, 24, kind="number", permission="commercial"),
     ExportColumn("base_wage", "Base wage", "Overtime", 18, 27, kind="number", permission="commercial"),
     ExportColumn("overtime_wage", "OT wage", "Overtime", 18, 27, kind="number", permission="commercial"),
@@ -354,6 +361,8 @@ def build_rental_timesheet_export_dataset(
         .first()
     )
 
+    policy = effective_timesheet_policy(company=company, project=project, period=period)
+
     assignments = list(
         WorkerAssignment.objects.for_company(company)
         .filter(worker_id__in=worker_ids_db, project=project, cancelled_at__isnull=True, effective_from__lte=end)
@@ -407,6 +416,8 @@ def build_rental_timesheet_export_dataset(
         overtime = overtime_by_worker.get(wid)
         assigned_days = 0
         regular_hours = Decimal("0")
+        automatic_overtime_hours = Decimal("0")
+        automatic_overtime_wage = Decimal("0")
         base_wage = Decimal("0")
         work_days = absent = no_scope = leave = off = zero = missing = 0
         notes: list[str] = []
@@ -444,27 +455,44 @@ def build_rental_timesheet_export_dataset(
             elif entry.code == "OFF":
                 off += 1
             else:
-                regular_hours += entry.regular_hours
+                regular_part, automatic_ot_part = split_daily_hours(entry.regular_hours, policy)
+                regular_hours += regular_part
+                automatic_overtime_hours += automatic_ot_part
                 if entry.regular_hours > 0:
                     work_days += 1
                 else:
                     zero += 1
 
-            # Commercial board/export preview uses the same effective-dated rate basis
-            # as settlement calculation; adjustments still belong to settlement.
+            # Commercial board/export preview follows the authoritative project-period
+            # hours policy. Daily input remains the worker's total worked hours; the
+            # configured regular-day threshold splits base vs automatic OT.
             if entry is not None:
+                regular_part, automatic_ot_part = split_daily_hours(entry.regular_hours, policy)
                 if assigned.rate_type == "hourly":
-                    base_wage += entry.regular_hours * assigned.rate
+                    base_wage += regular_part * assigned.rate
                 elif assigned.rate_type == "daily" and entry.regular_hours > 0:
                     base_wage += assigned.rate
                 elif assigned.rate_type == "monthly":
                     base_wage += assigned.rate / Decimal(end.day)
+                if automatic_ot_part > 0:
+                    automatic_overtime_wage += automatic_ot_part * overtime_bill_rate(
+                        assignment=assigned, policy=policy, period_start=start
+                    )
 
         trade_values = list(dict.fromkeys(a.trade for a in worker_assignments if a.trade))
         rate_type_values = list(dict.fromkeys(a.get_rate_type_display() for a in worker_assignments))
         rate_values = list(dict.fromkeys(str(a.rate) for a in worker_assignments))
         starts = [a.effective_from for a in worker_assignments]
         ends = [a.effective_to for a in worker_assignments]
+        additional_overtime_hours = overtime.hours if overtime else Decimal("0")
+        additional_overtime_wage = (overtime.hours * overtime.rate) if overtime else Decimal("0")
+        total_overtime_hours = automatic_overtime_hours + additional_overtime_hours
+        overtime_wage = automatic_overtime_wage + additional_overtime_wage
+        derived_rates = {
+            overtime_bill_rate(assignment=a, policy=policy, period_start=start)
+            for a in worker_assignments
+        }
+        displayed_overtime_rate = overtime.rate if overtime else (next(iter(derived_rates)) if len(derived_rates) == 1 else Decimal("0"))
         row: dict[str, Any] = {
             "worker_id": worker.worker_number,
             "worker_name": worker.full_name,
@@ -482,6 +510,7 @@ def build_rental_timesheet_export_dataset(
             "supplier_payment_terms": supplier.payment_terms,
             "supplier_address": supplier.address,
             **project_values,
+            "regular_hours_limit": float(policy.regular_hours_per_day),
             "assignment_trade": " → ".join(trade_values),
             "assignment_rate_type": " → ".join(rate_type_values),
             "assignment_rate": " → ".join(rate_values),
@@ -493,7 +522,7 @@ def build_rental_timesheet_export_dataset(
             **day_values,
             "assigned_days": assigned_days,
             "regular_hours": float(regular_hours),
-            "total_hours": float(regular_hours + (overtime.hours if overtime else Decimal("0"))),
+            "total_hours": float(regular_hours + total_overtime_hours),
             "work_days": work_days,
             "absent_days": absent,
             "no_scope_days": no_scope,
@@ -502,11 +531,14 @@ def build_rental_timesheet_export_dataset(
             "zero_hour_days": zero,
             "missing_days": missing,
             "daily_notes": "; ".join(notes),
-            "overtime_hours": float(overtime.hours) if overtime else 0,
-            "overtime_rate": float(overtime.rate) if overtime else 0,
+            "overtime_hours": float(total_overtime_hours),
+            "automatic_overtime_hours": float(automatic_overtime_hours),
+            "additional_overtime_hours": float(additional_overtime_hours),
+            "overtime_multiplier": float(policy.overtime_multiplier),
+            "overtime_rate": float(displayed_overtime_rate),
             "base_wage": float(base_wage),
-            "overtime_wage": float((overtime.hours * overtime.rate) if overtime else Decimal("0")),
-            "gross_wage": float(base_wage + ((overtime.hours * overtime.rate) if overtime else Decimal("0"))),
+            "overtime_wage": float(overtime_wage),
+            "gross_wage": float(base_wage + overtime_wage),
             **workflow,
         }
         rows.append(row)

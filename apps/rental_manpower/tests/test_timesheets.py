@@ -9,7 +9,10 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.rental_manpower.models import RentalTimesheetEntry, RentalTimesheetProjectSettings, RentalTimesheetStatus
+from apps.rental_manpower.models import (
+    RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetPeriodPolicy,
+    RentalTimesheetProjectSettings, RentalTimesheetStatus,
+)
 from apps.rental_manpower.services.assignments import assign_worker, change_worker_rate
 from apps.rental_manpower.services.masters import create_project, create_supplier, create_worker
 from apps.rental_manpower.services.timesheets import save_entries, save_overtime, transition_timesheet
@@ -88,13 +91,33 @@ class RentalTimesheetTests(TestCase):
         with self.assertRaises(ValidationError):
             save_overtime(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),worker_id=self.worker.pk,hours='5')
 
-    def test_daily_assignment_requires_explicit_overtime_rate(self):
+    def test_daily_assignment_derives_policy_overtime_rate_without_manual_override(self):
         worker=create_worker(actor_membership=self.owner,supplier_id=self.supplier.pk,worker_number='RW-DOT',full_name='Daily OT Worker')
         assign_worker(actor_membership=self.owner,worker_id=worker.pk,project_id=self.project.pk,trade='Driver',rate_type='Daily',rate='120',effective_date=date(2026,8,1))
-        with self.assertRaises(ValidationError):
-            save_overtime(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),worker_id=worker.pk,hours='2')
-        overtime=save_overtime(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),worker_id=worker.pk,hours='2',rate='18')
-        self.assertIsNotNone(overtime)
+        RentalTimesheetProjectSettings.objects.create(
+            company=self.company, project=self.project, regular_hours_per_day=Decimal('10.00'),
+            overtime_multiplier=Decimal('1.5000'), automatic_overtime=True,
+        )
+        period=save_overtime(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),worker_id=worker.pk,hours='2')
+        overtime=RentalTimesheetOvertime.objects.get(period=period,worker=worker)
+        self.assertEqual(overtime.rate,Decimal('18.0000'))
+
+    def test_daily_hours_above_policy_limit_split_into_regular_and_automatic_overtime(self):
+        period=save_entries(
+            actor_membership=self.owner, project_id=self.project.pk, period_start=date(2026,8,1),
+            entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,1),'value':'12'}],
+        )
+        policy=RentalTimesheetPeriodPolicy.objects.get(company=self.company,period=period)
+        self.assertEqual(policy.regular_hours_per_day,Decimal('10.00'))
+        context=self.client.get(
+            reverse('rental_manpower:timesheets-api'),
+            {'project_id':str(self.project.reference),'period':'2026-08','page':1,'page_size':25},
+        )
+        self.assertEqual(context.status_code,200)
+        summary=context.json()['summary']
+        self.assertEqual(Decimal(summary['regularHours']),Decimal('10'))
+        self.assertEqual(Decimal(summary['automaticOvertimeHours']),Decimal('2'))
+        self.assertEqual(Decimal(summary['overtimeHours']),Decimal('2'))
 
     def test_assignment_rate_change_cannot_cross_saved_timesheet_snapshot(self):
         save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,15),'value':'8'}])
@@ -110,6 +133,10 @@ class RentalTimesheetTests(TestCase):
         self.assertEqual(response.status_code,200)
         payload=response.json()['settings']
         self.assertEqual(payload['offWeekdays'],['fri','sat'])
+        self.assertEqual(Decimal(payload['regularHoursPerDay']),Decimal('10.00'))
+        self.assertTrue(payload['automaticOvertime'])
+        self.assertEqual(Decimal(payload['overtimeMultiplier']),Decimal('1.0000'))
+        self.assertTrue(payload['canEditPolicy'])
         self.assertTrue(payload['canEdit'])
         self.assertTrue(payload['canViewCommercial'])
         self.assertTrue(payload['canViewWorkerIdentity'])
@@ -117,13 +144,17 @@ class RentalTimesheetTests(TestCase):
     def test_timesheet_settings_patch_persists_shared_project_off_days(self):
         response=self.client.patch(
             reverse('rental_manpower:timesheets-settings-api'),
-            data=json.dumps({'project_id':str(self.project.reference),'off_weekdays':['fri']}),
+            data=json.dumps({'project_id':str(self.project.reference),'period':'2026-08','off_weekdays':['fri'],'regular_hours_per_day':'10','automatic_overtime':True,'overtime_multiplier':'1.5'}),
             content_type='application/json',
         )
         self.assertEqual(response.status_code,200)
         self.assertEqual(response.json()['settings']['offWeekdays'],['fri'])
+        self.assertEqual(Decimal(response.json()['settings']['regularHoursPerDay']),Decimal('10'))
+        self.assertEqual(Decimal(response.json()['settings']['overtimeMultiplier']),Decimal('1.5'))
         row=RentalTimesheetProjectSettings.objects.get(company=self.company,project=self.project)
         self.assertEqual(row.off_weekdays,['fri'])
+        self.assertEqual(row.regular_hours_per_day,Decimal('10'))
+        self.assertEqual(row.overtime_multiplier,Decimal('1.5'))
 
         context=self.client.get(
             reverse('rental_manpower:timesheets-api'),
@@ -131,6 +162,20 @@ class RentalTimesheetTests(TestCase):
         )
         self.assertEqual(context.status_code,200)
         self.assertEqual(context.json()['settings']['offWeekdays'],['fri'])
+
+    def test_period_working_hours_policy_is_frozen_after_submission(self):
+        entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,day),'value':'OFF'} for day in range(1,32)]
+        save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=entries)
+        transition_timesheet(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),action='submit')
+        response=self.client.patch(
+            reverse('rental_manpower:timesheets-settings-api'),
+            data=json.dumps({'project_id':str(self.project.reference),'period':'2026-08','regular_hours_per_day':'9','automatic_overtime':True,'overtime_multiplier':'1.5','off_weekdays':['fri','sat']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code,400)
+        policy=RentalTimesheetPeriodPolicy.objects.get(company=self.company,period__project=self.project,period__period_start=date(2026,8,1))
+        self.assertEqual(policy.regular_hours_per_day,Decimal('10.00'))
+        self.assertEqual(policy.overtime_multiplier,Decimal('1.0000'))
 
     def test_timesheet_settings_reject_unknown_weekday(self):
         response=self.client.patch(

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Exists, OuterRef, Q, Sum
+from django.db.models import Case, Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value, When
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_allows_project, membership_has_permission
@@ -21,6 +21,10 @@ from apps.rental_manpower.models import (
     WorkerAssignment,
 )
 from apps.rental_manpower.services.timesheets import month_bounds
+from apps.rental_manpower.services.timesheet_policy import (
+    DEFAULT_OFF_WEEKDAYS, DEFAULT_OVERTIME_MULTIPLIER, DEFAULT_REGULAR_HOURS_PER_DAY,
+    effective_timesheet_policy,
+)
 from apps.rental_manpower.project_adapter import rental_project_for_company, project_public_id
 
 
@@ -37,23 +41,34 @@ _RENTAL_WEEKDAYS = (
 _DEFAULT_OFF_WEEKDAYS = ["fri", "sat"]
 
 
-def rental_timesheet_settings_payload(*, company, project, membership=None):
-    row = (
-        RentalTimesheetProjectSettings.objects.for_company(company).filter(project=project).first()
-        if project is not None else None
-    )
-    values = row.off_weekdays if row and isinstance(row.off_weekdays, list) else _DEFAULT_OFF_WEEKDAYS
-    allowed = {key for key, _label in _RENTAL_WEEKDAYS}
-    off_weekdays = []
-    for raw in values:
-        key = str(raw or "").strip().lower()
-        if key in allowed and key not in off_weekdays:
-            off_weekdays.append(key)
+def rental_timesheet_settings_payload(*, company, project, period=None, membership=None):
+    if project is None:
+        off_weekdays = list(DEFAULT_OFF_WEEKDAYS)
+        regular_hours = DEFAULT_REGULAR_HOURS_PER_DAY
+        multiplier = DEFAULT_OVERTIME_MULTIPLIER
+        automatic_overtime = True
+        source = "default"
+    else:
+        policy = effective_timesheet_policy(company=company, project=project, period=period)
+        off_weekdays = list(policy.off_weekdays)
+        regular_hours = policy.regular_hours_per_day
+        multiplier = policy.overtime_multiplier
+        automatic_overtime = policy.automatic_overtime
+        source = policy.source
+    can_edit = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_EDIT))
+    policy_locked = bool(period is not None and period.status != RentalTimesheetStatus.DRAFT)
     return {
         "projectId": project_public_id(project) if project else None,
         "offWeekdays": off_weekdays,
         "weekdayOptions": [{"value": key, "label": label} for key, label in _RENTAL_WEEKDAYS],
-        "canEdit": bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_EDIT)),
+        "regularHoursPerDay": str(regular_hours),
+        "automaticOvertime": automatic_overtime,
+        "overtimeMultiplier": str(multiplier),
+        "overtimePremiumPercent": str((multiplier - Decimal("1")) * Decimal("100")),
+        "policySource": source,
+        "policyLocked": policy_locked,
+        "canEdit": can_edit,
+        "canEditPolicy": bool(can_edit and not policy_locked),
         "canViewCommercial": bool(
             membership is None
             or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
@@ -128,16 +143,47 @@ def rental_timesheet_summary(*, company, project, period, start: date, end: date
     supplier_count = workers.order_by().values("supplier_id").distinct().count()
     entry_count = 0
     regular_hours = Decimal("0")
+    automatic_overtime_hours = Decimal("0")
+    additional_overtime_hours = Decimal("0")
     overtime_hours = Decimal("0")
     overtime_employees = 0
     missing_count = 0
     if period is not None:
+        policy = effective_timesheet_policy(company=company, project=project, period=period)
         entry_qs = RentalTimesheetEntry.objects.for_company(company).filter(period=period)
         entry_count = entry_qs.count()
-        regular_hours = entry_qs.aggregate(total=Sum("regular_hours")).get("total") or Decimal("0")
+        if policy.automatic_overtime:
+            output = DecimalField(max_digits=18, decimal_places=4)
+            aggregates = entry_qs.aggregate(
+                regular=Sum(
+                    Case(
+                        When(regular_hours__gt=policy.regular_hours_per_day, then=Value(policy.regular_hours_per_day)),
+                        default=F("regular_hours"),
+                        output_field=output,
+                    )
+                ),
+                automatic_ot=Sum(
+                    Case(
+                        When(regular_hours__gt=policy.regular_hours_per_day, then=F("regular_hours") - Value(policy.regular_hours_per_day)),
+                        default=Value(Decimal("0")),
+                        output_field=output,
+                    )
+                ),
+            )
+            regular_hours = aggregates.get("regular") or Decimal("0")
+            automatic_overtime_hours = aggregates.get("automatic_ot") or Decimal("0")
+            auto_worker_ids = set(
+                entry_qs.filter(regular_hours__gt=policy.regular_hours_per_day)
+                .values_list("worker_id", flat=True).distinct()
+            )
+        else:
+            regular_hours = entry_qs.aggregate(total=Sum("regular_hours")).get("total") or Decimal("0")
+            auto_worker_ids = set()
         overtime_qs = RentalTimesheetOvertime.objects.for_company(company).filter(period=period)
-        overtime_employees = overtime_qs.count()
-        overtime_hours = overtime_qs.aggregate(total=Sum("hours")).get("total") or Decimal("0")
+        additional_overtime_hours = overtime_qs.aggregate(total=Sum("hours")).get("total") or Decimal("0")
+        overtime_hours = automatic_overtime_hours + additional_overtime_hours
+        explicit_worker_ids = set(overtime_qs.values_list("worker_id", flat=True))
+        overtime_employees = len(auto_worker_ids | explicit_worker_ids)
         required_days = 0
         for effective_from, effective_to in (
             WorkerAssignment.objects.for_company(company)
@@ -151,7 +197,7 @@ def rental_timesheet_summary(*, company, project, period, start: date, end: date
                 required_days += (segment_end - segment_start).days + 1
         missing_count = max(0, required_days - entry_count)
     else:
-        # No saved period means every assigned worker-day is missing.
+        required_days = 0
         for effective_from, effective_to in (
             WorkerAssignment.objects.for_company(company)
             .filter(project=project, cancelled_at__isnull=True, effective_from__lte=end)
@@ -161,12 +207,15 @@ def rental_timesheet_summary(*, company, project, period, start: date, end: date
             segment_start = max(start, effective_from)
             segment_end = min(end, effective_to or end)
             if segment_end >= segment_start:
-                missing_count += (segment_end - segment_start).days + 1
+                required_days += (segment_end - segment_start).days + 1
+        missing_count = required_days
     return {
         "workerCount": worker_count,
         "supplierCount": supplier_count,
         "entryCount": entry_count,
         "regularHours": str(regular_hours),
+        "automaticOvertimeHours": str(automatic_overtime_hours),
+        "additionalOvertimeHours": str(additional_overtime_hours),
         "overtimeHours": str(overtime_hours),
         "overtimeEmployees": overtime_employees,
         "missingCount": missing_count,
@@ -190,7 +239,7 @@ def rental_timesheet_context(
         return {
             "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
             "period": _period_payload(period=period, project=project, start=start, end=end, membership=membership),
-            "settings": rental_timesheet_settings_payload(company=company, project=project, membership=membership),
+            "settings": rental_timesheet_settings_payload(company=company, project=project, period=period, membership=membership),
             "roster": [], "records": {}, "overtime": {},
             "summary": {"workerCount": 0, "supplierCount": 0, "entryCount": 0, "regularHours": "0", "overtimeHours": "0", "overtimeEmployees": 0, "missingCount": 0},
             "meta": {"count": 0, "page": 1, "pageSize": page_size or 50, "totalPages": 0},
@@ -280,7 +329,7 @@ def rental_timesheet_context(
     return {
         "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
         "period": _period_payload(period=period, project=project, start=start, end=end, membership=membership),
-        "settings": rental_timesheet_settings_payload(company=company, project=project, membership=membership),
+        "settings": rental_timesheet_settings_payload(company=company, project=project, period=period, membership=membership),
         "roster": roster,
         "records": records,
         "overtime": ot,

@@ -34,7 +34,7 @@ if contract.get("schema_change") is not False:
     fail("final browser freeze must not introduce schema changes")
 if contract.get("permission_catalog_size") != 94:
     fail("permission catalog size changed")
-if contract.get("persisted_model_retention_count") != 76:
+if contract.get("persisted_model_retention_count") != 77:
     fail("retention model count changed")
 if contract.get("required_seed_profile") != "benchmark":
     fail("browser E2E must use benchmark Sourcing seed")

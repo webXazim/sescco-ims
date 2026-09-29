@@ -996,8 +996,12 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
 
 from datetime import date as _date
 from .selectors.timesheets import rental_timesheet_context, rental_timesheet_summary, rental_timesheet_settings_payload, _period_payload
-from .models import RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetProjectSettings
+from .models import (
+    RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetPeriod,
+    RentalTimesheetPeriodPolicy, RentalTimesheetProjectSettings, RentalTimesheetStatus,
+)
 from .services.timesheets import save_entries as save_rental_timesheet_entries, save_overtime as save_rental_timesheet_overtime, transition_timesheet as transition_rental_timesheet
+from .services.timesheet_policy import ensure_period_timesheet_policy
 
 
 def _period_start_value(value):
@@ -1083,8 +1087,28 @@ def rental_timesheet_settings_api(request: HttpRequest) -> JsonResponse:
         if not project_id:
             raise ValidationError({"project_id": "project_id is required."})
         project = _scoped_project(request, project_id)
+        raw_period = request.GET.get("period") if request.method == "GET" else body.get("period")
+        period = None
+        if raw_period:
+            period_start = _period_start_value(raw_period)
+            period = (
+                RentalTimesheetPeriod.objects.for_company(request.company)
+                .filter(project=project, period_start=period_start)
+                .first()
+            )
         if request.method == "PATCH":
-            raw = body.get("off_weekdays")
+            if period is not None and SupplierSettlement.objects.for_company(request.company).filter(source_timesheet=period).exists():
+                raise ValidationError({
+                    "period": "This project-period already has a supplier settlement snapshot. Return/remove the settlement through its controlled workflow before changing timesheet policy."
+                })
+            if period is not None and period.status != RentalTimesheetStatus.DRAFT:
+                raise ValidationError({
+                    "period": "Working-hours and overtime policy is frozen after Draft. Return the timesheet to Draft or choose a future period before changing it."
+                })
+            row, created = RentalTimesheetProjectSettings.objects.for_company(request.company).get_or_create(
+                project=project, defaults={"company": request.company}
+            )
+            raw = body.get("off_weekdays", row.off_weekdays)
             if not isinstance(raw, list):
                 raise ValidationError({"off_weekdays": "off_weekdays must be an array of weekday keys."})
             allowed = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
@@ -1095,23 +1119,54 @@ def rental_timesheet_settings_api(request: HttpRequest) -> JsonResponse:
                     raise ValidationError({"off_weekdays": f"Unknown weekday: {value}."})
                 if key not in off_weekdays:
                     off_weekdays.append(key)
-            row, created = RentalTimesheetProjectSettings.objects.for_company(request.company).get_or_create(
-                project=project, defaults={"company": request.company, "off_weekdays": off_weekdays}
-            )
-            before = {"offWeekdays": list(row.off_weekdays or [])} if not created else {"offWeekdays": ["fri", "sat"]}
+            try:
+                regular_hours = Decimal(str(body.get("regular_hours_per_day", row.regular_hours_per_day)))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValidationError({"regular_hours_per_day": "Enter valid regular working hours."}) from exc
+            try:
+                overtime_multiplier = Decimal(str(body.get("overtime_multiplier", row.overtime_multiplier)))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValidationError({"overtime_multiplier": "Enter a valid OT multiplier."}) from exc
+            automatic_overtime = body.get("automatic_overtime", row.automatic_overtime)
+            if not isinstance(automatic_overtime, bool):
+                raise ValidationError({"automatic_overtime": "automatic_overtime must be true or false."})
+            before = {
+                "offWeekdays": list(row.off_weekdays or []),
+                "regularHoursPerDay": str(row.regular_hours_per_day),
+                "automaticOvertime": bool(row.automatic_overtime),
+                "overtimeMultiplier": str(row.overtime_multiplier),
+            }
             row.off_weekdays = off_weekdays
+            row.regular_hours_per_day = regular_hours
+            row.automatic_overtime = automatic_overtime
+            row.overtime_multiplier = overtime_multiplier
             row.full_clean()
             row.save()
+            if period is not None:
+                policy_row = ensure_period_timesheet_policy(company=request.company, period=period)
+                policy_row.off_weekdays = list(off_weekdays)
+                policy_row.regular_hours_per_day = regular_hours
+                policy_row.automatic_overtime = automatic_overtime
+                policy_row.overtime_multiplier = overtime_multiplier
+                policy_row.full_clean()
+                policy_row.save()
+            after = {
+                "offWeekdays": list(row.off_weekdays or []),
+                "regularHoursPerDay": str(row.regular_hours_per_day),
+                "automaticOvertime": bool(row.automatic_overtime),
+                "overtimeMultiplier": str(row.overtime_multiplier),
+            }
             record_audit_event(
                 company=request.company, area=AuditArea.RENTAL, action="rental.timesheet.settings_updated",
                 object_type="rental_manpower.RentalTimesheetProjectSettings", object_id=row.pk,
                 object_label=f"{project.code} timesheet settings", actor_membership=request.company_membership,
-                before=before, after={"offWeekdays": list(row.off_weekdays or [])}, request=request,
+                before=before if not created else None, after=after,
+                metadata={"period": str(period.period_start) if period is not None else None}, request=request,
             )
         return JsonResponse({
             "ok": True,
             "settings": rental_timesheet_settings_payload(
-                company=request.company, project=project, membership=request.company_membership
+                company=request.company, project=project, period=period, membership=request.company_membership
             ),
         })
     except Exception as exc:

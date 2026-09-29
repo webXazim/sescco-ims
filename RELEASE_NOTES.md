@@ -1,3 +1,12 @@
+# 1.0.117 — Rental Timesheet Working-Hours & Overtime Policy
+
+- Added shared **regular working hours/day** to Rental Project Timesheet Settings, defaulting to **10.00 hours**. With automatic OT enabled, a daily value such as 12 hours is split into 10 regular + 2 automatic overtime hours while the stored attendance input remains the worker's actual total worked hours.
+- Added configurable **OT rate multiplier** with a safe 1.00× default (same hourly rate) and linked **OT premium %** input. Operators can enter either 1.50× / +50%, 1.25× / +25%, or a precise premium such as +1.5% (1.015×). OT multipliers below the base hourly rate are rejected.
+- Added a project-period policy snapshot so submitted/approved/locked periods cannot be silently re-priced by later settings changes. Existing protected historical periods are migrated with automatic OT disabled to preserve their pre-upgrade meaning; existing Draft periods adopt the new 10-hour/1.00× policy and remain editable.
+- Daily assignment hours above the configured threshold now flow through board totals, automatic/additional OT columns, Excel/PDF export, and authoritative Supplier Settlement calculations. Hourly assignments use the hourly rate directly; Daily and Monthly assignment OT rates are derived from the configured regular-day hours and scheduled workdays, then multiplied by the OT factor.
+- Clarified the monthly OT register as **Additional OT** only. Automatic daily excess is read-only there, preventing the same overtime from being entered and paid twice. Additional OT can still carry a manager override; otherwise its rate is derived from the frozen project-period policy.
+- Added migration `rental_manpower/0011_timesheet_working_hours_overtime_policy.py`, lifecycle-retention classification for the retained policy snapshot, export fields for policy/automatic/additional OT, and regression/static certification coverage.
+
 # 1.0.117 — Rental Timesheet Board Settings & Payroll Workspace Simplification
 
 - Added **Timesheet Settings** directly to Rental Manpower → Project Timesheets. Operators can choose which pinned columns appear to the left and right of the daily grid, see the visible-column count, apply Compact/Operations/Commercial presets, and reset saved widths.

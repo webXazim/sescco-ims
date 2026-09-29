@@ -197,7 +197,7 @@ for marker in (
     "if (canViewSettlement) tabs.push(['cost','Manpower Cost']);",
     "const canEditCommercialRate = hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage');",
     "Commercial rate restricted",
-    "if (hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage')) body.rate=current.rate||null;",
+    "const body={project_id:state.rentalTimesheetProject,period:rentalTimesheetApiPeriod(),worker_id:workerId,hours};",
     "if (hasAccessPermission('rental.adjustments.view')) tabs.push(['advances','Advances']);",
     "if (hasAnyAccessPermission('rental.documents.view','shared.documents.view')) tabs.push(['documents','Documents']);",
     "Financial authority</span><strong>Restricted",
@@ -206,6 +206,8 @@ for marker in (
 ):
     if marker not in js:
         fail(f"Foreman frontend scope/data-minimization marker missing: {marker}")
+if "body.rate=current.rate||null" in js:
+    fail("Foreman OT-hours mutation must not echo a commercial rate from browser state; the server derives the policy rate.")
 
 # Regression evidence must exist and remain syntactically valid.
 tests_rel = "apps/rental_manpower/tests/test_supervisor_access.py"

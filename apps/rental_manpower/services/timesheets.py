@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from apps.rental_manpower.project_adapter import rental_project_for_company
+from apps.rental_manpower.services.timesheet_policy import (
+    effective_timesheet_policy, ensure_period_timesheet_policy, overtime_bill_rate,
+)
 
 from calendar import monthrange
 from datetime import date
@@ -58,6 +61,8 @@ def _period(*, company, project_id, period_start, create=False, require_active=F
     if obj is None and create:
         obj=RentalTimesheetPeriod(company=company, project=project, period_start=start, period_end=end)
         obj.full_clean(); obj.save()
+    if obj is not None and create:
+        ensure_period_timesheet_policy(company=company, period=obj)
     return project,obj
 
 
@@ -145,6 +150,8 @@ def save_overtime(*, actor_membership, project_id, period_start, worker_id, hour
         RentalTimesheetOvertime.objects.filter(company=company,period=period,worker_id=worker_id).delete()
     else:
         assignments=list(WorkerAssignment.objects.for_company(company).select_related('worker','worker__supplier','project').filter(worker_id=worker_id,project=project,cancelled_at__isnull=True,effective_from__lte=period.period_end).filter(Q(effective_to__isnull=True)|Q(effective_to__gte=period.period_start)).order_by('effective_from'))
+        if not assignments:
+            raise ValidationError({"worker_id": "Worker has no assignment to this project in the selected period."})
         for assignment in assignments:
             _assert_assignment_lifecycle(assignment, work_date=period.period_end)
         commercial={(a.rate_type,a.rate,a.trade) for a in assignments}
@@ -159,23 +166,17 @@ def save_overtime(*, actor_membership, project_id, period_start, worker_id, hour
             .filter(company=company, period=period, worker_id=worker_id)
             .first()
         )
+        policy = effective_timesheet_policy(company=company, project=project, period=period)
+        default_overtime_rate = overtime_bill_rate(assignment=a, policy=policy, period_start=period.period_start)
         if not can_manage_commercial_rate:
             if rate not in (None, ''):
                 raise PermissionDenied("Your access profile cannot set or override Rental commercial OT rates.")
-            if a.rate_type == RentalRateType.HOURLY:
-                overtime_rate = _decimal(a.rate, 'rate')
-            elif existing_overtime is not None:
-                # Supervisors may change operational OT hours without being given
-                # visibility or authority over the manager-controlled commercial rate.
-                overtime_rate = existing_overtime.rate
-            else:
-                raise ValidationError({
-                    "rate": "An authorized Rental manager must configure the OT hourly rate before a supervisor can enter overtime for Daily or Monthly assignments."
-                })
+            # Supervisors can record additional OT without seeing the commercial rate.
+            # Existing manager overrides stay frozen; otherwise the project-period policy
+            # derives the same-rate / multiplier-based hourly OT rate.
+            overtime_rate = existing_overtime.rate if existing_overtime is not None else default_overtime_rate
         else:
-            if rate in (None, '') and a.rate_type != RentalRateType.HOURLY:
-                raise ValidationError({"rate": "An explicit hourly OT rate is required for Daily or Monthly rental assignments."})
-            overtime_rate=_decimal(rate if rate not in (None,'') else a.rate,'rate')
+            overtime_rate = _decimal(rate, 'rate') if rate not in (None, '') else default_overtime_rate
         if overtime_rate <= 0:
             raise ValidationError({"rate": "OT rate must be greater than zero."})
         obj,_=RentalTimesheetOvertime.objects.update_or_create(period=period,worker_id=worker_id,defaults={"company":company,"assignment":a,"hours":h,"rate":overtime_rate,**{k:v for k,v in _entry_snapshot(a).items() if k!='rate'}})

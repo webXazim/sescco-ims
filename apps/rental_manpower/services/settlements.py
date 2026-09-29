@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from apps.rental_manpower.project_adapter import project_public_id, rental_project_for_company
+from apps.rental_manpower.services.timesheet_policy import effective_timesheet_policy, overtime_bill_rate_from_terms, split_daily_hours
 
 import hashlib
 import json
@@ -761,6 +762,155 @@ def _calculate_supplier_snapshot(*, settlement: SupplierSettlement) -> None:
     settlement.save(update_fields=("snapshot_fingerprint", "updated_at"))
 
 
+def _apply_timesheet_working_policy_to_settlement(*, settlement: SupplierSettlement) -> None:
+    """Apply the additive working-hours/automatic-OT policy to a fresh snapshot.
+
+    `_calculate_supplier_snapshot` is an older frozen financial authority used by
+    document-reconciliation verification and historical records. Keep that function
+    byte-for-byte stable, then adjust only the newly calculated Draft/Calculated
+    snapshot when the retained project-period policy explicitly enables automatic OT.
+    """
+    period = settlement.source_timesheet
+    policy = effective_timesheet_policy(company=settlement.company, project=period.project, period=period)
+    if not policy.automatic_overtime:
+        return
+
+    entries = list(
+        RentalTimesheetEntry.objects.for_company(settlement.company)
+        .filter(period=period, worker__supplier=settlement.supplier)
+        .select_related("worker", "assignment")
+        .order_by("worker__worker_number", "work_date")
+    )
+    overtime = {
+        row.worker_id: row
+        for row in RentalTimesheetOvertime.objects.for_company(settlement.company)
+        .filter(period=period, worker__supplier=settlement.supplier)
+        .select_related("assignment")
+    }
+    settlement_lines = {
+        row.worker_id: row
+        for row in SupplierSettlementLine.objects.for_company(settlement.company)
+        .filter(settlement=settlement)
+    }
+    rate_lines = {
+        (row.settlement_line.worker_id, row.assignment_id): row
+        for row in SupplierSettlementRateLine.objects.for_company(settlement.company)
+        .filter(settlement_line__settlement=settlement)
+        .select_related("settlement_line")
+    }
+
+    by_worker: dict[Any, list[RentalTimesheetEntry]] = defaultdict(list)
+    for entry in entries:
+        by_worker[entry.worker_id].append(entry)
+
+    line_updates: list[SupplierSettlementLine] = []
+    rate_updates: list[SupplierSettlementRateLine] = []
+    totals = defaultdict(lambda: Decimal("0"))
+    total_days = 0
+    month_days = Decimal(monthrange(period.period_start.year, period.period_start.month)[1])
+
+    for worker_id, worker_entries in by_worker.items():
+        line = settlement_lines.get(worker_id)
+        if line is None:
+            raise ValidationError("Calculated settlement snapshot is missing a worker line required by the locked timesheet.")
+        by_assignment: dict[Any, list[RentalTimesheetEntry]] = defaultdict(list)
+        for entry in worker_entries:
+            by_assignment[entry.assignment_id].append(entry)
+
+        regular_hours = Decimal("0")
+        automatic_ot_hours = Decimal("0")
+        automatic_ot_amount = ZERO
+        base = ZERO
+        work_days = 0
+        for assignment_id, segment_entries in by_assignment.items():
+            first = segment_entries[0]
+            segment_regular = sum((split_daily_hours(row.regular_hours, policy)[0] for row in segment_entries), Decimal("0"))
+            segment_auto_ot = sum((split_daily_hours(row.regular_hours, policy)[1] for row in segment_entries), Decimal("0"))
+            billable_days = sum(1 for row in segment_entries if row.regular_hours > 0)
+            calendar_days = len({row.work_date for row in segment_entries})
+            if first.rate_type == RentalRateType.HOURLY:
+                segment_base = _money(segment_regular * first.rate)
+            elif first.rate_type == RentalRateType.DAILY:
+                segment_base = _money(Decimal(billable_days) * first.rate)
+            elif first.rate_type == RentalRateType.MONTHLY:
+                segment_base = _money(first.rate * Decimal(calendar_days) / month_days)
+            else:
+                raise ValidationError(f"Unsupported rental rate type: {first.rate_type}")
+
+            segment_ot_amount = _money(
+                segment_auto_ot
+                * overtime_bill_rate_from_terms(
+                    rate_type=first.rate_type, rate=first.rate, policy=policy, period_start=period.period_start
+                )
+            )
+            regular_hours += segment_regular
+            automatic_ot_hours += segment_auto_ot
+            automatic_ot_amount += segment_ot_amount
+            base += segment_base
+            work_days += billable_days
+
+            rate_line = rate_lines.get((worker_id, assignment_id))
+            if rate_line is None:
+                raise ValidationError("Calculated settlement snapshot is missing an assignment-rate line required by the locked timesheet.")
+            rate_line.regular_hours = segment_regular
+            rate_line.base_amount = segment_base
+            rate_updates.append(rate_line)
+
+        additional = overtime.get(worker_id)
+        additional_ot_hours = additional.hours if additional else Decimal("0")
+        additional_ot_amount = _money(additional.hours * additional.rate) if additional else ZERO
+        overtime_hours = automatic_ot_hours + additional_ot_hours
+        overtime_amount = _money(automatic_ot_amount + additional_ot_amount)
+        base = _money(base)
+        gross = _money(base + overtime_amount)
+        net = _money(gross + line.adjustment_earnings - line.adjustment_deductions)
+        if net < 0:
+            raise ValidationError({"adjustments": f"Approved adjustments make {line.worker_number} {line.worker_name}'s supplier payable negative."})
+
+        line.regular_hours = regular_hours
+        line.work_days = work_days
+        line.overtime_hours = overtime_hours
+        line.base_amount = base
+        line.overtime_amount = overtime_amount
+        line.gross_amount = gross
+        line.net_amount = net
+        line_updates.append(line)
+
+        totals["regular_hours"] += regular_hours
+        totals["overtime_hours"] += overtime_hours
+        totals["base"] += base
+        totals["overtime"] += overtime_amount
+        totals["gross"] += gross
+        totals["earning"] += line.adjustment_earnings
+        totals["deduction"] += line.adjustment_deductions
+        totals["net"] += net
+        total_days += work_days
+
+    if rate_updates:
+        SupplierSettlementRateLine.objects.bulk_update(rate_updates, ("regular_hours", "base_amount"), batch_size=1000)
+    if line_updates:
+        SupplierSettlementLine.objects.bulk_update(
+            line_updates,
+            ("regular_hours", "work_days", "overtime_hours", "base_amount", "overtime_amount", "gross_amount", "net_amount"),
+            batch_size=1000,
+        )
+
+    settlement.worker_count = len(by_worker)
+    settlement.total_regular_hours = totals["regular_hours"].quantize(CENT, rounding=ROUND_HALF_UP)
+    settlement.total_work_days = total_days
+    settlement.total_overtime_hours = totals["overtime_hours"].quantize(CENT, rounding=ROUND_HALF_UP)
+    settlement.total_base = _money(totals["base"])
+    settlement.total_overtime = _money(totals["overtime"])
+    settlement.total_gross = _money(totals["gross"])
+    settlement.total_adjustment_earnings = _money(totals["earning"])
+    settlement.total_adjustment_deductions = _money(totals["deduction"])
+    settlement.total_net = _money(totals["net"])
+    settlement.full_clean()
+    settlement.save()
+    settlement.snapshot_fingerprint = settlement_snapshot_fingerprint(settlement)
+    settlement.save(update_fields=("snapshot_fingerprint", "updated_at"))
+
+
 @transaction.atomic
 def calculate_project_settlements(*, actor_membership, project_id, period_start: date, request=None) -> list[SupplierSettlement]:
     _edit(actor_membership)
@@ -817,6 +967,7 @@ def calculate_project_settlements(*, actor_membership, project_id, period_start:
         settlement.snapshot_fingerprint = ""
         settlement.full_clean(); settlement.save()
         _calculate_supplier_snapshot(settlement=settlement)
+        _apply_timesheet_working_policy_to_settlement(settlement=settlement)
         record_audit_event(
             company=company, area=AuditArea.RENTAL,
             action="rental.settlement.calculated" if created else "rental.settlement.recalculated",

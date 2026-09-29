@@ -70,7 +70,7 @@
     "archive_trash_contract": "Archive and 30-day Delete are reversible lifecycle boundaries; protected historical evidence is never cascade-erased",
     "lifecycle_retention_contract": "merge/lifecycle-retention-contract.json",
     "lifecycle_retention_verifier": "scripts/verify-lifecycle-retention-contract.py",
-    "lifecycle_retention_coverage": "76 persisted SESCCO models explicitly classified by retention mode",
+    "lifecycle_retention_coverage": "77 persisted SESCCO models explicitly classified by retention mode",
     "access_profile_authority": "accounts.AccessProfile + accounts.AccessProfilePermission (sole runtime application authorization authority)",
     "access_scope_authority": "accounts MembershipProjectScope / MembershipBranchScope / MembershipInventoryLocationScope",
     "access_permission_catalog": "apps.accounts.access_catalog.AccessPermission (94 granular permissions)",

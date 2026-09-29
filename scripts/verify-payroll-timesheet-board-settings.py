@@ -18,12 +18,16 @@ def require(path: str, *needles: str) -> None:
 require(
     "apps/rental_manpower/models/timesheet_settings.py",
     "class RentalTimesheetProjectSettings",
+    "class RentalTimesheetPeriodPolicy",
     "off_weekdays = models.JSONField",
+    "regular_hours_per_day = models.DecimalField",
+    "overtime_multiplier = models.DecimalField",
+    "automatic_overtime = models.BooleanField",
     "default_rental_timesheet_off_weekdays",
 )
 require(
     "apps/rental_manpower/models/__init__.py",
-    "from .timesheet_settings import RentalTimesheetProjectSettings",
+    "from .timesheet_settings import RentalTimesheetPeriodPolicy, RentalTimesheetProjectSettings",
 )
 require(
     "apps/rental_manpower/migrations/0010_rental_timesheet_project_settings.py",
@@ -31,10 +35,30 @@ require(
     '"off_weekdays"',
 )
 require(
+    "apps/rental_manpower/migrations/0011_timesheet_working_hours_overtime_policy.py",
+    'name="RentalTimesheetPeriodPolicy"',
+    'name="regular_hours_per_day"',
+    'name="overtime_multiplier"',
+    'name="automatic_overtime"',
+    "backfill_period_policies",
+)
+require(
+    "apps/rental_manpower/services/timesheet_policy.py",
+    "DEFAULT_REGULAR_HOURS_PER_DAY",
+    "DEFAULT_OVERTIME_MULTIPLIER",
+    "ensure_period_timesheet_policy",
+    "split_daily_hours",
+    "overtime_bill_rate",
+)
+require(
     "apps/rental_manpower/api.py",
     "def rental_timesheet_settings_api",
     'AccessPermission.RENTAL_TIMESHEETS_EDIT',
     'action="rental.timesheet.settings_updated"',
+    '"regular_hours_per_day"',
+    '"overtime_multiplier"',
+    '"automatic_overtime"',
+    "ensure_period_timesheet_policy",
 )
 require(
     "apps/rental_manpower/urls.py",
@@ -43,6 +67,10 @@ require(
 require(
     "apps/rental_manpower/selectors/timesheets.py",
     '"offWeekdays": off_weekdays',
+    '"regularHoursPerDay": str(regular_hours)',
+    '"automaticOvertime": automatic_overtime',
+    '"overtimeMultiplier": str(multiplier)',
+    '"policyLocked": policy_locked',
     '"canViewCommercial"',
     '"canViewWorkerIdentity"',
     'worker_payload["nationalId"]',
@@ -62,6 +90,16 @@ require(
     "function bindRentalTimesheetBoardResizers()",
     "data-rental-board-resize",
     "function renderRentalTimesheetSettingsDrawer()",
+    "Working hours & overtime",
+    "data-rental-regular-hours",
+    "data-rental-auto-overtime",
+    "data-rental-overtime-multiplier",
+    "data-rental-overtime-premium",
+    "OT premium %",
+    "1.5% becomes 1.015×",
+    "Same · 1.00×",
+    "+50% · 1.50×",
+    "Automatic daily excess + additional OT",
     "Project weekly off days",
     "Apply OFF to blank off-days on this page",
     "data-rental-timesheet-settings",
@@ -72,6 +110,8 @@ require(
     ".is-board-right",
     ".ui-v2-prs-rental-board-resizer",
     ".ui-v2-prs-timesheet-weekdays",
+    ".ui-v2-prs-timesheet-policy-grid",
+    ".ui-v2-prs-timesheet-policy-presets",
 )
 require(
     "apps/rental_manpower/services/timesheet_exports.py",
