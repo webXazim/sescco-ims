@@ -897,3 +897,135 @@
 @layer ui-v2-pages {
   .ui-v2-payroll-timesheet-lifecycle .ui-v2-payroll-workflow-steps{grid-template-columns:repeat(auto-fit,minmax(112px,1fr));row-gap:10px}
 }
+
+/* 1.0.117 — dynamic Rental Timesheet export */
+.ui-v2-root #quickDrawer.ui-v2-payroll-timesheet-export-drawer {
+  width: min(680px, 96vw);
+  max-width: 680px;
+}
+.ui-v2-root #quickDrawer.ui-v2-payroll-timesheet-export-drawer .drawer__body {
+  padding: 0;
+}
+.ui-v2-timesheet-export-loading {
+  display: grid;
+  gap: 5px;
+  padding: 22px 20px;
+  border-bottom: 1px solid var(--ui-v2-border);
+}
+.ui-v2-timesheet-export-loading strong { font-size: 13px; }
+.ui-v2-timesheet-export-loading span { color: var(--ui-v2-text-muted); font-size: 12px; line-height: 1.5; }
+.ui-v2-timesheet-export-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-timesheet-export-summary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 11px 12px;
+  border-right: 1px solid var(--ui-v2-border);
+}
+.ui-v2-timesheet-export-summary > div:last-child { border-right: 0; }
+.ui-v2-timesheet-export-summary span,
+.ui-v2-timesheet-export-section__head span,
+.ui-v2-timesheet-export-note,
+.ui-v2-timesheet-export-footer span { color: var(--ui-v2-text-muted); font-size: 12px; line-height: 1.45; }
+.ui-v2-timesheet-export-summary strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-timesheet-export-section { padding: 15px 18px; border-bottom: 1px solid var(--ui-v2-border); }
+.ui-v2-timesheet-export-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.ui-v2-timesheet-export-section__head > div:first-child { display: grid; gap: 2px; }
+.ui-v2-timesheet-export-section__head strong { font-size: 13px; }
+.ui-v2-timesheet-export-format-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--ui-v2-border); }
+.ui-v2-timesheet-export-choice {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 11px 12px;
+  cursor: pointer;
+}
+.ui-v2-timesheet-export-choice + .ui-v2-timesheet-export-choice { border-left: 1px solid var(--ui-v2-border); }
+.ui-v2-timesheet-export-choice:has(input:checked) { background: var(--ui-v2-surface-subtle); box-shadow: inset 0 -2px 0 var(--ui-v2-text); }
+.ui-v2-timesheet-export-choice input { margin-top: 2px; }
+.ui-v2-timesheet-export-choice > span { display: grid; gap: 3px; }
+.ui-v2-timesheet-export-choice strong { font-size: 12px; }
+.ui-v2-timesheet-export-choice small { color: var(--ui-v2-text-muted); font-size: 11px; line-height: 1.4; }
+.ui-v2-timesheet-export-note { margin: 8px 0 0; }
+.ui-v2-timesheet-export-scope-list { display: grid; border: 1px solid var(--ui-v2-border); }
+.ui-v2-timesheet-export-scope-list > label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+.ui-v2-timesheet-export-scope-list > label + label { border-top: 1px solid var(--ui-v2-border); }
+.ui-v2-timesheet-export-scope-list > label:has(input:checked) { background: var(--ui-v2-surface-subtle); }
+.ui-v2-timesheet-export-scope-list > label.is-disabled { opacity: .55; cursor: default; }
+.ui-v2-timesheet-export-scope-list input { margin-top: 2px; }
+.ui-v2-timesheet-export-scope-list label > span { display: grid; gap: 2px; }
+.ui-v2-timesheet-export-scope-list strong { font-size: 12px; }
+.ui-v2-timesheet-export-scope-list small { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-timesheet-export-column-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.ui-v2-timesheet-export-column-actions button,
+.ui-v2-timesheet-export-group header button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ui-v2-text-muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ui-v2-timesheet-export-column-actions button:hover,
+.ui-v2-timesheet-export-group header button:hover { color: var(--ui-v2-text); text-decoration-color: currentColor; }
+.ui-v2-timesheet-export-group { border-top: 1px solid var(--ui-v2-border); padding: 11px 0 4px; }
+.ui-v2-timesheet-export-group:first-of-type { border-top: 0; padding-top: 0; }
+.ui-v2-timesheet-export-group header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.ui-v2-timesheet-export-group header > div { display: flex; align-items: baseline; gap: 8px; }
+.ui-v2-timesheet-export-group header strong { font-size: 12px; }
+.ui-v2-timesheet-export-group header span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-timesheet-export-column-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 14px; }
+.ui-v2-timesheet-export-group.is-daily .ui-v2-timesheet-export-column-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ui-v2-timesheet-export-check { display: flex; align-items: center; gap: 7px; min-height: 30px; min-width: 0; cursor: pointer; }
+.ui-v2-timesheet-export-check input { flex: 0 0 auto; }
+.ui-v2-timesheet-export-check span { overflow: hidden; color: var(--ui-v2-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ui-v2-timesheet-export-check:has(input:checked) span { color: var(--ui-v2-text); font-weight: 600; }
+.ui-v2-timesheet-export-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface);
+}
+.ui-v2-timesheet-export-footer > div { display: grid; gap: 2px; }
+.ui-v2-timesheet-export-footer strong { font-size: 12px; }
+.ui-v2-timesheet-export-footer .ui-v2-button { min-width: 132px; }
+
+@media (max-width: 720px) {
+  .ui-v2-timesheet-export-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ui-v2-timesheet-export-summary > div:nth-child(2) { border-right: 0; }
+  .ui-v2-timesheet-export-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-timesheet-export-format-grid { grid-template-columns: 1fr; }
+  .ui-v2-timesheet-export-choice + .ui-v2-timesheet-export-choice { border-left: 0; border-top: 1px solid var(--ui-v2-border); }
+  .ui-v2-timesheet-export-group.is-daily .ui-v2-timesheet-export-column-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ui-v2-timesheet-export-footer { grid-template-columns: 1fr; }
+  .ui-v2-timesheet-export-footer .ui-v2-button { width: 100%; }
+}

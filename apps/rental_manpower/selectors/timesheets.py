@@ -13,6 +13,7 @@ from apps.accounts.access_policy import membership_allows_project, membership_ha
 from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
 from apps.rental_manpower.models import (
     RentalTimesheetPeriod,
+    RentalTimesheetProjectSettings,
     RentalTimesheetEntry,
     RentalTimesheetOvertime,
     RentalTimesheetStatus,
@@ -27,6 +28,41 @@ def _display(entry):
     if entry.code:
         return entry.code
     return str(int(entry.regular_hours)) if entry.regular_hours == entry.regular_hours.to_integral() else format(entry.regular_hours.normalize(), "f")
+
+
+_RENTAL_WEEKDAYS = (
+    ("sun", "Sunday"), ("mon", "Monday"), ("tue", "Tuesday"), ("wed", "Wednesday"),
+    ("thu", "Thursday"), ("fri", "Friday"), ("sat", "Saturday"),
+)
+_DEFAULT_OFF_WEEKDAYS = ["fri", "sat"]
+
+
+def rental_timesheet_settings_payload(*, company, project, membership=None):
+    row = (
+        RentalTimesheetProjectSettings.objects.for_company(company).filter(project=project).first()
+        if project is not None else None
+    )
+    values = row.off_weekdays if row and isinstance(row.off_weekdays, list) else _DEFAULT_OFF_WEEKDAYS
+    allowed = {key for key, _label in _RENTAL_WEEKDAYS}
+    off_weekdays = []
+    for raw in values:
+        key = str(raw or "").strip().lower()
+        if key in allowed and key not in off_weekdays:
+            off_weekdays.append(key)
+    return {
+        "projectId": project_public_id(project) if project else None,
+        "offWeekdays": off_weekdays,
+        "weekdayOptions": [{"value": key, "label": label} for key, label in _RENTAL_WEEKDAYS],
+        "canEdit": bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_EDIT)),
+        "canViewCommercial": bool(
+            membership is None
+            or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+            or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+        ),
+        "canViewWorkerIdentity": bool(
+            membership is None or membership_has_permission(membership, AccessPermission.RENTAL_WORKERS_VIEW)
+        ),
+    }
 
 
 def _period_payload(*, period, project, start: date, end: date, membership=None):
@@ -154,6 +190,7 @@ def rental_timesheet_context(
         return {
             "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
             "period": _period_payload(period=period, project=project, start=start, end=end, membership=membership),
+            "settings": rental_timesheet_settings_payload(company=company, project=project, membership=membership),
             "roster": [], "records": {}, "overtime": {},
             "summary": {"workerCount": 0, "supplierCount": 0, "entryCount": 0, "regularHours": "0", "overtimeHours": "0", "overtimeEmployees": 0, "missingCount": 0},
             "meta": {"count": 0, "page": 1, "pageSize": page_size or 50, "totalPages": 0},
@@ -215,6 +252,9 @@ def rental_timesheet_context(
         }
         for row in overtime
     }
+    include_worker_identity = bool(
+        membership is None or membership_has_permission(membership, AccessPermission.RENTAL_WORKERS_VIEW)
+    )
     roster = []
     for worker in workers:
         wid = str(worker.pk)
@@ -228,14 +268,19 @@ def rental_timesheet_context(
                 "rateValue": float(assignment.rate) if include_commercial else None,
                 "supplierId": str(worker.supplier_id), "supplierName": worker.supplier.name,
             })
-        roster.append({
+        worker_payload = {
             "id": wid, "workerId": worker.worker_number, "workerCode": worker.worker_number, "name": worker.full_name,
             "supplierId": str(worker.supplier_id), "supplierName": worker.supplier.name, "assignments": segments,
-        })
+            "status": worker.get_status_display(),
+        }
+        if include_worker_identity:
+            worker_payload["nationalId"] = worker.national_id or ""
+        roster.append(worker_payload)
 
     return {
         "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
         "period": _period_payload(period=period, project=project, start=start, end=end, membership=membership),
+        "settings": rental_timesheet_settings_payload(company=company, project=project, membership=membership),
         "roster": roster,
         "records": records,
         "overtime": ot,

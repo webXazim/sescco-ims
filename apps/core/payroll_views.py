@@ -73,6 +73,11 @@ def payroll_app(request):
     can_internal = membership_can_workspace(membership, Workspace.INTERNAL)
     can_rental = membership_can_workspace(membership, Workspace.RENTAL)
     can_management = membership_can_workspace(membership, Workspace.MANAGEMENT)
+    # Management was an interim cross-workspace shell. When a membership already has
+    # an operational Payroll workspace, Administration is the authority for users and
+    # configuration, so do not expose a second "Management" destination. Keep the
+    # legacy read-only workspace only for management-only profiles to avoid stranding them.
+    show_management_workspace = can_management and not (can_internal or can_rental)
 
     # 1.0.94: workspace membership is no longer enough to decide which bootstrap
     # payloads may be disclosed. Custom profiles can expose only one or two pages,
@@ -103,12 +108,13 @@ def payroll_app(request):
         for key, allowed in (
             (Workspace.INTERNAL.value, can_internal),
             (Workspace.RENTAL.value, can_rental),
-            (Workspace.MANAGEMENT.value, can_management),
+            (Workspace.MANAGEMENT.value, show_management_workspace),
         )
         if allowed
     ]
     initial_workspace = requested_workspace if requested_workspace in allowed_workspace_keys else None
     access_context["initial_workspace"] = initial_workspace
+    access_context["payroll_workspaces"] = allowed_workspace_keys
 
     # 1.0.68: keep the initial HTML bootstrap bounded. Complete employee/worker
     # directories and heavy Payroll configuration/period contexts are loaded from
@@ -223,7 +229,7 @@ def payroll_app(request):
     )
     management_bootstrap = (
         management_summary_context(company=request.company, period_start=current_month)
-        if can_management
+        if show_management_workspace
         else {
             "period": f"{current_month:%Y-%m}",
             "periodLabel": f"{month_name[current_month.month]} {current_month.year}",
@@ -285,6 +291,7 @@ def payroll_app(request):
         "payroll/app.html",
         {
             "access_context": access_context,
+            "show_management_workspace": show_management_workspace,
             "current_company": request.company,
             "current_membership": membership,
             "account_display_name": display_name,

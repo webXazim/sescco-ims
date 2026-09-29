@@ -33,15 +33,15 @@ class MergedPayrollFrontendTests(TestCase):
         self.assertNotContains(response, 'src="/static/js/app.js"')
 
 
-    def test_owner_payroll_workspaces_are_server_authorized(self):
+    def test_owner_payroll_workspaces_hide_redundant_management_shell(self):
         self.make_user("owner-workspaces", AccessRole.OWNER)
         response = self.client.get(reverse("core:payroll"))
 
         self.assertEqual(response.status_code, 200)
         access = response.context["access_context"]
-        self.assertIn("internal", access["workspaces"])
-        self.assertIn("rental", access["workspaces"])
-        self.assertIn("management", access["workspaces"])
+        self.assertEqual(access["payroll_workspaces"], ["internal", "rental"])
+        self.assertFalse(response.context["show_management_workspace"])
+        self.assertNotContains(response, 'data-workspace-switch="management"')
 
     def test_owner_can_deep_link_to_rental_workspace(self):
         self.make_user("owner-rental-link", AccessRole.OWNER)
@@ -51,13 +51,23 @@ class MergedPayrollFrontendTests(TestCase):
         self.assertEqual(response.context["access_context"]["initial_workspace"], "rental")
         self.assertContains(response, '?workspace=rental#/overview')
 
-    def test_owner_can_deep_link_to_management_workspace(self):
+    def test_owner_management_deep_link_is_not_honored_when_operational_workspaces_exist(self):
         self.make_user("owner-management-link", AccessRole.OWNER)
         response = self.client.get(reverse("core:payroll"), {"workspace": "management"})
 
         self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["access_context"]["initial_workspace"])
+        self.assertNotContains(response, 'data-workspace-switch="management"')
+
+    def test_management_only_auditor_keeps_legacy_read_only_workspace(self):
+        self.make_user("auditor-management-link", AccessRole.READ_ONLY_AUDITOR)
+        response = self.client.get(reverse("core:payroll"), {"workspace": "management"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["access_context"]["payroll_workspaces"], ["management"])
         self.assertEqual(response.context["access_context"]["initial_workspace"], "management")
-        self.assertContains(response, '?workspace=management#/overview')
+        self.assertTrue(response.context["show_management_workspace"])
+        self.assertContains(response, 'data-workspace-switch="management"')
 
     def test_disallowed_workspace_query_is_not_honored(self):
         self.make_user("internal-workspace-guard", AccessRole.INTERNAL_PAYROLL_OFFICER)

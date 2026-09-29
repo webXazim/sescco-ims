@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Case, Count, DecimalField, Exists, F, OuterRef, Q, Sum, Value, When
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 from django.db.models.functions import Coalesce
@@ -21,6 +21,8 @@ from apps.accounts.access_policy import membership_allows_project, membership_ha
 from apps.accounts.roles import Workspace
 from apps.core.query_controls import ListControls, apply_ordering, parse_list_controls, serialize_list
 from apps.core.payroll_attendance_contract import normalize_attendance_workflow_action
+from apps.core.models import AuditArea
+from apps.core.services.audit import record_audit_event
 from apps.rental_manpower.api_utils import handle_api_error, json_body, parse_date, parse_optional_date
 from apps.rental_manpower.models import (
     ManpowerSupplier,
@@ -74,6 +76,11 @@ from apps.rental_manpower.services import (
     transition_rental_adjustment,
     transition_supplier_payment,
     update_rental_adjustment,
+)
+from apps.rental_manpower.services.timesheet_exports import (
+    build_rental_timesheet_export_dataset,
+    rental_timesheet_export_schema,
+    render_rental_timesheet_export,
 )
 
 
@@ -988,8 +995,8 @@ def assignments_api(request: HttpRequest) -> JsonResponse:
         return handle_api_error(exc)
 
 from datetime import date as _date
-from .selectors.timesheets import rental_timesheet_context, rental_timesheet_summary, _period_payload
-from .models import RentalTimesheetEntry, RentalTimesheetOvertime
+from .selectors.timesheets import rental_timesheet_context, rental_timesheet_summary, rental_timesheet_settings_payload, _period_payload
+from .models import RentalTimesheetEntry, RentalTimesheetOvertime, RentalTimesheetProjectSettings
 from .services.timesheets import save_entries as save_rental_timesheet_entries, save_overtime as save_rental_timesheet_overtime, transition_timesheet as transition_rental_timesheet
 
 
@@ -1065,6 +1072,54 @@ def _rental_overtime_delta(*, request: HttpRequest, period, worker_id: str) -> d
 
 @require_http_methods(["GET", "PATCH"])
 @api_workspace_required(Workspace.RENTAL)
+def rental_timesheet_settings_api(request: HttpRequest) -> JsonResponse:
+    try:
+        _require_permission(
+            request,
+            AccessPermission.RENTAL_TIMESHEETS_VIEW if request.method == "GET" else AccessPermission.RENTAL_TIMESHEETS_EDIT,
+        )
+        body = json_body(request) if request.method == "PATCH" else {}
+        project_id = request.GET.get("project_id") if request.method == "GET" else body.get("project_id")
+        if not project_id:
+            raise ValidationError({"project_id": "project_id is required."})
+        project = _scoped_project(request, project_id)
+        if request.method == "PATCH":
+            raw = body.get("off_weekdays")
+            if not isinstance(raw, list):
+                raise ValidationError({"off_weekdays": "off_weekdays must be an array of weekday keys."})
+            allowed = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
+            off_weekdays: list[str] = []
+            for value in raw:
+                key = str(value or "").strip().lower()
+                if key not in allowed:
+                    raise ValidationError({"off_weekdays": f"Unknown weekday: {value}."})
+                if key not in off_weekdays:
+                    off_weekdays.append(key)
+            row, created = RentalTimesheetProjectSettings.objects.for_company(request.company).get_or_create(
+                project=project, defaults={"company": request.company, "off_weekdays": off_weekdays}
+            )
+            before = {"offWeekdays": list(row.off_weekdays or [])} if not created else {"offWeekdays": ["fri", "sat"]}
+            row.off_weekdays = off_weekdays
+            row.full_clean()
+            row.save()
+            record_audit_event(
+                company=request.company, area=AuditArea.RENTAL, action="rental.timesheet.settings_updated",
+                object_type="rental_manpower.RentalTimesheetProjectSettings", object_id=row.pk,
+                object_label=f"{project.code} timesheet settings", actor_membership=request.company_membership,
+                before=before, after={"offWeekdays": list(row.off_weekdays or [])}, request=request,
+            )
+        return JsonResponse({
+            "ok": True,
+            "settings": rental_timesheet_settings_payload(
+                company=request.company, project=project, membership=request.company_membership
+            ),
+        })
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["GET", "PATCH"])
+@api_workspace_required(Workspace.RENTAL)
 def rental_timesheets_api(request: HttpRequest) -> JsonResponse:
     try:
         _require_permission(request, AccessPermission.RENTAL_TIMESHEETS_VIEW if request.method == "GET" else AccessPermission.RENTAL_TIMESHEETS_EDIT)
@@ -1114,6 +1169,90 @@ def rental_timesheets_api(request: HttpRequest) -> JsonResponse:
             request=request,
         )
         return JsonResponse({"ok": True, **_rental_entry_delta(request=request, period=period, raw_rows=normalized)})
+    except Exception as exc:
+        return handle_api_error(exc)
+
+
+@require_http_methods(["GET", "POST"])
+@api_workspace_required(Workspace.RENTAL)
+def rental_timesheet_export_api(request: HttpRequest):
+    try:
+        _require_permission(request, AccessPermission.RENTAL_TIMESHEETS_VIEW)
+        if request.method == "GET":
+            project_id = request.GET.get("project_id")
+            if not project_id:
+                raise ValidationError({"project_id": "project_id is required."})
+            period_start = _period_start(request.GET.get("period"))
+            return JsonResponse({
+                "ok": True,
+                **rental_timesheet_export_schema(
+                    company=request.company,
+                    membership=request.company_membership,
+                    project_id=project_id,
+                    period_start=period_start,
+                    query=request.GET.get("q", ""),
+                    supplier_id=request.GET.get("supplier_id", ""),
+                ),
+            })
+
+        body = json_body(request)
+        project_id = body.get("project_id")
+        if not project_id:
+            raise ValidationError({"project_id": "project_id is required."})
+        columns = body.get("columns")
+        if not isinstance(columns, list):
+            raise ValidationError({"columns": "columns must be an array of export column keys."})
+        try:
+            page = max(1, int(body.get("page", 1) or 1))
+            page_size = min(100, max(1, int(body.get("page_size", 50) or 50)))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"page": "page and page_size must be valid integers."}) from exc
+        worker_ids = body.get("worker_ids") or []
+        if not isinstance(worker_ids, list):
+            raise ValidationError({"worker_ids": "worker_ids must be an array."})
+
+        period_start = _period_start(body.get("period"))
+        dataset = build_rental_timesheet_export_dataset(
+            company=request.company,
+            membership=request.company_membership,
+            project_id=project_id,
+            period_start=period_start,
+            columns=columns,
+            query=str(body.get("q") or ""),
+            supplier_id=str(body.get("supplier_id") or ""),
+            scope=str(body.get("scope") or "all_matching"),
+            page=page,
+            page_size=page_size,
+            worker_ids=worker_ids,
+        )
+        payload, content_type, filename = render_rental_timesheet_export(dataset, str(body.get("format") or ""))
+        project = dataset["project"]
+        record_audit_event(
+            company=request.company,
+            area=AuditArea.RENTAL,
+            action="rental.timesheet.exported",
+            object_type="projects.Project",
+            object_id=project.reference,
+            object_label=f"{project.code} {dataset['period_start']:%Y-%m}",
+            actor_membership=request.company_membership,
+            metadata={
+                "format": str(body.get("format") or "").lower(),
+                "scope": dataset["scope"],
+                "row_count": len(dataset["rows"]),
+                "column_count": len(dataset["columns"]),
+                "query": dataset["query"],
+                "supplier_filter": bool(dataset["supplier_id"]),
+                "timesheet_status": dataset["status"],
+                "timesheet_revision": dataset["revision"],
+            },
+            request=request,
+        )
+        response = HttpResponse(payload, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        response["X-Export-Row-Count"] = str(len(dataset["rows"]))
+        return response
     except Exception as exc:
         return handle_api_error(exc)
 

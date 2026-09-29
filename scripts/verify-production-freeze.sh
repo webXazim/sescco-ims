@@ -54,6 +54,8 @@ python3 scripts/verify-payroll-directory-runtime.py
 python3 scripts/verify-payroll-rental-finance-runtime.py
 python3 scripts/verify-payroll-assignment-runtime.py
 python3 scripts/verify-payroll-timesheet-scale.py
+python3 scripts/verify-payroll-timesheet-dynamic-export.py
+python3 scripts/verify-payroll-timesheet-board-settings.py
 python3 scripts/verify-payroll-bootstrap-search.py
 python3 scripts/verify-payroll-query-hardening.py
 python3 scripts/verify-payroll-browser-scale.py

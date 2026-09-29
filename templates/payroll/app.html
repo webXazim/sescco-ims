@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{% static 'payroll/css/components.css' %}" />
   <link rel="stylesheet" href="{% static 'payroll/css/responsive.css' %}" />
   <link rel="stylesheet" href="{% static 'payroll/css/production-polish.css' %}" />
-  <link rel="stylesheet" href="{% static 'payroll/css/v2/index.css' %}" />
+  <link rel="stylesheet" href="{% static 'payroll/css/v2/index.css' %}?v=1.0.117" />
   <link rel="stylesheet" href="{% static 'payroll/css/v2/prs-final.css' %}" />
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}" />
   <link rel="stylesheet" href="{% static 'platform/css/payroll-shell-fixes.css' %}" />
@@ -63,11 +63,13 @@
               <span class="ui-v2-switcher-menu__copy"><strong>Rental Manpower</strong><small>Suppliers · projects · settlements</small></span>
               <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
             </a>
+            {% if show_management_workspace %}
             <a class="ui-v2-switcher-menu__item" href="{% url 'core:payroll' %}?workspace=management#/overview" data-workspace-switch="management" role="menuitem">
               <span class="ui-v2-switcher-menu__icon ui-v2-prs-switcher-code">MG</span>
               <span class="ui-v2-switcher-menu__copy"><strong>Management</strong><small>Company control · approvals · audit</small></span>
               <span class="ui-v2-prs-switcher-check" aria-hidden="true">✓</span>
             </a>
+            {% endif %}
           </div>
         </div>
       </div>

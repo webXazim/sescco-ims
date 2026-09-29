@@ -938,7 +938,7 @@
   const storedRentalWorkspacePeriod = localStorage.getItem('payroll-ui-rental-period') || defaultInternalPeriod;
   const storedManagementWorkspacePeriod = localStorage.getItem('payroll-ui-management-period') || defaultInternalPeriod;
   const accessRoles = serverAccess.role_matrix;
-  const serverWorkspaces = Array.isArray(serverAccess.workspaces) ? serverAccess.workspaces : [];
+  const serverWorkspaces = Array.isArray(serverAccess.payroll_workspaces) ? serverAccess.payroll_workspaces : (Array.isArray(serverAccess.workspaces) ? serverAccess.workspaces : []);
   const serverEditWorkspaces = Array.isArray(serverAccess.edit_workspaces) ? serverAccess.edit_workspaces : [];
   const serverCapabilities = new Set(Array.isArray(serverAccess.capabilities) ? serverAccess.capabilities : []);
   const effectivePermissions = new Set(Array.isArray(serverAccess.effective_access?.permissions) ? serverAccess.effective_access.permissions : []);
@@ -1110,6 +1110,8 @@
     rentalTimesheetMeta: {},
     rentalTimesheetRoster: {},
     rentalTimesheetSummary: {},
+    rentalTimesheetSettings: {},
+    rentalTimesheetBoard: loadRentalTimesheetBoardPreferences(),
     rentalTimesheetServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     rentalAttendanceContract: rentalMaster.attendanceContract || null,
     timesheetSearch: '',
@@ -4429,6 +4431,7 @@
       state.rentalTimesheetMeta[key] = { ...(state.rentalTimesheetMeta[key] || {}), ...payload.period };
     }
     if (payload.attendanceContract) state.rentalAttendanceContract = payload.attendanceContract;
+    if (payload.settings) state.rentalTimesheetSettings[projectId] = { ...(state.rentalTimesheetSettings[projectId] || {}), ...payload.settings };
     if (payload.summary) state.rentalTimesheetSummary[key] = { ...(state.rentalTimesheetSummary[key] || {}), ...payload.summary };
 
     if (payload.deltaOnly) {
@@ -4635,7 +4638,7 @@
   function rentalTimesheetDayHeaders(info) {
     return Array.from({length:info.days},(_,index)=>{
       const day = index + 1;
-      return `<th class="${attendanceDayClasses(day,state.period)}" title="${escapeHtml(rentalTimesheetDate(day))}"><span>${weekdayShort(day,state.period)}</span><strong>${day}</strong></th>`;
+      return `<th class="${rentalTimesheetDayClasses(day,state.period)}" title="${escapeHtml(rentalTimesheetDate(day))}"><span>${weekdayShort(day,state.period)}</span><strong>${day}</strong></th>`;
     }).join('');
   }
 
@@ -4672,34 +4675,476 @@
     return 'This project timesheet is under controlled rental-manpower review.';
   }
 
-  function exportRentalTimesheetCsv() {
-    const workers = rentalWorkersForTimesheet();
-    const info = periodInfo();
+  function rentalTimesheetExportFilterParams() {
+    const params = new URLSearchParams();
+    params.set('project_id', state.rentalTimesheetProject || '');
+    params.set('period', rentalTimesheetApiPeriod());
+    if (state.rentalTimesheetSearch.trim()) params.set('q', state.rentalTimesheetSearch.trim());
+    if (state.rentalTimesheetSupplier !== 'All suppliers') params.set('supplier_id', state.rentalTimesheetSupplier);
+    return params;
+  }
+
+  function rentalTimesheetExportPreference(schema) {
+    let stored = [];
+    try { stored = JSON.parse(localStorage.getItem('payroll-ui-rental-timesheet-export-columns') || '[]'); }
+    catch { stored = []; }
+    const allowed = new Set(schema.allColumns || []);
+    const selected = Array.isArray(stored) ? stored.filter(key => allowed.has(key)) : [];
+    return selected.length ? selected : [...(schema.defaultColumns || [])];
+  }
+
+  function rentalTimesheetExportColumnGroups(schema, selectedKeys) {
+    const selected = new Set(selectedKeys || []);
+    return (schema.groups || []).map(group => {
+      const daily = group.label === 'Daily entries';
+      return `<section class="ui-v2-timesheet-export-group ${daily ? 'is-daily' : ''}">
+        <header><div><strong>${escapeHtml(group.label)}</strong><span>${group.columns.length} column${group.columns.length === 1 ? '' : 's'}</span></div><button type="button" data-rental-export-group-toggle="${escapeHtml(group.label)}">Toggle group</button></header>
+        <div class="ui-v2-timesheet-export-column-grid">${group.columns.map(column => `<label class="ui-v2-timesheet-export-check"><input type="checkbox" value="${escapeHtml(column.key)}" data-rental-export-column ${selected.has(column.key) ? 'checked' : ''}><span>${escapeHtml(column.label)}</span></label>`).join('')}</div>
+      </section>`;
+    }).join('');
+  }
+
+  function updateRentalTimesheetExportSelectionUi() {
+    if (state.drawerType !== 'rental-timesheet-export') return;
+    const checked = [...drawerBody.querySelectorAll('[data-rental-export-column]:checked')];
+    const count = drawerBody.querySelector('[data-rental-export-column-count]');
+    if (count) count.textContent = `${checked.length} selected`;
+    const submit = drawerBody.querySelector('[data-rental-export-submit]');
+    if (submit) submit.disabled = checked.length === 0;
+  }
+
+  function renderRentalTimesheetExportDrawer(schema) {
+    const selected = rentalTimesheetExportPreference(schema);
+    const savedFormat = localStorage.getItem('payroll-ui-rental-timesheet-export-format');
+    const format = ['xlsx','pdf'].includes(savedFormat) ? savedFormat : 'xlsx';
+    const page = rentalTimesheetPageData();
+    const selectedCount = state.rentalTimesheetSelected.size;
     const project = state.projects.find(item => item.id === state.rentalTimesheetProject);
-    const bucket = state.rentalTimesheets?.[state.period]?.[state.rentalTimesheetProject] || {};
-    const header = ['Worker ID','Worker','Supplier','Trade / Rate', ...Array.from({length:info.days},(_,i)=>String(i+1)), 'Regular Hours','OT Hours','Missing'];
-    const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = workers.map(worker => {
-      const supplier = rentalWorkerSupplier(worker);
-      const record = bucket[worker.id] || {};
-      const metrics = rentalWorkerTimesheetMetrics(worker);
-      return [
-        rentalWorkerCode(worker), worker.name, supplier?.name || '', rentalPeriodAssignmentsLabel(worker),
-        ...Array.from({length:info.days},(_,i)=>record[i+1] ?? record[String(i+1)] ?? ''),
-        metrics.hours, metrics.otHours, metrics.missing
-      ];
+    const matchingCount = Number(schema.matchingCount || 0);
+    const overLimit = matchingCount > Number(schema.maxRows || 5000);
+    drawerBody.innerHTML = `
+      <section class="ui-v2-timesheet-export-summary">
+        <div><span>Project</span><strong>${escapeHtml(project?.name || schema.project?.name || 'Selected project')}</strong></div>
+        <div><span>Period</span><strong>${escapeHtml(schema.period?.label || state.period)}</strong></div>
+        <div><span>Matching workers</span><strong>${matchingCount.toLocaleString()}</strong></div>
+        <div><span>Timesheet</span><strong>${escapeHtml(schema.period?.status || rentalTimesheetStatus())} · Rev ${Number(schema.period?.revision || 0)}</strong></div>
+      </section>
+      <section class="ui-v2-timesheet-export-section">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>File format</strong><span>Choose how this export will be shared.</span></div></div>
+        <div class="ui-v2-timesheet-export-format-grid">${(schema.formats || []).map(item => `<label class="ui-v2-timesheet-export-choice"><input type="radio" name="rental-export-format" value="${escapeHtml(item.value)}" ${format === item.value ? 'checked' : ''}><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description || '')}</small></span></label>`).join('')}</div>
+        <p class="ui-v2-timesheet-export-note" data-rental-export-format-note>${format === 'pdf' ? 'PDF automatically splits very wide selections into readable landscape column sections.' : 'Excel keeps every selected column in one filterable workbook.'}</p>
+      </section>
+      <section class="ui-v2-timesheet-export-section">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Rows to export</strong><span>The current project, supplier filter and search are always respected.</span></div></div>
+        <div class="ui-v2-timesheet-export-scope-list">
+          <label><input type="radio" name="rental-export-scope" value="all_matching" checked><span><strong>All matching workers</strong><small>${matchingCount.toLocaleString()} worker${matchingCount === 1 ? '' : 's'}${overLimit ? ` · narrow filters to ${Number(schema.maxRows || 5000).toLocaleString()} or fewer` : ''}</small></span></label>
+          <label><input type="radio" name="rental-export-scope" value="current_page"><span><strong>Current page</strong><small>${page.rows.length.toLocaleString()} worker${page.rows.length === 1 ? '' : 's'} · page ${page.page}</small></span></label>
+          <label class="${selectedCount ? '' : 'is-disabled'}"><input type="radio" name="rental-export-scope" value="selected" ${selectedCount ? '' : 'disabled'}><span><strong>Selected workers</strong><small>${selectedCount ? `${selectedCount.toLocaleString()} selected on this page` : 'Select workers in the timesheet first'}</small></span></label>
+        </div>
+      </section>
+      <section class="ui-v2-timesheet-export-section ui-v2-timesheet-export-columns">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Columns</strong><span data-rental-export-column-count>${selected.length} selected</span></div><div class="ui-v2-timesheet-export-column-actions"><button type="button" data-rental-export-columns="recommended">Recommended</button><button type="button" data-rental-export-columns="all">Select all</button><button type="button" data-rental-export-columns="none">Clear</button></div></div>
+        ${rentalTimesheetExportColumnGroups(schema, selected)}
+      </section>
+      <section class="ui-v2-timesheet-export-footer">
+        <div><strong>Server-generated export</strong><span>The file includes all requested rows, not only the browser's currently loaded data. Commercial and personal-detail columns appear only when your access profile allows them.</span></div>
+        <button class="ui-v2-button ui-v2-button--primary" type="button" data-rental-export-submit ${selected.length ? '' : 'disabled'}>Generate export</button>
+      </section>`;
+
+    drawerBody.querySelectorAll('input[name="rental-export-format"]').forEach(input => input.addEventListener('change', () => {
+      localStorage.setItem('payroll-ui-rental-timesheet-export-format', input.value);
+      const note = drawerBody.querySelector('[data-rental-export-format-note]');
+      if (note) note.textContent = input.value === 'pdf'
+        ? 'PDF automatically splits very wide selections into readable landscape column sections.'
+        : 'Excel keeps every selected column in one filterable workbook.';
+    }));
+    drawerBody.querySelectorAll('[data-rental-export-column]').forEach(input => input.addEventListener('change', updateRentalTimesheetExportSelectionUi));
+    drawerBody.querySelectorAll('[data-rental-export-group-toggle]').forEach(button => button.addEventListener('click', () => {
+      const section = button.closest('.ui-v2-timesheet-export-group');
+      const inputs = [...(section?.querySelectorAll('[data-rental-export-column]') || [])];
+      const shouldCheck = inputs.some(input => !input.checked);
+      inputs.forEach(input => { input.checked = shouldCheck; });
+      updateRentalTimesheetExportSelectionUi();
+    }));
+    drawerBody.querySelectorAll('[data-rental-export-columns]').forEach(button => button.addEventListener('click', () => {
+      const mode = button.dataset.rentalExportColumns;
+      const recommended = new Set(schema.defaultColumns || []);
+      drawerBody.querySelectorAll('[data-rental-export-column]').forEach(input => {
+        input.checked = mode === 'all' ? true : mode === 'none' ? false : recommended.has(input.value);
+      });
+      updateRentalTimesheetExportSelectionUi();
+    }));
+    drawerBody.querySelector('[data-rental-export-submit]')?.addEventListener('click', () => runRentalTimesheetExport(schema));
+  }
+
+  async function openRentalTimesheetExportDrawer() {
+    if (!state.rentalTimesheetProject) { showToast('Choose a project', 'Select a rental project before exporting its timesheet.'); return; }
+    state.drawerType = 'rental-timesheet-export';
+    state.drawerContext = null;
+    configureDrawerPresentation({ eyebrow:'Project Timesheet', ariaLabel:'Export project timesheet', footerVisible:false });
+    drawer.classList.add('ui-v2-payroll-timesheet-export-drawer','is-open');
+    drawerScrim.classList.add('is-open');
+    drawer.setAttribute('aria-hidden','false');
+    drawerTitle.textContent = 'Export timesheet';
+    drawerBody.innerHTML = '<div class="ui-v2-timesheet-export-loading"><strong>Preparing export options…</strong><span>Reading the allowed columns for this project and period.</span></div>';
+    try {
+      const schema = await appApi(`/api/rental/timesheets/export/?${rentalTimesheetExportFilterParams().toString()}`);
+      if (state.drawerType !== 'rental-timesheet-export') return;
+      renderRentalTimesheetExportDrawer(schema);
+    } catch (error) {
+      if (state.drawerType !== 'rental-timesheet-export') return;
+      drawerBody.innerHTML = `<div class="ui-v2-payroll-table-empty"><strong>Export options unavailable.</strong><span>${escapeHtml(error.message)}</span></div>`;
+    }
+  }
+
+  async function runRentalTimesheetExport(schema) {
+    const submit = drawerBody.querySelector('[data-rental-export-submit]');
+    const columns = [...drawerBody.querySelectorAll('[data-rental-export-column]:checked')].map(input => input.value);
+    if (!columns.length) { showToast('Choose export columns', 'Select at least one column before generating the file.'); return; }
+    const format = drawerBody.querySelector('input[name="rental-export-format"]:checked')?.value || 'xlsx';
+    const scope = drawerBody.querySelector('input[name="rental-export-scope"]:checked')?.value || 'all_matching';
+    const page = rentalTimesheetPageData();
+    const body = {
+      project_id: state.rentalTimesheetProject,
+      period: rentalTimesheetApiPeriod(),
+      format,
+      columns,
+      scope,
+      q: state.rentalTimesheetSearch.trim(),
+      supplier_id: state.rentalTimesheetSupplier === 'All suppliers' ? '' : state.rentalTimesheetSupplier,
+      page: page.page,
+      page_size: page.pageSize,
+      worker_ids: scope === 'selected' ? [...state.rentalTimesheetSelected] : []
+    };
+    if (submit) { submit.disabled = true; submit.textContent = 'Generating…'; }
+    try {
+      const response = await fetch('/api/rental/timesheets/export/', {
+        method:'POST', credentials:'same-origin',
+        headers:{ 'Accept':'application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/json', 'Content-Type':'application/json', 'X-CSRFToken':csrfToken },
+        body:JSON.stringify(body)
+      });
+      if (!response.ok) {
+        let payload={}; try { payload=await response.json(); } catch {}
+        const first=Object.values(payload.errors||{}).flat().find(Boolean);
+        throw new Error(first || `Export failed (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const filename = (disposition.match(/filename="?([^";]+)"?/i) || [])[1] || `rental-timesheet.${format}`;
+      const rowCount = Number(response.headers.get('X-Export-Row-Count') || 0);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href=url; anchor.download=filename; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(()=>URL.revokeObjectURL(url),800);
+      localStorage.setItem('payroll-ui-rental-timesheet-export-columns', JSON.stringify(columns));
+      localStorage.setItem('payroll-ui-rental-timesheet-export-format', format);
+      closeDrawer();
+      showToast('Timesheet exported', `${filename}${rowCount ? ` · ${rowCount.toLocaleString()} worker row${rowCount === 1 ? '' : 's'}` : ''}.`);
+    } catch (error) {
+      showToast('Export blocked', error.message);
+      if (submit) { submit.disabled = false; submit.textContent = 'Generate export'; }
+    }
+  }
+
+  function loadRentalTimesheetBoardPreferences() {
+    const fallback = {
+      left:['worker_name','worker_id','trade'],
+      right:['regular_hours','overtime_hours','total_hours','missing_days'],
+      widths:{}
+    };
+    try {
+      const parsed = JSON.parse(localStorage.getItem('payroll-ui-rental-timesheet-board-v2') || 'null');
+      if (!parsed || typeof parsed !== 'object') return fallback;
+      return {
+        left:Array.isArray(parsed.left) ? parsed.left.map(String) : fallback.left,
+        right:Array.isArray(parsed.right) ? parsed.right.map(String) : fallback.right,
+        widths:parsed.widths && typeof parsed.widths === 'object' ? { ...parsed.widths } : {}
+      };
+    } catch { return fallback; }
+  }
+
+  function saveRentalTimesheetBoardPreferences() {
+    localStorage.setItem('payroll-ui-rental-timesheet-board-v2', JSON.stringify({
+      left:state.rentalTimesheetBoard.left,
+      right:state.rentalTimesheetBoard.right,
+      widths:state.rentalTimesheetBoard.widths || {}
+    }));
+  }
+
+  function currentRentalTimesheetSettings(projectId = state.rentalTimesheetProject) {
+    return state.rentalTimesheetSettings?.[projectId] || {
+      projectId,
+      offWeekdays:['fri','sat'],
+      weekdayOptions:[
+        {value:'sun',label:'Sunday'},{value:'mon',label:'Monday'},{value:'tue',label:'Tuesday'},
+        {value:'wed',label:'Wednesday'},{value:'thu',label:'Thursday'},{value:'fri',label:'Friday'},{value:'sat',label:'Saturday'}
+      ],
+      canEdit:false,
+      canViewCommercial:hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage'),
+      canViewWorkerIdentity:hasAccessPermission('rental.workers.view')
+    };
+  }
+
+  function rentalTimesheetBoardColumnCatalog() {
+    const settings = currentRentalTimesheetSettings();
+    const rows = [
+      {key:'worker_name',label:'Worker',side:'left',width:230,min:160,max:420,required:true},
+      {key:'worker_id',label:'Worker ID',side:'left',width:105,min:82,max:220},
+      {key:'national_id',label:'Iqama / National ID',side:'left',width:142,min:110,max:240,identity:true},
+      {key:'supplier',label:'Supplier',side:'left',width:170,min:120,max:320},
+      {key:'trade',label:'Trade',side:'left',width:135,min:100,max:260},
+      {key:'rate_type',label:'Rate type',side:'left',width:105,min:86,max:180,commercial:true},
+      {key:'rate',label:'Commercial rate',side:'left',width:150,min:110,max:240,commercial:true},
+      {key:'regular_hours',label:'Basic hrs',side:'right',width:78,min:66,max:130,numeric:true},
+      {key:'overtime_hours',label:'OT hrs',side:'right',width:70,min:60,max:120,numeric:true},
+      {key:'total_hours',label:'Total hrs',side:'right',width:78,min:66,max:130,numeric:true},
+      {key:'work_days',label:'Worked',side:'right',width:70,min:60,max:120,numeric:true},
+      {key:'absent_days',label:'Absent',side:'right',width:70,min:60,max:120,numeric:true},
+      {key:'no_scope_days',label:'No scope',side:'right',width:78,min:66,max:130,numeric:true},
+      {key:'leave_days',label:'Leave',side:'right',width:66,min:58,max:115,numeric:true},
+      {key:'off_days',label:'Off',side:'right',width:62,min:56,max:110,numeric:true},
+      {key:'missing_days',label:'Missing',side:'right',width:74,min:64,max:125,numeric:true},
+      {key:'base_wage',label:'Base wage',side:'right',width:112,min:92,max:190,commercial:true,numeric:true},
+      {key:'overtime_wage',label:'OT wage',side:'right',width:108,min:90,max:180,commercial:true,numeric:true},
+      {key:'gross_wage',label:'Gross wage',side:'right',width:118,min:96,max:200,commercial:true,numeric:true},
+    ];
+    return rows.filter(row => (!row.commercial || settings.canViewCommercial) && (!row.identity || settings.canViewWorkerIdentity));
+  }
+
+  function rentalTimesheetBoardLayout() {
+    const catalog = rentalTimesheetBoardColumnCatalog();
+    const byKey = new Map(catalog.map(item => [item.key,item]));
+    let leftKeys = (state.rentalTimesheetBoard?.left || []).filter(key => byKey.get(key)?.side === 'left');
+    let rightKeys = (state.rentalTimesheetBoard?.right || []).filter(key => byKey.get(key)?.side === 'right');
+    if (!leftKeys.includes('worker_name') && byKey.has('worker_name')) leftKeys.unshift('worker_name');
+    if (!rightKeys.length) rightKeys = ['regular_hours','overtime_hours','total_hours','missing_days'].filter(key => byKey.has(key));
+    const widthOf = item => {
+      const raw = Number(state.rentalTimesheetBoard?.widths?.[item.key] ?? item.width);
+      return Math.round(Math.max(item.min, Math.min(item.max, Number.isFinite(raw) ? raw : item.width)));
+    };
+    let leftOffset = 34;
+    const left = leftKeys.map(key => {
+      const item={...byKey.get(key)}; item.widthPx=widthOf(item); item.offset=leftOffset; leftOffset += item.widthPx; return item;
     });
-    const csv = [header, ...rows].map(row => row.map(quote).join(',')).join('\r\n');
-    const blob = new Blob([`\uFEFF${csv}`], {type:'text/csv;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `rental-timesheet-${(project?.code || state.rentalTimesheetProject || 'project').replace(/[^a-z0-9_-]+/gi,'-').toLowerCase()}-${state.period.replace(/\s+/g,'-').toLowerCase()}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    showToast('Timesheet page exported', `${workers.length} worker row${workers.length === 1 ? '' : 's'} from the current filtered page exported for ${project?.name || 'the selected project'} · ${state.period}.`);
+    let rightOffset = 0;
+    const rightReversed = [...rightKeys].reverse().map(key => {
+      const item={...byKey.get(key)}; item.widthPx=widthOf(item); item.offset=rightOffset; rightOffset += item.widthPx; return item;
+    });
+    const right = rightKeys.map(key => rightReversed.find(item => item.key===key));
+    return {left,right,catalog,leftWidth:leftOffset,rightWidth:rightOffset};
+  }
+
+  function rentalTimesheetWeekdayKey(day, period = state.period) {
+    const info=periodInfo(period);
+    return ['sun','mon','tue','wed','thu','fri','sat'][new Date(info.year,info.monthIndex,day).getDay()];
+  }
+
+  function rentalTimesheetDayClasses(day, period = state.period) {
+    const info=periodInfo(period);
+    const date=new Date(info.year,info.monthIndex,day);
+    const offDays=new Set(currentRentalTimesheetSettings().offWeekdays || ['fri','sat']);
+    const isOff=offDays.has(rentalTimesheetWeekdayKey(day,period));
+    return [isOff?'is-weekend is-project-offday':'',date.getDay()===6?'is-week-boundary':'',isCompanyToday(day,period)?'is-today':''].filter(Boolean).join(' ');
+  }
+
+  function rentalPeriodAssignmentValues(worker, mapper) {
+    const values=[];
+    rentalAssignmentsInProjectPeriod(worker).forEach(row=>{
+      const value=mapper(row);
+      if(value && !values.includes(value)) values.push(value);
+    });
+    return values.length ? values.join(' → ') : '—';
+  }
+
+  function rentalWorkerCommercialPreview(worker, period = state.period, projectId = state.rentalTimesheetProject) {
+    if (!currentRentalTimesheetSettings(projectId).canViewCommercial) return {base:null,ot:null,gross:null};
+    const info=periodInfo(period);
+    const record=state.rentalTimesheets?.[period]?.[projectId]?.[worker.id] || {};
+    let base=0;
+    let hasRate=false;
+    for(let day=1; day<=info.days; day+=1){
+      const assignment=rentalAssignmentForDate(worker,projectId,day,period);
+      if(!assignment) continue;
+      const rate=Number(assignment.rateValue);
+      if(!Number.isFinite(rate)) continue;
+      hasRate=true;
+      const value=record[day] ?? record[String(day)] ?? '';
+      const raw=String(value ?? '').trim().toUpperCase();
+      const hours=rentalTimesheetHours(value);
+      const rateType=String(assignment.rateTypeValue || assignment.rateType || '').toLowerCase();
+      if(rateType.includes('hour')) base += hours * rate;
+      else if(rateType.includes('day')) { if(hours > 0) base += rate; }
+      else if(rateType.includes('month')) { if(raw) base += rate / info.days; }
+    }
+    const overtime=rentalOvertimeFor(worker,period,projectId);
+    const ot=Number(overtime.hours || 0) * Number(overtime.rate || 0);
+    return {base:hasRate?base:null,ot:hasRate?ot:null,gross:hasRate?base+ot:null};
+  }
+
+  function rentalTimesheetBoardCell(worker, spec, metrics, commercial) {
+    const supplier=rentalWorkerSupplier(worker);
+    let value='—';
+    if(spec.key==='worker_name') return `<button type="button" class="ui-v2-prs-rental-board-worker" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button>`;
+    if(spec.key==='worker_id') value=rentalWorkerCode(worker);
+    else if(spec.key==='national_id') value=worker.nationalId || '—';
+    else if(spec.key==='supplier') value=supplier?.name || worker.supplierName || '—';
+    else if(spec.key==='trade') value=rentalPeriodAssignmentsLabel(worker,undefined,undefined,'trade');
+    else if(spec.key==='rate_type') value=rentalPeriodAssignmentValues(worker,row=>row.rateType || row.rateTypeValue || '');
+    else if(spec.key==='rate') value=rentalPeriodAssignmentsLabel(worker,undefined,undefined,'rate');
+    else if(spec.key==='regular_hours') value=metrics.hours.toLocaleString('en-SA',{maximumFractionDigits:2});
+    else if(spec.key==='overtime_hours') value=metrics.otHours ? metrics.otHours.toLocaleString('en-SA',{maximumFractionDigits:2}) : '—';
+    else if(spec.key==='total_hours') value=(metrics.hours+metrics.otHours).toLocaleString('en-SA',{maximumFractionDigits:2});
+    else if(spec.key==='work_days') value=metrics.workDays || '—';
+    else if(spec.key==='absent_days') value=metrics.absent || '—';
+    else if(spec.key==='no_scope_days') value=metrics.noScope || '—';
+    else if(spec.key==='leave_days') value=metrics.leave || '—';
+    else if(spec.key==='off_days') value=metrics.off || '—';
+    else if(spec.key==='missing_days') value=metrics.missing || '—';
+    else if(spec.key==='base_wage') value=commercial.base == null ? '—' : formatCurrency(commercial.base);
+    else if(spec.key==='overtime_wage') value=commercial.ot == null ? '—' : formatCurrency(commercial.ot);
+    else if(spec.key==='gross_wage') value=commercial.gross == null ? '—' : formatCurrency(commercial.gross);
+    return `<span class="ui-v2-prs-rental-board-value${spec.numeric?' is-numeric':''}">${escapeHtml(String(value))}</span>`;
+  }
+
+  function rentalTimesheetBoardHeader(spec, side) {
+    const position=side==='left' ? `left:${spec.offset}px` : `right:${spec.offset}px`;
+    return `<th class="is-board-column is-board-${side} ${side==='right'?'is-total':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="${side}" style="${position};width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px"><span class="ui-v2-prs-rental-board-header-label">${escapeHtml(spec.label)}</span><span class="ui-v2-prs-rental-board-resizer" data-rental-board-resize="${escapeHtml(spec.key)}" role="separator" tabindex="0" aria-label="Resize ${escapeHtml(spec.label)} column"></span></th>`;
+  }
+
+  function applyRentalTimesheetBoardGeometry() {
+    const layout=rentalTimesheetBoardLayout();
+    [...layout.left,...layout.right].forEach(spec=>{
+      document.querySelectorAll(`[data-rental-board-col="${spec.key}"]`).forEach(cell=>{
+        cell.style.width=`${spec.widthPx}px`; cell.style.minWidth=`${spec.widthPx}px`; cell.style.maxWidth=`${spec.widthPx}px`;
+        if(spec.side==='left') cell.style.left=`${spec.offset}px`; else cell.style.right=`${spec.offset}px`;
+      });
+    });
+  }
+
+  function bindRentalTimesheetBoardResizers() {
+    const specs=new Map(rentalTimesheetBoardColumnCatalog().map(item=>[item.key,item]));
+    document.querySelectorAll('[data-rental-board-resize]').forEach(handle=>{
+      handle.addEventListener('pointerdown',event=>{
+        event.preventDefault(); event.stopPropagation();
+        const key=handle.dataset.rentalBoardResize; const spec=specs.get(key); if(!spec)return;
+        const startX=event.clientX; const startWidth=Number(state.rentalTimesheetBoard.widths?.[key] || spec.width);
+        handle.setPointerCapture?.(event.pointerId);
+        const move=moveEvent=>{
+          const delta=(moveEvent.clientX-startX)*(spec.side==='right'?-1:1); const next=Math.round(Math.max(spec.min,Math.min(spec.max,startWidth+delta)));
+          state.rentalTimesheetBoard.widths ||= {}; state.rentalTimesheetBoard.widths[key]=next; applyRentalTimesheetBoardGeometry();
+        };
+        const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); saveRentalTimesheetBoardPreferences(); };
+        document.addEventListener('pointermove',move); document.addEventListener('pointerup',up,{once:true});
+      });
+      handle.addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+        event.preventDefault(); const key=handle.dataset.rentalBoardResize; const spec=specs.get(key); if(!spec)return;
+        const current=Number(state.rentalTimesheetBoard.widths?.[key] || spec.width);
+        const next=Math.round(Math.max(spec.min,Math.min(spec.max,current+(event.key==='ArrowRight'?10:-10))));
+        state.rentalTimesheetBoard.widths ||= {}; state.rentalTimesheetBoard.widths[key]=next; saveRentalTimesheetBoardPreferences(); applyRentalTimesheetBoardGeometry();
+      });
+    });
+  }
+
+  function rentalTimesheetBoardPreset(name) {
+    const catalog=new Map(rentalTimesheetBoardColumnCatalog().map(item=>[item.key,item]));
+    const presets={
+      compact:{left:['worker_name','trade'],right:['regular_hours','overtime_hours','total_hours','missing_days']},
+      operations:{left:['worker_name','worker_id','national_id','supplier','trade'],right:['regular_hours','overtime_hours','total_hours','work_days','absent_days','missing_days']},
+      commercial:{left:['worker_name','worker_id','supplier','trade','rate_type','rate'],right:['regular_hours','overtime_hours','total_hours','base_wage','overtime_wage','gross_wage','missing_days']}
+    };
+    const preset=presets[name] || presets.compact;
+    return {left:preset.left.filter(key=>catalog.get(key)?.side==='left'),right:preset.right.filter(key=>catalog.get(key)?.side==='right')};
+  }
+
+  function renderRentalTimesheetSettingsDrawer() {
+    const settings=currentRentalTimesheetSettings();
+    const layout=rentalTimesheetBoardLayout();
+    const selected=new Set([...layout.left,...layout.right].map(item=>item.key));
+    const catalog=rentalTimesheetBoardColumnCatalog();
+    const offDays=new Set(settings.offWeekdays || []);
+    const project=state.projects.find(item=>item.id===state.rentalTimesheetProject);
+    drawerBody.innerHTML=`
+      <section class="ui-v2-prs-timesheet-settings-intro"><strong>${escapeHtml(project?.name || 'Project')} board settings</strong><span>Choose the information pinned around the daily grid. Your board layout and widths are personal to this browser; weekly off days are shared for this project.</span></section>
+      <section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-board-settings">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Board columns</strong><span data-rental-board-settings-count>${selected.size} of ${catalog.length} visible</span></div><div class="ui-v2-timesheet-export-column-actions"><button type="button" data-rental-board-preset="compact">Compact</button><button type="button" data-rental-board-preset="operations">Operations</button>${settings.canViewCommercial?'<button type="button" data-rental-board-preset="commercial">Commercial</button>':''}<button type="button" data-rental-board-reset-widths>Reset widths</button></div></div>
+        <div class="ui-v2-prs-timesheet-board-groups">
+          <div><header><strong>Left of days</strong><span>Worker identity and assignment details</span></header>${catalog.filter(item=>item.side==='left').map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="left" ${selected.has(item.key)?'checked':''} ${item.required?'disabled':''}><span>${escapeHtml(item.label)}${item.required?' · required':''}</span></label>`).join('')}</div>
+          <div><header><strong>Right of days</strong><span>Hours, exceptions and commercial totals</span></header>${catalog.filter(item=>item.side==='right').map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="right" ${selected.has(item.key)?'checked':''}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
+        </div>
+        ${settings.canViewCommercial?'<p class="ui-v2-timesheet-export-note">Base, OT and gross wage columns are live commercial previews from effective assignment rates and saved timesheet values. Approved supplier settlement remains the financial authority and can include adjustments.</p>':''}
+      </section>
+      <section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-offday-settings">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Project weekly off days</strong><span>${settings.canEdit?'Shared project setting':'View only for your access profile'}</span></div></div>
+        <div class="ui-v2-prs-timesheet-weekdays">${(settings.weekdayOptions||[]).map(item=>`<label><input type="checkbox" data-rental-off-weekday="${escapeHtml(item.value)}" ${offDays.has(item.value)?'checked':''} ${settings.canEdit?'':'disabled'}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
+        <p class="ui-v2-timesheet-export-note">Configured off days are highlighted on the board. They do not silently change attendance: an assigned day still needs explicit <strong>OFF</strong>, hours, or another valid status before submission.</p>
+        ${settings.canEdit && rentalTimesheetCanEdit()?'<button type="button" class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-fill-off-days>Apply OFF to blank off-days on this page</button>':''}
+      </section>
+      <section class="ui-v2-timesheet-export-footer"><div><strong>Resizable board</strong><span>After applying, drag any visible column edge in the timesheet header to resize it. Widths are remembered automatically.</span></div><button type="button" class="ui-v2-button ui-v2-button--primary" data-rental-board-settings-apply>Apply settings</button></section>`;
+    const refreshCount=()=>{const count=drawerBody.querySelectorAll('[data-rental-board-setting-column]:checked').length;const total=drawerBody.querySelectorAll('[data-rental-board-setting-column]').length;const node=drawerBody.querySelector('[data-rental-board-settings-count]');if(node)node.textContent=`${count} of ${total} visible`;};
+    drawerBody.querySelectorAll('[data-rental-board-setting-column]').forEach(input=>input.addEventListener('change',refreshCount));
+    drawerBody.querySelectorAll('[data-rental-board-preset]').forEach(button=>button.addEventListener('click',()=>{
+      const preset=rentalTimesheetBoardPreset(button.dataset.rentalBoardPreset);
+      const keys=new Set([...preset.left,...preset.right]);
+      drawerBody.querySelectorAll('[data-rental-board-setting-column]').forEach(input=>{ input.checked=input.disabled || keys.has(input.dataset.rentalBoardSettingColumn); }); refreshCount();
+    }));
+    drawerBody.querySelector('[data-rental-board-reset-widths]')?.addEventListener('click',()=>{state.rentalTimesheetBoard.widths={};showToast('Column widths reset','Default widths will be used when you apply the settings.');});
+    drawerBody.querySelector('[data-rental-board-settings-apply]')?.addEventListener('click',applyRentalTimesheetSettingsFromDrawer);
+    drawerBody.querySelector('[data-rental-fill-off-days]')?.addEventListener('click',applyRentalTimesheetOffDaysFromDrawer);
+  }
+
+  function openRentalTimesheetSettingsDrawer() {
+    if(!state.rentalTimesheetProject){showToast('Choose a project','Select a rental project before opening timesheet settings.');return;}
+    state.drawerType='rental-timesheet-settings'; state.drawerContext=null;
+    configureDrawerPresentation({eyebrow:'Project Timesheet',ariaLabel:'Timesheet board settings',footerVisible:false});
+    drawer.classList.add('ui-v2-prs-timesheet-settings-drawer','is-open'); drawerScrim.classList.add('is-open'); drawer.setAttribute('aria-hidden','false'); drawerTitle.textContent='Timesheet settings';
+    renderRentalTimesheetSettingsDrawer();
+  }
+
+  function rentalTimesheetDrawerSelectedColumns() {
+    const left=[],right=[];
+    drawerBody.querySelectorAll('[data-rental-board-setting-column]:checked').forEach(input=>{const key=input.dataset.rentalBoardSettingColumn;(input.dataset.side==='right'?right:left).push(key);});
+    if(!left.includes('worker_name')) left.unshift('worker_name');
+    return {left,right};
+  }
+
+  function rentalTimesheetDrawerOffDays() {
+    return [...drawerBody.querySelectorAll('[data-rental-off-weekday]:checked')].map(input=>input.dataset.rentalOffWeekday).filter(Boolean);
+  }
+
+  async function saveRentalTimesheetProjectSettings(offWeekdays) {
+    const settings=currentRentalTimesheetSettings();
+    if(!settings.canEdit)return settings;
+    const payload=await appApi('/api/rental/timesheets/settings/',{method:'PATCH',body:{project_id:state.rentalTimesheetProject,off_weekdays:offWeekdays}});
+    if(payload.settings) state.rentalTimesheetSettings[state.rentalTimesheetProject]=payload.settings;
+    return payload.settings || settings;
+  }
+
+  async function applyRentalTimesheetSettingsFromDrawer() {
+    const chosen=rentalTimesheetDrawerSelectedColumns();
+    state.rentalTimesheetBoard.left=chosen.left; state.rentalTimesheetBoard.right=chosen.right; saveRentalTimesheetBoardPreferences();
+    try { await saveRentalTimesheetProjectSettings(rentalTimesheetDrawerOffDays()); closeDrawer(); renderRoute(); showToast('Timesheet settings applied','Visible columns, saved widths and project off-day markers are ready.'); }
+    catch(error){ showToast('Settings update failed',error.message); }
+  }
+
+  async function applyRentalTimesheetOffDaysFromDrawer() {
+    if(!rentalTimesheetCanEdit()){showToast('Timesheet protected','Only an editable Draft timesheet can receive OFF entries.');return;}
+    const offWeekdays=rentalTimesheetDrawerOffDays();
+    try {
+      await saveRentalTimesheetProjectSettings(offWeekdays);
+      const offSet=new Set(offWeekdays); const page=rentalTimesheetPageData(); const info=periodInfo(); const entries=[];
+      const bucket=state.rentalTimesheets?.[state.period]?.[state.rentalTimesheetProject] || {};
+      page.rows.forEach(worker=>{
+        const record=bucket[worker.id] || {};
+        for(let day=1;day<=info.days;day+=1){
+          if(!offSet.has(rentalTimesheetWeekdayKey(day)))continue;
+          if(!rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period))continue;
+          const current=record[day] ?? record[String(day)] ?? '';
+          if(String(current ?? '').trim())continue;
+          entries.push({worker_id:worker.id,work_date:rentalTimesheetDate(day),value:'OFF'});
+        }
+      });
+      if(entries.length) await saveRentalTimesheetEntries(entries,{render:false});
+      closeDrawer(); renderRoute(); showToast('Off days applied',entries.length?`${entries.length.toLocaleString()} blank assigned worker-day${entries.length===1?'':'s'} set to OFF; existing entries were kept.`:'Off-day setting saved. No blank assigned cells needed changing on this page.');
+    } catch(error){showToast('Off-day update failed',error.message);}
   }
 
   function rentalTimesheetGrid(workers) {
@@ -4708,24 +5153,26 @@
     const editable = rentalTimesheetCanEdit();
     const bucket = state.rentalTimesheets?.[state.period]?.[state.rentalTimesheetProject] || {};
     const days = Array.from({length:info.days},(_,i)=>i+1);
+    const layout=rentalTimesheetBoardLayout();
+    const leftHeaders=layout.left.map(spec=>rentalTimesheetBoardHeader(spec,'left')).join('');
+    const rightHeaders=layout.right.map(spec=>rentalTimesheetBoardHeader(spec,'right')).join('');
     return `<div class="ui-v2-payroll-timesheet-scroll ui-v2-prs-rental-timesheet-scroll" tabindex="0" role="region" aria-label="${escapeHtml(state.period)} rental project manpower timesheet grid">
       <table class="ui-v2-payroll-timesheet-grid ui-v2-prs-rental-timesheet-grid" aria-label="Rental worker project timesheet by day">
         <caption class="ui-v2-sr-only">${escapeHtml(state.period)} rental worker project timesheet by day</caption>
         <thead><tr>
           <th class="is-select" aria-label="Worker selection"></th>
-          <th class="is-employee">Worker</th>
+          ${leftHeaders}
           ${rentalTimesheetDayHeaders(info)}
-          <th class="is-total is-hours">Reg hrs</th><th class="is-total is-days">OT</th><th class="is-total is-exceptions">Missing</th>
+          ${rightHeaders}
         </tr></thead>
         <tbody>${workers.map(worker => {
           const record = bucket[worker.id] || {};
-          const supplier = rentalWorkerSupplier(worker);
           const metrics = rentalWorkerTimesheetMetrics(worker);
-          const trade = rentalPeriodAssignmentsLabel(worker,undefined,undefined,'trade');
-          const rate = rentalPeriodAssignmentsLabel(worker,undefined,undefined,'rate');
+          const commercial = rentalWorkerCommercialPreview(worker);
+          const leftCells=layout.left.map(spec=>`<td class="is-board-column is-board-left ${spec.key==='worker_name'?'is-employee':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="left" style="left:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial)}</td>`).join('');
           const cells = days.map(day => {
             const assignment = rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period);
-            const dayClasses = attendanceDayClasses(day,state.period);
+            const dayClasses = rentalTimesheetDayClasses(day,state.period);
             if (!assignment) return `<td class="${dayClasses} is-disabled-day"><span class="ui-v2-payroll-timesheet-not-assigned" title="Not assigned to this project on ${day} ${escapeHtml(info.monthName)}" aria-label="Not assigned on day ${day}">—</span></td>`;
             const value = record[day] ?? record[String(day)] ?? '';
             const tone = rentalTimesheetTone(value);
@@ -4735,19 +5182,17 @@
             const title = `${assignment.trade || worker.trade || 'Worker'} · ${rentalRateLabelFromParts(assignment.rateType,assignment.rateValue,assignment.rateLabel)}`;
             return `<td class="${dayClasses}${overtime ? ' has-overtime' : ''}" title="${escapeHtml(title)}"><input class="ui-v2-payroll-ts-input is-${uiTone}${overtime ? ' is-overtime' : ''}${String(value).length > 1 ? ' is-multi-digit' : ''}" value="${escapeHtml(value)}" data-rental-ts-input="${escapeHtml(worker.id)}" data-day="${day}" ${editable ? '' : 'disabled'} aria-label="${escapeHtml(worker.name)}, day ${day}" maxlength="4" autocomplete="off"></td>`;
           }).join('');
+          const rightCells=layout.right.map(spec=>`<td class="is-board-column is-board-right is-total ${spec.key==='missing_days'&&metrics.missing?'has-exceptions':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="right" style="right:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial)}</td>`).join('');
           return `<tr data-rental-ts-row="${escapeHtml(worker.id)}">
             <td class="is-select"><input type="checkbox" data-rental-ts-select="${escapeHtml(worker.id)}" ${state.rentalTimesheetSelected.has(worker.id) ? 'checked' : ''} ${editable ? '' : 'disabled'} aria-label="Select ${escapeHtml(worker.name)}"></td>
-            <td class="is-employee"><button type="button" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))} · ${escapeHtml(trade)} · ${escapeHtml(supplier?.name || 'Supplier not linked')} · ${escapeHtml(rate)}</span></button></td>
+            ${leftCells}
             ${cells}
-            <td class="is-total is-hours"><strong>${metrics.hours.toLocaleString('en-SA',{maximumFractionDigits:2})}</strong></td>
-            <td class="is-total is-days"><strong>${metrics.otHours ? metrics.otHours.toLocaleString('en-SA',{maximumFractionDigits:2}) : '—'}</strong></td>
-            <td class="is-total is-exceptions ${metrics.missing ? 'has-exceptions' : ''}"><strong>${metrics.missing || '—'}</strong></td>
+            ${rightCells}
           </tr>`;
         }).join('')}</tbody>
       </table>
     </div>`;
   }
-
 
   function rentalTimesheetDailyTemplate() {
     ensureRentalTimesheet();
@@ -4793,10 +5238,11 @@
           <select class="ui-v2-select ui-v2-payroll-operational-select" id="rentalTimesheetProjectFilter" aria-label="Project">${state.projects.filter(project=>project.status !== 'Completed').map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.rentalTimesheetProject?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>
           <select class="ui-v2-select ui-v2-payroll-operational-select" id="rentalTimesheetSupplierFilter" aria-label="Supplier"><option>All suppliers</option>${supplierOptions.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===state.rentalTimesheetSupplier?'selected':''}>${escapeHtml(item.name)}</option>`).join('')}</select>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-reset>${icon('filter')}<span>Reset</span></button>
+          <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-settings><span>Timesheet Settings</span></button>
           <div class="ui-v2-payroll-timesheet-file-actions">${editable ? '<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-import>Import</button>' : ''}<button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm" data-rental-timesheet-export>Export</button></div>
           <button class="ui-v2-button ui-v2-button--secondary ui-v2-button--sm ui-v2-payroll-timesheet-fullscreen" data-timesheet-fullscreen aria-pressed="${state.timesheetFullscreen ? 'true' : 'false'}"><span>${icon(state.timesheetFullscreen ? 'collapse' : 'expand')}</span>${state.timesheetFullscreen ? 'Exit Full Screen' : 'Full Screen'}</button>
         </div>
-        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span>${attendanceLegendItems(state.rentalAttendanceContract)}<span><i class="is-weekend"></i>Weekend</span><span><i class="is-disabled"></i>Not assigned</span></div><span>${escapeHtml(attendanceContractHint(state.rentalAttendanceContract).replace("required days", "assigned worker-days"))}</span></div>
+        <div class="ui-v2-payroll-timesheet-subtoolbar"><div class="ui-v2-payroll-timesheet-legend"><span><i class="is-worked"></i>Hours</span><span><i class="is-zero"></i>0 · Zero hours</span>${attendanceLegendItems(state.rentalAttendanceContract)}<span><i class="is-weekend"></i>Project off day</span><span><i class="is-disabled"></i>Not assigned</span></div><span>${escapeHtml(attendanceContractHint(state.rentalAttendanceContract).replace("required days", "assigned worker-days"))}</span></div>
         <div class="ui-v2-payroll-timesheet-bulkbar ${selectedCount ? 'is-active' : 'is-idle'}">
           <div class="ui-v2-payroll-timesheet-master-select"><input type="checkbox" data-rental-ts-select-all aria-label="${allPageSelected ? 'Unselect' : 'Select'} this page of workers" ${allPageSelected ? 'checked' : ''} ${editable ? '' : 'disabled'} data-rental-indeterminate="${somePageSelected ? 'true' : 'false'}"></div>
           <div class="ui-v2-payroll-timesheet-selection-summary"><strong>${selectedCount ? `${selectedCount.toLocaleString()} selected` : `${workers.length.toLocaleString()} workers`}</strong><div class="ui-v2-payroll-timesheet-selection-meta"><small>${selectedCount ? `${selectedOnPage.toLocaleString()} on this page · ${selectedCount.toLocaleString()} selected` : `${page.rangeStart}–${page.rangeEnd} of ${Number(page.count || workers.length).toLocaleString()} matching`}</small>${selectedCount ? '<div class="ui-v2-payroll-timesheet-selection-actions"><button type="button" data-rental-timesheet-clear-selection>Clear</button></div>' : ''}</div></div>
@@ -9950,7 +10396,9 @@
       renderRoute();
     });
     document.querySelectorAll('[data-rental-timesheet-clear-selection]').forEach(btn => btn.addEventListener('click', () => { state.rentalTimesheetSelected.clear(); renderRoute(); }));
-    document.querySelectorAll('[data-rental-timesheet-export]').forEach(btn => btn.addEventListener('click', exportRentalTimesheetCsv));
+    document.querySelectorAll('[data-rental-timesheet-export]').forEach(btn => btn.addEventListener('click', openRentalTimesheetExportDrawer));
+    document.querySelectorAll('[data-rental-timesheet-settings]').forEach(btn => btn.addEventListener('click', openRentalTimesheetSettingsDrawer));
+    bindRentalTimesheetBoardResizers();
     document.querySelectorAll('[data-rental-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 
     const rentalTimesheetBulkDay = document.getElementById('rentalTimesheetBulkDay');
@@ -11666,7 +12114,7 @@
     state.assignmentProjectLookupUiController=null;
     cancelDocumentSourceRequest();
     clearTimeout(documentSourceTimer);documentSourceTimer=null;
-    drawer.classList.remove('is-open','ui-v2-payroll-document-drawer--type-first');
+    drawer.classList.remove('is-open','ui-v2-payroll-document-drawer--type-first','ui-v2-payroll-timesheet-export-drawer','ui-v2-prs-timesheet-settings-drawer');
     drawerScrim.classList.remove('is-open');
     drawer.setAttribute('aria-hidden', 'true');
     state.drawerType = null;

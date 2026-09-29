@@ -242,3 +242,161 @@ body.timesheet-focus-mode .ui-v2-prs-rental-timesheet-workspace.is-fullscreen {
     width: 132px;
   }
 }
+
+/* Configurable Rental Timesheet board */
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-board-left,
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-board-right {
+  position: sticky;
+  box-sizing: border-box;
+  z-index: 6;
+  overflow: visible;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead .is-board-left,
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead .is-board-right {
+  z-index: 10;
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid tbody .is-board-left {
+  background: var(--ui-v2-surface);
+  text-align: left;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid tbody .is-board-right {
+  background: #fbfcfd;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-board-left {
+  border-right-color: var(--ui-v2-border-strong);
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-board-right {
+  border-left: 1px solid var(--ui-v2-border);
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .ui-v2-prs-rental-board-header-label {
+  display: block;
+  overflow: hidden;
+  padding: 0 8px;
+  color: var(--ui-v2-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 38px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-v2-root .ui-v2-prs-rental-board-value {
+  display: block;
+  overflow: hidden;
+  padding: 0 8px;
+  color: var(--ui-v2-text-secondary);
+  font-size: 11px;
+  line-height: 30px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-v2-root .ui-v2-prs-rental-board-value.is-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ui-v2-root .ui-v2-prs-rental-board-worker {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-v2-text);
+  text-align: left;
+  cursor: pointer;
+}
+.ui-v2-root .ui-v2-prs-rental-board-worker strong,
+.ui-v2-root .ui-v2-prs-rental-board-worker span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-v2-root .ui-v2-prs-rental-board-worker strong { font-size: 11px; font-weight: 700; }
+.ui-v2-root .ui-v2-prs-rental-board-worker span { color: var(--ui-v2-text-muted); font-size: 10px; }
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .ui-v2-prs-rental-board-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 15;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .is-board-right .ui-v2-prs-rental-board-resizer {
+  right: auto;
+  left: -4px;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .ui-v2-prs-rental-board-resizer::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .ui-v2-prs-rental-board-resizer:hover::after,
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid .ui-v2-prs-rental-board-resizer:focus-visible::after {
+  background: var(--ui-v2-text-muted);
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead th.is-project-offday {
+  box-shadow: inset 0 2px 0 #8996a1;
+}
+
+.ui-v2-root #quickDrawer.ui-v2-prs-timesheet-settings-drawer {
+  width: min(690px, 96vw);
+  max-width: 690px;
+}
+.ui-v2-root #quickDrawer.ui-v2-prs-timesheet-settings-drawer .drawer__body { padding: 0; }
+.ui-v2-prs-timesheet-settings-intro {
+  display: grid;
+  gap: 4px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-prs-timesheet-settings-intro strong { font-size: 13px; }
+.ui-v2-prs-timesheet-settings-intro span { color: var(--ui-v2-text-muted); font-size: 12px; line-height: 1.45; }
+.ui-v2-prs-timesheet-board-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--ui-v2-border);
+}
+.ui-v2-prs-timesheet-board-groups > div { min-width: 0; padding: 10px 12px; }
+.ui-v2-prs-timesheet-board-groups > div + div { border-left: 1px solid var(--ui-v2-border); }
+.ui-v2-prs-timesheet-board-groups header { display: grid; gap: 2px; padding-bottom: 7px; border-bottom: 1px solid var(--ui-v2-border); margin-bottom: 3px; }
+.ui-v2-prs-timesheet-board-groups header strong { font-size: 12px; }
+.ui-v2-prs-timesheet-board-groups header span { color: var(--ui-v2-text-muted); font-size: 11px; }
+.ui-v2-prs-timesheet-weekdays {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--ui-v2-border);
+}
+.ui-v2-prs-timesheet-weekdays label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 9px;
+  border-right: 1px solid var(--ui-v2-border);
+  border-bottom: 1px solid var(--ui-v2-border);
+  cursor: pointer;
+}
+.ui-v2-prs-timesheet-weekdays label:nth-child(4n) { border-right: 0; }
+.ui-v2-prs-timesheet-weekdays label:nth-last-child(-n+3) { border-bottom: 0; }
+.ui-v2-prs-timesheet-weekdays span { font-size: 11px; }
+.ui-v2-prs-timesheet-offday-settings .ui-v2-button { margin-top: 10px; }
+
+@media (max-width: 720px) {
+  .ui-v2-prs-timesheet-board-groups { grid-template-columns: 1fr; }
+  .ui-v2-prs-timesheet-board-groups > div + div { border-left: 0; border-top: 1px solid var(--ui-v2-border); }
+  .ui-v2-prs-timesheet-weekdays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ui-v2-prs-timesheet-weekdays label:nth-child(4n) { border-right: 1px solid var(--ui-v2-border); }
+  .ui-v2-prs-timesheet-weekdays label:nth-child(2n) { border-right: 0; }
+  .ui-v2-prs-timesheet-weekdays label:nth-last-child(-n+3) { border-bottom: 1px solid var(--ui-v2-border); }
+  .ui-v2-prs-timesheet-weekdays label:last-child { border-bottom: 0; }
+}

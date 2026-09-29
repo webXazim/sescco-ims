@@ -1,3 +1,23 @@
+# 1.0.117 — Rental Timesheet Board Settings & Payroll Workspace Simplification
+
+- Added **Timesheet Settings** directly to Rental Manpower → Project Timesheets. Operators can choose which pinned columns appear to the left and right of the daily grid, see the visible-column count, apply Compact/Operations/Commercial presets, and reset saved widths.
+- Added resizable sticky board columns with browser-persisted widths. Supported operational/commercial fields include Worker, Worker ID, Iqama/National ID, Supplier, Trade, Rate Type, Commercial Rate, Basic Hours, OT Hours, Total Hours, Worked/Absent/No Scope/Leave/Off/Missing counts, Base Wage, OT Wage and Gross Wage. Identity and commercial columns continue to follow server-authorized permissions.
+- Added shared **Project weekly off days**. Each project defaults to Friday/Saturday until configured; selected days are highlighted on the timesheet. Authorized editors can optionally fill only blank, assigned cells on the current page with explicit `OFF`; existing attendance values are never overwritten and off-day configuration alone never makes an incomplete timesheet complete.
+- Added `RentalTimesheetProjectSettings` and audited GET/PATCH settings API with company/project-scope enforcement. This release therefore adds migration `rental_manpower/0010_rental_timesheet_project_settings.py`.
+- Added live wage preview columns using effective assignment rates and saved timesheet/OT values. These are operational previews only; approved Supplier Settlement remains the financial authority and can include adjustments. Matching Total Hours/Base Wage/OT Wage/Gross Wage fields are also available in the dynamic Excel/PDF export.
+- Simplified the Payroll workspace switcher: users who already have Internal Company or Rental Manpower no longer see the redundant read-only **Management** workspace. Administration remains the authority for access/configuration. Management is retained only as a legacy read-only fallback for management-only profiles so existing auditor/access-only roles are not stranded.
+- Added static production certification plus Django regression coverage for shared off-day settings and the workspace boundary.
+
+# 1.0.117 — Rental Timesheet Dynamic Excel/PDF Export
+
+- Replaced the browser-only Rental Project Timesheet CSV export with a server-generated export workflow supporting **Excel (.xlsx)** and **PDF (.pdf)**.
+- The Export drawer now exposes checkbox-based column selection across worker, supplier, project, assignment, every day in the selected month, totals/exceptions, overtime and workflow metadata, with Recommended / Select all / Clear and group toggles.
+- Operators can export all workers matching the current project/search/supplier filters, the current bounded page, or explicitly selected workers. Server-side generation means the export is not limited to rows currently rendered in the browser.
+- Excel output includes report metadata, exporter identity, an attendance-code legend, selected columns, frozen/filterable headers, sensible widths, numeric formatting and print setup. PDF output uses landscape A4, carries the same legend, and automatically splits very wide column selections into readable sections while retaining worker identity columns.
+- Sensitive supplier, commercial-rate and workflow-detail columns are permission-filtered at schema and generation time; out-of-profile column requests fail closed. Project access scope is enforced for both export option discovery and generation.
+- Added a 5,000-worker export safety ceiling, spreadsheet-formula injection protection, private/no-store download headers, immutable export audit events and regression coverage for schema, XLSX, PDF, selected-row scope and Rental Supervisor restrictions.
+- Adds ReportLab to the production dependency set. No database migration, timesheet calculation, approval lifecycle, settlement calculation or historical record is changed.
+
 # 1.0.117 — Inline Vendor Material Creation & Category/Type Selection Hotfix
 
 - Upgraded **New Vendor → Materials** so operators with Sourcing Reference Masters edit authority can create one or more new Sourcing Material masters without leaving Vendor onboarding, while still selecting any existing active materials.

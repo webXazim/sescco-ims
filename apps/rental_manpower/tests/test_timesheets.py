@@ -9,7 +9,7 @@ from django.urls import reverse
 from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
-from apps.rental_manpower.models import RentalTimesheetEntry, RentalTimesheetStatus
+from apps.rental_manpower.models import RentalTimesheetEntry, RentalTimesheetProjectSettings, RentalTimesheetStatus
 from apps.rental_manpower.services.assignments import assign_worker, change_worker_rate
 from apps.rental_manpower.services.masters import create_project, create_supplier, create_worker
 from apps.rental_manpower.services.timesheets import save_entries, save_overtime, transition_timesheet
@@ -100,6 +100,46 @@ class RentalTimesheetTests(TestCase):
         save_entries(actor_membership=self.owner,project_id=self.project.pk,period_start=date(2026,8,1),entries=[{'worker_id':self.worker.pk,'work_date':date(2026,8,15),'value':'8'}])
         with self.assertRaises(ValidationError):
             change_worker_rate(actor_membership=self.owner,worker_id=self.worker.pk,rate_type='Hourly',rate='16',effective_date=date(2026,8,15),reason='Retroactive revision')
+
+
+    def test_timesheet_settings_default_to_friday_and_saturday(self):
+        response=self.client.get(
+            reverse('rental_manpower:timesheets-settings-api'),
+            {'project_id':str(self.project.reference)},
+        )
+        self.assertEqual(response.status_code,200)
+        payload=response.json()['settings']
+        self.assertEqual(payload['offWeekdays'],['fri','sat'])
+        self.assertTrue(payload['canEdit'])
+        self.assertTrue(payload['canViewCommercial'])
+        self.assertTrue(payload['canViewWorkerIdentity'])
+
+    def test_timesheet_settings_patch_persists_shared_project_off_days(self):
+        response=self.client.patch(
+            reverse('rental_manpower:timesheets-settings-api'),
+            data=json.dumps({'project_id':str(self.project.reference),'off_weekdays':['fri']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['settings']['offWeekdays'],['fri'])
+        row=RentalTimesheetProjectSettings.objects.get(company=self.company,project=self.project)
+        self.assertEqual(row.off_weekdays,['fri'])
+
+        context=self.client.get(
+            reverse('rental_manpower:timesheets-api'),
+            {'project_id':str(self.project.reference),'period':'2026-08','page':1,'page_size':25},
+        )
+        self.assertEqual(context.status_code,200)
+        self.assertEqual(context.json()['settings']['offWeekdays'],['fri'])
+
+    def test_timesheet_settings_reject_unknown_weekday(self):
+        response=self.client.patch(
+            reverse('rental_manpower:timesheets-settings-api'),
+            data=json.dumps({'project_id':str(self.project.reference),'off_weekdays':['fri','holiday']}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code,400)
+        self.assertFalse(RentalTimesheetProjectSettings.objects.filter(company=self.company,project=self.project).exists())
 
     def test_timesheet_api_is_server_paged_and_returns_project_roster_only(self):
         for index in range(2, 32):

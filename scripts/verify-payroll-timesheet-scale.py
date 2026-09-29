@@ -102,7 +102,7 @@ for needle in (
     "delay:320,beforeRender:()=>{cancelInternalAttendanceRequest()",
     "delay:320,beforeRender:()=>{cancelRentalTimesheetRequest()",
     "Attendance page exported",
-    "Timesheet page exported",
+    "Timesheet exported",
 ):
     if needle not in js:
         fail(f"frontend timesheet scale protection missing: {needle}")
