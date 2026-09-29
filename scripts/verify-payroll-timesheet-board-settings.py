@@ -72,6 +72,11 @@ require(
     '"overtimeMultiplier": str(multiplier)',
     '"policyLocked": policy_locked',
     '"canViewCommercial"',
+    '"canViewAdjustments"',
+    '"canViewCalculatedResult"',
+    '"adjustmentSummary"',
+    "def _rental_timesheet_adjustment_summary",
+    '.annotate(total=Sum("amount"), row_count=Count("id"))',
     '"canViewWorkerIdentity"',
     'worker_payload["nationalId"]',
 )
@@ -87,6 +92,13 @@ require(
     "Base wage",
     "OT wage",
     "Gross wage",
+    "Adjustment +",
+    "Adjustment −",
+    "Calculated result",
+    "showCalculatedResult",
+    "data-rental-show-calculated-result",
+    "Gross wage + approved adjustment earnings − approved deductions = calculated result.",
+    "negative · settlement blocked",
     "function bindRentalTimesheetBoardResizers()",
     "data-rental-board-resize",
     "function renderRentalTimesheetSettingsDrawer()",
@@ -112,6 +124,10 @@ require(
     ".ui-v2-prs-timesheet-weekdays",
     ".ui-v2-prs-timesheet-policy-grid",
     ".ui-v2-prs-timesheet-policy-presets",
+    ".ui-v2-prs-timesheet-calculated-settings",
+    ".ui-v2-prs-rental-calculated-result",
+    "thead th.is-project-offday::after",
+    "tbody td.is-project-offday",
 )
 require(
     "apps/rental_manpower/services/timesheet_exports.py",
@@ -119,6 +135,10 @@ require(
     'ExportColumn("base_wage"',
     'ExportColumn("overtime_wage"',
     'ExportColumn("gross_wage"',
+    'ExportColumn("approved_adjustment_earnings"',
+    'ExportColumn("approved_adjustment_deductions"',
+    'ExportColumn("calculated_result"',
+    "_adjustment_totals_for_workers",
 )
 require(
     "apps/core/payroll_views.py",
@@ -135,4 +155,13 @@ require(
     "payroll-ui-rental-timesheet-board-v2",
 )
 
-print("Rental timesheet board/settings contract verified.")
+require(
+    "apps/rental_manpower/tests/test_timesheets.py",
+    "test_timesheet_context_returns_permission_safe_approved_and_pending_adjustment_preview",
+)
+require(
+    "apps/rental_manpower/tests/test_timesheet_exports.py",
+    "test_export_calculated_result_applies_only_approved_adjustments",
+)
+
+print("Rental timesheet board/settings/calculated-result contract verified.")

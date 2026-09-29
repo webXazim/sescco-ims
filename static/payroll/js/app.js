@@ -1111,6 +1111,7 @@
     rentalTimesheetRoster: {},
     rentalTimesheetSummary: {},
     rentalTimesheetSettings: {},
+    rentalTimesheetAdjustmentSummary: {},
     rentalTimesheetBoard: loadRentalTimesheetBoardPreferences(),
     rentalTimesheetServer: { key:'', pendingKey:'', controller:null, requestId:0, loading:false, error:'', meta:{} },
     rentalAttendanceContract: rentalMaster.attendanceContract || null,
@@ -4433,6 +4434,7 @@
     if (payload.attendanceContract) state.rentalAttendanceContract = payload.attendanceContract;
     if (payload.settings) state.rentalTimesheetSettings[projectId] = { ...(state.rentalTimesheetSettings[projectId] || {}), ...payload.settings };
     if (payload.summary) state.rentalTimesheetSummary[key] = { ...(state.rentalTimesheetSummary[key] || {}), ...payload.summary };
+    if (!payload.deltaOnly && payload.adjustmentSummary) state.rentalTimesheetAdjustmentSummary[key] = { ...payload.adjustmentSummary };
 
     if (payload.deltaOnly) {
       (payload.changes || []).forEach(change => {
@@ -4675,7 +4677,10 @@
   function rentalTimesheetDayHeaders(info) {
     return Array.from({length:info.days},(_,index)=>{
       const day = index + 1;
-      return `<th class="${rentalTimesheetDayClasses(day,state.period)}" title="${escapeHtml(rentalTimesheetDate(day))}"><span>${weekdayShort(day,state.period)}</span><strong>${day}</strong></th>`;
+      const classes=rentalTimesheetDayClasses(day,state.period);
+      const offDay=classes.includes('is-project-offday');
+      const title=`${rentalTimesheetDate(day)}${offDay?' · Project weekly off day':''}`;
+      return `<th class="${classes}" title="${escapeHtml(title)}"><span>${weekdayShort(day,state.period)}</span><strong>${day}</strong></th>`;
     }).join('');
   }
 
@@ -4885,7 +4890,8 @@
     const fallback = {
       left:['worker_name','worker_id','trade'],
       right:['regular_hours','overtime_hours','total_hours','missing_days'],
-      widths:{}
+      widths:{},
+      showCalculatedResult:false
     };
     try {
       const parsed = JSON.parse(localStorage.getItem('payroll-ui-rental-timesheet-board-v2') || 'null');
@@ -4893,7 +4899,8 @@
       return {
         left:Array.isArray(parsed.left) ? parsed.left.map(String) : fallback.left,
         right:Array.isArray(parsed.right) ? parsed.right.map(String) : fallback.right,
-        widths:parsed.widths && typeof parsed.widths === 'object' ? { ...parsed.widths } : {}
+        widths:parsed.widths && typeof parsed.widths === 'object' ? { ...parsed.widths } : {},
+        showCalculatedResult:parsed.showCalculatedResult === true
       };
     } catch { return fallback; }
   }
@@ -4902,7 +4909,8 @@
     localStorage.setItem('payroll-ui-rental-timesheet-board-v2', JSON.stringify({
       left:state.rentalTimesheetBoard.left,
       right:state.rentalTimesheetBoard.right,
-      widths:state.rentalTimesheetBoard.widths || {}
+      widths:state.rentalTimesheetBoard.widths || {},
+      showCalculatedResult:state.rentalTimesheetBoard.showCalculatedResult === true
     }));
   }
 
@@ -4923,6 +4931,8 @@
       canEdit:false,
       canEditPolicy:false,
       canViewCommercial:hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage'),
+      canViewAdjustments:hasAccessPermission('rental.adjustments.view'),
+      canViewCalculatedResult:hasAnyAccessPermission('rental.settlements.view','rental.assignments.manage') && hasAccessPermission('rental.adjustments.view'),
       canViewWorkerIdentity:hasAccessPermission('rental.workers.view')
     };
   }
@@ -4951,17 +4961,23 @@
       {key:'base_wage',label:'Base wage',side:'right',width:112,min:92,max:190,commercial:true,numeric:true},
       {key:'overtime_wage',label:'OT wage',side:'right',width:108,min:90,max:180,commercial:true,numeric:true},
       {key:'gross_wage',label:'Gross wage',side:'right',width:118,min:96,max:200,commercial:true,numeric:true},
+      {key:'adjustment_earnings',label:'Adjustment +',side:'right',width:116,min:96,max:190,commercial:true,calculated:true,numeric:true},
+      {key:'adjustment_deductions',label:'Adjustment −',side:'right',width:116,min:96,max:190,commercial:true,calculated:true,numeric:true},
+      {key:'calculated_result',label:'Calculated result',side:'right',width:138,min:112,max:220,commercial:true,calculated:true,numeric:true},
     ];
-    return rows.filter(row => (!row.commercial || settings.canViewCommercial) && (!row.identity || settings.canViewWorkerIdentity));
+    return rows.filter(row => (!row.commercial || settings.canViewCommercial) && (!row.calculated || settings.canViewCalculatedResult) && (!row.identity || settings.canViewWorkerIdentity));
   }
 
   function rentalTimesheetBoardLayout() {
     const catalog = rentalTimesheetBoardColumnCatalog();
     const byKey = new Map(catalog.map(item => [item.key,item]));
     let leftKeys = (state.rentalTimesheetBoard?.left || []).filter(key => byKey.get(key)?.side === 'left');
-    let rightKeys = (state.rentalTimesheetBoard?.right || []).filter(key => byKey.get(key)?.side === 'right');
+    let rightKeys = (state.rentalTimesheetBoard?.right || []).filter(key => byKey.get(key)?.side === 'right' && !byKey.get(key)?.calculated);
     if (!leftKeys.includes('worker_name') && byKey.has('worker_name')) leftKeys.unshift('worker_name');
     if (!rightKeys.length) rightKeys = ['regular_hours','overtime_hours','total_hours','missing_days'].filter(key => byKey.has(key));
+    if (state.rentalTimesheetBoard?.showCalculatedResult === true && currentRentalTimesheetSettings().canViewCalculatedResult) {
+      ['adjustment_earnings','adjustment_deductions','calculated_result'].forEach(key=>{ if(byKey.has(key)&&!rightKeys.includes(key))rightKeys.push(key); });
+    }
     const widthOf = item => {
       const raw = Number(state.rentalTimesheetBoard?.widths?.[item.key] ?? item.width);
       return Math.round(Math.max(item.min, Math.min(item.max, Number.isFinite(raw) ? raw : item.width)));
@@ -5029,7 +5045,25 @@
   }
 
 
-  function rentalTimesheetBoardCell(worker, spec, metrics, commercial) {
+  function rentalWorkerAdjustmentPreview(worker, commercial, period = state.period, projectId = state.rentalTimesheetProject) {
+    const settings=currentRentalTimesheetSettings(projectId);
+    if(!settings.canViewCalculatedResult) return {approvedEarnings:null,approvedDeductions:null,pendingCount:0,pendingEarnings:0,pendingDeductions:0,result:null};
+    const key=rentalTimesheetRecordKey(period,projectId);
+    const row=state.rentalTimesheetAdjustmentSummary?.[key]?.[worker.id] || {};
+    const approvedEarnings=Number(row.approvedEarnings || 0);
+    const approvedDeductions=Number(row.approvedDeductions || 0);
+    const pendingEarnings=Number(row.pendingEarnings || 0);
+    const pendingDeductions=Number(row.pendingDeductions || 0);
+    const pendingCount=Number(row.pendingCount || 0);
+    const gross=Number(commercial?.gross);
+    return {
+      approvedEarnings, approvedDeductions, pendingEarnings, pendingDeductions, pendingCount,
+      result:Number.isFinite(gross) ? gross + approvedEarnings - approvedDeductions : null
+    };
+  }
+
+
+  function rentalTimesheetBoardCell(worker, spec, metrics, commercial, calculated) {
     const supplier=rentalWorkerSupplier(worker);
     let value='—';
     if(spec.key==='worker_name') return `<button type="button" class="ui-v2-prs-rental-board-worker" data-open-rental-worker="${escapeHtml(worker.id)}"><strong>${escapeHtml(worker.name)}</strong><span>${escapeHtml(rentalWorkerCode(worker))}</span></button>`;
@@ -5053,6 +5087,16 @@
     else if(spec.key==='base_wage') value=commercial.base == null ? '—' : formatCurrency(commercial.base);
     else if(spec.key==='overtime_wage') value=commercial.ot == null ? '—' : formatCurrency(commercial.ot);
     else if(spec.key==='gross_wage') value=commercial.gross == null ? '—' : formatCurrency(commercial.gross);
+    else if(spec.key==='adjustment_earnings') value=calculated?.approvedEarnings ? formatCurrency(calculated.approvedEarnings) : '—';
+    else if(spec.key==='adjustment_deductions') value=calculated?.approvedDeductions ? formatCurrency(calculated.approvedDeductions) : '—';
+    else if(spec.key==='calculated_result') {
+      const result=calculated?.result;
+      const pending=Number(calculated?.pendingCount || 0);
+      const negative=result != null && Number(result)<0;
+      const pendingTitle=pending ? `Pending adjustments not applied: +${formatCurrency(calculated.pendingEarnings || 0)} / −${formatCurrency(calculated.pendingDeductions || 0)}` : 'No pending adjustments';
+      const resultNote=negative ? 'negative · settlement blocked' : (pending ? `${pending.toLocaleString()} pending` : 'approved only');
+      return `<span class="ui-v2-prs-rental-board-value ui-v2-prs-rental-calculated-result is-numeric${negative?' is-negative':''}" title="${escapeHtml(pendingTitle)}"><strong>${result == null ? '—' : escapeHtml(formatCurrency(result))}</strong><small>${escapeHtml(resultNote)}</small></span>`;
+    }
     return `<span class="ui-v2-prs-rental-board-value${spec.numeric?' is-numeric':''}">${escapeHtml(String(value))}</span>`;
   }
 
@@ -5112,10 +5156,13 @@
     const layout=rentalTimesheetBoardLayout();
     const selected=new Set([...layout.left,...layout.right].map(item=>item.key));
     const catalog=rentalTimesheetBoardColumnCatalog();
+    const selectableCatalog=catalog.filter(item=>!item.calculated);
+    const selectedBoardCount=[...layout.left,...layout.right].filter(item=>!item.calculated).length;
     const offDays=new Set(settings.offWeekdays || []);
     const project=state.projects.find(item=>item.id===state.rentalTimesheetProject);
     const regular=Number(settings.regularHoursPerDay || 10);
     const multiplier=Number(settings.overtimeMultiplier || 1);
+    const calculatedResultEnabled=settings.canViewCalculatedResult === true && state.rentalTimesheetBoard?.showCalculatedResult === true;
     const policyEditable=settings.canEditPolicy === true;
     const policyStatus=settings.policyLocked
       ? '<span class="ui-v2-prs-timesheet-policy-lock">Frozen for this submitted/approved/locked period</span>'
@@ -5135,13 +5182,18 @@
         ${settings.policyLocked?'<p class="ui-v2-timesheet-export-note">This period keeps its frozen policy snapshot so historical OT and settlement values cannot change. Return the timesheet to Draft before changing this period’s policy.</p>':''}
       </section>
       <section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-board-settings">
-        <div class="ui-v2-timesheet-export-section__head"><div><strong>Board columns</strong><span data-rental-board-settings-count>${selected.size} of ${catalog.length} visible</span></div><div class="ui-v2-timesheet-export-column-actions"><button type="button" data-rental-board-preset="compact">Compact</button><button type="button" data-rental-board-preset="operations">Operations</button>${settings.canViewCommercial?'<button type="button" data-rental-board-preset="commercial">Commercial</button>':''}<button type="button" data-rental-board-reset-widths>Reset widths</button></div></div>
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Board columns</strong><span data-rental-board-settings-count>${selectedBoardCount} of ${selectableCatalog.length} visible</span></div><div class="ui-v2-timesheet-export-column-actions"><button type="button" data-rental-board-preset="compact">Compact</button><button type="button" data-rental-board-preset="operations">Operations</button>${settings.canViewCommercial?'<button type="button" data-rental-board-preset="commercial">Commercial</button>':''}<button type="button" data-rental-board-reset-widths>Reset widths</button></div></div>
         <div class="ui-v2-prs-timesheet-board-groups">
           <div><header><strong>Left of days</strong><span>Worker identity and assignment details</span></header>${catalog.filter(item=>item.side==='left').map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="left" ${selected.has(item.key)?'checked':''} ${item.required?'disabled':''}><span>${escapeHtml(item.label)}${item.required?' · required':''}</span></label>`).join('')}</div>
-          <div><header><strong>Right of days</strong><span>Regular, automatic/additional OT, exceptions and commercial totals</span></header>${catalog.filter(item=>item.side==='right').map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="right" ${selected.has(item.key)?'checked':''}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
+          <div><header><strong>Right of days</strong><span>Regular, automatic/additional OT, exceptions and commercial totals</span></header>${catalog.filter(item=>item.side==='right' && !item.calculated).map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="right" ${selected.has(item.key)?'checked':''}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
         </div>
         ${settings.canViewCommercial?'<p class="ui-v2-timesheet-export-note">Base, OT and gross wage columns are live previews using the effective assignment rate and this period’s OT policy. Approved supplier settlement remains the financial authority and can include adjustments.</p>':''}
       </section>
+      ${settings.canViewCalculatedResult?`<section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-calculated-settings">
+        <div class="ui-v2-timesheet-export-section__head"><div><strong>Calculated result</strong><span>Personal board display · permission controlled</span></div></div>
+        <label class="ui-v2-prs-timesheet-calculated-toggle"><span class="ui-v2-prs-timesheet-policy-toggle"><input type="checkbox" data-rental-show-calculated-result ${calculatedResultEnabled?'checked':''}><strong>${calculatedResultEnabled?'Shown':'Hidden'}</strong></span><span><strong>Show calculated result on the timesheet</strong><small>Adds approved adjustment earnings, approved deductions and the calculated payable result to the right side of the board.</small></span></label>
+        <div class="ui-v2-prs-timesheet-calculated-formula"><strong>Preview formula</strong><span>Gross wage + approved adjustment earnings − approved deductions = calculated result.</span><small>Worker advances, fines and other approved deductions reduce the result. Draft/Review adjustments are shown as pending context but are not applied until approved. Supplier Settlement remains the financial authority.</small></div>
+      </section>`:''}
       <section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-offday-settings">
         <div class="ui-v2-timesheet-export-section__head"><div><strong>Project weekly off days</strong><span>${policyEditable?'Shared current-period policy':'View only for this period'}</span></div></div>
         <div class="ui-v2-prs-timesheet-weekdays">${(settings.weekdayOptions||[]).map(item=>`<label><input type="checkbox" data-rental-off-weekday="${escapeHtml(item.value)}" ${offDays.has(item.value)?'checked':''} ${policyEditable?'':'disabled'}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
@@ -5168,6 +5220,7 @@
     drawerBody.querySelector('[data-rental-overtime-multiplier]')?.addEventListener('input',()=>{syncPremiumFromMultiplier();refreshPolicyExample();});
     drawerBody.querySelector('[data-rental-overtime-premium]')?.addEventListener('input',()=>{syncMultiplierFromPremium();refreshPolicyExample();});
     drawerBody.querySelector('[data-rental-auto-overtime]')?.addEventListener('change',event=>{const strong=event.currentTarget.closest('.ui-v2-prs-timesheet-policy-toggle')?.querySelector('strong');if(strong)strong.textContent=event.currentTarget.checked?'Enabled':'Disabled';refreshPolicyExample();});
+    drawerBody.querySelector('[data-rental-show-calculated-result]')?.addEventListener('change',event=>{const strong=event.currentTarget.closest('.ui-v2-prs-timesheet-policy-toggle')?.querySelector('strong');if(strong)strong.textContent=event.currentTarget.checked?'Shown':'Hidden';});
     refreshPolicyExample();
     drawerBody.querySelector('[data-rental-board-reset-widths]')?.addEventListener('click',()=>{state.rentalTimesheetBoard.widths={};showToast('Column widths reset','Default widths will be used when you apply the settings.');});
     drawerBody.querySelector('[data-rental-board-settings-apply]')?.addEventListener('click',applyRentalTimesheetSettingsFromDrawer);
@@ -5223,12 +5276,14 @@
     const values=rentalTimesheetDrawerPolicyValues();
     if(!(values.regularHoursPerDay>0&&values.regularHoursPerDay<=24)){showToast('Check regular hours','Regular working hours must be greater than 0 and no more than 24.');return;}
     if(!(values.overtimeMultiplier>=1&&values.overtimeMultiplier<=10)){showToast('Check OT multiplier','OT multiplier must be at least 1.00 and no more than 10.00.');return;}
-    state.rentalTimesheetBoard.left=chosen.left; state.rentalTimesheetBoard.right=chosen.right; saveRentalTimesheetBoardPreferences();
+    state.rentalTimesheetBoard.left=chosen.left; state.rentalTimesheetBoard.right=chosen.right;
+    state.rentalTimesheetBoard.showCalculatedResult=currentRentalTimesheetSettings().canViewCalculatedResult === true && drawerBody.querySelector('[data-rental-show-calculated-result]')?.checked === true;
+    saveRentalTimesheetBoardPreferences();
     try {
       const wasEditable=currentRentalTimesheetSettings().canEditPolicy===true;
       if(wasEditable) await saveRentalTimesheetProjectSettings(values);
       closeDrawer(); renderRoute();
-      showToast('Timesheet settings applied',wasEditable?'Board, regular-hours rule, OT multiplier and off days are ready.':'Board layout applied. This period’s shared timesheet policy remains frozen.');
+      showToast('Timesheet settings applied',wasEditable?'Board, calculation preview, regular-hours rule, OT multiplier and off days are ready.':'Board and calculation preview applied. This period’s shared timesheet policy remains frozen.');
     }
     catch(error){ showToast('Settings update failed',error.message); }
   }
@@ -5280,7 +5335,8 @@
           const record = bucket[worker.id] || {};
           const metrics = rentalWorkerTimesheetMetrics(worker);
           const commercial = rentalWorkerCommercialPreview(worker);
-          const leftCells=layout.left.map(spec=>`<td class="is-board-column is-board-left ${spec.key==='worker_name'?'is-employee':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="left" style="left:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial)}</td>`).join('');
+          const calculated = rentalWorkerAdjustmentPreview(worker,commercial);
+          const leftCells=layout.left.map(spec=>`<td class="is-board-column is-board-left ${spec.key==='worker_name'?'is-employee':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="left" style="left:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial,calculated)}</td>`).join('');
           const cells = days.map(day => {
             const assignment = rentalAssignmentForDate(worker,state.rentalTimesheetProject,day,state.period);
             const dayClasses = rentalTimesheetDayClasses(day,state.period);
@@ -5295,7 +5351,7 @@
             const title = `${assignment.trade || worker.trade || 'Worker'} · ${rentalRateLabelFromParts(assignment.rateType,assignment.rateValue,assignment.rateLabel)}${overtime?` · ${split.regular} regular + ${split.overtime} OT`:''}`;
             return `<td class="${dayClasses}${overtime ? ' has-overtime' : ''}" title="${escapeHtml(title)}"><input class="ui-v2-payroll-ts-input is-${uiTone}${overtime ? ' is-overtime' : ''}${String(value).length > 1 ? ' is-multi-digit' : ''}" value="${escapeHtml(value)}" data-rental-ts-input="${escapeHtml(worker.id)}" data-day="${day}" ${editable ? '' : 'disabled'} aria-label="${escapeHtml(worker.name)}, day ${day}" maxlength="4" autocomplete="off"></td>`;
           }).join('');
-          const rightCells=layout.right.map(spec=>`<td class="is-board-column is-board-right is-total ${spec.key==='missing_days'&&metrics.missing?'has-exceptions':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="right" style="right:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial)}</td>`).join('');
+          const rightCells=layout.right.map(spec=>`<td class="is-board-column is-board-right is-total ${spec.key==='missing_days'&&metrics.missing?'has-exceptions':''}" data-rental-board-col="${escapeHtml(spec.key)}" data-rental-board-side="right" style="right:${spec.offset}px;width:${spec.widthPx}px;min-width:${spec.widthPx}px;max-width:${spec.widthPx}px">${rentalTimesheetBoardCell(worker,spec,metrics,commercial,calculated)}</td>`).join('');
           return `<tr data-rental-ts-row="${escapeHtml(worker.id)}">
             <td class="is-select"><input type="checkbox" data-rental-ts-select="${escapeHtml(worker.id)}" ${state.rentalTimesheetSelected.has(worker.id) ? 'checked' : ''} ${editable ? '' : 'disabled'} aria-label="Select ${escapeHtml(worker.name)}"></td>
             ${leftCells}
@@ -8136,6 +8192,11 @@
     state.rentalSettlementLoadedPeriods.delete(period);
     [...state.rentalSettlementDetailKeys].filter(key=>key.startsWith(`${period}::`)).forEach(key=>state.rentalSettlementDetailKeys.delete(key));
     delete state.rentalSettlementContexts[period];
+    Object.keys(state.rentalTimesheetAdjustmentSummary || {}).filter(key=>key.startsWith(`${period}::`)).forEach(key=>{
+      delete state.rentalTimesheetAdjustmentSummary[key];
+      state.rentalTimesheetLoaded?.delete?.(key);
+    });
+    state.rentalTimesheetServer.key='';
     if(currentRoute()==='adjustments'&&state.workspace==='rental') {
       await loadRentalAdjustmentPage(period,{force:true,render:false});
       renderRoute();

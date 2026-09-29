@@ -481,3 +481,104 @@ body.timesheet-focus-mode .ui-v2-prs-rental-timesheet-workspace.is-fullscreen {
 @media (max-width: 720px) {
   .ui-v2-prs-timesheet-policy-grid { grid-template-columns: 1fr; }
 }
+
+/* Rental timesheet calculated-result preview + stronger project weekly-off context. */
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead th.is-project-offday {
+  position: sticky;
+  background: #e7ebee !important;
+  color: #37414a;
+  box-shadow: inset 0 3px 0 #687680, inset 0 -1px 0 #c7ced4;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead th.is-project-offday::after {
+  content: 'OFF';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  padding: 1px 2px;
+  background: #5f6b75;
+  color: #fff;
+  font-size: 6px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: .04em;
+  text-align: center;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid thead th.is-project-offday.is-today {
+  box-shadow: inset 0 3px 0 #111418, inset 0 -2px 0 #687680;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid tbody td.is-project-offday,
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid tbody tr:hover td.is-project-offday {
+  background: #f2f4f6 !important;
+  box-shadow: inset 1px 0 0 #d8dde1, inset -1px 0 0 #d8dde1;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-project-offday .ui-v2-payroll-ts-input.is-empty {
+  background: #fff !important;
+  border-color: #8e9aa4 !important;
+}
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid td.is-project-offday.is-disabled-day,
+.ui-v2-root .ui-v2-prs-rental-timesheet-grid tbody tr:hover td.is-project-offday.is-disabled-day {
+  background: #eceff1 !important;
+}
+
+.ui-v2-prs-timesheet-calculated-settings {
+  display: grid;
+  gap: 12px;
+}
+.ui-v2-prs-timesheet-calculated-toggle {
+  display: grid;
+  grid-template-columns: minmax(155px, .7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--ui-v2-border);
+  background: var(--ui-v2-surface);
+}
+.ui-v2-prs-timesheet-calculated-toggle > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+.ui-v2-prs-timesheet-calculated-toggle > span:last-child > strong { font-size: 12px; }
+.ui-v2-prs-timesheet-calculated-toggle small,
+.ui-v2-prs-timesheet-calculated-formula small {
+  color: var(--ui-v2-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.ui-v2-prs-timesheet-calculated-formula {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border-left: 3px solid var(--ui-v2-text);
+  background: var(--ui-v2-surface-subtle);
+}
+.ui-v2-prs-timesheet-calculated-formula strong { font-size: 11px; }
+.ui-v2-prs-timesheet-calculated-formula > span { font-size: 12px; font-weight: 650; }
+.ui-v2-root .ui-v2-prs-rental-calculated-result {
+  display: grid;
+  align-content: center;
+  gap: 0;
+  min-height: 30px;
+  line-height: 1.05;
+}
+.ui-v2-root .ui-v2-prs-rental-calculated-result strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-v2-root .ui-v2-prs-rental-calculated-result small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ui-v2-text-muted);
+  font-size: 8px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.ui-v2-root .ui-v2-prs-rental-calculated-result.is-negative strong { color: #9c4b44; }
+
+@media (max-width: 720px) {
+  .ui-v2-prs-timesheet-calculated-toggle { grid-template-columns: 1fr; }
+}

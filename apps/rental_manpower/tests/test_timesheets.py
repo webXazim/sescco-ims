@@ -16,6 +16,7 @@ from apps.rental_manpower.models import (
 from apps.rental_manpower.services.assignments import assign_worker, change_worker_rate
 from apps.rental_manpower.services.masters import create_project, create_supplier, create_worker
 from apps.rental_manpower.services.timesheets import save_entries, save_overtime, transition_timesheet
+from apps.rental_manpower.services.settlements import create_rental_adjustment, transition_rental_adjustment
 
 
 class RentalTimesheetTests(TestCase):
@@ -139,6 +140,8 @@ class RentalTimesheetTests(TestCase):
         self.assertTrue(payload['canEditPolicy'])
         self.assertTrue(payload['canEdit'])
         self.assertTrue(payload['canViewCommercial'])
+        self.assertTrue(payload['canViewAdjustments'])
+        self.assertTrue(payload['canViewCalculatedResult'])
         self.assertTrue(payload['canViewWorkerIdentity'])
 
     def test_timesheet_settings_patch_persists_shared_project_off_days(self):
@@ -185,6 +188,33 @@ class RentalTimesheetTests(TestCase):
         )
         self.assertEqual(response.status_code,400)
         self.assertFalse(RentalTimesheetProjectSettings.objects.filter(company=self.company,project=self.project).exists())
+
+    def test_timesheet_context_returns_permission_safe_approved_and_pending_adjustment_preview(self):
+        bonus=create_rental_adjustment(
+            actor_membership=self.owner, worker_id=self.worker.pk, project_id=self.project.pk,
+            transaction_date=date(2026,8,10), period_start=date(2026,8,1),
+            adjustment_type='bonus', amount=Decimal('50'), reason='Approved bonus',
+        )
+        transition_rental_adjustment(actor_membership=self.owner,adjustment_id=bonus.pk,action='submit')
+        transition_rental_adjustment(actor_membership=self.owner,adjustment_id=bonus.pk,action='approve')
+        create_rental_adjustment(
+            actor_membership=self.owner, worker_id=self.worker.pk, project_id=self.project.pk,
+            transaction_date=date(2026,8,11), period_start=date(2026,8,1),
+            adjustment_type='advance', amount=Decimal('20'), reason='Pending advance',
+        )
+        response=self.client.get(
+            reverse('rental_manpower:timesheets-api'),
+            {'project_id':str(self.project.reference),'period':'2026-08','page':1,'page_size':25},
+        )
+        self.assertEqual(response.status_code,200)
+        payload=response.json()
+        self.assertTrue(payload['settings']['canViewCalculatedResult'])
+        preview=payload['adjustmentSummary'][str(self.worker.pk)]
+        self.assertEqual(Decimal(preview['approvedEarnings']),Decimal('50'))
+        self.assertEqual(Decimal(preview['approvedDeductions']),Decimal('0'))
+        self.assertEqual(preview['approvedCount'],1)
+        self.assertEqual(Decimal(preview['pendingDeductions']),Decimal('20'))
+        self.assertEqual(preview['pendingCount'],1)
 
     def test_timesheet_api_is_server_paged_and_returns_project_roster_only(self):
         for index in range(2, 32):

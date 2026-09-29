@@ -516,4 +516,7 @@ The functional finalized synthetic payroll uses a collision-safe historical mont
 ## Rental Timesheet working-hours / OT policy migration
 
 This release adds `rental_manpower/0011_timesheet_working_hours_overtime_policy.py`. Deploy through the normal production pipeline so `migrate` runs before cutover. The migration preserves the pre-upgrade meaning of submitted/approved/locked historical timesheets by leaving automatic OT disabled on those existing period snapshots; existing Draft periods adopt the new 10-hour default and can be adjusted in Timesheet Settings. No manual SQL or hand-created follow-up migration is required.
+## Rental Timesheet calculated-result display follow-on
+
+The calculated-result/adjustment preview and stronger weekly-off highlighting add **no new migration**. They use the existing Rental Timesheet project settings and working-hours/OT migrations (`0010` and `0011`). Deploy through the normal pipeline so static assets and server code are rebuilt together. The calculated-result board preference is browser-local; no manual SQL or data backfill is required.
 

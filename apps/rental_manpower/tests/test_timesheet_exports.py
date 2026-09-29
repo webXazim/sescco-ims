@@ -12,6 +12,7 @@ from apps.core.models import AuditEvent, Company
 from apps.rental_manpower.services.assignments import assign_worker
 from apps.rental_manpower.services.masters import create_project, create_supplier, create_worker
 from apps.rental_manpower.services.timesheets import save_entries, save_overtime
+from apps.rental_manpower.services.settlements import create_rental_adjustment, transition_rental_adjustment
 
 
 class RentalTimesheetExportTests(TestCase):
@@ -101,6 +102,9 @@ class RentalTimesheetExportTests(TestCase):
         self.assertIn("base_wage", keys)
         self.assertIn("overtime_wage", keys)
         self.assertIn("gross_wage", keys)
+        self.assertIn("approved_adjustment_earnings", keys)
+        self.assertIn("approved_adjustment_deductions", keys)
+        self.assertIn("calculated_result", keys)
         self.assertIn("day_01", payload["defaultColumns"])
         self.assertIn("regular_hours", payload["defaultColumns"])
 
@@ -148,6 +152,41 @@ class RentalTimesheetExportTests(TestCase):
         self.assertEqual(exported["RW-EX-001"][5], 8)
         self.assertEqual(exported["RW-EX-001"][6], 2)
         self.assertTrue(AuditEvent.objects.filter(company=self.company, action="rental.timesheet.exported").exists())
+
+    def test_export_calculated_result_applies_only_approved_adjustments(self):
+        bonus=create_rental_adjustment(
+            actor_membership=self.owner, worker_id=self.worker.pk, project_id=self.project.pk,
+            transaction_date=date(2026,8,10), period_start=date(2026,8,1),
+            adjustment_type='bonus', amount=50, reason='Approved bonus',
+        )
+        transition_rental_adjustment(actor_membership=self.owner,adjustment_id=bonus.pk,action='submit')
+        transition_rental_adjustment(actor_membership=self.owner,adjustment_id=bonus.pk,action='approve')
+        create_rental_adjustment(
+            actor_membership=self.owner, worker_id=self.worker.pk, project_id=self.project.pk,
+            transaction_date=date(2026,8,11), period_start=date(2026,8,1),
+            adjustment_type='advance', amount=20, reason='Pending advance',
+        )
+        response=self.client.post(
+            self.url,
+            data=json.dumps({
+                'project_id':str(self.project.reference),'period':'2026-08','format':'xlsx','scope':'selected',
+                'worker_ids':[str(self.worker.pk)],
+                'columns':['worker_id','gross_wage','approved_adjustment_earnings','approved_adjustment_deductions','pending_adjustment_count','calculated_result'],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code,200)
+        workbook=load_workbook(io.BytesIO(response.content),data_only=True)
+        sheet=workbook['Timesheet']
+        headers=[sheet.cell(6,index).value for index in range(1,7)]
+        self.assertEqual(headers,['Worker ID','Gross wage','Approved adjustment earnings','Approved adjustment deductions','Pending adjustment count','Calculated result'])
+        values=[sheet.cell(7,index).value for index in range(1,7)]
+        self.assertEqual(values[0],'RW-EX-001')
+        self.assertEqual(values[1],100)
+        self.assertEqual(values[2],50)
+        self.assertEqual(values[3],0)
+        self.assertEqual(values[4],1)
+        self.assertEqual(values[5],150)
 
     def test_pdf_export_is_a_real_pdf_file(self):
         response = self.client.post(
@@ -211,6 +250,8 @@ class RentalTimesheetExportTests(TestCase):
         self.assertNotIn("supplier_email", keys)
         self.assertNotIn("supplier_vat", keys)
         self.assertNotIn("assignment_rate", keys)
+        self.assertNotIn("calculated_result", keys)
+        self.assertNotIn("approved_adjustment_deductions", keys)
         self.assertIn("worker_phone", keys)
 
         blocked = self.client.post(

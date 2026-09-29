@@ -11,7 +11,7 @@ import re
 from typing import Any, Iterable
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import Q
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -26,6 +26,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_allows_project, membership_has_permission
 from apps.rental_manpower.models import (
+    RentalAdjustment,
+    RentalAdjustmentStatus,
+    RentalAdjustmentType,
     RentalTimesheetEntry,
     RentalTimesheetOvertime,
     RentalTimesheetPeriod,
@@ -120,6 +123,14 @@ _STATIC_COLUMNS: tuple[ExportColumn, ...] = (
     ExportColumn("overtime_wage", "OT wage", "Overtime", 18, 27, kind="number", permission="commercial"),
     ExportColumn("gross_wage", "Gross wage", "Overtime", 18, 27, kind="number", permission="commercial"),
 
+    ExportColumn("approved_adjustment_earnings", "Approved adjustment earnings", "Adjustments & result", 22, 31, kind="number", permission="calculated_result"),
+    ExportColumn("approved_adjustment_deductions", "Approved adjustment deductions", "Adjustments & result", 23, 32, kind="number", permission="calculated_result"),
+    ExportColumn("approved_adjustment_net", "Approved adjustment net", "Adjustments & result", 20, 29, kind="number", permission="calculated_result"),
+    ExportColumn("pending_adjustment_count", "Pending adjustment count", "Adjustments & result", 19, 27, kind="number", permission="calculated_result"),
+    ExportColumn("pending_adjustment_earnings", "Pending adjustment earnings", "Adjustments & result", 22, 31, kind="number", permission="calculated_result"),
+    ExportColumn("pending_adjustment_deductions", "Pending adjustment deductions", "Adjustments & result", 23, 32, kind="number", permission="calculated_result"),
+    ExportColumn("calculated_result", "Calculated result", "Adjustments & result", 20, 29, kind="number", permission="calculated_result"),
+
     ExportColumn("timesheet_status", "Timesheet status", "Workflow", 17, 25, default=True),
     ExportColumn("timesheet_revision", "Revision", "Workflow", 11, 18, kind="number"),
     ExportColumn("submitted_at", "Submitted at", "Workflow", 21, 31, permission="workflow_detail"),
@@ -136,12 +147,16 @@ def _can(membership, permission: AccessPermission) -> bool:
 
 
 def _permission_flags(membership) -> dict[str, bool]:
+    commercial = _can(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW) or _can(
+        membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE
+    )
+    adjustments = _can(membership, AccessPermission.RENTAL_ADJUSTMENTS_VIEW)
     return {
         "base": True,
         "worker_detail": _can(membership, AccessPermission.RENTAL_WORKERS_VIEW),
         "supplier_detail": _can(membership, AccessPermission.RENTAL_SUPPLIERS_VIEW),
-        "commercial": _can(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
-        or _can(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE),
+        "commercial": commercial,
+        "calculated_result": commercial and adjustments,
         "workflow_detail": _can(membership, AccessPermission.RENTAL_TIMESHEETS_APPROVE)
         or _can(membership, AccessPermission.RENTAL_REPORTS_VIEW),
     }
@@ -308,6 +323,44 @@ def _select_worker_queryset(
     return rows, matching_count
 
 
+def _adjustment_totals_for_workers(*, company, project, start: date, worker_ids) -> dict[str, dict[str, Decimal | int]]:
+    if not worker_ids:
+        return {}
+    earning_types = {
+        RentalAdjustmentType.BONUS,
+        RentalAdjustmentType.REIMBURSEMENT,
+        RentalAdjustmentType.OTHER_EARNING,
+    }
+    result: dict[str, dict[str, Decimal | int]] = {}
+    grouped = (
+        RentalAdjustment.objects.for_company(company)
+        .filter(project=project, period_start=start, worker_id__in=worker_ids)
+        .values("worker_id", "status", "adjustment_type")
+        .annotate(total=Sum("amount"), count=Count("id"))
+        .order_by("worker_id")
+    )
+    for row in grouped.iterator(chunk_size=1000):
+        worker_id = str(row["worker_id"])
+        bucket = result.setdefault(worker_id, {
+            "approved_earnings": Decimal("0"),
+            "approved_deductions": Decimal("0"),
+            "approved_count": 0,
+            "pending_earnings": Decimal("0"),
+            "pending_deductions": Decimal("0"),
+            "pending_count": 0,
+        })
+        amount = Decimal(row["total"] or 0)
+        count = int(row["count"] or 0)
+        earning = row["adjustment_type"] in earning_types
+        if row["status"] == RentalAdjustmentStatus.APPROVED:
+            bucket["approved_count"] += count
+            bucket["approved_earnings" if earning else "approved_deductions"] += amount
+        else:
+            bucket["pending_count"] += count
+            bucket["pending_earnings" if earning else "pending_deductions"] += amount
+    return result
+
+
 def build_rental_timesheet_export_dataset(
     *,
     company,
@@ -340,6 +393,7 @@ def build_rental_timesheet_export_dataset(
     if unavailable:
         raise PermissionDenied("One or more requested export columns are not available to your access profile.")
     selected_columns = [by_key[key] for key in requested_keys]
+    needs_adjustment_result = any(column.permission == "calculated_result" for column in selected_columns)
 
     workers, matching_count = _select_worker_queryset(
         company=company,
@@ -387,6 +441,10 @@ def build_rental_timesheet_export_dataset(
         RentalTimesheetOvertime.objects.for_company(company).filter(period=period, worker_id__in=worker_ids_db)
     ) if period and worker_ids_db else []
     overtime_by_worker = {str(row.worker_id): row for row in overtime_rows}
+    adjustment_totals = (
+        _adjustment_totals_for_workers(company=company, project=project, start=start, worker_ids=worker_ids_db)
+        if needs_adjustment_result else {}
+    )
 
     workflow = {
         "timesheet_status": period.get_status_display() if period else "Draft",
@@ -488,6 +546,13 @@ def build_rental_timesheet_export_dataset(
         additional_overtime_wage = (overtime.hours * overtime.rate) if overtime else Decimal("0")
         total_overtime_hours = automatic_overtime_hours + additional_overtime_hours
         overtime_wage = automatic_overtime_wage + additional_overtime_wage
+        gross_wage = base_wage + overtime_wage
+        adjustment = adjustment_totals.get(wid, {})
+        approved_adjustment_earnings = Decimal(adjustment.get("approved_earnings", 0))
+        approved_adjustment_deductions = Decimal(adjustment.get("approved_deductions", 0))
+        pending_adjustment_earnings = Decimal(adjustment.get("pending_earnings", 0))
+        pending_adjustment_deductions = Decimal(adjustment.get("pending_deductions", 0))
+        calculated_result = gross_wage + approved_adjustment_earnings - approved_adjustment_deductions
         derived_rates = {
             overtime_bill_rate(assignment=a, policy=policy, period_start=start)
             for a in worker_assignments
@@ -538,7 +603,14 @@ def build_rental_timesheet_export_dataset(
             "overtime_rate": float(displayed_overtime_rate),
             "base_wage": float(base_wage),
             "overtime_wage": float(overtime_wage),
-            "gross_wage": float(base_wage + overtime_wage),
+            "gross_wage": float(gross_wage),
+            "approved_adjustment_earnings": float(approved_adjustment_earnings),
+            "approved_adjustment_deductions": float(approved_adjustment_deductions),
+            "approved_adjustment_net": float(approved_adjustment_earnings - approved_adjustment_deductions),
+            "pending_adjustment_count": int(adjustment.get("pending_count", 0)),
+            "pending_adjustment_earnings": float(pending_adjustment_earnings),
+            "pending_adjustment_deductions": float(pending_adjustment_deductions),
+            "calculated_result": float(calculated_result),
             **workflow,
         }
         rows.append(row)

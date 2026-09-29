@@ -54,6 +54,10 @@ for marker in (
     'ExportColumn("additional_overtime_hours", "Additional OT hours"',
     'ExportColumn("overtime_multiplier", "OT multiplier"',
     'ExportColumn("timesheet_status", "Timesheet status"',
+    'ExportColumn("approved_adjustment_earnings", "Approved adjustment earnings"',
+    'ExportColumn("approved_adjustment_deductions", "Approved adjustment deductions"',
+    'ExportColumn("calculated_result", "Calculated result"',
+    "_adjustment_totals_for_workers",
     'f"day_{day:02d}"',
     'permission="supplier_detail"',
     'permission="commercial"',
@@ -109,6 +113,7 @@ for marker in (
     "test_pdf_export_is_a_real_pdf_file",
     "test_selected_scope_only_exports_requested_matching_workers",
     "test_supervisor_schema_does_not_offer_supplier_private_or_commercial_columns",
+    "test_export_calculated_result_applies_only_approved_adjustments",
 ):
     if marker not in tests:
         fail(f"timesheet export regression coverage missing: {marker}")
@@ -117,4 +122,4 @@ notes = text("RELEASE_NOTES.md")
 if "# 1.0.117 — Rental Timesheet Dynamic Excel/PDF Export" not in notes:
     fail("release notes are missing the dynamic timesheet export upgrade")
 
-print("Verified SESCCO MS 1.0.117 Rental Timesheet dynamic Excel/PDF export: selectable columns, scoped rows, permission-safe server generation, audit evidence and export safety controls.")
+print("Verified SESCCO MS 1.0.117 Rental Timesheet dynamic Excel/PDF export: selectable columns, scoped rows, adjustment-aware calculated results, permission-safe server generation, audit evidence and export safety controls.")

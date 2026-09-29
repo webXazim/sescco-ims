@@ -1,3 +1,14 @@
+# 1.0.117 — Rental Timesheet Calculated Result & Weekly-Off Highlight
+
+- Added a permission-controlled **Show calculated result on the timesheet** toggle directly in Project Timesheet Settings. It is a personal browser display preference and does not modify the shared project-period attendance policy.
+- When enabled, the board adds **Approved adjustment earnings**, **Approved adjustment deductions**, and **Calculated result** to the right side of the day grid. The preview uses the same business meaning as settlement preparation: **Gross wage + approved earnings − approved deductions**.
+- Worker **advances, fines and other approved deductions** reduce the calculated result; approved **bonuses, reimbursements and other earnings** increase it. Draft/Review adjustments are surfaced as pending context but are deliberately excluded until approved.
+- A negative calculated result is clearly marked as **settlement blocked**, matching the settlement authority instead of silently presenting a negative payable as final. Supplier Settlement remains the authoritative financial record and may include the full approved adjustment set.
+- Rental timesheet context now returns bounded, database-aggregated per-worker adjustment totals only for the visible server page and only when the user has both commercial-timesheet and adjustment visibility. Adjustment mutations invalidate the cached timesheet preview so values refresh without stale financial context.
+- Dynamic Excel/PDF export now offers the same approved adjustment, pending adjustment and calculated-result fields, with the existing permission-safe selectable-column behavior.
+- Project weekly off days are now substantially easier to scan: the configured date header has a strong **OFF** badge/top rule and the full day column is shaded while retaining normal editable/assignment behavior.
+- No new database migration is introduced by this follow-on. It builds on the existing `0010` project settings and `0011` working-hours/overtime policy migrations.
+
 # 1.0.117 — Rental Timesheet Working-Hours & Overtime Policy
 
 - Added shared **regular working hours/day** to Rental Project Timesheet Settings, defaulting to **10.00 hours**. With automatic OT enabled, a daily value such as 12 hours is split into 10 regular + 2 automatic overtime hours while the stored attendance input remains the worker's actual total worked hours.

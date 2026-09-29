@@ -12,6 +12,9 @@ from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_allows_project, membership_has_permission
 from apps.core.payroll_attendance_contract import ATTENDANCE_WORKSPACE_RENTAL, attendance_contract_payload
 from apps.rental_manpower.models import (
+    RentalAdjustment,
+    RentalAdjustmentStatus,
+    RentalAdjustmentType,
     RentalTimesheetPeriod,
     RentalTimesheetProjectSettings,
     RentalTimesheetEntry,
@@ -57,6 +60,14 @@ def rental_timesheet_settings_payload(*, company, project, period=None, membersh
         source = policy.source
     can_edit = bool(membership and membership_has_permission(membership, AccessPermission.RENTAL_TIMESHEETS_EDIT))
     policy_locked = bool(period is not None and period.status != RentalTimesheetStatus.DRAFT)
+    can_view_commercial = bool(
+        membership is None
+        or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+        or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+    )
+    can_view_adjustments = bool(
+        membership is None or membership_has_permission(membership, AccessPermission.RENTAL_ADJUSTMENTS_VIEW)
+    )
     return {
         "projectId": project_public_id(project) if project else None,
         "offWeekdays": off_weekdays,
@@ -69,11 +80,9 @@ def rental_timesheet_settings_payload(*, company, project, period=None, membersh
         "policyLocked": policy_locked,
         "canEdit": can_edit,
         "canEditPolicy": bool(can_edit and not policy_locked),
-        "canViewCommercial": bool(
-            membership is None
-            or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
-            or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
-        ),
+        "canViewCommercial": can_view_commercial,
+        "canViewAdjustments": can_view_adjustments,
+        "canViewCalculatedResult": bool(can_view_commercial and can_view_adjustments),
         "canViewWorkerIdentity": bool(
             membership is None or membership_has_permission(membership, AccessPermission.RENTAL_WORKERS_VIEW)
         ),
@@ -222,6 +231,77 @@ def rental_timesheet_summary(*, company, project, period, start: date, end: date
     }
 
 
+def _rental_timesheet_adjustment_summary(*, company, project, start: date, worker_ids, membership=None) -> dict[str, dict[str, object]]:
+    """Return bounded per-worker adjustment totals for the visible timesheet page.
+
+    Calculated-result previews are intentionally permission-gated and use approved
+    adjustments only for the payable result. Draft/Review items are returned only as
+    pending context so the board never silently treats an unapproved advance or bonus
+    as part of the settlement amount.
+    """
+    can_view_commercial = bool(
+        membership is None
+        or membership_has_permission(membership, AccessPermission.RENTAL_SETTLEMENTS_VIEW)
+        or membership_has_permission(membership, AccessPermission.RENTAL_ASSIGNMENTS_MANAGE)
+    )
+    can_view_adjustments = bool(
+        membership is None or membership_has_permission(membership, AccessPermission.RENTAL_ADJUSTMENTS_VIEW)
+    )
+    if not (can_view_commercial and can_view_adjustments) or not worker_ids:
+        return {}
+
+    earning_types = {
+        RentalAdjustmentType.BONUS,
+        RentalAdjustmentType.REIMBURSEMENT,
+        RentalAdjustmentType.OTHER_EARNING,
+    }
+    result: dict[str, dict[str, object]] = {}
+    rows = (
+        RentalAdjustment.objects.for_company(company)
+        .filter(project=project, period_start=start, worker_id__in=worker_ids)
+        .values("worker_id", "status", "adjustment_type")
+        .annotate(total=Sum("amount"), row_count=Count("id"))
+        .order_by("worker_id", "status", "adjustment_type")
+    )
+    for row in rows.iterator(chunk_size=256):
+        worker_id = str(row["worker_id"])
+        bucket = result.setdefault(worker_id, {
+            "approvedEarnings": Decimal("0"),
+            "approvedDeductions": Decimal("0"),
+            "approvedCount": 0,
+            "pendingEarnings": Decimal("0"),
+            "pendingDeductions": Decimal("0"),
+            "pendingCount": 0,
+        })
+        amount = Decimal(row["total"] or 0)
+        row_count = int(row["row_count"] or 0)
+        is_earning = row["adjustment_type"] in earning_types
+        if row["status"] == RentalAdjustmentStatus.APPROVED:
+            bucket["approvedCount"] += row_count
+            bucket["approvedEarnings" if is_earning else "approvedDeductions"] += amount
+        else:
+            bucket["pendingCount"] += row_count
+            bucket["pendingEarnings" if is_earning else "pendingDeductions"] += amount
+
+    payload: dict[str, dict[str, object]] = {}
+    for worker_id, bucket in result.items():
+        approved_earnings = Decimal(bucket["approvedEarnings"])
+        approved_deductions = Decimal(bucket["approvedDeductions"])
+        pending_earnings = Decimal(bucket["pendingEarnings"])
+        pending_deductions = Decimal(bucket["pendingDeductions"])
+        payload[worker_id] = {
+            "approvedEarnings": str(approved_earnings),
+            "approvedDeductions": str(approved_deductions),
+            "approvedNet": str(approved_earnings - approved_deductions),
+            "approvedCount": int(bucket["approvedCount"]),
+            "pendingEarnings": str(pending_earnings),
+            "pendingDeductions": str(pending_deductions),
+            "pendingNet": str(pending_earnings - pending_deductions),
+            "pendingCount": int(bucket["pendingCount"]),
+        }
+    return payload
+
+
 def rental_timesheet_context(
     *, company, project_id, period_start: date, membership=None,
     query: str = "", supplier_id: str = "", page: int | None = None, page_size: int | None = None,
@@ -240,7 +320,7 @@ def rental_timesheet_context(
             "attendanceContract": attendance_contract_payload(ATTENDANCE_WORKSPACE_RENTAL),
             "period": _period_payload(period=period, project=project, start=start, end=end, membership=membership),
             "settings": rental_timesheet_settings_payload(company=company, project=project, period=period, membership=membership),
-            "roster": [], "records": {}, "overtime": {},
+            "roster": [], "records": {}, "overtime": {}, "adjustmentSummary": {},
             "summary": {"workerCount": 0, "supplierCount": 0, "entryCount": 0, "regularHours": "0", "overtimeHours": "0", "overtimeEmployees": 0, "missingCount": 0},
             "meta": {"count": 0, "page": 1, "pageSize": page_size or 50, "totalPages": 0},
         }
@@ -301,6 +381,9 @@ def rental_timesheet_context(
         }
         for row in overtime
     }
+    adjustment_summary = _rental_timesheet_adjustment_summary(
+        company=company, project=project, start=start, worker_ids=worker_ids, membership=membership
+    )
     include_worker_identity = bool(
         membership is None or membership_has_permission(membership, AccessPermission.RENTAL_WORKERS_VIEW)
     )
@@ -333,6 +416,7 @@ def rental_timesheet_context(
         "roster": roster,
         "records": records,
         "overtime": ot,
+        "adjustmentSummary": adjustment_summary,
         **({"summary": rental_timesheet_summary(company=company, project=project, period=period, start=start, end=end)} if include_summary else {}),
         "meta": meta,
     }
