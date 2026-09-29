@@ -15,7 +15,7 @@ class SourcingBrowserE2EFreezeContractTests(SimpleTestCase):
         self.assertEqual(contract["release"], "1.0.117")
         self.assertFalse(contract["schema_change"])
         self.assertEqual(contract["permission_catalog_size"], 94)
-        self.assertEqual(contract["persisted_model_retention_count"], 75)
+        self.assertEqual(contract["persisted_model_retention_count"], 76)
         self.assertEqual(contract["required_seed_profile"], "benchmark")
         self.assertEqual(contract["browser_limits"]["max_rendered_business_rows"], 100)
         self.assertTrue(contract["browser_limits"]["stale_request_abort_required"])

@@ -5,7 +5,7 @@
   "previous_archive_sha256": "bf498e6af3405b279cb42fbbf769c5baeb14d8940d59b3f732e89950dd503b2b",
   "schema_change": false,
   "permission_catalog_size": 94,
-  "persisted_model_retention_count": 75,
+  "persisted_model_retention_count": 76,
   "required_seed_profile": "benchmark",
   "required_seed_contract": {
     "vendor": "SDEMO-V00001",
