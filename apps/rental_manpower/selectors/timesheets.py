@@ -234,10 +234,11 @@ def rental_timesheet_summary(*, company, project, period, start: date, end: date
 def _rental_timesheet_adjustment_summary(*, company, project, start: date, worker_ids, membership=None) -> dict[str, dict[str, object]]:
     """Return bounded per-worker adjustment totals for the visible timesheet page.
 
-    Calculated-result previews are intentionally permission-gated and use approved
-    adjustments only for the payable result. Draft/Review items are returned only as
-    pending context so the board never silently treats an unapproved advance or bonus
-    as part of the settlement amount.
+    Calculated-result previews are intentionally permission-gated. The board returns
+    approved and pending (Draft/Review) adjustment buckets separately, plus a current
+    preview total that combines both buckets. This lets operators see the projected
+    worker payment before approval while Supplier Settlement continues to use Approved
+    adjustments only as its financial authority.
     """
     can_view_commercial = bool(
         membership is None
@@ -289,6 +290,8 @@ def _rental_timesheet_adjustment_summary(*, company, project, start: date, worke
         approved_deductions = Decimal(bucket["approvedDeductions"])
         pending_earnings = Decimal(bucket["pendingEarnings"])
         pending_deductions = Decimal(bucket["pendingDeductions"])
+        preview_earnings = approved_earnings + pending_earnings
+        preview_deductions = approved_deductions + pending_deductions
         payload[worker_id] = {
             "approvedEarnings": str(approved_earnings),
             "approvedDeductions": str(approved_deductions),
@@ -298,6 +301,9 @@ def _rental_timesheet_adjustment_summary(*, company, project, start: date, worke
             "pendingDeductions": str(pending_deductions),
             "pendingNet": str(pending_earnings - pending_deductions),
             "pendingCount": int(bucket["pendingCount"]),
+            "previewEarnings": str(preview_earnings),
+            "previewDeductions": str(preview_deductions),
+            "previewNet": str(preview_earnings - preview_deductions),
         }
     return payload
 

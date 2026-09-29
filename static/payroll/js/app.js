@@ -4961,22 +4961,22 @@
       {key:'base_wage',label:'Base wage',side:'right',width:112,min:92,max:190,commercial:true,numeric:true},
       {key:'overtime_wage',label:'OT wage',side:'right',width:108,min:90,max:180,commercial:true,numeric:true},
       {key:'gross_wage',label:'Gross wage',side:'right',width:118,min:96,max:200,commercial:true,numeric:true},
-      {key:'adjustment_earnings',label:'Adjustment +',side:'right',width:116,min:96,max:190,commercial:true,calculated:true,numeric:true},
-      {key:'adjustment_deductions',label:'Adjustment −',side:'right',width:116,min:96,max:190,commercial:true,calculated:true,numeric:true},
-      {key:'calculated_result',label:'Calculated result',side:'right',width:138,min:112,max:220,commercial:true,calculated:true,numeric:true},
+      {key:'adjustment_earnings',label:'Adjustment +',side:'right',width:116,min:96,max:190,commercial:true,financialPreview:true,numeric:true},
+      {key:'adjustment_deductions',label:'Adjustment −',side:'right',width:116,min:96,max:190,commercial:true,financialPreview:true,numeric:true},
+      {key:'calculated_result',label:'Calculated result',side:'right',width:138,min:112,max:220,commercial:true,financialPreview:true,resultOnly:true,numeric:true},
     ];
-    return rows.filter(row => (!row.commercial || settings.canViewCommercial) && (!row.calculated || settings.canViewCalculatedResult) && (!row.identity || settings.canViewWorkerIdentity));
+    return rows.filter(row => (!row.commercial || settings.canViewCommercial) && (!row.financialPreview || settings.canViewCalculatedResult) && (!row.identity || settings.canViewWorkerIdentity));
   }
 
   function rentalTimesheetBoardLayout() {
     const catalog = rentalTimesheetBoardColumnCatalog();
     const byKey = new Map(catalog.map(item => [item.key,item]));
     let leftKeys = (state.rentalTimesheetBoard?.left || []).filter(key => byKey.get(key)?.side === 'left');
-    let rightKeys = (state.rentalTimesheetBoard?.right || []).filter(key => byKey.get(key)?.side === 'right' && !byKey.get(key)?.calculated);
+    let rightKeys = (state.rentalTimesheetBoard?.right || []).filter(key => byKey.get(key)?.side === 'right' && !byKey.get(key)?.resultOnly);
     if (!leftKeys.includes('worker_name') && byKey.has('worker_name')) leftKeys.unshift('worker_name');
     if (!rightKeys.length) rightKeys = ['regular_hours','overtime_hours','total_hours','missing_days'].filter(key => byKey.has(key));
     if (state.rentalTimesheetBoard?.showCalculatedResult === true && currentRentalTimesheetSettings().canViewCalculatedResult) {
-      ['adjustment_earnings','adjustment_deductions','calculated_result'].forEach(key=>{ if(byKey.has(key)&&!rightKeys.includes(key))rightKeys.push(key); });
+      const key='calculated_result'; if(byKey.has(key)&&!rightKeys.includes(key))rightKeys.push(key);
     }
     const widthOf = item => {
       const raw = Number(state.rentalTimesheetBoard?.widths?.[item.key] ?? item.width);
@@ -5047,7 +5047,7 @@
 
   function rentalWorkerAdjustmentPreview(worker, commercial, period = state.period, projectId = state.rentalTimesheetProject) {
     const settings=currentRentalTimesheetSettings(projectId);
-    if(!settings.canViewCalculatedResult) return {approvedEarnings:null,approvedDeductions:null,pendingCount:0,pendingEarnings:0,pendingDeductions:0,result:null};
+    if(!settings.canViewCalculatedResult) return {approvedEarnings:null,approvedDeductions:null,pendingCount:0,pendingEarnings:0,pendingDeductions:0,adjustmentEarnings:null,adjustmentDeductions:null,approvedResult:null,result:null};
     const key=rentalTimesheetRecordKey(period,projectId);
     const row=state.rentalTimesheetAdjustmentSummary?.[key]?.[worker.id] || {};
     const approvedEarnings=Number(row.approvedEarnings || 0);
@@ -5055,10 +5055,13 @@
     const pendingEarnings=Number(row.pendingEarnings || 0);
     const pendingDeductions=Number(row.pendingDeductions || 0);
     const pendingCount=Number(row.pendingCount || 0);
+    const adjustmentEarnings=Number(row.previewEarnings ?? (approvedEarnings+pendingEarnings));
+    const adjustmentDeductions=Number(row.previewDeductions ?? (approvedDeductions+pendingDeductions));
     const gross=Number(commercial?.gross);
     return {
-      approvedEarnings, approvedDeductions, pendingEarnings, pendingDeductions, pendingCount,
-      result:Number.isFinite(gross) ? gross + approvedEarnings - approvedDeductions : null
+      approvedEarnings, approvedDeductions, pendingEarnings, pendingDeductions, pendingCount, adjustmentEarnings, adjustmentDeductions,
+      approvedResult:Number.isFinite(gross) ? gross + approvedEarnings - approvedDeductions : null,
+      result:Number.isFinite(gross) ? gross + adjustmentEarnings - adjustmentDeductions : null
     };
   }
 
@@ -5087,14 +5090,21 @@
     else if(spec.key==='base_wage') value=commercial.base == null ? '—' : formatCurrency(commercial.base);
     else if(spec.key==='overtime_wage') value=commercial.ot == null ? '—' : formatCurrency(commercial.ot);
     else if(spec.key==='gross_wage') value=commercial.gross == null ? '—' : formatCurrency(commercial.gross);
-    else if(spec.key==='adjustment_earnings') value=calculated?.approvedEarnings ? formatCurrency(calculated.approvedEarnings) : '—';
-    else if(spec.key==='adjustment_deductions') value=calculated?.approvedDeductions ? formatCurrency(calculated.approvedDeductions) : '—';
+    else if(spec.key==='adjustment_earnings') {
+      const total=Number(calculated?.adjustmentEarnings || 0); const pending=Number(calculated?.pendingEarnings || 0);
+      return `<span class="ui-v2-prs-rental-board-value is-numeric" title="${escapeHtml(`Approved ${formatCurrency(calculated?.approvedEarnings || 0)}${pending?` · Pending ${formatCurrency(pending)}`:''}`)}">${total ? escapeHtml(formatCurrency(total)) : '—'}</span>`;
+    }
+    else if(spec.key==='adjustment_deductions') {
+      const total=Number(calculated?.adjustmentDeductions || 0); const pending=Number(calculated?.pendingDeductions || 0);
+      return `<span class="ui-v2-prs-rental-board-value is-numeric" title="${escapeHtml(`Approved ${formatCurrency(calculated?.approvedDeductions || 0)}${pending?` · Pending ${formatCurrency(pending)}`:''}`)}">${total ? escapeHtml(formatCurrency(total)) : '—'}</span>`;
+    }
     else if(spec.key==='calculated_result') {
       const result=calculated?.result;
       const pending=Number(calculated?.pendingCount || 0);
       const negative=result != null && Number(result)<0;
-      const pendingTitle=pending ? `Pending adjustments not applied: +${formatCurrency(calculated.pendingEarnings || 0)} / −${formatCurrency(calculated.pendingDeductions || 0)}` : 'No pending adjustments';
-      const resultNote=negative ? 'negative · settlement blocked' : (pending ? `${pending.toLocaleString()} pending` : 'approved only');
+      const approvedResult=calculated?.approvedResult;
+      const pendingTitle=pending ? `Includes ${pending} Draft/Review adjustment${pending===1?'':'s'} in this projected payment. Approved-only result: ${approvedResult == null ? '—' : formatCurrency(approvedResult)}.` : 'All included adjustments are approved.';
+      const resultNote=negative ? (pending ? `negative preview · ${pending.toLocaleString()} pending` : 'negative · settlement blocked') : (pending ? `provisional · ${pending.toLocaleString()} pending` : 'all adjustments approved');
       return `<span class="ui-v2-prs-rental-board-value ui-v2-prs-rental-calculated-result is-numeric${negative?' is-negative':''}" title="${escapeHtml(pendingTitle)}"><strong>${result == null ? '—' : escapeHtml(formatCurrency(result))}</strong><small>${escapeHtml(resultNote)}</small></span>`;
     }
     return `<span class="ui-v2-prs-rental-board-value${spec.numeric?' is-numeric':''}">${escapeHtml(String(value))}</span>`;
@@ -5156,8 +5166,8 @@
     const layout=rentalTimesheetBoardLayout();
     const selected=new Set([...layout.left,...layout.right].map(item=>item.key));
     const catalog=rentalTimesheetBoardColumnCatalog();
-    const selectableCatalog=catalog.filter(item=>!item.calculated);
-    const selectedBoardCount=[...layout.left,...layout.right].filter(item=>!item.calculated).length;
+    const selectableCatalog=catalog.filter(item=>!item.resultOnly);
+    const selectedBoardCount=[...layout.left,...layout.right].filter(item=>!item.resultOnly).length;
     const offDays=new Set(settings.offWeekdays || []);
     const project=state.projects.find(item=>item.id===state.rentalTimesheetProject);
     const regular=Number(settings.regularHoursPerDay || 10);
@@ -5185,14 +5195,14 @@
         <div class="ui-v2-timesheet-export-section__head"><div><strong>Board columns</strong><span data-rental-board-settings-count>${selectedBoardCount} of ${selectableCatalog.length} visible</span></div><div class="ui-v2-timesheet-export-column-actions"><button type="button" data-rental-board-preset="compact">Compact</button><button type="button" data-rental-board-preset="operations">Operations</button>${settings.canViewCommercial?'<button type="button" data-rental-board-preset="commercial">Commercial</button>':''}<button type="button" data-rental-board-reset-widths>Reset widths</button></div></div>
         <div class="ui-v2-prs-timesheet-board-groups">
           <div><header><strong>Left of days</strong><span>Worker identity and assignment details</span></header>${catalog.filter(item=>item.side==='left').map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="left" ${selected.has(item.key)?'checked':''} ${item.required?'disabled':''}><span>${escapeHtml(item.label)}${item.required?' · required':''}</span></label>`).join('')}</div>
-          <div><header><strong>Right of days</strong><span>Regular, automatic/additional OT, exceptions and commercial totals</span></header>${catalog.filter(item=>item.side==='right' && !item.calculated).map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="right" ${selected.has(item.key)?'checked':''}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
+          <div><header><strong>Right of days</strong><span>Regular, automatic/additional OT, exceptions and commercial totals</span></header>${catalog.filter(item=>item.side==='right' && !item.resultOnly).map(item=>`<label class="ui-v2-timesheet-export-check"><input type="checkbox" data-rental-board-setting-column="${escapeHtml(item.key)}" data-side="right" ${selected.has(item.key)?'checked':''}><span>${escapeHtml(item.label)}</span></label>`).join('')}</div>
         </div>
-        ${settings.canViewCommercial?'<p class="ui-v2-timesheet-export-note">Base, OT and gross wage columns are live previews using the effective assignment rate and this period’s OT policy. Approved supplier settlement remains the financial authority and can include adjustments.</p>':''}
+        ${settings.canViewCommercial?'<p class="ui-v2-timesheet-export-note">Base, OT and gross wage columns are live previews using the effective assignment rate and this period’s OT policy. Adjustment + / − may be shown independently; the calculated result uses them even when those columns are hidden. Supplier Settlement remains the approval-controlled financial authority.</p>':''}
       </section>
       ${settings.canViewCalculatedResult?`<section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-calculated-settings">
         <div class="ui-v2-timesheet-export-section__head"><div><strong>Calculated result</strong><span>Personal board display · permission controlled</span></div></div>
-        <label class="ui-v2-prs-timesheet-calculated-toggle"><span class="ui-v2-prs-timesheet-policy-toggle"><input type="checkbox" data-rental-show-calculated-result ${calculatedResultEnabled?'checked':''}><strong>${calculatedResultEnabled?'Shown':'Hidden'}</strong></span><span><strong>Show calculated result on the timesheet</strong><small>Adds approved adjustment earnings, approved deductions and the calculated payable result to the right side of the board.</small></span></label>
-        <div class="ui-v2-prs-timesheet-calculated-formula"><strong>Preview formula</strong><span>Gross wage + approved adjustment earnings − approved deductions = calculated result.</span><small>Worker advances, fines and other approved deductions reduce the result. Draft/Review adjustments are shown as pending context but are not applied until approved. Supplier Settlement remains the financial authority.</small></div>
+        <label class="ui-v2-prs-timesheet-calculated-toggle"><span class="ui-v2-prs-timesheet-policy-toggle"><input type="checkbox" data-rental-show-calculated-result ${calculatedResultEnabled?'checked':''}><strong>${calculatedResultEnabled?'Shown':'Hidden'}</strong></span><span><strong>Show calculated result on the timesheet</strong><small>Adds only the calculated-result column. Adjustment + / − columns are independent board-column choices and may be hidden without changing the calculation.</small></span></label>
+        <div class="ui-v2-prs-timesheet-calculated-formula"><strong>Projected payment formula</strong><span>Gross wage + current adjustment earnings − current deductions = calculated result.</span><small>Draft, Review and Approved adjustments are included in this live timesheet preview so advances and deductions are visible immediately. Pending items keep the result marked provisional; only Approved adjustments enter the authoritative Supplier Settlement.</small></div>
       </section>`:''}
       <section class="ui-v2-timesheet-export-section ui-v2-prs-timesheet-offday-settings">
         <div class="ui-v2-timesheet-export-section__head"><div><strong>Project weekly off days</strong><span>${policyEditable?'Shared current-period policy':'View only for this period'}</span></div></div>
@@ -8403,7 +8413,7 @@
         ${state.workspace==='rental'?`<div class="search-field adjustment-scope-search">${icon('search')}<input id="adjustmentProjectSearch" type="search" value="${escapeHtml(state.adjustmentProjectSearch)}" placeholder="Project…"></div><div class="search-field adjustment-scope-search">${icon('search')}<input id="adjustmentSupplierSearch" type="search" value="${escapeHtml(state.adjustmentSupplierSearch)}" placeholder="Supplier…"></div>`:''}
         <button class="btn btn--ghost" data-adjustment-reset>Reset</button>
       </div>
-      <div class="table-meta"><span><strong>${matchingCount}</strong> matching transaction${matchingCount===1?'':'s'}</span><span>Draft/Review items are visible but do not change payroll or rental settlement.</span></div>
+      <div class="table-meta"><span><strong>${matchingCount}</strong> matching transaction${matchingCount===1?'':'s'}</span><span>Draft/Review items are included in the timesheet projected worker result, but remain excluded from payroll or Supplier Settlement until approved.</span></div>
       <div class="table-scroll"><table class="data-table adjustment-ledger-table"><thead><tr><th>Date / Period</th><th>Person</th><th>Transaction</th><th>Project / Supplier</th><th>Amount</th><th>${state.workspace==='rental'?'Settlement effect':'Payroll effect'}</th><th>Status</th><th>Source</th><th></th></tr></thead><tbody>${rows.length?rows.map(row=>{
         const kind=adjustmentKind(row.type), amount=Number(row.amount||0);
         const entityButton=row.workforceKey==='Internal'?`<button class="entity-link entity-link--stack" data-open-employee="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)} · Internal</span></button>`:`<button class="entity-link entity-link--stack" data-open-rental-worker="${escapeHtml(row.personId)}"><strong>${escapeHtml(row.personName)}</strong><span>${escapeHtml(row.personCode)} · Rental</span></button>`;
@@ -8451,7 +8461,7 @@
       ${state.workspace==='rental'?'':`<div class="adjustment-tabs"><button class="${state.adjustmentView==='register'?'is-active':''}" data-adjustment-view="register"><span>Transaction Register</span><small>${totalTransactionCount} total records</small></button><button class="${state.adjustmentView==='balances'?'is-active':''}" data-adjustment-view="balances"><span>Advance Balances</span><small>${activeBalanceCount} open</small></button></div>`}
       ${state.adjustmentServer.error&&state.workspace==='internal'?`<div class="ui-v2-payroll-inline-alert"><strong>Adjustment page could not be refreshed.</strong><span>${escapeHtml(state.adjustmentServer.error)}</span></div>`:''}
       ${content}
-      <div class="source-note adjustment-source-note">${icon('info')}<span><strong>Calculation boundary:</strong> ${state.workspace==='rental'?'Only Approved database adjustments are snapshotted into the matching supplier/project settlement. Worker Advance is a direct settlement deduction; it is not an internal employee salary-advance balance.':'Internal transactions are company-scoped database records. Draft and Review items remain excluded from payroll until approved.'}</span></div>
+      <div class="source-note adjustment-source-note">${icon('info')}<span><strong>Calculation boundary:</strong> ${state.workspace==='rental'?'Timesheet projected payment includes current Draft, Review and Approved worker adjustments so advances/deductions are visible immediately. Only Approved database adjustments are snapshotted into the matching supplier/project settlement. Worker Advance is a direct settlement deduction; it is not an internal employee salary-advance balance.':'Internal transactions are company-scoped database records. Draft and Review items remain excluded from payroll until approved.'}</span></div>
     </section>`;
   }
   function adjustmentFindRow(id) {
@@ -10224,7 +10234,7 @@
       try {
         const payload = await appApi(`/api/rental/adjustments/${encodeURIComponent(found.item.id)}/workflow/`, { method:'POST', body:{ action } });
         await refreshRentalAdjustmentAuthority(state.period, payload.adjustment || null);
-        showToast(action==='approve'?'Transaction approved':'Transaction submitted', action==='approve' ? `${adjustmentNormalizeType(found.item.type)} is now eligible for the matching rental settlement calculation.` : 'The transaction is awaiting approval and remains excluded from settlement calculation.');
+        showToast(action==='approve'?'Transaction approved':'Transaction submitted', action==='approve' ? `${adjustmentNormalizeType(found.item.type)} is now eligible for the matching rental settlement calculation.` : 'The transaction is awaiting approval. It is included in the timesheet projected result, but remains excluded from Supplier Settlement until approved.');
       } catch (error) {
         showToast('Transaction workflow failed', error.message);
         btn.disabled = false;

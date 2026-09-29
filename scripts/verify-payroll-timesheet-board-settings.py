@@ -75,6 +75,9 @@ require(
     '"canViewAdjustments"',
     '"canViewCalculatedResult"',
     '"adjustmentSummary"',
+    '"previewEarnings"',
+    '"previewDeductions"',
+    '"previewNet"',
     "def _rental_timesheet_adjustment_summary",
     '.annotate(total=Sum("amount"), row_count=Count("id"))',
     '"canViewWorkerIdentity"',
@@ -96,8 +99,12 @@ require(
     "Adjustment −",
     "Calculated result",
     "showCalculatedResult",
+    "financialPreview:true",
+    "resultOnly:true",
     "data-rental-show-calculated-result",
-    "Gross wage + approved adjustment earnings − approved deductions = calculated result.",
+    "independent board-column choices",
+    "Gross wage + current adjustment earnings − current deductions = calculated result.",
+    "provisional ·",
     "negative · settlement blocked",
     "function bindRentalTimesheetBoardResizers()",
     "data-rental-board-resize",
@@ -161,7 +168,7 @@ require(
 )
 require(
     "apps/rental_manpower/tests/test_timesheet_exports.py",
-    "test_export_calculated_result_applies_only_approved_adjustments",
+    "test_export_calculated_result_includes_pending_adjustments_as_projected_payment",
 )
 
 print("Rental timesheet board/settings/calculated-result contract verified.")

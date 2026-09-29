@@ -215,6 +215,9 @@ class RentalTimesheetTests(TestCase):
         self.assertEqual(preview['approvedCount'],1)
         self.assertEqual(Decimal(preview['pendingDeductions']),Decimal('20'))
         self.assertEqual(preview['pendingCount'],1)
+        self.assertEqual(Decimal(preview['previewEarnings']),Decimal('50'))
+        self.assertEqual(Decimal(preview['previewDeductions']),Decimal('20'))
+        self.assertEqual(Decimal(preview['previewNet']),Decimal('30'))
 
     def test_timesheet_api_is_server_paged_and_returns_project_roster_only(self):
         for index in range(2, 32):

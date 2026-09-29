@@ -129,7 +129,10 @@ _STATIC_COLUMNS: tuple[ExportColumn, ...] = (
     ExportColumn("pending_adjustment_count", "Pending adjustment count", "Adjustments & result", 19, 27, kind="number", permission="calculated_result"),
     ExportColumn("pending_adjustment_earnings", "Pending adjustment earnings", "Adjustments & result", 22, 31, kind="number", permission="calculated_result"),
     ExportColumn("pending_adjustment_deductions", "Pending adjustment deductions", "Adjustments & result", 23, 32, kind="number", permission="calculated_result"),
-    ExportColumn("calculated_result", "Calculated result", "Adjustments & result", 20, 29, kind="number", permission="calculated_result"),
+    ExportColumn("current_adjustment_earnings", "Current adjustment earnings", "Adjustments & result", 22, 31, kind="number", permission="calculated_result"),
+    ExportColumn("current_adjustment_deductions", "Current adjustment deductions", "Adjustments & result", 23, 32, kind="number", permission="calculated_result"),
+    ExportColumn("approved_calculated_result", "Approved-only result", "Adjustments & result", 20, 29, kind="number", permission="calculated_result"),
+    ExportColumn("calculated_result", "Projected calculated result", "Adjustments & result", 22, 31, kind="number", permission="calculated_result"),
 
     ExportColumn("timesheet_status", "Timesheet status", "Workflow", 17, 25, default=True),
     ExportColumn("timesheet_revision", "Revision", "Workflow", 11, 18, kind="number"),
@@ -552,7 +555,10 @@ def build_rental_timesheet_export_dataset(
         approved_adjustment_deductions = Decimal(adjustment.get("approved_deductions", 0))
         pending_adjustment_earnings = Decimal(adjustment.get("pending_earnings", 0))
         pending_adjustment_deductions = Decimal(adjustment.get("pending_deductions", 0))
-        calculated_result = gross_wage + approved_adjustment_earnings - approved_adjustment_deductions
+        current_adjustment_earnings = approved_adjustment_earnings + pending_adjustment_earnings
+        current_adjustment_deductions = approved_adjustment_deductions + pending_adjustment_deductions
+        approved_calculated_result = gross_wage + approved_adjustment_earnings - approved_adjustment_deductions
+        calculated_result = gross_wage + current_adjustment_earnings - current_adjustment_deductions
         derived_rates = {
             overtime_bill_rate(assignment=a, policy=policy, period_start=start)
             for a in worker_assignments
@@ -610,6 +616,9 @@ def build_rental_timesheet_export_dataset(
             "pending_adjustment_count": int(adjustment.get("pending_count", 0)),
             "pending_adjustment_earnings": float(pending_adjustment_earnings),
             "pending_adjustment_deductions": float(pending_adjustment_deductions),
+            "current_adjustment_earnings": float(current_adjustment_earnings),
+            "current_adjustment_deductions": float(current_adjustment_deductions),
+            "approved_calculated_result": float(approved_calculated_result),
             "calculated_result": float(calculated_result),
             **workflow,
         }

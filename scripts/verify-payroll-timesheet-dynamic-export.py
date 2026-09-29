@@ -56,7 +56,9 @@ for marker in (
     'ExportColumn("timesheet_status", "Timesheet status"',
     'ExportColumn("approved_adjustment_earnings", "Approved adjustment earnings"',
     'ExportColumn("approved_adjustment_deductions", "Approved adjustment deductions"',
-    'ExportColumn("calculated_result", "Calculated result"',
+    'ExportColumn("current_adjustment_deductions", "Current adjustment deductions"',
+    'ExportColumn("approved_calculated_result", "Approved-only result"',
+    'ExportColumn("calculated_result", "Projected calculated result"',
     "_adjustment_totals_for_workers",
     'f"day_{day:02d}"',
     'permission="supplier_detail"',
@@ -113,7 +115,7 @@ for marker in (
     "test_pdf_export_is_a_real_pdf_file",
     "test_selected_scope_only_exports_requested_matching_workers",
     "test_supervisor_schema_does_not_offer_supplier_private_or_commercial_columns",
-    "test_export_calculated_result_applies_only_approved_adjustments",
+    "test_export_calculated_result_includes_pending_adjustments_as_projected_payment",
 ):
     if marker not in tests:
         fail(f"timesheet export regression coverage missing: {marker}")

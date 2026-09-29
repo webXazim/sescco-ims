@@ -1,12 +1,12 @@
-# 1.0.117 — Rental Timesheet Calculated Result & Weekly-Off Highlight
+# 1.0.117 — Rental Timesheet Projected Payment & Weekly-Off Highlight
 
-- Added a permission-controlled **Show calculated result on the timesheet** toggle directly in Project Timesheet Settings. It is a personal browser display preference and does not modify the shared project-period attendance policy.
-- When enabled, the board adds **Approved adjustment earnings**, **Approved adjustment deductions**, and **Calculated result** to the right side of the day grid. The preview uses the same business meaning as settlement preparation: **Gross wage + approved earnings − approved deductions**.
-- Worker **advances, fines and other approved deductions** reduce the calculated result; approved **bonuses, reimbursements and other earnings** increase it. Draft/Review adjustments are surfaced as pending context but are deliberately excluded until approved.
-- A negative calculated result is clearly marked as **settlement blocked**, matching the settlement authority instead of silently presenting a negative payable as final. Supplier Settlement remains the authoritative financial record and may include the full approved adjustment set.
-- Rental timesheet context now returns bounded, database-aggregated per-worker adjustment totals only for the visible server page and only when the user has both commercial-timesheet and adjustment visibility. Adjustment mutations invalidate the cached timesheet preview so values refresh without stale financial context.
-- Dynamic Excel/PDF export now offers the same approved adjustment, pending adjustment and calculated-result fields, with the existing permission-safe selectable-column behavior.
-- Project weekly off days are now substantially easier to scan: the configured date header has a strong **OFF** badge/top rule and the full day column is shaded while retaining normal editable/assignment behavior.
+- The permission-controlled **Show calculated result on the timesheet** toggle now adds only the Calculated Result column. **Adjustment +** and **Adjustment −** are normal independent board-column choices, so operators can show or hide them without changing the calculation.
+- The live timesheet result now uses **Gross wage + all current adjustment earnings − all current deductions**. Draft, Review and Approved transactions are therefore reflected immediately in the projected worker payment; pending transactions keep the result visibly marked **provisional**.
+- The board still preserves approval authority: the projected value is an operational preview, while **Supplier Settlement continues to snapshot Approved adjustments only**. The result tooltip exposes the approved-only amount whenever pending adjustments exist.
+- Worker advances, fines and other deductions reduce the projected result even before approval, while bonuses/reimbursements increase it. Negative provisional results are labelled as a negative preview; a negative all-approved result remains settlement-blocking under the existing finance rules.
+- Rental timesheet context returns bounded, database-aggregated approved/pending/current adjustment totals only for workers on the visible server page and only when the user has both commercial-timesheet and adjustment visibility. Adjustment mutations invalidate cached timesheet preview data.
+- Dynamic Excel/PDF export now exposes current adjustment earnings/deductions, an **Approved-only result**, and the **Projected calculated result**, alongside the existing approved/pending breakdown.
+- Project weekly off days remain strongly highlighted with an **OFF** badge/top rule and full-column shading while retaining normal editable/assignment behavior.
 - No new database migration is introduced by this follow-on. It builds on the existing `0010` project settings and `0011` working-hours/overtime policy migrations.
 
 # 1.0.117 — Rental Timesheet Working-Hours & Overtime Policy
