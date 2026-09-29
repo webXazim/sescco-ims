@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
                 ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("off_weekdays", models.JSONField(default=apps.rental_manpower.models.timesheet_settings.default_rental_timesheet_off_weekdays)),
-                ("company", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="rental_manpower_rentaltimesheetprojectsettings_records", to="core.company")),
+                ("company", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="%(app_label)s_%(class)s_records", to="core.company")),
                 ("project", models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name="rental_timesheet_settings", to="projects.project")),
             ],
             options={
