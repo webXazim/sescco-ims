@@ -172,6 +172,11 @@ svg { display: block; }
 .activity-title { font-size: 12px; font-weight: 610; }
 .activity-sub { color: var(--muted); font-size: 10px; margin-top: 3px; }
 .activity-qty { font-size: 12px; font-weight: 680; text-align: right; }
+/* Keep the project activity title, action, and actor on separate readable lines. */
+.project-activity-list .project-activity-content { display: flex; flex-direction: column; min-width: 0; gap: 4px; }
+.project-activity-list .activity-title, .project-activity-list .activity-sub { display: block; overflow-wrap: anywhere; }
+.project-activity-list .activity-sub { margin-top: 0; line-height: 1.45; }
+
 .project-bars { padding: 6px 16px 16px; display: grid; gap: 14px; }
 .project-bar-head { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
 .bar { height: 6px; background: #eef0f2; border-radius: 99px; overflow: hidden; }

@@ -70,6 +70,19 @@
 </section>
 <section class="card section-gap">
   <div class="card-head"><div><h2 class="card-title">Recent project activity</h2><div class="card-meta">Latest balance changes for {{ project.code }}</div></div><a class="btn btn-sm" href="{% url 'core:activity' %}?project={{ project.code }}">View all activity</a></div>
-  {% if recent_movements %}<div class="activity-list">{% for movement in recent_movements %}<a class="activity-row" href="{% url 'inventory:movement_detail' movement.reference %}"><span class="activity-symbol">{% if movement.is_inbound %}＋{% else %}−{% endif %}</span><span><span class="activity-title">{{ movement.material_name_display }}</span><span class="activity-sub">{{ movement.get_movement_type_display }} · {{ movement.movement_date|date:"d M Y" }}{% if movement.invoice_reference %} · {{ movement.invoice_reference }}{% endif %}</span></span><span class="activity-qty {% if movement.is_inbound %}text-positive{% else %}text-danger{% endif %}">{{ movement.signed_quantity_display }}</span></a>{% endfor %}</div>{% else %}<div class="empty-state"><p>No project stock activity has been recorded.</p></div>{% endif %}
+  {% if recent_movements %}
+  <div class="activity-list project-activity-list">
+    {% for movement in recent_movements %}
+    <a class="activity-row" href="{% url 'inventory:movement_detail' movement.reference %}">
+      <span class="activity-symbol">{% if movement.is_inbound %}＋{% else %}−{% endif %}</span>
+      <span class="project-activity-content">
+        <span class="activity-title">{{ movement.material_name_display }}</span>
+        <span class="activity-sub">{{ movement.get_movement_type_display }} · {{ movement.movement_date|date:"d M Y" }}{% if movement.invoice_reference %} · {{ movement.invoice_reference }}{% endif %} · By {% if movement.created_by %}{{ movement.created_by.display_name|default:movement.created_by.username }}{% else %}Unknown user{% endif %}</span>
+      </span>
+      <span class="activity-qty {% if movement.is_inbound %}text-positive{% else %}text-danger{% endif %}">{{ movement.signed_quantity_display }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}<div class="empty-state"><p>No project stock activity has been recorded.</p></div>{% endif %}
 </section>
 {% endblock %}
