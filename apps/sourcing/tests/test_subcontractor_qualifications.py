@@ -99,7 +99,13 @@ class SubcontractorQualificationTests(TestCase):
         self.assertEqual(doc.effective_status, "Expired")
 
     def test_invalid_upload_signature_and_date_range(self):
-        self.assertEqual(self._create(upload=SimpleUploadedFile("malware.pdf", b"<script>bad</script>")).status_code, 400)
+        response = self._create(upload=SimpleUploadedFile("malware.pdf", b"<script>bad</script>"))
+        self.assertEqual(response.status_code, 400)
+        self.assertFormError(
+            response.context["form"],
+            "upload",
+            "Upload a PDF, PNG or JPEG with a matching file extension.",
+        )
         self.assertFalse(SourcingSubcontractorDocument.objects.exists())
         self.assertEqual(self._create(issued_on="2027-01-01", expires_on="2026-01-01").status_code, 400)
         self.assertFalse(SourcingSubcontractorDocument.objects.exists())

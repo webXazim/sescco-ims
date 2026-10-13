@@ -59,6 +59,8 @@ class SourcingAccessControlTests(TestCase):
         self.assertIn(AccessPermission.SOURCING_VENDORS_MANAGE, owner_permissions)
         self.assertIn(AccessPermission.SOURCING_MANPOWER_MANAGE, owner_permissions)
         self.assertIn(AccessPermission.SOURCING_MASTERS_MANAGE, owner_permissions)
+        self.assertIn(AccessPermission.SOURCING_SUBCONTRACTORS_VIEW, owner_permissions)
+        self.assertIn(AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE, owner_permissions)
 
         for role in (
             AccessRole.OPERATIONS_ADMIN,
@@ -141,8 +143,19 @@ class SourcingAccessControlTests(TestCase):
 
     def test_permission_catalog_exposes_sourcing_as_a_separate_category(self):
         rows = [row for row in permission_catalog() if row["code"].startswith("sourcing.")]
-        self.assertEqual(len(rows), 7)
+        expected_kinds = {
+            "sourcing.vendors.view": "view",
+            "sourcing.vendors.manage": "action",
+            "sourcing.manpower.view": "view",
+            "sourcing.manpower.manage": "action",
+            "sourcing.masters.view": "view",
+            "sourcing.masters.manage": "action",
+            "sourcing.export.execute": "action",
+            "sourcing.subcontractors.view": "view",
+            "sourcing.subcontractors.manage": "action",
+        }
+        self.assertCountEqual([row["code"] for row in rows], expected_kinds)
         self.assertTrue(all(row["category"] == "Sourcing Directory" for row in rows))
-        by_code = {row["code"]: row for row in rows}
-        self.assertEqual(by_code[AccessPermission.SOURCING_VENDORS_VIEW.value]["kind"], "view")
-        self.assertEqual(by_code[AccessPermission.SOURCING_VENDORS_MANAGE.value]["kind"], "action")
+        for row in rows:
+            with self.subTest(permission=row["code"]):
+                self.assertEqual(row["kind"], expected_kinds[row["code"]])

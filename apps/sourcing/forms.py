@@ -1114,5 +1114,10 @@ class SourcingSubcontractorDocumentForm(forms.ModelForm):
         upload = self.cleaned_data.get("upload")
         if upload:
             from .services.subcontractor_documents import inspect_upload
-            inspect_upload(upload)
+            try:
+                inspect_upload(upload)
+            except forms.ValidationError as exc:
+                # Field cleaners must raise a message list, rather than the
+                # service's dictionary of errors keyed by field name.
+                raise forms.ValidationError(exc.messages) from exc
         return upload
