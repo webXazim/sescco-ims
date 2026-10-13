@@ -41,8 +41,9 @@ views = require(
 )
 require("apps/sourcing/urls.py", '"data-exchange/template/<str:dataset>/"')
 require("templates/sourcing/data_exchange.html", "Blank import templates", "Import CSV / XLSX", "verified_now=yes")
-for t in ("subcontractors/list.html", "services/list.html", "service_finder/list.html"):
+for t in ("subcontractors/list.html", "services/list.html"):
     require("templates/sourcing/" + t, "data-sourcing-export-current")
+require("templates/sourcing/subcontractors/_offers.html", "data-sourcing-finder-root", "data-sourcing-live-finder")
 require("templates/sourcing/sidebar.html", "SOURCING_ACCESS.subcontractors.manage")
 require("apps/sourcing/tests/test_subcontractor_data_exchange.py",
         "test_master_dry_run_then_commit", "test_catalog_multi_scope_verification",

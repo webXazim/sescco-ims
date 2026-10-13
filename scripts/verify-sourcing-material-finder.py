@@ -79,8 +79,9 @@ views = text("apps/sourcing/views.py")
 for marker in (
     "def material_finder(request: HttpRequest)",
     "_require_vendor_view(request)",
-    "material_finder_page(company=request.company",
-    'page_key="sourcing-material-finder"',
+    "material_finder_page, material_finder_categories",
+    'page_key="sourcing-vendors"',
+    'request.GET.get("view") == "offers"',
     "can_manage=membership_can_manage_vendor_sourcing",
 ):
     if marker not in views:
@@ -91,17 +92,20 @@ if 'path("material-finder/", views.material_finder, name="material_finder")' not
     fail("Material Finder route missing")
 
 sidebar = text("templates/sourcing/sidebar.html")
-if "{% url 'sourcing:material_finder' %}" not in sidebar or "sourcing-material-finder" not in sidebar:
-    fail("Material Finder is not a permission-aware live navigation route")
+if "{% url 'sourcing:vendor_list' %}" not in sidebar or "sourcing-vendors" not in sidebar:
+    fail("Vendor sourcing navigation missing after Finder consolidation")
+if '_legacy_finder_redirect(request, destination="sourcing:vendor_list")' not in views:
+    fail("Permission-checked legacy Material Finder redirect missing")
 
-template = text("templates/sourcing/material_finder/list.html")
+template = text("templates/sourcing/vendors/_offers.html")
 for marker in (
     "Search material, type/category, code, alias, specification, brand, model or vendor",
     "Available Qty",
     "Reference Rate",
     "Freshness",
     "Never verified",
-    "Reference only",
+    "data-sourcing-finder-root",
+    "data-sourcing-live-finder",
     "Edit reference",
 ):
     if marker not in template:

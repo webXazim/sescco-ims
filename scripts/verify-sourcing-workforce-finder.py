@@ -118,10 +118,10 @@ for route in ("workforce-finder/", "workforce/<uuid:offer_id>/verify/", "workfor
     if route not in urls:
         fail(f"Workforce Finder route missing: {route}")
 
-finder_ui = text("templates/sourcing/workforce_finder/list.html")
+finder_ui = text("templates/sourcing/manpower/_offers.html")
 for marker in (
-    "Workforce Finder", "Available", "Standard Rate", "OT Rate", "Mobilization", "Freshness",
-    "Verification history", "Verify now", "Reference only",
+    "data-sourcing-finder-root", "data-sourcing-live-finder", "Available", "Standard Rate", "OT Rate", "Mobilization", "Freshness",
+    "Verification history", "Verify now", "data-sourcing-live-finder",
 ):
     if marker not in finder_ui:
         fail(f"Workforce Finder UI missing: {marker}")
@@ -134,11 +134,13 @@ for marker in ("Workforce Verification History", "Immutable sourcing evidence", 
     if marker not in history_ui and marker not in history:
         fail(f"Workforce History UI missing: {marker}")
 sidebar = text("templates/sourcing/sidebar.html")
-if "sourcing:workforce_finder" not in sidebar or "sourcing-workforce-finder" not in sidebar:
-    fail("Workforce Finder navigation is not live")
+if "sourcing:manpower_supplier_list" not in sidebar or "sourcing-manpower" not in sidebar:
+    fail("Integrated Manpower sourcing navigation is missing")
+if '_legacy_finder_redirect(request, destination="sourcing:manpower_supplier_list")' not in views:
+    fail("Permission-checked legacy Workforce Finder redirect missing")
 home = text("templates/sourcing/home.html")
-if "Find Workforce" not in home:
-    fail("Sourcing home does not expose Workforce Finder")
+if "manpower_supplier_list" not in home:
+    fail("Sourcing home does not expose Manpower directory")
 
 for rel in (
     "apps/sourcing/selectors/workforce_finder.py",

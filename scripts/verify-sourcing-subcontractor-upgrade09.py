@@ -18,10 +18,14 @@ for text in ("subcontractor-sort", "subcontractor-direction", "active_service_co
     assert text in list_page, text
 
 selector = read("apps/sourcing/selectors/subcontractors.py")
-for text in ("service_offers__company=company", "service_offers__is_active=True", "service_offers__service__is_active=True", "distinct=True"):
-    assert text in selector
+# The integrated directory keeps service counts tenant-scoped through a bounded
+# correlated Subquery, avoiding high-cardinality joins and DISTINCT fanout.
+for text in ("SourcingSubcontractorService.objects.for_company(company)",
+             "service_qs.filter(is_active=True, service__is_active=True)",
+             "active_service_count=Coalesce(Subquery(service_total",
+             "service_hit=Exists(service_qs.filter("):
+    assert text in selector, text
 assert "for_company(company)" in selector
-assert "active_service_count=Count(" in selector
 ast.parse(selector)
 
 profile = read("templates/sourcing/subcontractors/detail.html")
@@ -30,10 +34,10 @@ for text in ('id="company-information"', 'id="service-catalog"', 'id="contacts"'
 assert "{% if can_manage %}<a href=\"#lifecycle\"" in profile
 assert 'id="qualifications"' in read("templates/sourcing/subcontractors/_qualifications.html")
 
-finder = read("templates/sourcing/service_finder/list.html")
+finder = read("templates/sourcing/subcontractors/_offers.html")
 assert "data-sourcing-finder-root" in finder and "data-sourcing-live-finder" in finder
-assert "sourcing-u09-filter-heading" in finder
-assert "sourcing:data_export" in finder
+assert "sourcing-finder-filters" in finder
+assert "data-sourcing-export-current" in list_page
 exchange = read("templates/sourcing/data_exchange.html")
 assert "sourcing-u09-exchange-guide" in exchange
 assert "{% if import_choices %}" in exchange and "{% if export_choices %}" in exchange

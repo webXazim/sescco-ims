@@ -21,7 +21,7 @@ views = source("apps/sourcing/views.py")
 urls = source("apps/sourcing/urls.py")
 access = source("apps/sourcing/access.py")
 nav = source("templates/sourcing/sidebar.html")
-page = source("templates/sourcing/service_finder/list.html")
+page = source("templates/sourcing/subcontractors/_offers.html")
 home = source("templates/sourcing/home.html")
 profile = source("templates/sourcing/subcontractors/detail.html")
 tests = source("apps/sourcing/tests/test_service_finder.py")
@@ -32,8 +32,12 @@ assert '_require_subcontractor_view(request)' in views.split('def service_finder
 assert 'membership_can_manage_subcontractor_sourcing' in views
 assert 'SOURCING_SUBCONTRACTORS_VIEW' in access
 assert 'SOURCING_SUBCONTRACTORS_MANAGE' in access
-for html in (page, nav, home, profile):
-    assert "sourcing:service_finder" in html
+assert "sourcing:subcontractor_list" in page
+assert 'sourcing:subcontractor_list' in nav
+assert 'subcontractor_list' in home
+assert 'sourcing:subcontractor_list' in profile or 'sourcing:service_finder' in profile
+assert '_legacy_finder_redirect(request, destination="sourcing:subcontractor_list")' in views
+assert 'request.GET.get("view") == "offers"' in views
 for marker in (
     '.objects.for_company(company)',
     'is_active=True',

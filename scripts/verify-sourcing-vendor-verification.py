@@ -95,7 +95,7 @@ for marker in (
 
 verify_template = text("templates/sourcing/vendors/offer_verify.html")
 history_template = text("templates/sourcing/vendors/offer_history.html")
-finder_template = text("templates/sourcing/material_finder/list.html")
+finder_template = text("templates/sourcing/vendors/_offers.html")
 detail_template = text("templates/sourcing/vendors/detail.html")
 for marker in ("Save Verification", "form.contact_name", "Recent Verification History", "Reference-only verification"):
     if marker not in verify_template:

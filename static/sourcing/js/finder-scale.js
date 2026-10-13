@@ -93,7 +93,7 @@
 
     function queueSearch() {
       clearTimeout(debounce);
-      debounce = setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 650);
+      debounce = setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 350);
     }
 
     form.addEventListener('submit', (event) => {

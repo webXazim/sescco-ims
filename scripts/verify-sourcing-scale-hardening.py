@@ -65,12 +65,12 @@ for rel, markers in (
             fail(f"bounded profile catalog missing: {rel}: {marker}")
 
 js = text("static/sourcing/js/finder-scale.js")
-for marker in ("AbortController", "controller.abort()", "setTimeout(() => run(submitUrl(), { push: false }), 350)", "data-sourcing-finder-root", "DOMParser"):
+for marker in ("AbortController", "activeController.abort()", "setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 350)", "data-sourcing-finder-root", "DOMParser"):
     if marker not in js:
         fail(f"stale-request protection missing: {marker}")
-for rel in ("templates/sourcing/material_finder/list.html", "templates/sourcing/workforce_finder/list.html"):
+for rel in ("templates/sourcing/vendors/_offers.html", "templates/sourcing/manpower/_offers.html", "templates/sourcing/subcontractors/_offers.html"):
     payload = text(rel)
-    for marker in ("data-sourcing-finder-root", "data-sourcing-live-finder", "finder-scale.js"):
+    for marker in ("data-sourcing-finder-root", "data-sourcing-live-finder", "sourcing-pagination"):
         if marker not in payload:
             fail(f"Finder scale binding missing in {rel}: {marker}")
 

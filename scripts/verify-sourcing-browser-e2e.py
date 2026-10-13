@@ -87,9 +87,9 @@ for needle in (
     'MANPOWER_CODE = "SDEMO-P00001"',
     'TRADE_QUERY = "SDEMO Trade 001"',
     'app/sourcing/vendors/',
-    'app/sourcing/material-finder/',
+    'app/sourcing/vendors/?view=offers',
     'app/sourcing/manpower-suppliers/',
-    'app/sourcing/workforce-finder/',
+    'app/sourcing/manpower-suppliers/?view=offers',
     'vendor-supply-catalog',
     'vendor-quick-verification',
     'workforce-quick-verification',
@@ -123,11 +123,11 @@ if "sourcing/js/directory-menus.js" not in base_template:
 menu_templates = (
     "templates/sourcing/vendors/list.html",
     "templates/sourcing/vendors/detail.html",
-    "templates/sourcing/material_finder/list.html",
+    "templates/sourcing/vendors/_offers.html",
     "templates/sourcing/materials/list.html",
     "templates/sourcing/manpower/list.html",
     "templates/sourcing/manpower/detail.html",
-    "templates/sourcing/workforce_finder/list.html",
+    "templates/sourcing/manpower/_offers.html",
     "templates/sourcing/trades/list.html",
 )
 for rel in menu_templates:
@@ -140,15 +140,15 @@ for needle in (".sourcing-row-menu__floating-panel", "position:fixed!important",
         fail(f"Sourcing unclipped row-menu CSS missing: {needle}")
 
 finder_js = text("static/sourcing/js/finder-scale.js")
-for needle in ("new AbortController()", 'timer = setTimeout(() => run(submitUrl(), { push: false }), 350)', "serial !== requestSerial"):
+for needle in ("new AbortController()", 'debounce = setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 350)', "serial !== requestSerial"):
     if needle not in finder_js:
         fail(f"Finder browser-scale authority missing: {needle}")
 
 for template, needles in {
     "templates/sourcing/vendors/detail.html": ('data-sourcing-tab="catalog"', 'data-sourcing-panel="catalog"', "Verification history", "Verify now"),
-    "templates/sourcing/material_finder/list.html": ('data-sourcing-finder-root', 'data-sourcing-live-finder', "Verification history", "Verify now"),
+    "templates/sourcing/vendors/_offers.html": ('data-sourcing-finder-root', 'data-sourcing-live-finder', "Verification history", "Verify now"),
     "templates/sourcing/manpower/detail.html": ('data-sourcing-tab="workforce"', 'data-sourcing-panel="workforce"', "Verification history", "Verify now"),
-    "templates/sourcing/workforce_finder/list.html": ('data-sourcing-finder-root', 'data-sourcing-live-finder', "Verification history", "Verify now"),
+    "templates/sourcing/manpower/_offers.html": ('data-sourcing-finder-root', 'data-sourcing-live-finder', "Verification history", "Verify now"),
     "templates/sourcing/vendors/offer_history.html": ("sourcing-verification-timeline", "Immutable sourcing evidence"),
     "templates/sourcing/manpower/workforce_history.html": ("sourcing-verification-timeline", "Immutable sourcing evidence"),
 }.items():
