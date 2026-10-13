@@ -86,9 +86,14 @@ def vendor_directory_page(*, company, params) -> VendorDirectoryResult:
             | Q(postal_code__icontains=query)
             | Q(cr_number__icontains=query)
             | Q(vat_number__icontains=query)
-            | Q(_contact_match=True)
+            | Q(tags__icontains=query) | Q(_contact_match=True)
             | Q(_material_match=True)
         )
+
+    tag = str(params.get("tag") or "").strip()[:40]
+    if tag and '"' not in tag and "\\" not in tag:
+        # Quoted match against the short JSON list avoids matching e.g. "Civil" inside "Civil Works".
+        qs = qs.filter(tags__icontains='"' + tag + '"')
 
     qs = filter_company_capabilities(queryset=qs, company=company, kind='vendor', params=params)
     qs = annotate_first_capability(queryset=qs, company=company, kind='vendor', params=params)

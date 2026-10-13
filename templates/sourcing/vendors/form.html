@@ -76,6 +76,7 @@
     <div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div>
   </section>
 
+  <section class="sourcing-form-section"><header><h2>Company Classification Tags</h2><p>Identify this provider's specializations independently of its supply items, worker trades or service capabilities.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.tags full=True %}</div>{% include "sourcing/unified/tag_options.html" %}</section>
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}

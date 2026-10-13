@@ -63,9 +63,13 @@ def subcontractor_directory_page(*, company, params):
     service_total = (service_qs.filter(is_active=True, service__is_active=True)
                      .order_by().values("subcontractor_id")
                      .annotate(total=Count("pk")).values("total")[:1])
+    distinct_services = (service_qs.filter(is_active=True, service__is_active=True)
+                         .order_by().values("subcontractor_id")
+                         .annotate(total=Count("service_id", distinct=True)).values("total")[:1])
     qs = qs.annotate(
         contact_count=Coalesce(Subquery(contact_total, output_field=IntegerField()), Value(0)),
         active_service_count=Coalesce(Subquery(service_total, output_field=IntegerField()), Value(0)),
+        active_service_type_count=Coalesce(Subquery(distinct_services, output_field=IntegerField()), Value(0)),
     )
     if query:
         normalized = normalize_text(query)
@@ -86,8 +90,13 @@ def subcontractor_directory_page(*, company, params):
             | Q(company_email__icontains=query) | Q(mobile__icontains=query) | Q(email__icontains=query)
             | Q(city__icontains=query) | Q(region__icontains=query) | Q(address__icontains=query)
             | Q(cr_number__icontains=query) | Q(vat_number__icontains=query)
-            | Q(service_coverage__icontains=query) | Q(contact_hit=True) | Q(service_hit=True)
+            | Q(tags__icontains=query) | Q(service_coverage__icontains=query) | Q(contact_hit=True) | Q(service_hit=True)
         )
+    tag = str(params.get("tag") or "").strip()[:40]
+    if tag and '"' not in tag and "\\" not in tag:
+        # Quoted match against the short JSON list avoids matching e.g. "Civil" inside "Civil Works".
+        qs = qs.filter(tags__icontains='"' + tag + '"')
+
     qs = filter_company_capabilities(queryset=qs, company=company, kind='subcontractor', params=params)
     qs = annotate_first_capability(queryset=qs, company=company, kind='subcontractor', params=params)
 

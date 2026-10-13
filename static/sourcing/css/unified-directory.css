@@ -25,3 +25,15 @@
 @media(max-width:590px){.sourcing-unified-filter-grid{grid-template-columns:1fr}.sourcing-unified-summary-help{display:block;margin-left:0}.sourcing-unified-cap-head{display:block}}
 
 .sourcing-unified-cap-actions{display:flex;flex-direction:column;gap:4px}
+
+/* Shared company classification presentation across all three directory modules. */
+.sourcing-provider-tags { display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:100px; }
+.sourcing-provider-tag { display:inline-flex; max-width:160px; overflow-wrap:anywhere; padding:3px 8px; border:1px solid #d8e3ee; border-radius:7px; background:#f4f8fc; color:#24415e; font-size:12px; font-weight:600; }
+.sourcing-capability-count { white-space:nowrap; font-weight:650; }
+.sourcing-capability-cell .cell-note { display:block; font-weight:400; margin-top:3px; }
+.sourcing-suggestion-datalist { display:none; }
+@media (max-width:850px) { .sourcing-provider-tag { max-width:115px; } }
+
+.sourcing-directory-profile-tags{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 16px;color:#52647b;font-size:13px}
+.sourcing-directory-profile-tags>strong{color:#213547}
+.sourcing-unified-filters .sourcing-input[list]{max-width:100%}

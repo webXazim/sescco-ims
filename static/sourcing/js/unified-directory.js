@@ -38,7 +38,7 @@
     });
   }
   function applyColumns() {
-    const table = results.querySelector('[data-vendor-table], [data-manpower-table]');
+    const table = results.querySelector('[data-vendor-table], [data-manpower-table], [data-subcontractor-table]');
     if (!table) return;
     form.querySelectorAll('[data-column-toggle]').forEach((toggle) => {
       table.querySelectorAll(`[data-column="${toggle.dataset.columnToggle}"]`)

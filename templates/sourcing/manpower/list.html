@@ -37,7 +37,7 @@
           <label><input type="checkbox" data-column-toggle="email" checked> Email</label>
           <label><input type="checkbox" data-column-toggle="phone" checked> Phone</label>
           <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
-          <label><input type="checkbox" data-column-toggle="trades" checked> Workforce Types</label>
+          <label><input type="checkbox" data-column-toggle="tags" checked> Tags</label><label><input type="checkbox" data-column-toggle="capabilities" checked> Active Trades</label>
           <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
         </div>
       </details>
@@ -56,6 +56,7 @@
       </select></label>
     </div>
     {% include "sourcing/unified/filters.html" %}
+    {% include "sourcing/unified/tag_options.html" %}
   </form>
   <div data-unified-results aria-live="polite" aria-atomic="false">
 
@@ -67,7 +68,7 @@
 
   <div class="sourcing-table-wrap">
     <table class="sourcing-table" data-manpower-table>
-      <thead><tr><th>Manpower Supplier</th><th data-column="contact">Primary Contact</th><th data-column="email">Email</th><th data-column="phone">Phone</th><th data-column="location">Location</th><th data-column="trades" class="num">Workforce Types</th><th>Status</th><th data-column="updated">Updated</th><th class="row-menu-col"><span class="sr-only">Actions</span></th></tr></thead>
+      <thead><tr><th>Manpower Supplier</th><th data-column="contact">Primary Contact</th><th data-column="email">Email</th><th data-column="phone">Phone</th><th data-column="location">Location</th><th data-column="tags">Tags</th><th data-column="capabilities">Active Trades</th><th>Status</th><th data-column="updated">Updated</th><th class="row-menu-col"><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {% for supplier in suppliers %}
         <tr>
@@ -76,13 +77,13 @@
           <td data-column="email">{% if supplier.email %}<a class="plain-link" href="mailto:{{ supplier.email }}">{{ supplier.email }}</a>{% else %}—{% endif %}</td>
           <td data-column="phone">{{ supplier.phone|default:supplier.mobile|default:'—' }}</td>
           <td data-column="location">{% if supplier.city or supplier.region %}{{ supplier.city }}{% if supplier.city and supplier.region %}, {% endif %}{{ supplier.region }}{% else %}—{% endif %}</td>
-          <td data-column="trades" class="num"><button type="button" class="sourcing-unified-expand" data-provider-expand="{{ supplier.pk }}" aria-expanded="false" aria-controls="capabilities-{{ supplier.pk }}">{{ supplier.workforce_type_count }} workforce type{{ supplier.workforce_type_count|pluralize }}</button>{% if supplier.first_capability %}<small class="cell-note">{{ supplier.first_capability }} · {% if supplier.first_capability_rate != None %}{{ supplier.first_capability_currency }} {{ supplier.first_capability_rate }}{% else %}Rate unknown{% endif %}</small>{% endif %}</td>
+          <td data-column="tags">{% include "sourcing/unified/tags_cell.html" with provider=supplier %}</td><td data-column="capabilities" class="sourcing-capability-cell"><button type="button" class="sourcing-unified-expand" data-provider-expand="{{ supplier.pk }}" aria-expanded="false" aria-controls="capabilities-{{ supplier.pk }}">{{ supplier.active_trade_count }} trade{{ supplier.active_trade_count|pluralize }}</button>{% if supplier.first_capability %}<small class="cell-note">{{ supplier.first_capability }} · {% if supplier.first_capability_rate != None %}{{ supplier.first_capability_currency }} {{ supplier.first_capability_rate }}{% else %}Rate unknown{% endif %}</small>{% endif %}</td>
           <td>{% if supplier.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>{% elif supplier.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif supplier.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
           <td data-column="updated"><time datetime="{{ supplier.updated_at|date:'c' }}">{{ supplier.updated_at|date:"d M Y" }}</time></td>
           <td class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Manpower Supplier actions">⋯</summary><div><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">View</a>{% if can_manage and not supplier.deleted_at and not supplier.archived_at %}<a href="{% url 'sourcing:manpower_supplier_edit' supplier.id %}">Edit</a>{% endif %}</div></details></td>
         </tr>
-        <tr class="sourcing-unified-expansion" data-provider-row="{{ supplier.pk }}" hidden><td colspan="9"><div id="capabilities-{{ supplier.pk }}" data-capabilities-slot><span>Loading workforce…</span></div></td></tr>
-        {% empty %}<tr><td colspan="9"><div class="sourcing-empty"><strong>No Manpower Suppliers found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Manpower Supplier when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_create' %}">New Manpower Supplier</a>{% endif %}</div></td></tr>{% endfor %}
+        <tr class="sourcing-unified-expansion" data-provider-row="{{ supplier.pk }}" hidden><td colspan="10"><div id="capabilities-{{ supplier.pk }}" data-capabilities-slot><span>Loading workforce…</span></div></td></tr>
+        {% empty %}<tr><td colspan="10"><div class="sourcing-empty"><strong>No Manpower Suppliers found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Manpower Supplier when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_create' %}">New Manpower Supplier</a>{% endif %}</div></td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

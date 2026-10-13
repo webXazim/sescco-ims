@@ -14,7 +14,7 @@ assert 'id="sourcing-main-content"' in base
 assert 'class="sourcing-skip-link"' in base
 
 list_page = read("templates/sourcing/subcontractors/list.html")
-for text in ("subcontractor-sort", "subcontractor-direction", "active_service_count", "sourcing-u09-stat-grid", "SOURCING_ACCESS.export", "{% if can_manage %}", "aria-label=\"Subcontractors table"):
+for text in ("subcontractor-sort", "subcontractor-direction", "active_service_type_count", "data-unified-results", "data-column=\"tags\"", "SOURCING_ACCESS.export", "{% if can_manage %}", "aria-label=\"Subcontractors table"):
     assert text in list_page, text
 
 selector = read("apps/sourcing/selectors/subcontractors.py")
@@ -22,7 +22,7 @@ selector = read("apps/sourcing/selectors/subcontractors.py")
 # correlated Subquery, avoiding high-cardinality joins and DISTINCT fanout.
 for text in ("SourcingSubcontractorService.objects.for_company(company)",
              "service_qs.filter(is_active=True, service__is_active=True)",
-             "active_service_count=Coalesce(Subquery(service_total",
+             "active_service_type_count=Coalesce(Subquery(distinct_services",
              "service_hit=Exists(service_qs.filter("):
     assert text in selector, text
 assert "for_company(company)" in selector
@@ -37,7 +37,7 @@ assert 'id="qualifications"' in read("templates/sourcing/subcontractors/_qualifi
 finder = read("templates/sourcing/subcontractors/_offers.html")
 assert "data-sourcing-finder-root" in finder and "data-sourcing-live-finder" in finder
 assert "sourcing-finder-filters" in finder
-assert "data-sourcing-export-current" in list_page
+assert "data-unified-export" in list_page
 exchange = read("templates/sourcing/data_exchange.html")
 assert "sourcing-u09-exchange-guide" in exchange
 assert "{% if import_choices %}" in exchange and "{% if export_choices %}" in exchange

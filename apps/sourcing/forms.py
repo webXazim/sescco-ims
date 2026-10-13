@@ -23,6 +23,27 @@ from .models.subcontractors import SourcingSubcontractorDocument
 from .models.base import clean_text, normalize_text
 
 
+from .models.provider_tags import normalize_provider_tags
+
+
+class SourcingProviderTagsFormMixin:
+    """Field normalization shared by all three concrete Django ModelForms."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and not self.is_bound:
+            self.initial["tags"] = ", ".join(self.instance.tags or [])
+
+    def clean_tags(self):
+        value = self.cleaned_data.get("tags", "")
+        if len(value) > 430:
+            raise forms.ValidationError("Tags are too long.")
+        try:
+            return normalize_provider_tags(value.split(","))
+        except ValidationError as error:
+            raise forms.ValidationError(error.messages) from error
+
+
 NEW_MATERIAL_CATEGORY_VALUE = "__new__"
 
 
@@ -84,7 +105,13 @@ def _canonical_material_category(value: object, categories=()) -> str:
     return cleaned
 
 
-class SourcingVendorForm(forms.ModelForm):
+class SourcingVendorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
+    tags = forms.CharField(
+        required=False, label="Company tags",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
+        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+    )
+
     materials = forms.ModelMultipleChoiceField(
         queryset=SourcingMaterial.objects.none(),
         required=False,
@@ -116,6 +143,7 @@ class SourcingVendorForm(forms.ModelForm):
             "city",
             "region",
             "postal_code",
+            "tags",
             "notes",
         )
         widgets = {
@@ -240,7 +268,13 @@ class SourcingVendorContactForm(forms.ModelForm):
                 field.widget.attrs.setdefault("class", "sourcing-input")
 
 
-class SourcingManpowerSupplierForm(forms.ModelForm):
+class SourcingManpowerSupplierForm(SourcingProviderTagsFormMixin, forms.ModelForm):
+    tags = forms.CharField(
+        required=False, label="Company tags",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
+        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+    )
+
     class Meta:
         model = SourcingManpowerSupplier
         fields = (
@@ -254,6 +288,7 @@ class SourcingManpowerSupplierForm(forms.ModelForm):
             "region",
             "cr_number",
             "vat_number",
+            "tags",
             "notes",
         )
         widgets = {
@@ -1090,15 +1125,21 @@ class SourcingServiceForm(forms.ModelForm):
         return cleaned
 
 
-class SourcingSubcontractorForm(forms.ModelForm):
-    """Company-scoped reference profile; deliberately no operational relations."""
+class SourcingSubcontractorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
+    """Company-scoped reference profile; no operational relations."""
+    tags = forms.CharField(
+        required=False, label="Company tags",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
+        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+    )
+
     class Meta:
         model = SourcingSubcontractor
         fields = (
             "code", "name", "display_name", "cr_number", "vat_number",
             "company_phone", "company_email", "website", "primary_contact_name",
             "mobile", "email", "address", "street_number", "district",
-            "city", "region", "postal_code", "service_coverage", "notes",
+            "city", "region", "postal_code", "service_coverage", "tags", "notes",
         )
         widgets = {
             "code": forms.TextInput(attrs={"placeholder": "SUB-XXXXXXXX"}),

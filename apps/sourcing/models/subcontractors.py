@@ -11,6 +11,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.core.models import CompanyOwnedModel
+from .provider_tags import normalize_provider_tags
 from .base import (
     ImmutableSourcingRevisionManager, SourcingAvailability, SourcingEntityStatus,
     SourcingLifecycleModel, SourcingRateMixin, clean_text, normalize_text,
@@ -37,6 +38,7 @@ class SourcingSubcontractor(SourcingLifecycleModel):
     cr_number = models.CharField(max_length=60, blank=True)
     vat_number = models.CharField(max_length=60, blank=True)
     website = models.URLField(blank=True)
+    tags = models.JSONField(default=list, blank=True)  # searchable company classifications
     notes = models.TextField(blank=True)
     last_verified_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
@@ -68,6 +70,7 @@ class SourcingSubcontractor(SourcingLifecycleModel):
             setattr(self, field, clean_text(getattr(self, field)).lower())
         for field in ("cr_number", "vat_number"):
             setattr(self, field, clean_text(getattr(self, field)).upper())
+        self.tags = normalize_provider_tags(self.tags)
         self.notes = (self.notes or "").strip()
         errors = {}
         if not self.code:

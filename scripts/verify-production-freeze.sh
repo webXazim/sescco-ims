@@ -44,6 +44,8 @@ python3 scripts/verify-sourcing-data-exchange.py
 python3 scripts/verify-sourcing-scale-hardening.py
 python3 scripts/verify-sourcing-security-certification.py
 python3 scripts/verify-sourcing-browser-e2e.py
+python3 scripts/verify-sourcing-provider-tags.py
+python3 scripts/verify-sourcing-subcontractor-upgrade09.py
 
 bash scripts/verify-payroll-frontend.sh
 

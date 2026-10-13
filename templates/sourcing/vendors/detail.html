@@ -3,6 +3,7 @@
 {% block title %}{{ vendor.display_name|default:vendor.name }} · {{ APP_NAME }}{% endblock %}
 {% block content %}
 <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:vendor_list' %}">Vendors</a><span>/</span><strong>{{ vendor.code }}</strong></nav>
+<div class="sourcing-directory-profile-tags"><strong>Tags</strong> {% include "sourcing/unified/tags_cell.html" with provider=vendor %}</div>
 <section class="sourcing-profile-head">
   <div><div class="sourcing-profile-title"><h1>{{ vendor.display_name|default:vendor.name }}</h1>{% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>{% elif vendor.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif vendor.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</div><p>{{ vendor.code }}{% if vendor.vat_number %} · VAT {{ vendor.vat_number }}{% endif %}{% if vendor.city %} · {{ vendor.city }}{% endif %}</p></div>
   <div class="sourcing-profile-actions">{% if can_manage and not vendor.deleted_at and not vendor.archived_at %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_edit' vendor.id %}">Edit Vendor</a>{% endif %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_list' %}">Back to list</a></div>

@@ -29,6 +29,7 @@ def _supplier_snapshot(supplier: SourcingManpowerSupplier) -> dict[str, object]:
     return {
         "code": supplier.code,
         "name": supplier.name,
+        "tags": list(supplier.tags or []),
         "primaryContactName": supplier.primary_contact_name,
         "phone": supplier.phone,
         "mobile": supplier.mobile,

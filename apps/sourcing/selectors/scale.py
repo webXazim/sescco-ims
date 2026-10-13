@@ -22,6 +22,12 @@ def vendor_directory_scale_annotations(*, company, queryset, contact_query: str 
         .annotate(total=Count("pk"))
         .values("total")[:1]
     )
+    active_material_count = (
+        SourcingVendorOffer.objects.for_company(company)
+        .filter(vendor_id=OuterRef("pk"), is_active=True, material__is_active=True)
+        .values("vendor_id").annotate(total=Count("material_id", distinct=True))
+        .values("total")[:1]
+    )
     active_contact_count = (
         SourcingVendorContact.objects.for_company(company)
         .filter(vendor_id=OuterRef("pk"), is_active=True)
@@ -31,6 +37,7 @@ def vendor_directory_scale_annotations(*, company, queryset, contact_query: str 
     )
     queryset = queryset.annotate(
         supply_item_count=Coalesce(Subquery(active_offer_count, output_field=IntegerField()), Value(0)),
+        active_material_count=Coalesce(Subquery(active_material_count, output_field=IntegerField()), Value(0)),
         contact_count=Coalesce(Subquery(active_contact_count, output_field=IntegerField()), Value(0)),
     )
     if contact_query:
@@ -73,6 +80,12 @@ def manpower_directory_scale_annotations(*, company, queryset, contact_query: st
         .annotate(total=Count("pk"))
         .values("total")[:1]
     )
+    active_trade_count = (
+        SourcingWorkforceOffer.objects.for_company(company)
+        .filter(supplier_id=OuterRef("pk"), is_active=True, trade__is_active=True)
+        .values("supplier_id").annotate(total=Count("trade_id", distinct=True))
+        .values("total")[:1]
+    )
     active_contact_count = (
         SourcingManpowerContact.objects.for_company(company)
         .filter(supplier_id=OuterRef("pk"), is_active=True)
@@ -82,6 +95,7 @@ def manpower_directory_scale_annotations(*, company, queryset, contact_query: st
     )
     queryset = queryset.annotate(
         workforce_type_count=Coalesce(Subquery(active_offer_count, output_field=IntegerField()), Value(0)),
+        active_trade_count=Coalesce(Subquery(active_trade_count, output_field=IntegerField()), Value(0)),
         contact_count=Coalesce(Subquery(active_contact_count, output_field=IntegerField()), Value(0)),
     )
     if contact_query:

@@ -454,7 +454,8 @@ class VendorSourcingMasterTests(TestCase):
         listed = next(item for item in response.context["vendors"] if item.pk == vendor.pk)
         self.assertEqual(listed.supply_item_count, 5)
         self.assertEqual(listed.first_capability, "Cable")
-        self.assertContains(response, "Material Types")
+        self.assertContains(response, "Active Materials")
+        self.assertContains(response, "Tags")
         self.assertContains(response, 'data-provider-expand=')
         self.assertNotContains(response, 'data-material-types-all=')
         expanded = self.client.get(reverse('sourcing:vendor_list'), {

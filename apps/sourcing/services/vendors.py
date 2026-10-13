@@ -29,6 +29,7 @@ def _vendor_snapshot(vendor: SourcingVendor) -> dict[str, object]:
     return {
         "code": vendor.code,
         "name": vendor.name,
+        "tags": list(vendor.tags or []),
         "displayName": vendor.display_name,
         "primaryContactName": vendor.primary_contact_name,
         "companyPhone": vendor.company_phone,

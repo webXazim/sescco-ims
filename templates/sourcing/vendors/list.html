@@ -37,7 +37,7 @@
           <label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label>
           <label><input type="checkbox" data-column-toggle="mobile" checked> Mobile</label>
           <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
-          <label><input type="checkbox" data-column-toggle="materials" checked> Material Types</label>
+          <label><input type="checkbox" data-column-toggle="tags" checked> Tags</label><label><input type="checkbox" data-column-toggle="capabilities" checked> Active Materials</label>
           <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
         </div>
       </details>
@@ -56,6 +56,7 @@
       </select></label>
     </div>
     {% include "sourcing/unified/filters.html" %}
+    {% include "sourcing/unified/tag_options.html" %}
   </form>
   <div data-unified-results aria-live="polite" aria-atomic="false">
 
@@ -73,7 +74,8 @@
         <th data-column="email">Contact Email</th>
         <th data-column="mobile">Mobile</th>
         <th data-column="location">Location</th>
-        <th data-column="materials">Material Types</th>
+        <th data-column="tags">Tags</th>
+        <th data-column="capabilities">Active Materials</th>
         <th>Status</th>
         <th data-column="updated">Updated</th>
         <th class="row-menu-col"><span class="sr-only">Actions</span></th>
@@ -86,9 +88,10 @@
           <td data-column="email">{% if vendor.email %}<a class="plain-link" href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</td>
           <td data-column="mobile">{{ vendor.mobile|default:'—' }}</td>
           <td data-column="location">{% if vendor.district or vendor.city or vendor.region %}{% if vendor.district %}{{ vendor.district }}{% endif %}{% if vendor.district and vendor.city %}, {% endif %}{% if vendor.city %}{{ vendor.city }}{% endif %}{% if vendor.region and vendor.city %}, {% elif vendor.region and vendor.district %}, {% endif %}{% if vendor.region %}{{ vendor.region }}{% endif %}{% if vendor.address %}<small class="cell-note">{{ vendor.address }}{% if vendor.postal_code %} · {{ vendor.postal_code }}{% endif %}</small>{% endif %}{% elif vendor.address %}{{ vendor.address }}{% if vendor.postal_code %}<small class="cell-note">{{ vendor.postal_code }}</small>{% endif %}{% else %}—{% endif %}</td>
-          <td data-column="materials" class="sourcing-material-types-cell">
-            {% if vendor.first_capability %}<strong>{{ vendor.first_capability }}</strong><small class="cell-note">{% if vendor.first_capability_rate != None %}{{ vendor.first_capability_currency }} {{ vendor.first_capability_rate }}{% else %}Rate unknown{% endif %} · {{ vendor.first_capability_availability }}</small>{% else %}—{% endif %}
-            <button type="button" class="sourcing-unified-expand" data-provider-expand="{{ vendor.pk }}" aria-expanded="false" aria-controls="capabilities-{{ vendor.pk }}">View {{ vendor.supply_item_count }} supply item{{ vendor.supply_item_count|pluralize }}</button>
+          <td data-column="tags">{% include "sourcing/unified/tags_cell.html" with provider=vendor %}</td>
+          <td data-column="capabilities" class="sourcing-capability-cell">
+            
+            <button type="button" class="sourcing-unified-expand" data-provider-expand="{{ vendor.pk }}" aria-expanded="false" aria-controls="capabilities-{{ vendor.pk }}">{{ vendor.active_material_count }} material{{ vendor.active_material_count|pluralize }}</button>
           </td>
           <td>
             {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>
@@ -104,9 +107,9 @@
             </div></details>
           </td>
         </tr>
-        <tr class="sourcing-unified-expansion" data-provider-row="{{ vendor.pk }}" hidden><td colspan="9"><div id="capabilities-{{ vendor.pk }}" data-capabilities-slot><span>Loading supply items…</span></div></td></tr>
+        <tr class="sourcing-unified-expansion" data-provider-row="{{ vendor.pk }}" hidden><td colspan="10"><div id="capabilities-{{ vendor.pk }}" data-capabilities-slot><span>Loading supply items…</span></div></td></tr>
         {% empty %}
-        <tr><td colspan="9"><div class="sourcing-empty"><strong>No Vendors found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Vendor when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_create' %}">New Vendor</a>{% endif %}</div></td></tr>
+        <tr><td colspan="10"><div class="sourcing-empty"><strong>No Vendors found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Vendor when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_create' %}">New Vendor</a>{% endif %}</div></td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -36,6 +36,7 @@ from .models import (
     SourcingWorkforceOffer,
 )
 from .models.base import normalize_text
+from .models.provider_tags import normalize_provider_tags
 from .services.catalog import (
     create_material,
     create_vendor_offer,
@@ -80,13 +81,13 @@ IMPORT_DATASETS = (
 EXPORT_DATASETS = IMPORT_DATASETS
 
 HEADERS = {
-    "vendors": ["code", "name", "display_name", "cr_number", "vat_number", "company_phone", "company_email", "website", "primary_contact_name", "mobile", "email", "address", "street_number", "district", "city", "region", "postal_code", "status", "notes", "last_verified_at"],
+    "vendors": ["code", "name", "display_name", "cr_number", "vat_number", "company_phone", "company_email", "website", "primary_contact_name", "mobile", "email", "address", "street_number", "district", "city", "region", "postal_code", "status", "notes", "last_verified_at", "tags"],
     "materials": ["code", "name", "category", "default_unit", "aliases", "is_active", "notes"],
     "vendor_catalog": ["vendor_code", "material_code", "specification", "brand", "model", "availability", "available_quantity", "unit", "minimum_quantity", "rate", "currency", "rate_valid_until", "lead_time", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
-    "manpower_suppliers": ["code", "name", "primary_contact_name", "phone", "mobile", "email", "city", "region", "cr_number", "vat_number", "status", "notes", "last_verified_at"],
+    "manpower_suppliers": ["code", "name", "primary_contact_name", "phone", "mobile", "email", "city", "region", "cr_number", "vat_number", "status", "notes", "last_verified_at", "tags"],
     "trades": ["code", "name", "category", "aliases", "is_active", "notes"],
     "workforce_catalog": ["supplier_code", "trade_code", "availability", "available_quantity", "rate", "currency", "rate_basis", "overtime_rate", "rate_valid_until", "mobilization_lead_time", "work_location", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
-    "subcontractors": ["code", "name", "display_name", "primary_contact_name", "company_phone", "company_email", "mobile", "email", "website", "address", "street_number", "district", "city", "region", "postal_code", "service_coverage", "cr_number", "vat_number", "status", "notes", "last_verified_at"],
+    "subcontractors": ["code", "name", "display_name", "primary_contact_name", "company_phone", "company_email", "mobile", "email", "website", "address", "street_number", "district", "city", "region", "postal_code", "service_coverage", "cr_number", "vat_number", "status", "notes", "last_verified_at", "tags"],
     "services": ["code", "name", "category", "default_rate_basis", "aliases", "description", "is_active", "notes"],
     "subcontractor_service_catalog": ["subcontractor_code", "service_code", "scope_description", "service_location", "availability", "rate", "currency", "rate_basis", "rate_valid_until", "lead_time", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
 }
@@ -365,6 +366,8 @@ def _upsert_vendor(*, actor_membership, row, request):
         "postal_code": _text(row.get("postal_code")),
         "notes": str(row.get("notes") or "").strip(),
     }
+    if "tags" in row:
+        data["tags"] = normalize_provider_tags(_aliases(row.get("tags")))
     obj = update_vendor(actor_membership=actor_membership, vendor_id=existing.pk, cleaned_data=data, request=request) if existing else create_vendor(actor_membership=actor_membership, cleaned_data=data, request=request)
     status = _status(row.get("status"))
     if obj.status != status:
@@ -448,6 +451,8 @@ def _upsert_manpower_supplier(*, actor_membership, row, request):
         "vat_number": _text(row.get("vat_number")),
         "notes": str(row.get("notes") or "").strip(),
     }
+    if "tags" in row:
+        data["tags"] = normalize_provider_tags(_aliases(row.get("tags")))
     obj = update_manpower_supplier(actor_membership=actor_membership, supplier_id=existing.pk, cleaned_data=data, request=request) if existing else create_manpower_supplier(actor_membership=actor_membership, cleaned_data=data, request=request)
     status = _status(row.get("status"))
     if obj.status != status:
@@ -525,6 +530,8 @@ def _upsert_subcontractor(*, actor_membership, row, request):
     )
     data = {key: _text(row.get(key)) for key in fields}
     data.update(code=code, notes=str(row.get("notes") or "").strip())
+    if "tags" in row:
+        data["tags"] = normalize_provider_tags(_aliases(row.get("tags")))
     subcontractor = (
         update_subcontractor(actor_membership=actor_membership, subcontractor_id=obj.pk, cleaned_data=data, request=request)
         if obj else create_subcontractor(actor_membership=actor_membership, cleaned_data=data, request=request)
@@ -793,6 +800,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 | Q(postal_code__icontains=q)
                 | Q(cr_number__icontains=q)
                 | Q(vat_number__icontains=q)
+                | Q(tags__icontains=q)
                 | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
         if params.get("unified") == "1":
@@ -804,7 +812,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 obj.code, obj.name, obj.display_name, obj.cr_number, obj.vat_number,
                 obj.company_phone, obj.company_email, obj.website, obj.primary_contact_name,
                 obj.mobile, obj.email, obj.address, obj.street_number, obj.district, obj.city,
-                obj.region, obj.postal_code, obj.status, obj.notes, obj.last_verified_at,
+                obj.region, obj.postal_code, obj.status, obj.notes, obj.last_verified_at, " | ".join(obj.tags or []),
             ])
     elif dataset == "materials":
         qs = SourcingMaterial.objects.for_company(company)
@@ -874,13 +882,13 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
         if q:
             qs = _directory_export_search(qs, company=company, dataset=dataset, query=q)
             qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(primary_contact_name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
-                           | Q(_export_contact_hit=True) | Q(_export_offer_hit=True))
+                           | Q(tags__icontains=q) | Q(_export_contact_hit=True) | Q(_export_offer_hit=True))
         if params.get("unified") == "1":
             # Use EXACTLY the tenant-scoped, company-first search queryset.
             from .selectors.manpower import manpower_directory_page
             qs = manpower_directory_page(company=company, params=params).page_obj.paginator.object_list
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
-            rows.append([obj.code, obj.name, obj.primary_contact_name, obj.phone, obj.mobile, obj.email, obj.city, obj.region, obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at])
+            rows.append([obj.code, obj.name, obj.primary_contact_name, obj.phone, obj.mobile, obj.email, obj.city, obj.region, obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at, " | ".join(obj.tags or [])])
     elif dataset == "trades":
         qs = SourcingTrade.objects.for_company(company)
         status = _text(params.get("status")).casefold()
@@ -956,7 +964,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 | Q(primary_contact_name__icontains=q) | Q(company_email__icontains=q)
                 | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q)
                 | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
-                | Q(service_coverage__icontains=q)
+                | Q(service_coverage__icontains=q) | Q(tags__icontains=q)
                 | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
         if params.get("unified") == "1":
@@ -969,7 +977,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 obj.company_phone, obj.company_email, obj.mobile, obj.email,
                 obj.website, obj.address, obj.street_number, obj.district,
                 obj.city, obj.region, obj.postal_code, obj.service_coverage,
-                obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at,
+                obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at, " | ".join(obj.tags or []),
             ])
     elif dataset == "services":
         qs = SourcingService.objects.for_company(company)

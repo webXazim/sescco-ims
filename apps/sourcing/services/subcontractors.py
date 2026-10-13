@@ -31,7 +31,7 @@ def _snapshot(obj):
         "code", "name", "display_name", "primary_contact_name", "company_phone",
         "company_email", "mobile", "email", "address", "street_number", "district",
         "city", "region", "postal_code", "service_coverage", "cr_number", "vat_number",
-        "website", "status", "notes", "archived_reason", "deletion_reason",
+        "website", "status", "tags", "notes", "archived_reason", "deletion_reason",
         "last_verified_at",
     )
     data = {field: getattr(obj, field) for field in keys}
