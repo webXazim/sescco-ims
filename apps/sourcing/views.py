@@ -5,7 +5,7 @@ from django.core.files.storage import default_storage
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.utils import timezone
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -15,6 +15,11 @@ from django.http import HttpRequest, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_http_methods
+from django.db import IntegrityError
+from django.db.transaction import atomic
+from uuid import UUID
+from .models.base import clean_text, normalize_text
 
 from .access import (
     membership_can_manage_sourcing_masters,
@@ -289,9 +294,128 @@ def _base_context(request: HttpRequest, *, page_key: str, page_title: str, page_
         "page_title": page_title,
         "page_subtitle": page_subtitle,
         "SOURCING_ACCESS": sourcing_access_context(_membership(request)),
+        "can_create_master": membership_can_manage_sourcing_masters(_membership(request)),
     }
 
 
+
+
+# Upgrade: searchable, company-scoped reference selection and inline master creation.
+# This API does not mutate Inventory, Payroll or contracting records.
+_LOOKUP_CATALOGS = {
+    "material": (SourcingMaterial, SourcingVendorOffer, "material"),
+    "trade": (SourcingTrade, SourcingWorkforceOffer, "trade"),
+    "service": (SourcingService, SourcingSubcontractorService, "service"),
+}
+
+
+def _lookup_authorized(request, kind):
+    member = _membership(request)
+    checks = {
+        "material": membership_can_manage_vendor_sourcing,
+        "trade": membership_can_manage_manpower_sourcing,
+        "service": membership_can_manage_subcontractor_sourcing,
+    }
+    return bool(member and (checks[kind](member) or membership_can_view_sourcing_masters(member)))
+
+
+def _lookup_result(obj):
+    return {"id": str(obj.pk), "name": obj.name, "code": obj.code,
+            "category": obj.category, "label": f"{obj.name} · {obj.code}"}
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def reference_lookup(request: HttpRequest, kind: str) -> HttpResponse:
+    """Fast capped suggestions; creation remains permission-gated and audited."""
+    if kind not in _LOOKUP_CATALOGS:
+        raise Http404("Unknown sourcing master.")
+    model, offer_model, foreign_key = _LOOKUP_CATALOGS[kind]
+    if request.method == "GET":
+        if not _lookup_authorized(request, kind):
+            raise PermissionDenied("Sourcing catalog access required.")
+        queryset = model.objects.for_company(request.company).filter(is_active=True)
+        selected_id = request.GET.get("selected", "").strip()
+        if selected_id:
+            try:
+                chosen = model.objects.for_company(request.company).filter(pk=UUID(selected_id)).first()
+            except (ValueError, TypeError, AttributeError):
+                chosen = None
+            return JsonResponse({"results": [_lookup_result(chosen)] if chosen else []})
+        raw_query = clean_text(request.GET.get("q", ""))[:80]
+        if not raw_query:
+            # Aggregate by the indexed offer FK, not over every master row.
+            # Busy/reference items appear first; alphabetical active items fill gaps.
+            counts = (offer_model.objects.for_company(request.company).filter(
+                is_active=True, **{f"{foreign_key}__is_active": True,
+                                  f"{foreign_key}__company": request.company})
+                .order_by().values(f"{foreign_key}_id").annotate(usage=Count("pk"))
+                .order_by("-usage", f"{foreign_key}_id")[:12])
+            popular_ids = [entry[f"{foreign_key}_id"] for entry in counts]
+            keyed = queryset.in_bulk(popular_ids)
+            results = [keyed[pk] for pk in popular_ids if pk in keyed]
+            if len(results) < 12:
+                results += list(queryset.exclude(pk__in=popular_ids)
+                                .order_by("normalized_name", "pk")[:12 - len(results)])
+        else:
+            term = normalize_text(raw_query)
+            primary = list(queryset.filter(
+                Q(normalized_name__startswith=term) | Q(code__istartswith=raw_query)
+            ).order_by("normalized_name", "pk")[:12])
+            results = primary
+            if len(results) < 12:
+                # Substring/alias fallback runs only for the remaining slots.
+                more = queryset.filter(
+                    Q(normalized_name__icontains=term) | Q(category__icontains=raw_query)
+                    | Q(normalized_aliases__icontains=term)
+                ).exclude(pk__in=[entry.pk for entry in primary]).order_by("normalized_name", "pk")[:12 - len(results)]
+                results += list(more)
+        return JsonResponse({"results": [_lookup_result(entry) for entry in results]})
+
+    # A user permitted to edit a vendor/supplier is NOT necessarily authorized
+    # to create company-wide master vocabulary. Enforce this independently.
+    _require_master_manage(request)
+    # CSRF middleware may already have consumed and parsed POST; never read
+    # request.body again (RawPostDataException on production Django).
+    declared_size = request.META.get("CONTENT_LENGTH", "")
+    if declared_size.isdecimal() and int(declared_size) > 16384:
+        return JsonResponse({"error": "Reference details are too large."}, status=413)
+    posted = request.POST.copy()
+    posted["name"] = clean_text(posted.get("name"))
+    if not posted["name"]:
+        return JsonResponse({"errors": {"name": ["Enter a reference name."]}}, status=400)
+    if kind == "material":
+        posted["code"] = posted.get("code") or suggest_material_code()
+        category = clean_text(posted.get("category"))
+        if category:
+            posted["category"] = "__new__"
+            posted["new_category"] = category
+        form = SourcingMaterialForm(posted, company=request.company)
+        create_fn = create_material
+    elif kind == "trade":
+        posted["code"] = posted.get("code") or suggest_trade_code()
+        form = SourcingTradeForm(posted)
+        create_fn = create_trade
+    else:
+        category = clean_text(posted.get("category"))
+        if category:
+            posted["category"] = "__new__"
+            posted["new_category"] = category
+        form = SourcingServiceForm(posted, company=request.company)
+        create_fn = create_service
+    if not form.is_valid():
+        return JsonResponse({"errors": form.errors.get_json_data()}, status=400)
+    cleaned = {key: val for key, val in form.cleaned_data.items() if key != "new_category"}
+    try:
+        # Each service creates the master and records the standard sourcing audit.
+        created = create_fn(actor_membership=_membership(request), cleaned_data=cleaned, request=request)
+    except ValidationError as exc:
+        errors = exc.message_dict if hasattr(exc, "message_dict") else {"__all__": exc.messages}
+        return JsonResponse({"errors": errors}, status=400)
+    except IntegrityError:
+        # Concurrent duplicate insert (unique company + normalized name/code).
+        return JsonResponse({"errors": {"name": ["This reference already exists. Search and select it."]}}, status=409)
+    return JsonResponse({"item": _lookup_result(created)}, status=201)
 
 
 def _safe_sourcing_next(request: HttpRequest, raw: str | None, fallback: str) -> str:

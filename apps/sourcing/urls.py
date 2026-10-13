@@ -6,6 +6,7 @@ app_name = "sourcing"
 
 urlpatterns = [
     path("", views.sourcing_home, name="home"),
+    path("reference-lookup/<str:kind>/", views.reference_lookup, name="reference_lookup"),
     path("service-finder/", views.service_finder, name="service_finder"),
     path("subcontractors/", views.subcontractor_list, name="subcontractor_list"),
     path("subcontractors/new/", views.subcontractor_create, name="subcontractor_create"),

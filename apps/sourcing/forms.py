@@ -431,6 +431,9 @@ class SourcingWorkforceOfferForm(forms.ModelForm):
             if name != "verified_now":
                 field.widget.attrs.setdefault("class", "sourcing-input")
         self.fields["trade"].empty_label = "Select Worker Type / Trade"
+        # The selection is resolved by the bounded AJAX lookup, not a giant HTML select.
+        # ModelChoiceField still validates a submitted UUID against the entire company-scoped queryset.
+        self.fields["trade"].widget = forms.HiddenInput()
         self.fields["trade"].help_text = "Trades are controlled in the independent Sourcing Reference master."
         self.fields["available_quantity"].help_text = "Leave blank when the supplier did not confirm a quantity. This is not a Rental worker count."
         self.fields["rate"].help_text = "Reference sourcing rate only. It never changes Payroll or supplier settlement rates."
@@ -792,6 +795,9 @@ class SourcingVendorOfferForm(forms.ModelForm):
             if name != "verified_now":
                 field.widget.attrs.setdefault("class", "sourcing-input")
         self.fields["material"].empty_label = "Select Sourcing Material"
+        # The selection is resolved by the bounded AJAX lookup, not a giant HTML select.
+        # ModelChoiceField still validates a submitted UUID against the entire company-scoped queryset.
+        self.fields["material"].widget = forms.HiddenInput()
         self.fields["material"].help_text = "Materials are managed in the independent Sourcing reference master."
         self.fields["available_quantity"].help_text = "Leave blank when the Vendor did not confirm quantity."
         self.fields["rate"].help_text = "Reference quote only. It never posts to Inventory or Accounting."
@@ -1040,6 +1046,9 @@ class SourcingSubcontractorServiceForm(forms.ModelForm):
             queryset = queryset.filter(Q(is_active=True) | Q(pk=current_id)) if current_id else queryset.filter(is_active=True)
         self.fields["service"].queryset = queryset.order_by("category", "normalized_name", "code")
         self.fields["service"].empty_label = "Select Service"
+        # The selection is resolved by the bounded AJAX lookup, not a giant HTML select.
+        # ModelChoiceField still validates a submitted UUID against the entire company-scoped queryset.
+        self.fields["service"].widget = forms.HiddenInput()
         self.fields["service"].help_text = "Select from Reference → Services; service creation requires master-data permission."
         self.fields["rate"].help_text = "Quotation/reference only; not a purchase order, approved contract or accounting entry."
         for name, field in self.fields.items():

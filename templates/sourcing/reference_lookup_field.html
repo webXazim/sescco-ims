@@ -1,0 +1,20 @@
+<div class="sourcing-field sourcing-reference-lookup{% if field.errors %} has-error{% endif %}"
+     data-sourcing-reference-lookup data-kind="{{ kind }}"
+     data-endpoint="{% url 'sourcing:reference_lookup' kind %}"
+     data-create="{% if can_create_master %}1{% else %}0{% endif %}">
+  <label for="sourcing-search-{{ field.html_name }}">{{ field.label }}{% if field.field.required %}<span aria-hidden="true">*</span>{% endif %}</label>
+  {{ field }}
+  <div class="sourcing-reference-lookup-line">
+    <input type="search" class="sourcing-input sourcing-reference-search" id="sourcing-search-{{ field.html_name }}"
+           autocomplete="off" placeholder="Search by name, code, category or alias" role="combobox"
+           aria-autocomplete="list" aria-expanded="true" aria-controls="sourcing-options-{{ field.html_name }}"
+           data-reference-search>
+    {% if can_create_master %}<button type="button" class="sourcing-btn sourcing-reference-add" data-reference-add>+ Add new</button>{% endif %}
+  </div>
+  <div class="sourcing-reference-current" data-reference-current aria-live="polite"></div>
+  <div class="sourcing-reference-options" data-reference-options role="listbox" id="sourcing-options-{{ field.html_name }}">
+    <div class="sourcing-reference-status">Loading commonly used items…</div>
+  </div>
+  <small data-reference-help>Commonly used items appear first. Type to search the entire company reference list.</small>
+  {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+</div>
