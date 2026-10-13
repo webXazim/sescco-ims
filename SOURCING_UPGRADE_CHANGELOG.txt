@@ -1,0 +1,33 @@
+NEW
+  apps/sourcing/tests/test_integrated_directory.py
+  templates/sourcing/manpower/_offers.html
+  templates/sourcing/subcontractors/_offers.html
+  templates/sourcing/vendors/_offers.html
+MODIFIED
+  apps/sourcing/exchange.py
+  apps/sourcing/selectors/manpower.py
+  apps/sourcing/selectors/material_finder.py
+  apps/sourcing/selectors/scale.py
+  apps/sourcing/selectors/subcontractors.py
+  apps/sourcing/selectors/workforce_finder.py
+  apps/sourcing/tests/test_browser_e2e_freeze.py
+  apps/sourcing/tests/test_material_finder.py
+  apps/sourcing/tests/test_security_certification.py
+  apps/sourcing/tests/test_service_finder.py
+  apps/sourcing/tests/test_vendor_verification.py
+  apps/sourcing/tests/test_workforce_finder.py
+  apps/sourcing/views.py
+  scripts/certify-sourcing-browser-e2e.py
+  static/sourcing/css/refinement.css
+  static/sourcing/js/finder-scale.js
+  templates/sourcing/base.html
+  templates/sourcing/home.html
+  templates/sourcing/manpower/list.html
+  templates/sourcing/sidebar.html
+  templates/sourcing/subcontractors/detail.html
+  templates/sourcing/subcontractors/list.html
+  templates/sourcing/vendors/list.html
+DELETE
+  templates/sourcing/material_finder/list.html
+  templates/sourcing/service_finder/list.html
+  templates/sourcing/workforce_finder/list.html

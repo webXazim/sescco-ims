@@ -1,0 +1,3 @@
+templates/sourcing/material_finder/list.html
+templates/sourcing/service_finder/list.html
+templates/sourcing/workforce_finder/list.html
