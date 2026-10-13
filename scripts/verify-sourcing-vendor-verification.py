@@ -106,8 +106,33 @@ for marker in ("Save Verification", "form.contact_name", "Recent Verification Hi
 for marker in ("Verification History", "Immutable sourcing evidence", "before", "after"):
     if marker not in history_template:
         fail(f"History UX missing: {marker}")
-if 'data-provider-expand' not in directory_template or 'data-capabilities-slot' not in directory_template:
-    fail("Unified Vendor Directory does not expose on-demand supply capabilities")
+# The unified directory now opens a scrollable modal rather than rendering
+# a hidden inline table row. Verify the trigger, client fetch contract and
+# company-scoped backend fragment; do not require the retired slot marker.
+for marker in ('data-provider-expand', 'aria-haspopup="dialog"', 'data-provider-kind="Vendor"'):
+    if marker not in directory_template:
+        fail(f"Unified Vendor Directory capability modal trigger missing: {marker}")
+modal_js = text("static/sourcing/js/unified-directory.js")
+for marker in (
+    "function ensureModal()",
+    "function openModal(trigger)",
+    "async function loadCapabilities(provider, page = '1')",
+    "data-modal-content",
+    "data-cap-page",
+    "url.searchParams.set('fragment', 'capabilities')",
+    "url.searchParams.set('provider', provider)",
+    "url.searchParams.set('cap_page', page)",
+):
+    if marker not in modal_js:
+        fail(f"Unified Vendor capability modal missing: {marker}")
+for marker in (
+    "if request.GET.get('fragment') == 'capabilities':",
+    "return _capability_fragment(request, kind='vendor')",
+    "SourcingVendor.objects.for_company(request.company)",
+    "Paginator(qs, 20).get_page(page_num)",
+):
+    if marker not in views:
+        fail(f"Company-scoped paginated Vendor capability fragment missing: {marker}")
 if 'Verify now' not in capabilities_template or 'vendor_offer_history' not in capabilities_template:
     fail("Unified Vendor capability panel does not expose verification/history workflow")
 if '{% if can_manage %}' not in capabilities_template:
