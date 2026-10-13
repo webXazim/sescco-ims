@@ -10,6 +10,10 @@ SOURCING_STATIC_ASSETS = (
     "sourcing/js/finder-scale.js",
     "sourcing/js/manpower-directory.js",
     "sourcing/js/vendor-directory.js",
+    "sourcing/js/reference-lookup.js",
+    "sourcing/css/reference-lookup.css",
+    "sourcing/js/vendor-onboarding.js",
+    "sourcing/css/vendor-onboarding.css",
 )
 
 

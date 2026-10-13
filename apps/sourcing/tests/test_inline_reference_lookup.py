@@ -126,3 +126,83 @@ class InlineReferenceLookupTests(TestCase):
             self.assertContains(response, 'data-sourcing-reference-lookup')
             self.assertContains(response, reverse('sourcing:reference_lookup', args=[kind]))
             self.assertContains(response, 'data-reference-add')
+
+    def test_modal_and_standalone_render_the_same_master_fields(self):
+        specs = (
+            ('material', 'material_create', ('code', 'name', 'category', 'new_category', 'default_unit', 'aliases', 'notes')),
+            ('trade', 'trade_create', ('code', 'name', 'category', 'aliases', 'notes')),
+            ('service', 'service_create', ('code', 'name', 'category', 'new_category', 'default_rate_basis', 'description', 'aliases', 'notes')),
+        )
+        for kind, page, fields in specs:
+            with self.subTest(kind=kind):
+                standalone = self.client.get(reverse('sourcing:' + page))
+                modal = self.lookup(kind, {'form': '1'})
+                self.assertEqual(standalone.status_code, 200)
+                self.assertEqual(modal.status_code, 200)
+                self.assertContains(modal, f'data-reference-master-fields="{kind}"')
+                for field in fields:
+                    self.assertContains(standalone, f'name="{field}"')
+                    self.assertContains(modal, f'name="master-{field}"')
+                if kind in ('material', 'service'):
+                    self.assertContains(modal, 'data-material-category-scope')
+                    self.assertContains(modal, 'data-new-material-category-field')
+
+    def test_prefixed_modal_creation_keeps_the_same_fields_and_audit(self):
+        specs = (
+            ('material', SourcingMaterial, {
+                'master-code': 'MAT-MODAL-1', 'master-name': 'Modal Fire Detector',
+                'master-category': '__new__', 'master-new_category': 'Fire Equipment',
+                'master-default_unit': 'pcs', 'master-aliases': 'Fire Alarm Sensor',
+                'master-notes': 'Material notes from modal.',
+            }),
+            ('trade', SourcingTrade, {
+                'master-code': 'TRD-MODAL-1', 'master-name': 'Modal Pipe Fitter',
+                'master-category': 'Piping', 'master-aliases': 'Pipefitter',
+                'master-notes': 'Trade notes from modal.',
+            }),
+            ('service', SourcingService, {
+                'master-code': 'SRV-MODAL-1', 'master-name': 'Modal Pump Commissioning',
+                'master-category': '__new__', 'master-new_category': 'Commissioning',
+                'master-default_rate_basis': 'job', 'master-description': 'Pump start-up and testing',
+                'master-aliases': 'Pump Startup', 'master-notes': 'Service notes from modal.',
+            }),
+        )
+        for kind, model, payload in specs:
+            with self.subTest(kind=kind):
+                response = self.client.post(reverse('sourcing:reference_lookup', args=[kind]), payload)
+                self.assertEqual(response.status_code, 201, response.content)
+                item = model.objects.get(pk=response.json()['item']['id'], company=self.company)
+                self.assertEqual(item.code, payload['master-code'])
+                self.assertEqual(item.notes, payload['master-notes'])
+                self.assertTrue(item.aliases)
+                if kind == 'material':
+                    self.assertEqual(item.category, 'Fire Equipment')
+                    self.assertEqual(item.default_unit, 'pcs')
+                if kind == 'service':
+                    self.assertEqual(item.category, 'Commissioning')
+                    self.assertEqual(item.default_rate_basis, 'job')
+                    self.assertEqual(item.description, 'Pump start-up and testing')
+                self.assertTrue(AuditEvent.objects.filter(company=self.company,
+                    area=AuditArea.SOURCING, object_id=item.pk).exists())
+
+    def test_modal_rejects_invalid_new_category_without_dropping_other_values(self):
+        response = self.client.post(reverse('sourcing:reference_lookup', args=['material']), {
+            'master-code': 'MAT-INVALID', 'master-name': 'Modal Invalid Category',
+            'master-category': '__new__', 'master-new_category': '',
+            'master-default_unit': 'box', 'master-notes': 'Unsaved notes',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('new_category', response.json()['errors'])
+        self.assertFalse(SourcingMaterial.objects.filter(company=self.company, code='MAT-INVALID').exists())
+
+    def test_modal_creation_form_requires_master_edit_permission(self):
+        reader = get_user_model().objects.create_user(username='lookup-company-vendor', password='test-password')
+        profile = AccessProfile.objects.create(company=self.company, key='reference-vendor-view',
+                                               name='Vendor View', is_system=False, is_active=True)
+        AccessProfilePermission.objects.create(profile=profile,
+                                               permission=AccessPermission.SOURCING_VENDORS_MANAGE.value)
+        CompanyMembership.objects.create(company=self.company, user=reader, role=AccessRole.CUSTOM,
+                                         access_profile=profile)
+        self.client.force_login(reader)
+        self.assertEqual(self.lookup('material', {'form': '1'}).status_code, 403)
+        self.assertEqual(self.lookup('material').status_code, 200)

@@ -25,3 +25,20 @@
 .sourcing-reference-modal-error{color:#b42318;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
 .sourcing-reference-modal-error:empty{display:none}
 @media(max-width:650px){.sourcing-reference-lookup-line{flex-wrap:wrap}.sourcing-reference-add{width:100%}.sourcing-reference-dialog-form{padding:18px}.sourcing-reference-option{flex-direction:column;gap:3px}.sourcing-reference-option span{text-align:left}}
+/* The inline master editor shares the standalone Material/Trade/Service form sections. */
+.sourcing-reference-dialog{max-width:min(96vw,1020px);max-height:min(92dvh,950px);overflow:auto;width:100%;}
+.sourcing-reference-dialog-form{display:block;padding:0;}
+.sourcing-reference-dialog-heading{padding:22px 26px 18px;border-bottom:1px solid var(--src-border,#e4e7ec);}
+.sourcing-reference-dialog-heading h2{margin:0 0 5px;font-size:21px;}
+.sourcing-reference-dialog-heading p{margin:0;color:#667085;font-size:13px;}
+.sourcing-reference-dialog-content{min-height:68px;}
+.sourcing-reference-dialog-content .sourcing-form-section{grid-template-columns:minmax(155px,215px) minmax(0,1fr);gap:24px;padding:22px 26px;}
+.sourcing-reference-dialog-content .sourcing-form-grid{min-width:0;}
+.sourcing-reference-dialog-content .sourcing-field{min-width:0;}
+.sourcing-reference-dialog-content .sourcing-field .sourcing-input{width:100%;}
+.sourcing-reference-dialog-content [data-new-material-category-field][hidden]{display:none!important;}
+.sourcing-reference-dialog .sourcing-reference-modal-error:not(:empty){padding:12px 26px;}
+.sourcing-reference-dialog .sourcing-reference-modal-actions{margin:0;padding:16px 26px;background:#fafbfc;border-top:1px solid #e4e7ec;}
+.sourcing-reference-dialog [aria-invalid="true"]{border-color:#d92d20!important;}
+.sourcing-reference-dialog-content .sourcing-field .field-error{color:#b42318;}
+@media(max-width:720px){.sourcing-reference-dialog-content .sourcing-form-section{grid-template-columns:minmax(0,1fr);gap:14px;padding:18px}.sourcing-reference-dialog-content .sourcing-form-grid{grid-template-columns:minmax(0,1fr)}.sourcing-reference-dialog-heading{padding:18px}.sourcing-reference-dialog .sourcing-reference-modal-actions{padding:14px 18px;}}

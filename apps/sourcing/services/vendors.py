@@ -107,15 +107,14 @@ def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=
 
 @transaction.atomic
 def create_vendor_with_materials(
-    *, actor_membership, cleaned_data: dict[str, object], materials=(), new_materials=(), request=None
+    *, actor_membership, cleaned_data: dict[str, object], materials=(), new_materials=(), offers=(), request=None
 ) -> SourcingVendor:
     """Create a Vendor and optionally seed its Supply Catalog in one transaction.
 
-    Existing-material selection creates lightweight catalog links.  Inline new-material
-    rows first create normal company Sourcing Material masters and then link them to the
-    Vendor.  Availability, quantities, rates and verification remain unknown until
-    explicitly completed later.  Reusing the normal material/catalog services keeps
-    audit and revision evidence identical to records created from their dedicated pages.
+    Legacy material-only selections create lightweight catalog links; complete
+    onboarding offers record all fields, including availability, quantity, rate and
+    verification immediately. New controlled Material masters are created in the
+    same transaction. The normal catalog services preserve audit/revision evidence.
     """
     vendor = create_vendor(
         actor_membership=actor_membership,
@@ -134,8 +133,19 @@ def create_vendor_with_materials(
             )
         )
 
+    complete_offers = list(offers or ())
+    # A legacy material-only selection cannot insert a duplicate of a complete
+    # offer with the identical blank specification/brand/model identity.
+    covered_default_materials = {
+        item["material"].pk
+        for item in complete_offers
+        if item.get("material") is not None
+        and not any(str(item.get(part) or "").strip() for part in ("specification", "brand", "model"))
+    }
     seen = set()
     for material in resolved_materials:
+        if material.pk in covered_default_materials:
+            continue
         material_id = getattr(material, "pk", None)
         if material_id in seen:
             continue
@@ -146,6 +156,27 @@ def create_vendor_with_materials(
             cleaned_data={"material": material},
             verified_now=False,
             contact_name="",
+            request=request,
+        )
+    # Complete draft supply items use the identical audited offer service as
+    # Vendor > Add Supply Item. Everything rolls back if any item fails.
+    for offer_data in complete_offers:
+        item = dict(offer_data)
+        draft_material = item.pop("draft_material", None)
+        verified_now = bool(item.pop("verified_now", False))
+        contact_name = str(item.pop("contact_name", "") or "")
+        if draft_material is not None:
+            item["material"] = create_material(
+                actor_membership=actor_membership,
+                cleaned_data=dict(draft_material),
+                request=request,
+            )
+        create_vendor_offer(
+            actor_membership=actor_membership,
+            vendor_id=vendor.pk,
+            cleaned_data=item,
+            verified_now=verified_now,
+            contact_name=contact_name,
             request=request,
         )
     return vendor

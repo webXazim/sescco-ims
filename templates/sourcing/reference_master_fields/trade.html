@@ -1,0 +1,9 @@
+<div class="sourcing-reference-master-fields" data-reference-master-fields="trade">
+  <section class="sourcing-form-section"><header><h2>Trade Identity</h2><p>Independent Sourcing vocabulary used only to describe what manpower suppliers say they can provide.</p></header><div class="sourcing-form-grid">
+    {% include "sourcing/vendors/field.html" with field=form.code %}
+    {% include "sourcing/vendors/field.html" with field=form.name %}
+    {% include "sourcing/vendors/field.html" with field=form.category %}
+  </div></section>
+  <section class="sourcing-form-section"><header><h2>Search Aliases</h2><p>Keep one canonical worker type while allowing common terminology such as A/C Technician or Air Conditioning Technician.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.aliases %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Remarks</h2><p>Reference notes only; no Payroll, worker or assignment effect.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+</div>

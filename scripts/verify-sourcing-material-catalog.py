@@ -137,7 +137,7 @@ for marker in ("Availability", "Reference Rate", "Verification", "Reference-only
     if marker not in text("templates/sourcing/vendors/offer_form.html"):
         fail(f"Vendor offer form UI missing: {marker}")
 for marker in ("data-material-category-scope", "data-new-material-category-field"):
-    if marker not in text("templates/sourcing/materials/form.html"):
+    if marker not in text("templates/sourcing/reference_master_fields/material.html"):
         fail(f"Material category/type selector UI missing: {marker}")
 for marker in ("Supply Catalog", "Never verified", "Available quantity and rate are reference snapshots only"):
     if marker not in text("templates/sourcing/vendors/detail.html"):

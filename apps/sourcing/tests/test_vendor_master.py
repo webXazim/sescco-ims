@@ -247,9 +247,9 @@ class VendorSourcingMasterTests(TestCase):
 
         create_page = self.client.get(reverse("sourcing:vendor_create"))
         self.assertEqual(create_page.status_code, 200)
-        self.assertContains(create_page, "All categories / types")
+        self.assertContains(create_page, "Supply Items")
+        self.assertContains(create_page, "+ Add Supply Item")
         self.assertContains(create_page, "Fire &amp; Safety")
-        self.assertContains(create_page, "+ Add another material")
 
     def test_vendor_editor_without_master_manage_cannot_inline_create_material(self):
         editor, _membership = self._member(
@@ -263,7 +263,7 @@ class VendorSourcingMasterTests(TestCase):
         page = self.client.get(reverse("sourcing:vendor_create"))
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "requires Reference Masters edit access")
-        self.assertNotContains(page, "+ Add another material")
+        self.assertNotContains(page, "+ Create new material")
 
         response = self.client.post(
             reverse("sourcing:vendor_create"),
@@ -281,6 +281,141 @@ class VendorSourcingMasterTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Should Not Save").exists())
         self.assertFalse(SourcingMaterial.objects.filter(company=self.company, name="Unauthorized Material").exists())
+
+    def test_new_vendor_full_supply_items_create_existing_and_new_material_atomically(self):
+        self.client.force_login(self.owner_user)
+        existing = SourcingMaterial.objects.create(
+            company=self.company, code="MAT-GLOVE", name="Safety Gloves", category="Safety", default_unit="pair"
+        )
+        response = self.client.post(reverse("sourcing:vendor_create"), {
+            "display_name": "Complete Supply Vendor",
+            "supply_items-TOTAL_FORMS": "2",
+            "supply_items-INITIAL_FORMS": "0",
+            "supply_items-MIN_NUM_FORMS": "0",
+            "supply_items-MAX_NUM_FORMS": "50",
+            "supply_items-0-material": str(existing.pk),
+            "supply_items-0-specification": "Size XL, nitrile",
+            "supply_items-0-brand": "Quality Brand",
+            "supply_items-0-model": "Q-900",
+            "supply_items-0-available_quantity": "150.000",
+            "supply_items-0-minimum_quantity": "20.000",
+            "supply_items-0-availability": "available",
+            "supply_items-0-currency": "SAR",
+            "supply_items-0-rate": "12.5000",
+            "supply_items-0-rate_valid_until": "2027-01-31",
+            "supply_items-0-lead_time": "Two days",
+            "supply_items-0-verification_note": "Confirmed with sales",
+            "supply_items-0-contact_name": "Sales representative",
+            "supply_items-0-verified_now": "on",
+            "supply_items-0-notes": "Preferred supplier",
+            "supply_items-1-new_material_name": "Copper Ground Wire",
+            "supply_items-1-new_material_category": "__new__",
+            "supply_items-1-new_material_new_category": "Electrical Equipment",
+            "supply_items-1-new_material_default_unit": "m",
+            "supply_items-1-new_material_aliases": "Grounding wire, Earth copper wire",
+            "supply_items-1-new_material_notes": "Copper grounding wire material",
+            "supply_items-1-specification": "35mm²",
+            "supply_items-1-availability": "limited",
+            "supply_items-1-available_quantity": "500.000",
+            "supply_items-1-currency": "SAR",
+            "supply_items-1-rate": "4.1250",
+        })
+        self.assertEqual(response.status_code, 302, getattr(response, "content", b"")[:1000])
+        vendor = SourcingVendor.objects.get(company=self.company, display_name="Complete Supply Vendor")
+        offers = SourcingVendorOffer.objects.filter(vendor=vendor).select_related("material")
+        self.assertEqual(offers.count(), 2)
+        first = offers.get(material=existing)
+        self.assertEqual(first.specification, "Size XL, nitrile")
+        self.assertEqual(first.brand, "Quality Brand")
+        self.assertEqual(first.available_quantity, 150)
+        self.assertEqual(first.rate, 12.5)
+        self.assertEqual(first.unit, "pair")
+        self.assertEqual(first.verified_by_id, self.owner_user.pk)
+        self.assertIsNotNone(first.last_verified_at)
+        new_material = SourcingMaterial.objects.get(company=self.company, name="Copper Ground Wire")
+        self.assertEqual(new_material.category, "Electrical Equipment")
+        self.assertEqual(new_material.default_unit, "m")
+        self.assertEqual(new_material.aliases, ["Grounding wire", "Earth copper wire"])
+        self.assertTrue(new_material.code.startswith("MAT-"))
+        self.assertEqual(offers.get(material=new_material).specification, "35mm²")
+        self.assertTrue(AuditEvent.objects.filter(company=self.company, action="sourcing.material.created", object_id=str(new_material.pk)).exists())
+        self.assertEqual(AuditEvent.objects.filter(company=self.company, action="sourcing.vendor_offer.created", object_id__in=[str(item.pk) for item in offers]).count(), 2)
+
+    def test_full_supply_items_validate_before_vendor_or_material_is_saved(self):
+        self.client.force_login(self.owner_user)
+        response = self.client.post(reverse("sourcing:vendor_create"), {
+            "display_name": "Do Not Save Invalid Vendor",
+            "supply_items-TOTAL_FORMS": "1",
+            "supply_items-INITIAL_FORMS": "0",
+            "supply_items-0-new_material_name": "Not Saved Material",
+            "supply_items-0-new_material_category": "__new__",
+            "supply_items-0-new_material_new_category": "Safety",
+            "supply_items-0-availability": "available",
+            "supply_items-0-available_quantity": "-10",
+            "supply_items-0-currency": "SAR",
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Available Qty", status_code=400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Do Not Save Invalid Vendor").exists())
+        self.assertFalse(SourcingMaterial.objects.filter(company=self.company, name="Not Saved Material").exists())
+
+    def test_new_vendor_supply_items_roll_back_if_material_master_rejects_alias(self):
+        self.client.force_login(self.owner_user)
+        SourcingMaterial.objects.create(company=self.company, code="MAT-ALIAS", name="Existing Wire", aliases=["Earthing Wire"])
+        response = self.client.post(reverse("sourcing:vendor_create"), {
+            "display_name": "Rollback Vendor",
+            "supply_items-TOTAL_FORMS": "1", "supply_items-INITIAL_FORMS": "0",
+            "supply_items-0-new_material_name": "Another Wire",
+            "supply_items-0-new_material_aliases": "Earthing Wire",
+            "supply_items-0-availability": "unknown",
+            "supply_items-0-currency": "SAR",
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Rollback Vendor").exists())
+        self.assertFalse(SourcingMaterial.objects.filter(company=self.company, name="Another Wire").exists())
+
+    def test_full_supply_items_reject_duplicate_identity_and_cross_company_material(self):
+        self.client.force_login(self.owner_user)
+        source = SourcingMaterial.objects.create(company=self.company, code="MAT-SOURCE", name="Source Material")
+        other = SourcingMaterial.objects.create(company=self.other_company, code="MAT-OTHER", name="Other Material")
+        common = {"supply_items-TOTAL_FORMS": "2", "supply_items-INITIAL_FORMS": "0"}
+        duplicate = self.client.post(reverse("sourcing:vendor_create"), {
+            **common,
+            "display_name": "Duplicated Offer Vendor",
+            "supply_items-0-material": str(source.pk),
+            "supply_items-0-currency": "SAR",
+            "supply_items-1-material": str(source.pk),
+            "supply_items-1-currency": "SAR",
+        })
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Duplicated Offer Vendor").exists())
+        wrong_company = self.client.post(reverse("sourcing:vendor_create"), {
+            "display_name": "Cross Company Vendor",
+            "supply_items-TOTAL_FORMS": "1", "supply_items-INITIAL_FORMS": "0",
+            "supply_items-0-material": str(other.pk),
+            "supply_items-0-currency": "SAR",
+        })
+        self.assertEqual(wrong_company.status_code, 400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Cross Company Vendor").exists())
+
+    def test_vendor_only_editor_cannot_create_new_master_in_supply_modal(self):
+        editor, _ = self._member(username="vendor-offer-only", permissions=(
+            AccessPermission.SOURCING_VENDORS_VIEW.value,
+            AccessPermission.SOURCING_VENDORS_MANAGE.value,
+        ))
+        self.client.force_login(editor)
+        page = self.client.get(reverse("sourcing:vendor_create"))
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, "+ Create new material")
+        blocked = self.client.post(reverse("sourcing:vendor_create"), {
+            "display_name": "Unauthorized New Material Vendor",
+            "supply_items-TOTAL_FORMS": "1", "supply_items-INITIAL_FORMS": "0",
+            "supply_items-0-new_material_name": "Unauthorized Inline Material",
+            "supply_items-0-currency": "SAR",
+        })
+        self.assertEqual(blocked.status_code, 400)
+        self.assertFalse(SourcingVendor.objects.filter(company=self.company, display_name="Unauthorized New Material Vendor").exists())
+        self.assertFalse(SourcingMaterial.objects.filter(company=self.company, name="Unauthorized Inline Material").exists())
 
     def test_vendor_directory_shows_only_three_unique_material_types_and_searches_them(self):
         self.client.force_login(self.owner_user)

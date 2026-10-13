@@ -40,6 +40,7 @@ from .forms import (
     SourcingManpowerSupplierForm,
     SourcingManpowerContactForm,
     SourcingVendorNewMaterialFormSet,
+    SourcingVendorOnboardingOfferFormSet,
     SourcingTradeForm,
     SourcingWorkforceOfferForm,
     SourcingWorkforceOfferVerificationForm,
@@ -332,6 +333,22 @@ def reference_lookup(request: HttpRequest, kind: str) -> HttpResponse:
         raise Http404("Unknown sourcing master.")
     model, offer_model, foreign_key = _LOOKUP_CATALOGS[kind]
     if request.method == "GET":
+        if request.GET.get("form") == "1":
+            # Render the SAME ModelForm fields used by the standalone master page.
+            # A separate prefix prevents collisions with the unsaved capability form.
+            _require_master_manage(request)
+            initial_codes = {
+                "material": suggest_material_code,
+                "trade": suggest_trade_code,
+                "service": suggest_service_code,
+            }
+            fields = {"material": SourcingMaterialForm, "trade": SourcingTradeForm,
+                      "service": SourcingServiceForm}
+            kwargs = {"prefix": "master", "initial": {"code": initial_codes[kind]()}}
+            if kind != "trade":
+                kwargs["company"] = request.company
+            form = fields[kind](**kwargs)
+            return render(request, f"sourcing/reference_master_fields/{kind}.html", {"form": form})
         if not _lookup_authorized(request, kind):
             raise PermissionDenied("Sourcing catalog access required.")
         queryset = model.objects.for_company(request.company).filter(is_active=True)
@@ -372,37 +389,47 @@ def reference_lookup(request: HttpRequest, kind: str) -> HttpResponse:
                 results += list(more)
         return JsonResponse({"results": [_lookup_result(entry) for entry in results]})
 
-    # A user permitted to edit a vendor/supplier is NOT necessarily authorized
-    # to create company-wide master vocabulary. Enforce this independently.
+    # A user permitted to edit a supplier is NOT automatically permitted to
+    # create company-wide master vocabulary. Match the standalone access check.
     _require_master_manage(request)
-    # CSRF middleware may already have consumed and parsed POST; never read
-    # request.body again (RawPostDataException on production Django).
     declared_size = request.META.get("CONTENT_LENGTH", "")
     if declared_size.isdecimal() and int(declared_size) > 16384:
         return JsonResponse({"error": "Reference details are too large."}, status=413)
+
+    # The new modal uses `master-` prefixed fields, while old cached JavaScript
+    # can still submit the previous unprefixed payload during rolling deploys.
+    prefix = "master" if any(key.startswith("master-") for key in request.POST) else None
     posted = request.POST.copy()
-    posted["name"] = clean_text(posted.get("name"))
-    if not posted["name"]:
+    def key_for(field):
+        return f"{prefix}-{field}" if prefix else field
+    posted[key_for("name")] = clean_text(posted.get(key_for("name")))
+    if not posted[key_for("name")]:
         return JsonResponse({"errors": {"name": ["Enter a reference name."]}}, status=400)
-    if kind == "material":
-        posted["code"] = posted.get("code") or suggest_material_code()
-        category = clean_text(posted.get("category"))
-        if category:
-            posted["category"] = "__new__"
-            posted["new_category"] = category
-        form = SourcingMaterialForm(posted, company=request.company)
-        create_fn = create_material
-    elif kind == "trade":
-        posted["code"] = posted.get("code") or suggest_trade_code()
-        form = SourcingTradeForm(posted)
-        create_fn = create_trade
-    else:
-        category = clean_text(posted.get("category"))
-        if category:
-            posted["category"] = "__new__"
-            posted["new_category"] = category
-        form = SourcingServiceForm(posted, company=request.company)
-        create_fn = create_service
+    forms = {"material": SourcingMaterialForm, "trade": SourcingTradeForm,
+             "service": SourcingServiceForm}
+    suggest_code = {"material": suggest_material_code,
+                    "trade": suggest_trade_code,
+                    "service": suggest_service_code}
+    posted[key_for("code")] = posted.get(key_for("code")) or suggest_code[kind]()
+    kwargs = {"prefix": prefix}
+    if kind != "trade":
+        kwargs["company"] = request.company
+        # Preserve compatibility with old inline dialogs that submitted a free
+        # text category instead of the standalone form's controlled choice.
+        if prefix is None:
+            category = clean_text(posted.get("category"))
+            if category:
+                existing_categories = (sourcing_material_categories(request.company) if kind == "material"
+                                       else service_categories(request.company))
+                existing = next((value for value in existing_categories
+                                 if normalize_text(value) == normalize_text(category)), None)
+                if existing:
+                    posted["category"] = existing
+                else:
+                    posted["category"] = "__new__"
+                    posted["new_category"] = category
+    form = forms[kind](posted, **kwargs)
+    create_fn = {"material": create_material, "trade": create_trade, "service": create_service}[kind]
     if not form.is_valid():
         return JsonResponse({"errors": form.errors.get_json_data()}, status=400)
     cleaned = {key: val for key, val in form.cleaned_data.items() if key != "new_category"}
@@ -582,8 +609,25 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
         "prefix": "new_materials",
         "form_kwargs": {"company": request.company, "categories": category_values},
     }
+    offers_kwargs = {
+        "prefix": "supply_items",
+        "form_kwargs": {
+            "company": request.company,
+            "can_create_materials": can_create_materials,
+            "categories": category_values,
+        },
+    }
+    offer_formset = (
+        SourcingVendorOnboardingOfferFormSet(request.POST, **offers_kwargs)
+        if request.method == "POST" and "supply_items-TOTAL_FORMS" in request.POST
+        else SourcingVendorOnboardingOfferFormSet(**offers_kwargs)
+    )
     if request.method == "POST":
         form = SourcingVendorForm(request.POST, company=request.company, include_materials=True)
+        if "supply_items-TOTAL_FORMS" not in request.POST and any(
+            key.startswith("supply_items-") for key in request.POST
+        ):
+            form.add_error(None, "The supply-item editor data was incomplete. Reopen the form and try again.")
         inline_formset_submitted = "new_materials-TOTAL_FORMS" in request.POST
         new_material_formset = None
         if can_create_materials:
@@ -608,7 +652,12 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
             if new_material_formset is not None and inline_formset_submitted
             else True
         )
-        if form_valid and formset_valid:
+        offers_valid = (
+            offer_formset.is_valid()
+            if "supply_items-TOTAL_FORMS" in request.POST
+            else True  # Pre-upgrade forms remain supported during rolling deployments.
+        )
+        if form_valid and formset_valid and offers_valid:
             cleaned_data = {key: value for key, value in form.cleaned_data.items() if key != "materials"}
             materials = list(form.cleaned_data.get("materials") or ())
             new_materials = []
@@ -620,24 +669,39 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
                     and not material_form.cleaned_data.get("DELETE")
                     and material_form.cleaned_data.get("name")
                 ]
+            complete_offers = []
+            for offer_form in offer_formset.forms:
+                if not offer_form.cleaned_data or offer_form.cleaned_data.get("DELETE"):
+                    continue
+                complete_offers.append({
+                    **offer_form.offer_data(),
+                    "material": offer_form.cleaned_data.get("material"),
+                    "draft_material": offer_form.cleaned_data.get("draft_material"),
+                    "verified_now": offer_form.cleaned_data.get("verified_now", False),
+                    "contact_name": offer_form.cleaned_data.get("contact_name", ""),
+                })
             try:
                 vendor = create_vendor_with_materials(
                     actor_membership=membership,
                     cleaned_data=cleaned_data,
                     materials=materials,
                     new_materials=new_materials,
+                    offers=complete_offers,
                     request=request,
                 )
             except ValidationError as exc:
                 _apply_validation_error(form, exc)
             else:
-                linked_material_count = len(materials) + len(new_materials)
+                linked_material_count = len(materials) + len(new_materials) + len(complete_offers)
                 if linked_material_count:
                     new_material_detail = ""
-                    if new_materials:
+                    new_master_count = len(new_materials) + sum(
+                        1 for offer in complete_offers if offer.get("draft_material")
+                    )
+                    if new_master_count:
                         new_material_detail = (
-                            f", including {len(new_materials)} new material master "
-                            f"record{'s' if len(new_materials) != 1 else ''}"
+                            f", including {new_master_count} new material master "
+                            f"record{'s' if new_master_count != 1 else ''}"
                         )
                     messages.success(
                         request,
@@ -654,9 +718,6 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
             include_materials=True,
         )
         new_material_formset = SourcingVendorNewMaterialFormSet(**formset_kwargs) if can_create_materials else None
-    active_category_values = list(
-        form.fields["materials"].queryset.exclude(category="").order_by("category").values_list("category", flat=True).distinct()
-    )
     context = _base_context(
         request,
         page_key="sourcing-vendors",
@@ -668,12 +729,17 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
         submit_label="Create Vendor",
         cancel_url="sourcing:vendor_list",
         show_materials=True,
-        material_master_count=form.fields["materials"].queryset.count(),
-        material_picker_categories=active_category_values,
         can_create_materials=can_create_materials,
         new_material_formset=new_material_formset,
+        offer_formset=offer_formset,
+        can_create_master=False,  # Draft new masters are committed with the Vendor.
     )
-    has_form_errors = bool(form.errors) or bool(new_material_formset and new_material_formset.errors)
+    has_form_errors = (
+        bool(form.errors)
+        or bool(new_material_formset and new_material_formset.errors)
+        or bool(offer_formset.errors)
+        or bool(offer_formset.non_form_errors())
+    )
     return render(
         request,
         "sourcing/vendors/form.html",

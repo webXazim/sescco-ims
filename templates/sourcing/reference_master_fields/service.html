@@ -1,0 +1,16 @@
+<div class="sourcing-reference-master-fields" data-reference-master-fields="service">
+  <section class="sourcing-form-section"><header><h2>Service Identity</h2><p>Services here are independent sourcing-only reference names.</p></header><div class="sourcing-form-grid">
+    {% include "sourcing/vendors/field.html" with field=form.code %}
+    {% include "sourcing/vendors/field.html" with field=form.name %}
+    <div data-material-category-scope>
+      {% include "sourcing/vendors/field.html" with field=form.category %}
+      <div data-new-material-category-field{% if form.category.value != '__new__' %} hidden{% endif %}>{% include "sourcing/vendors/field.html" with field=form.new_category %}</div>
+    </div>
+    {% include "sourcing/vendors/field.html" with field=form.default_rate_basis %}
+  </div></section>
+  <section class="sourcing-form-section"><header><h2>Scope &amp; Search Aliases</h2><p>Define the service once and provide alternative search terminology.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">
+    {% include "sourcing/vendors/field.html" with field=form.description %}
+    {% include "sourcing/vendors/field.html" with field=form.aliases %}
+  </div></section>
+  <section class="sourcing-form-section"><header><h2>Internal Notes</h2><p>Reference information only; not an approved quotation or contract.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+</div>

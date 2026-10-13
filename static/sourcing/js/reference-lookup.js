@@ -3,117 +3,173 @@
  */
 (() => {
   'use strict';
-  const configurations = {
-    material: { title: 'Sourcing Material', extra: [['default_unit', 'Default unit', 'e.g. pcs, box, kg']] },
-    trade: { title: 'Worker Type / Trade', extra: [] },
-    service: { title: 'Sourcing Service', extra: [['description', 'Service description', 'Optional scope definition']] },
+  const titles = {
+    material: 'Sourcing Material',
+    trade: 'Worker Type / Trade',
+    service: 'Sourcing Service',
   };
   function csrfToken(root) {
     return root.closest('form')?.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
   }
   function message(element, value) { element.textContent = value; }
-  function dialogFor(root, done) {
+
+  // The dialog receives the very same Django ModelForm sections used on the
+  // standalone master-data creation/edit screens, instead of maintaining a
+  // second, incomplete form definition in JavaScript.
+  async function dialogFor(root, done) {
     const kind = root.dataset.kind;
-    const config = configurations[kind];
+    if (!Object.prototype.hasOwnProperty.call(titles, kind)) return;
     const dialog = document.createElement('dialog');
     dialog.className = 'sourcing-reference-dialog';
     const panel = document.createElement('form');
     panel.method = 'post';
     panel.className = 'sourcing-reference-dialog-form';
+    const heading = document.createElement('div');
+    heading.className = 'sourcing-reference-dialog-heading';
     const title = document.createElement('h2');
-    title.textContent = `Add ${config.title}`;
-    panel.append(title);
+    title.id = 'sourcing-reference-modal-title';
+    title.textContent = `Add ${titles[kind]}`;
+    dialog.setAttribute('aria-labelledby', title.id);
     const description = document.createElement('p');
-    description.textContent = 'Create a company-wide sourcing reference item without leaving this capability form.';
-    panel.append(description);
-    const controls = [];
-    function field(name, label, placeholder, required = false) {
-      const wrapper = document.createElement('label');
-      wrapper.className = 'sourcing-reference-modal-field';
-      const text = document.createElement('span'); text.textContent = label;
-      const input = document.createElement('input');
-      input.type = 'text'; input.name = name; input.className = 'sourcing-input';
-      input.placeholder = placeholder; input.maxLength = name === 'name' ? 200 : 120;
-      input.required = required;
-      wrapper.append(text, input);
-      panel.append(wrapper); controls.push(input);
-      return input;
-    }
-    const nameInput = field('name', `${config.title} name`, 'Enter a clear controlled name', true);
-    field('category', 'Category / type (optional)', 'e.g. Electrical, HVAC, Civil');
-    for (const [key, label, placeholder] of config.extra) field(key, label, placeholder);
-    const aliasLabel = document.createElement('label');
-    aliasLabel.className = 'sourcing-reference-modal-field';
-    const aliasTitle = document.createElement('span'); aliasTitle.textContent = 'Search aliases (optional)';
-    const aliases = document.createElement('textarea');
-    aliases.name = 'aliases'; aliases.className = 'sourcing-input';
-    aliases.rows = 2; aliases.maxLength = 500;
-    aliases.placeholder = 'Alternative names, one per line';
-    aliasLabel.append(aliasTitle, aliases); panel.append(aliasLabel); controls.push(aliases);
-    if (kind === 'service') {
-      const basisLabel = document.createElement('label');
-      basisLabel.className = 'sourcing-reference-modal-field';
-      const basisTitle = document.createElement('span'); basisTitle.textContent = 'Default quotation basis (optional)';
-      const select = document.createElement('select');
-      select.className = 'sourcing-input'; select.name = 'default_rate_basis';
-      const basisOptions = [['', 'Not specified'], ['hour', 'Hour'], ['day', 'Day'],
-        ['visit', 'Visit'], ['job', 'Job'], ['m2', 'Square metre'], ['m3', 'Cubic metre'],
-        ['month', 'Month'], ['quotation', 'Quotation']];
-      for (const [value, label] of basisOptions) {
-        const option = document.createElement('option'); option.value = value;
-        option.textContent = label; select.append(option);
-      }
-      basisLabel.append(basisTitle, select); panel.append(basisLabel); controls.push(select);
-    }
-    const error = document.createElement('div');
-    error.className = 'sourcing-reference-modal-error'; error.setAttribute('role', 'alert');
-    panel.append(error);
+    description.textContent = 'Create a controlled sourcing reference without leaving your capability form.';
+    heading.append(title, description);
+    const content = document.createElement('div');
+    content.className = 'sourcing-reference-dialog-content';
+    content.textContent = 'Loading reference fields…';
+    const errors = document.createElement('div');
+    errors.className = 'sourcing-reference-modal-error';
+    errors.setAttribute('role', 'alert');
+    errors.setAttribute('aria-live', 'polite');
     const actions = document.createElement('div');
     actions.className = 'sourcing-reference-modal-actions';
     const cancel = document.createElement('button');
-    cancel.className = 'sourcing-btn'; cancel.type = 'button'; cancel.textContent = 'Cancel';
+    cancel.type = 'button'; cancel.className = 'sourcing-btn'; cancel.textContent = 'Cancel';
     const save = document.createElement('button');
-    save.className = 'sourcing-btn sourcing-btn--primary'; save.type = 'submit';
-    save.textContent = `Create ${config.title}`;
-    actions.append(cancel, save); panel.append(actions); dialog.append(panel);
+    save.type = 'submit'; save.className = 'sourcing-btn sourcing-btn--primary';
+    save.textContent = `Create ${titles[kind]}`; save.disabled = true;
+    actions.append(cancel, save);
+    panel.append(heading, content, errors, actions);
+    dialog.append(panel);
     document.body.append(dialog);
-    const close = () => { dialog.close(); dialog.remove(); };
-    cancel.addEventListener('click', close);
-    dialog.addEventListener('cancel', () => { dialog.remove(); });
-    dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    dialog.showModal();
+
+    const controller = new AbortController();
+    dialog.addEventListener('close', () => controller.abort(), { once: true });
+    function syncCategories() {
+      content.querySelectorAll('[data-material-category-scope]').forEach(scope => {
+        const select = scope.querySelector('[data-material-category-select]');
+        const field = scope.querySelector('[data-new-material-category-field]');
+        const input = field?.querySelector('[data-new-material-category-input]');
+        if (!select || !field) return;
+        const isNew = select.value === '__new__';
+        field.hidden = !isNew;
+        if (input) input.required = isNew;
+      });
+    }
+    content.addEventListener('change', event => {
+      if (event.target.matches('[data-material-category-select]')) syncCategories();
+    });
+    function clearErrors() {
+      errors.textContent = '';
+      content.querySelectorAll('[data-inline-error]').forEach(node => node.remove());
+      content.querySelectorAll('[aria-invalid="true"]').forEach(node => node.removeAttribute('aria-invalid'));
+    }
+    function displayErrors(payload) {
+      clearErrors();
+      const errorData = payload.errors || {};
+      let firstInvalid = null;
+      for (const [fieldName, messages] of Object.entries(errorData)) {
+        const details = (Array.isArray(messages) ? messages : [messages])
+          .map(entry => typeof entry === 'string' ? entry : (entry?.message || 'Invalid value.'));
+        // Restrict lookup to a real form control name; never construct HTML
+        // from a server error message.
+        const input = [...panel.elements].find(element => element.name === `master-${fieldName}`);
+        if (input) {
+          input.setAttribute('aria-invalid', 'true');
+          const field = input.closest('.sourcing-field');
+          if (field) {
+            const error = document.createElement('div');
+            error.className = 'field-error';
+            error.dataset.inlineError = '';
+            error.textContent = details.join(' ');
+            field.append(error);
+            firstInvalid ||= input;
+            continue;
+          }
+        }
+        errors.textContent += `${fieldName === '__all__' ? 'Error' : fieldName}: ${details.join(' ')}\n`;
+      }
+      if (!Object.keys(errorData).length) errors.textContent = payload.error || 'Unable to save the reference.';
+      firstInvalid?.focus();
+    }
+    try {
+      const url = new URL(root.dataset.endpoint, window.location.href);
+      url.searchParams.set('form', '1');
+      const response = await fetch(url, {
+        credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+        headers: { 'Accept': 'text/html' },
+      });
+      if (!response.ok) throw new Error(response.status === 403
+        ? 'You do not have permission to create reference records.'
+        : 'Unable to load the reference form. Please try again.');
+      const markup = await response.text();
+      if (!dialog.isConnected) return;
+      const scratch = document.createElement('div');
+      scratch.innerHTML = markup;
+      const fields = scratch.querySelector('[data-reference-master-fields]');
+      if (!fields || fields.dataset.referenceMasterFields !== kind) {
+        throw new Error('The reference form could not be loaded. Please refresh and try again.');
+      }
+      content.replaceChildren(fields);
+      syncCategories();
+      save.disabled = false;
+      content.querySelector('[name="master-name"]')?.focus();
+    } catch (exc) {
+      if (exc.name === 'AbortError' || !dialog.isConnected) return;
+      content.textContent = '';
+      errors.textContent = exc.message || 'Unable to open the reference form.';
+      return;
+    }
     panel.addEventListener('submit', async event => {
       event.preventDefault();
       if (!panel.reportValidity()) return;
-      save.disabled = true; error.textContent = '';
-      const body = new FormData();
-      for (const input of controls) body.set(input.name, input.value.trim());
+      clearErrors();
+      save.disabled = true;
       try {
         const response = await fetch(root.dataset.endpoint, {
           method: 'POST', credentials: 'same-origin',
           headers: { 'X-CSRFToken': csrfToken(root), 'Accept': 'application/json' },
-          body,
+          body: new FormData(panel),
         });
         const data = await response.json();
         if (!response.ok) {
-          const details = data.errors && Object.entries(data.errors).flatMap(([key, entries]) => {
-            return entries.map(entry => `${key === '__all__' ? 'Error' : key}: ${typeof entry === 'string' ? entry : entry.message}`);
-          });
-          throw new Error(details?.join(' · ') || data.error || `Could not create reference (${response.status}).`);
+          displayErrors(data);
+          return;
         }
-        if (!data.item || !data.item.id) throw new Error('Invalid server response.');
-        close(); done(data.item);
-      } catch (exc) { error.textContent = exc.message || 'Unable to create this reference. Try again.'; }
-      finally { save.disabled = false; }
+        if (!data.item?.id) throw new Error('Invalid server response.');
+        dialog.close();
+        done(data.item);
+      } catch (exc) {
+        errors.textContent = exc.message || 'Unable to save the reference. Please try again.';
+      } finally {
+        if (dialog.isConnected) save.disabled = false;
+      }
     });
-    dialog.showModal(); nameInput.focus();
   }
   function initialize(root) {
+    if (root.dataset.referenceInitialized === '1') return;
     const hidden = root.querySelector('input[type="hidden"]');
     const search = root.querySelector('[data-reference-search]');
     const current = root.querySelector('[data-reference-current]');
     const options = root.querySelector('[data-reference-options]');
     const help = root.querySelector('[data-reference-help]');
     if (!hidden || !search || !options) return;
+    root.dataset.referenceInitialized = '1';
     let requestId = 0;
     let controller;
     let timeout;
@@ -222,4 +278,7 @@
     else load('');
   }
   document.querySelectorAll('[data-sourcing-reference-lookup]').forEach(initialize);
+  document.addEventListener('sourcing:reference-lookup-mount', event => {
+    (event.detail?.root || document).querySelectorAll('[data-sourcing-reference-lookup]').forEach(initialize);
+  });
 })();

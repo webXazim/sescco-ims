@@ -807,6 +807,140 @@ class SourcingVendorOfferForm(forms.ModelForm):
                 self.initial["verified_now"] = True
 
 
+class SourcingVendorOnboardingOfferForm(SourcingVendorOfferForm):
+    """A complete supply offer before the parent Vendor exists.
+
+    Offers use the very same ModelForm fields and model validation as Add Supply
+    Item.  A new controlled Material may be drafted alongside the offer, and is
+    only persisted once the entire Vendor formset validates and saves atomically.
+    """
+
+    new_material_code = forms.CharField(required=False, max_length=40, label="Material Code")
+    new_material_name = forms.CharField(required=False, max_length=200, label="Material Name")
+    new_material_category = forms.ChoiceField(required=False, choices=(), label="Material Category / Type")
+    new_material_new_category = forms.CharField(required=False, max_length=120, label="New Category / Type")
+    new_material_default_unit = forms.CharField(required=False, max_length=40, label="Default Unit")
+    new_material_aliases = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}), label="Search Aliases")
+    new_material_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}), label="Material Notes")
+
+    def __init__(self, *args, can_create_materials=False, categories=None, **kwargs):
+        self.company = kwargs.get("company")
+        super().__init__(*args, **kwargs)
+        self.can_create_materials = can_create_materials
+        self.categories = categories
+        self.fields["material"].required = False
+        self.fields["new_material_category"].choices = _material_category_choices(
+            categories=categories or (),
+            posted=clean_text(self.data.get(self.add_prefix("new_material_category"), "")) if self.is_bound else "",
+        )
+        self.fields["new_material_category"].widget.attrs["data-material-category-select"] = ""
+        self.fields["new_material_new_category"].widget.attrs["data-new-material-category-input"] = ""
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "sourcing-input")
+        if not self.is_bound:
+            # Nothing is verified merely because the user adds a draft capability.
+            self.initial["verified_now"] = False
+
+    def clean(self):
+        cleaned = super().clean()
+        # Deleted rows are disregarded by Django's formset after field validation.
+        if cleaned.get("DELETE"):
+            return cleaned
+        new_fields = ("code", "name", "category", "new_category", "default_unit", "aliases", "notes")
+        new_values = {
+            field: cleaned.get(f"new_material_{field}") or ""
+            for field in new_fields
+        }
+        wants_new = any(clean_text(value) for value in new_values.values())
+        if wants_new:
+            if not self.can_create_materials:
+                self.add_error("new_material_name", "Reference Masters edit access is required to create a new material.")
+            if cleaned.get("material"):
+                self.add_error("material", "Choose an existing material OR create a new material, not both.")
+            # The full standalone ModelForm requires a code; generate it here,
+            # exactly as the dedicated reference-master creation service does.
+            if not clean_text(new_values["code"]):
+                from .services.catalog import suggest_material_code
+                new_values["code"] = suggest_material_code()
+            if self.company is not None:
+                name = normalize_text(new_values["name"])
+                if name and SourcingMaterial.objects.for_company(self.company).filter(normalized_name=name).exists():
+                    self.add_error("new_material_name", "This material already exists. Search and select it instead.")
+                if SourcingMaterial.objects.for_company(self.company).filter(code__iexact=new_values["code"]).exists():
+                    self.add_error("new_material_code", "This material code already exists.")
+            # Reuse the full standalone master form's model/category/alias validation.
+            master = SourcingMaterialForm(data=new_values, company=self.company, categories=self.categories)
+            if not master.is_valid():
+                for name, errors in master.errors.items():
+                    target = f"new_material_{name}"
+                    for error in errors:
+                        if target in self.fields:
+                            self.add_error(target, error)
+                        else:
+                            self.add_error(None, error)
+            else:
+                cleaned["draft_material"] = {
+                    key: master.cleaned_data[key]
+                    for key in ("code", "name", "category", "default_unit", "aliases", "notes")
+                }
+        elif not cleaned.get("material"):
+            self.add_error("material", "Select a material or create a new one.")
+        return cleaned
+
+    def offer_data(self):
+        keys = SourcingVendorOfferForm.Meta.fields
+        return {key: self.cleaned_data.get(key) for key in keys if key != "material"}
+
+
+class BaseSourcingVendorOnboardingOfferFormSet(forms.BaseFormSet):
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+        new_names = set()
+        new_codes = set()
+        identities = set()
+        for form in self.forms:
+            data = getattr(form, "cleaned_data", None)
+            if not data or data.get("DELETE"):
+                continue
+            draft = data.get("draft_material")
+            if draft:
+                name = normalize_text(draft["name"])
+                code = clean_text(draft["code"]).upper()
+                if name in new_names:
+                    form.add_error("new_material_name", "This material is already created in another supply item.")
+                new_names.add(name)
+                if code and code in new_codes:
+                    form.add_error("new_material_code", "This material code is already used in another supply item.")
+                if code:
+                    new_codes.add(code)
+                identity_material = ("new", name)
+            else:
+                material = data.get("material")
+                identity_material = ("existing", str(material.pk)) if material else ("invalid", "")
+            identity = (
+                identity_material,
+                normalize_text(data.get("specification")),
+                normalize_text(data.get("brand")),
+                normalize_text(data.get("model")),
+            )
+            if identity in identities:
+                form.add_error("specification", "This supply item has already been added. Edit the existing row instead.")
+            identities.add(identity)
+
+
+SourcingVendorOnboardingOfferFormSet = forms.formset_factory(
+    SourcingVendorOnboardingOfferForm,
+    formset=BaseSourcingVendorOnboardingOfferFormSet,
+    extra=0,
+    can_delete=True,
+    max_num=50,
+    absolute_max=100,
+    validate_max=True,
+)
+
+
 class SourcingVendorOfferVerificationForm(forms.ModelForm):
     contact_name = forms.CharField(
         required=False,

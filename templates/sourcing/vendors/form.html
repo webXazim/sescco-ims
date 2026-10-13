@@ -42,82 +42,31 @@
   </section>
 
   {% if show_materials %}
-  <section class="sourcing-form-section sourcing-material-onboarding">
-    <header><h2>Materials</h2><p>Select existing Sourcing Materials or create new material masters here while adding the Vendor. Every selected or newly created material is linked to this Vendor's Supply Catalog with availability left as Unknown until detailed sourcing information is recorded.</p></header>
-    <div class="sourcing-material-onboarding-body">
-      <div class="sourcing-field sourcing-field--full{% if form.materials.errors %} has-error{% endif %}" data-material-picker>
-        <div class="sourcing-material-picker-head">
-          <div>
-            <label for="vendor-material-search">Existing Materials</label>
-            <small>{{ material_master_count }} active material{{ material_master_count|pluralize }} available · <span data-material-selected-count>0 selected</span></small>
-          </div>
-          {% if material_master_count %}
-          <div class="sourcing-material-picker-tools">
-            <select class="sourcing-select" aria-label="Filter existing materials by category or type" data-material-category-filter>
-              <option value="">All categories / types</option>
-              {% for category in material_picker_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}
-              <option value="__uncategorized__">Uncategorized</option>
-            </select>
-            <input id="vendor-material-search" class="sourcing-input sourcing-material-picker-search" type="search" placeholder="Search existing materials" autocomplete="off" data-material-picker-search>
-          </div>
-          {% endif %}
-        </div>
-        {% if material_master_count %}
-          <div class="sourcing-material-picker-options">{{ form.materials }}</div>
-          {% if form.materials.help_text %}<small>{{ form.materials.help_text }}</small>{% endif %}
-          {% for error in form.materials.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
-        {% else %}
-          <div class="sourcing-material-picker-empty">No active Sourcing Materials exist yet.{% if can_create_materials %} You can create the first material below while creating this Vendor.{% endif %}</div>
-        {% endif %}
+  <section class="sourcing-form-section sourcing-onboarding" data-supply-onboarding>
+    <header><h2>Supply Items</h2><p>Add complete Vendor supply capabilities before saving. Search an existing Sourcing Material or create a new controlled Material, and enter specifications, availability, quantity, rates and verification details.</p></header>
+    <div class="sourcing-onboarding-body">
+      {{ offer_formset.management_form }}
+      {% for error in offer_formset.non_form_errors %}<div class="sourcing-form-errors">{{ error }}</div>{% endfor %}
+      <div class="sourcing-onboarding-summary" data-onboarding-summary aria-live="polite"></div>
+      <div class="sourcing-onboarding-actions">
+        <button class="sourcing-btn sourcing-btn--primary" type="button" data-onboarding-add>+ Add Supply Item</button>
+        <small>Each item saves with this Vendor. You can add multiple specifications for the same material.</small>
       </div>
-
-      {% if can_create_materials and new_material_formset %}
-      <div class="sourcing-inline-materials" data-new-material-formset>
-        {{ new_material_formset.management_form }}
-        <div class="sourcing-inline-materials-head">
-          <div>
-            <strong>New Materials</strong>
-            <small>Create company-wide Sourcing Material masters and link them to this Vendor in the same save. Choose a previously used category/type or add a new one.</small>
-          </div>
-          <button class="sourcing-btn" type="button" data-add-new-material>+ Add another material</button>
-        </div>
-        {% for error in new_material_formset.non_form_errors %}<div class="sourcing-form-errors">{{ error }}</div>{% endfor %}
-        <div class="sourcing-inline-material-rows" data-new-material-rows>
-          {% for material_form in new_material_formset.forms %}
-          <div class="sourcing-inline-material-row{% if material_form.errors %} has-error{% endif %}" data-new-material-row{% if material_form.DELETE.value %} hidden{% endif %}>
-            <div class="sourcing-inline-material-row-head"><strong>New material <span data-new-material-row-number>{{ forloop.counter }}</span></strong><button class="sourcing-inline-material-remove" type="button" data-remove-new-material aria-label="Remove new material row">Remove</button></div>
-            <span hidden>{{ material_form.DELETE }}</span>
-            <div class="sourcing-inline-material-grid">
-              {% include "sourcing/vendors/field.html" with field=material_form.name %}
-              <div data-material-category-scope>
-                {% include "sourcing/vendors/field.html" with field=material_form.category %}
-                <div data-new-material-category-field{% if material_form.category.value != '__new__' %} hidden{% endif %}>{% include "sourcing/vendors/field.html" with field=material_form.new_category %}</div>
-              </div>
-              {% include "sourcing/vendors/field.html" with field=material_form.default_unit %}
-              {% include "sourcing/vendors/field.html" with field=material_form.code %}
-            </div>
-          </div>
+      {% if not can_create_materials %}<p class="sourcing-material-permission-note">You can select existing materials. Creating a new Sourcing Material requires Reference Masters edit access.</p>{% endif %}
+      <noscript><p class="sourcing-form-errors">JavaScript is required to add supply items during Vendor creation. You can also add them after creating the Vendor.</p></noscript>
+      <dialog class="sourcing-onboarding-dialog" data-onboarding-dialog aria-labelledby="sourcing-onboarding-dialog-title">
+        <div class="sourcing-onboarding-dialog-head"><div><h2 id="sourcing-onboarding-dialog-title">Add Supply Item</h2><p>Enter the full supply capability. Changes are saved together with the Vendor.</p></div><button type="button" class="sourcing-onboarding-close" data-onboarding-cancel aria-label="Close supply item editor">×</button></div>
+        <div class="sourcing-onboarding-dialog-rows" data-onboarding-rows>
+          {% for offer_form in offer_formset.forms %}
+            {% include "sourcing/vendors/onboarding_offer_row.html" %}
           {% endfor %}
         </div>
-        <template data-new-material-template>
-          <div class="sourcing-inline-material-row" data-new-material-row>
-            <div class="sourcing-inline-material-row-head"><strong>New material <span data-new-material-row-number></span></strong><button class="sourcing-inline-material-remove" type="button" data-remove-new-material aria-label="Remove new material row">Remove</button></div>
-            <span hidden>{{ new_material_formset.empty_form.DELETE }}</span>
-            <div class="sourcing-inline-material-grid">
-              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.name %}
-              <div data-material-category-scope>
-                {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.category %}
-                <div data-new-material-category-field hidden>{% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.new_category %}</div>
-              </div>
-              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.default_unit %}
-              {% include "sourcing/vendors/field.html" with field=new_material_formset.empty_form.code %}
-            </div>
-          </div>
-        </template>
-      </div>
-      {% elif not can_create_materials %}
-      <div class="sourcing-material-permission-note">You can select existing materials for this Vendor. Creating a new Sourcing Material requires Reference Masters edit access.</div>
-      {% endif %}
+        <div class="sourcing-onboarding-dialog-error" role="alert" data-onboarding-error hidden></div>
+        <div class="sourcing-onboarding-dialog-actions"><button type="button" class="sourcing-btn" data-onboarding-cancel>Cancel</button><button type="button" class="sourcing-btn sourcing-btn--primary" data-onboarding-done>Add to Vendor</button></div>
+      </dialog>
+      <template data-onboarding-template>
+        {% include "sourcing/vendors/onboarding_offer_row.html" with offer_form=offer_formset.empty_form %}
+      </template>
     </div>
   </section>
   {% endif %}
@@ -130,4 +79,5 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials-filter-remove"></script>{% endblock %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.121-unified"><link rel="stylesheet" href="{% static 'sourcing/css/vendor-onboarding.css' %}?v=1.0.122">{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/vendor-onboarding.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.122"></script>{% endblock %}
