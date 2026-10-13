@@ -243,8 +243,22 @@ class MaterialFinderTests(TestCase):
             reverse("sourcing:material_finder"),
             {"category": "Electrical", "availability": "limited", "location": "Jubail", "rate_max": "30"},
         )
+        # The unified directory returns companies. Individual matching materials
+        # are loaded on demand in the expanded capability panel, not in this HTML.
         self.assertEqual(filtered.context["page_obj"].paginator.count, 1)
-        self.assertContains(filtered, "Electrical Cable")
+        self.assertContains(filtered, "Jubail Material Source")
+        self.assertNotContains(filtered, "Eastern Steel")
+        self.assertContains(filtered, f'data-provider-expand="{self.vendor_b.pk}"')
+
+        filtered_detail = self.client.get(reverse("sourcing:vendor_list"), {
+            "fragment": "capabilities", "provider": str(self.vendor_b.pk),
+            "category": "Electrical", "availability": "limited",
+            "location": "Jubail", "rate_max": "30",
+        })
+        self.assertEqual(filtered_detail.status_code, 200)
+        self.assertEqual(filtered_detail.context["offer_page"].paginator.count, 1)
+        self.assertContains(filtered_detail, "Electrical Cable")
+        self.assertNotContains(filtered_detail, "Rebar 12mm")
 
         page_two = self._get(
             reverse("sourcing:material_finder"),
