@@ -1,7 +1,7 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Vendors · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.123">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.124">{% endblock %}
 {% block content %}
 <section class="sourcing-page-head">
   <div>
@@ -16,8 +16,8 @@
 <p class="sourcing-unified-intro">Find companies and compare their matching {% if kind == 'vendor' %}materials{% elif kind == 'manpower' %}workforce{% else %}services{% endif %} in one directory. Open a company's capabilities below to review quantities, rates and verification details.</p>
 
 <section class="sourcing-directory-card">
-  <form class="sourcing-toolbar" data-unified-form method="get" action="{% url 'sourcing:vendor_list' %}">
-    <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material, specification, brand, model, contact or VAT" autocomplete="off"><button type="submit">Search</button></label>
+  <form class="sourcing-toolbar sourcing-toolbar--directory" data-unified-form method="get" action="{% url 'sourcing:vendor_list' %}">
+    <label class="sourcing-search sourcing-search--directory"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material, specification, brand, model, contact or VAT" autocomplete="off"><button type="submit">Search</button></label>
     <div class="sourcing-toolbar__actions">
       <select class="sourcing-select" name="status" aria-label="Vendor status">
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Vendors ({{ counts.active }})</option>
@@ -82,7 +82,7 @@
       </tr></thead>
       <tbody>
         {% for vendor in vendors %}
-        <tr>
+        <tr data-provider-row="{{ vendor.pk }}">
           <td class="sourcing-vendor-cell"><a href="{% url 'sourcing:vendor_detail' vendor.id %}"><strong>{{ vendor.display_name|default:vendor.name }}</strong><small>{{ vendor.code }}{% if vendor.cr_number %} · CR {{ vendor.cr_number }}{% endif %}</small></a></td>
           <td data-column="contact">{{ vendor.primary_contact_name|default:'—' }}{% if vendor.contact_count %}<small class="cell-note">{{ vendor.contact_count }} saved contact{{ vendor.contact_count|pluralize }}</small>{% endif %}</td>
           <td data-column="email">{% if vendor.email %}<a class="plain-link" href="mailto:{{ vendor.email }}">{{ vendor.email }}</a>{% else %}—{% endif %}</td>
@@ -91,7 +91,7 @@
           <td data-column="tags">{% include "sourcing/unified/tags_cell.html" with provider=vendor %}</td>
           <td data-column="capabilities" class="sourcing-capability-cell">
             
-            <button type="button" class="sourcing-unified-expand" data-provider-expand="{{ vendor.pk }}" aria-expanded="false" aria-controls="capabilities-{{ vendor.pk }}">{{ vendor.active_material_count }} material{{ vendor.active_material_count|pluralize }}</button>
+            <button type="button" class="sourcing-unified-expand sourcing-unified-modal-trigger" data-provider-expand="{{ vendor.pk }}" data-provider-label="{{ vendor.display_name|default:vendor.name|escape }}" data-provider-kind="Vendor" aria-haspopup="dialog" aria-controls="sourcing-capability-modal">{{ vendor.active_material_count }} material{{ vendor.active_material_count|pluralize }}</button>
           </td>
           <td>
             {% if vendor.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>
@@ -107,7 +107,6 @@
             </div></details>
           </td>
         </tr>
-        <tr class="sourcing-unified-expansion" data-provider-row="{{ vendor.pk }}" hidden><td colspan="10"><div id="capabilities-{{ vendor.pk }}" data-capabilities-slot><span>Loading supply items…</span></div></td></tr>
         {% empty %}
         <tr><td colspan="10"><div class="sourcing-empty"><strong>No Vendors found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Vendor when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_create' %}">New Vendor</a>{% endif %}</div></td></tr>
         {% endfor %}
@@ -128,4 +127,4 @@
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.123"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.123"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.123"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.124"></script>{% endblock %}

@@ -19,9 +19,9 @@
   </tbody></table></div>
   {% else %}<p class="sourcing-unified-no-offers">No matching active capabilities. Try clearing a filter, or inspect the company profile.</p>{% endif %}
   <div class="sourcing-unified-cap-footer">
-    {% if offer_page.has_previous %}<button type="button" data-cap-page="{{ offer_page.previous_page_number }}">Previous 20</button>{% endif %}
+    {% if offer_page.has_previous %}<button type="button" data-cap-page="{{ offer_page.previous_page_number }}">Previous page</button>{% endif %}
     <span>Page {{ offer_page.number }} of {{ offer_page.paginator.num_pages }}</span>
-    {% if offer_page.has_next %}<button type="button" data-cap-page="{{ offer_page.next_page_number }}">Next 20</button>{% endif %}
+    {% if offer_page.has_next %}<button type="button" data-cap-page="{{ offer_page.next_page_number }}">Next page</button>{% endif %}
     {% if kind == 'vendor' %}<a href="{% url 'sourcing:vendor_detail' provider.pk %}#catalog">Open Vendor catalog</a>{% elif kind == 'manpower' %}<a href="{% url 'sourcing:manpower_supplier_detail' provider.pk %}#workforce">Open Supplier profile</a>{% else %}<a href="{% url 'sourcing:subcontractor_detail' provider.pk %}#service-catalog">Open Subcontractor services</a>{% endif %}
   </div>
 </div>

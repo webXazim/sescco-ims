@@ -16,6 +16,9 @@
   let timer = null;
   let serial = 0;
   const debounceMs = 320;
+  let modalController = null;
+  let activeProvider = null;
+  let activeTrigger = null;
 
   function makeURL() {
     const url = new URL(form.action, location.href);
@@ -124,8 +127,85 @@
     clearTimeout(timer);
     location.assign(new URL(reset.href, location.href).pathname);
   });
+
+  function ensureModal() {
+    let modal = document.getElementById('sourcing-capability-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'sourcing-capability-modal';
+    modal.className = 'sourcing-unified-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'sourcing-capability-modal-title');
+    modal.innerHTML = `
+      <div class="sourcing-unified-modal__backdrop" data-modal-close></div>
+      <div class="sourcing-unified-modal__dialog">
+        <div class="sourcing-unified-modal__header">
+          <div>
+            <span class="sourcing-unified-modal__eyebrow" id="sourcing-capability-modal-kind">Capabilities</span>
+            <h2 class="sourcing-unified-modal__title" id="sourcing-capability-modal-title">Capability details</h2>
+            <p class="sourcing-unified-modal__subtitle" id="sourcing-capability-modal-subtitle">Browse matching items with pagination.</p>
+          </div>
+          <button type="button" class="sourcing-unified-modal__close" aria-label="Close dialog" data-modal-close>&times;</button>
+        </div>
+        <div class="sourcing-unified-modal__body">
+          <div class="sourcing-unified-modal__content" data-modal-content>
+            <div class="sourcing-unified-modal__loading">Loading matching capabilities…</div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (event) => {
+      if (event.target.closest('[data-modal-close]')) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+    });
+    return modal;
+  }
+  function openModal(trigger) {
+    const modal = ensureModal();
+    activeProvider = trigger.dataset.providerExpand;
+    activeTrigger = trigger;
+    modal.querySelector('#sourcing-capability-modal-title').textContent = trigger.dataset.providerLabel || 'Capability details';
+    modal.querySelector('#sourcing-capability-modal-kind').textContent = trigger.dataset.providerKind || 'Capabilities';
+    modal.querySelector('#sourcing-capability-modal-subtitle').textContent = 'Scroll through paginated capability records without leaving the directory.';
+    modal.querySelector('[data-modal-content]').innerHTML = '<div class="sourcing-unified-modal__loading">Loading matching capabilities…</div>';
+    modal.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+    if (activeTrigger) activeTrigger.setAttribute('aria-expanded', 'true');
+  }
+  function closeModal() {
+    const modal = document.getElementById('sourcing-capability-modal');
+    if (!modal) return;
+    if (modalController) modalController.abort();
+    modal.classList.remove('is-open');
+    document.body.style.overflow = '';
+    if (activeTrigger) activeTrigger.setAttribute('aria-expanded', 'false');
+    activeProvider = null;
+    activeTrigger = null;
+  }
+  async function loadCapabilities(provider, page = '1') {
+    const modal = ensureModal();
+    const target = modal.querySelector('[data-modal-content]');
+    if (modalController) modalController.abort();
+    modalController = new AbortController();
+    target.innerHTML = '<div class="sourcing-unified-modal__loading">Loading matching capabilities…</div>';
+    const url = makeURL();
+    url.searchParams.set('fragment', 'capabilities');
+    url.searchParams.set('provider', provider);
+    url.searchParams.set('cap_page', page);
+    try {
+      const response = await fetch(url, {credentials: 'same-origin', signal: modalController.signal});
+      if (!response.ok) throw new Error('Could not load company capabilities');
+      target.innerHTML = await response.text();
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      target.innerHTML = '<div class="sourcing-unified-modal__empty">Could not load capabilities. Open the company profile to continue.</div>';
+    }
+  }
   document.addEventListener('click', async (event) => {
-    if (!event.target.closest('[data-unified-results]')) return;
+    if (!event.target.closest('[data-unified-results], #sourcing-capability-modal')) return;
     const pageLink = event.target.closest('.sourcing-pagination a');
     const statusLink = event.target.closest('.sourcing-status-strip a');
     if (pageLink || statusLink) {
@@ -146,38 +226,16 @@
       return;
     }
     const expand = event.target.closest('[data-provider-expand]');
-    const capPage = event.target.closest('[data-cap-page]');
-    if (!expand && !capPage) return;
-    const row = (expand || capPage).closest('tr[data-provider-row]') ||
-      (capPage && capPage.closest('[data-provider-row]'));
-    // Buttons inside nested capability tables live inside the expansion row.
-    const sourceRow = row || (capPage && capPage.closest('tr.sourcing-unified-expansion'));
-    const provider = expand ? expand.dataset.providerExpand : sourceRow?.dataset.providerRow;
-    const hostRow = sourceRow || results.querySelector(`[data-provider-row="${provider}"]`);
-    if (!provider || !hostRow) return;
-    const trigger = expand || results.querySelector(`[data-provider-expand="${provider}"]`);
-    if (expand && trigger.getAttribute('aria-expanded') === 'true') {
-      hostRow.hidden = true;
-      trigger.setAttribute('aria-expanded', 'false');
+    if (expand) {
+      event.preventDefault();
+      openModal(expand);
+      await loadCapabilities(expand.dataset.providerExpand, '1');
       return;
     }
-    const target = hostRow.querySelector('[data-capabilities-slot]');
-    hostRow.hidden = false;
-    if (trigger) trigger.setAttribute('aria-expanded', 'true');
-    const url = makeURL();
-    url.searchParams.set('fragment', 'capabilities');
-    url.searchParams.set('provider', provider);
-    url.searchParams.set('cap_page', capPage ? capPage.dataset.capPage : '1');
-    target.setAttribute('aria-busy', 'true');
-    target.textContent = 'Loading matching capabilities…';
-    try {
-      const response = await fetch(url, {credentials: 'same-origin'});
-      if (!response.ok) throw new Error('Could not load company capabilities');
-      target.innerHTML = await response.text();
-    } catch (_) {
-      target.textContent = 'Could not load capabilities. Open the company profile to continue.';
-    } finally {
-      target.removeAttribute('aria-busy');
+    const capPage = event.target.closest('[data-cap-page]');
+    if (capPage && activeProvider) {
+      event.preventDefault();
+      await loadCapabilities(activeProvider, capPage.dataset.capPage || '1');
     }
   });
   // For back/forward use the browser's normal GET navigation to restore all form state.
