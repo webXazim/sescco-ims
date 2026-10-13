@@ -20,7 +20,7 @@ from apps.sourcing.models import SourcingMaterial, SourcingVendor, SourcingVendo
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class VendorVerificationTests(TestCase):
     def _get(self, path, *args, **kwargs):
-        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        # Bookmarked former Finder URLs now redirect to unified company directories.
         if path.split("?", 1)[0] in (
             reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
             reverse("sourcing:service_finder"),
@@ -171,7 +171,7 @@ class VendorVerificationTests(TestCase):
             403,
         )
 
-    def test_material_finder_links_to_history_and_editor_verification(self):
+    def test_unified_vendor_capabilities_link_to_history_and_editor_verification(self):
         editor, _ = self._member(
             username="verify-finder-editor",
             permissions=(
@@ -180,11 +180,32 @@ class VendorVerificationTests(TestCase):
             ),
         )
         self.client.force_login(editor)
+        # Former Material Finder bookmarks redirect to the unified Vendor Directory.
+        # The directory only renders provider rows; capability links load on demand.
         response = self._get(reverse("sourcing:material_finder"), {"q": "Verification Material"})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
-        self.assertContains(response, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
-        self.assertContains(response, "Verify now")
+        self.assertContains(response, f'data-provider-expand="{self.vendor.pk}"')
+        self.assertNotContains(response, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
+
+        capability_url = reverse("sourcing:vendor_list")
+        params = {"fragment": "capabilities", "provider": str(self.vendor.pk), "q": "Verification Material"}
+        detail = self.client.get(capability_url, params)
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "Verification Material")
+        self.assertContains(detail, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
+        self.assertContains(detail, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
+        self.assertContains(detail, "Verify now")
+
+        viewer, _ = self._member(
+            username="verify-finder-viewer",
+            permissions=(AccessPermission.SOURCING_VENDORS_VIEW.value,),
+        )
+        self.client.force_login(viewer)
+        readonly_detail = self.client.get(capability_url, params)
+        self.assertEqual(readonly_detail.status_code, 200)
+        self.assertContains(readonly_detail, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
+        self.assertNotContains(readonly_detail, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
+        self.assertNotContains(readonly_detail, "Verify now")
 
     def test_quick_verification_makes_stale_offer_fresh(self):
         self.client.force_login(self.owner_user)

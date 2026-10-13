@@ -95,7 +95,10 @@ for marker in (
 
 verify_template = text("templates/sourcing/vendors/offer_verify.html")
 history_template = text("templates/sourcing/vendors/offer_history.html")
-finder_template = text("templates/sourcing/vendors/_offers.html")
+# Verification actions moved from the retired Material Finder results to the
+# on-demand capability panel in the unified Vendor Directory.
+capabilities_template = text("templates/sourcing/unified/capabilities.html")
+directory_template = text("templates/sourcing/vendors/list.html")
 detail_template = text("templates/sourcing/vendors/detail.html")
 for marker in ("Save Verification", "form.contact_name", "Recent Verification History", "Reference-only verification"):
     if marker not in verify_template:
@@ -103,8 +106,12 @@ for marker in ("Save Verification", "form.contact_name", "Recent Verification Hi
 for marker in ("Verification History", "Immutable sourcing evidence", "before", "after"):
     if marker not in history_template:
         fail(f"History UX missing: {marker}")
-if "Verify now" not in finder_template or "vendor_offer_history" not in finder_template:
-    fail("Material Finder does not expose verification/history workflow")
+if 'data-provider-expand' not in directory_template or 'data-capabilities-slot' not in directory_template:
+    fail("Unified Vendor Directory does not expose on-demand supply capabilities")
+if 'Verify now' not in capabilities_template or 'vendor_offer_history' not in capabilities_template:
+    fail("Unified Vendor capability panel does not expose verification/history workflow")
+if '{% if can_manage %}' not in capabilities_template:
+    fail("Unified capability verification actions must remain manage-permission gated")
 if "Verify now" not in detail_template or "Verification history" not in detail_template:
     fail("Vendor Supply Catalog does not expose verification/history workflow")
 
@@ -132,5 +139,5 @@ if "1.0.117" not in text("docs/SOURCING_VENDOR_VERIFICATION.md"):
     fail("Vendor verification operator guide is not version-bound")
 
 print(
-    "PASS: SESCCO MS 1.0.117 Vendor Verification & History UX verified: manage-only quick confirmation, view-only immutable history, before/after revision evidence, bounded history pagination, Material Finder freshness renewal and zero Inventory/Payroll/Accounting integration."
+    "PASS: SESCCO MS 1.0.117 Vendor Verification & History UX verified: manage-only quick confirmation, view-only immutable history, before/after revision evidence, bounded history pagination, unified Vendor Directory freshness renewal and zero Inventory/Payroll/Accounting integration."
 )
