@@ -81,7 +81,7 @@ for marker in (
     "_require_vendor_view(request)",
     "material_finder_page, material_finder_categories",
     'page_key="sourcing-vendors"',
-    'request.GET.get("view") == "offers"',
+    '_legacy_directory_query(request)',
     "can_manage=membership_can_manage_vendor_sourcing",
 ):
     if marker not in views:
@@ -98,6 +98,10 @@ if '_legacy_finder_redirect(request, destination="sourcing:vendor_list")' not in
     fail("Permission-checked legacy Material Finder redirect missing")
 
 template = text("templates/sourcing/vendors/_offers.html")
+unified = text('templates/sourcing/vendors/list.html')
+for marker in ('data-unified-form', 'data-unified-results', 'data-provider-expand'):
+    if marker not in unified:
+        fail(f'Unified Vendor Finder UI missing: {marker}')
 for marker in (
     "Search material, type/category, code, alias, specification, brand, model or vendor",
     "Available Qty",

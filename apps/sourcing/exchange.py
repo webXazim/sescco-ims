@@ -795,6 +795,10 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 | Q(vat_number__icontains=q)
                 | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
+        if params.get("unified") == "1":
+            # Use EXACTLY the tenant-scoped, company-first search queryset.
+            from .selectors.vendors import vendor_directory_page
+            qs = vendor_directory_page(company=company, params=params).page_obj.paginator.object_list
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([
                 obj.code, obj.name, obj.display_name, obj.cr_number, obj.vat_number,
@@ -848,6 +852,12 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
         qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
         if q:
             qs = qs.filter(Q(vendor__name__icontains=q) | Q(vendor__code__icontains=q) | Q(material__name__icontains=q) | Q(material__code__icontains=q) | Q(material__category__icontains=q) | Q(material__normalized_aliases__icontains=normalize_text(q)) | Q(specification__icontains=q) | Q(brand__icontains=q) | Q(model__icontains=q))
+        if params.get("unified") == "1":
+            from .selectors.unified import capability_queryset, parse_filters
+            from .selectors.vendors import vendor_directory_page
+            matched_companies = vendor_directory_page(company=company, params=params).page_obj.paginator.object_list.order_by().values('pk')
+            qs = capability_queryset(company=company, kind='vendor', filters=parse_filters(kind='vendor', params=params), query=q)
+            qs = qs.filter(vendor_id__in=matched_companies).select_related('vendor', 'material')
         for obj in qs.order_by("material__name", "vendor__name").iterator(chunk_size=500):
             rows.append([obj.vendor.code, obj.material.code, obj.specification, obj.brand, obj.model, obj.availability, obj.available_quantity, obj.unit, obj.minimum_quantity, obj.rate, obj.currency, obj.rate_valid_until, obj.lead_time, "", "", obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at])
     elif dataset == "manpower_suppliers":
@@ -865,6 +875,10 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             qs = _directory_export_search(qs, company=company, dataset=dataset, query=q)
             qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(primary_contact_name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
                            | Q(_export_contact_hit=True) | Q(_export_offer_hit=True))
+        if params.get("unified") == "1":
+            # Use EXACTLY the tenant-scoped, company-first search queryset.
+            from .selectors.manpower import manpower_directory_page
+            qs = manpower_directory_page(company=company, params=params).page_obj.paginator.object_list
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([obj.code, obj.name, obj.primary_contact_name, obj.phone, obj.mobile, obj.email, obj.city, obj.region, obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at])
     elif dataset == "trades":
@@ -916,6 +930,12 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
         qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
         if q:
             qs = qs.filter(Q(supplier__name__icontains=q) | Q(supplier__code__icontains=q) | Q(trade__name__icontains=q) | Q(trade__code__icontains=q) | Q(trade__normalized_aliases__icontains=normalize_text(q)) | Q(trade__category__icontains=q) | Q(work_location__icontains=q) | Q(mobilization_lead_time__icontains=q))
+        if params.get("unified") == "1":
+            from .selectors.unified import capability_queryset, parse_filters
+            from .selectors.manpower import manpower_directory_page
+            matched_companies = manpower_directory_page(company=company, params=params).page_obj.paginator.object_list.order_by().values('pk')
+            qs = capability_queryset(company=company, kind='manpower', filters=parse_filters(kind='manpower', params=params), query=q)
+            qs = qs.filter(supplier_id__in=matched_companies).select_related('supplier', 'trade')
         for obj in qs.order_by("trade__name", "supplier__name").iterator(chunk_size=500):
             rows.append([obj.supplier.code, obj.trade.code, obj.availability, obj.available_quantity, obj.rate, obj.currency, obj.rate_basis, obj.overtime_rate, obj.rate_valid_until, obj.mobilization_lead_time, obj.work_location, "", "", obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at])
     elif dataset == "subcontractors":
@@ -939,6 +959,10 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 | Q(service_coverage__icontains=q)
                 | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
+        if params.get("unified") == "1":
+            # Use EXACTLY the tenant-scoped, company-first search queryset.
+            from .selectors.subcontractors import subcontractor_directory_page
+            qs = subcontractor_directory_page(company=company, params=params).page_obj.paginator.object_list
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([
                 obj.code, obj.name, obj.display_name, obj.primary_contact_name,
@@ -1018,6 +1042,12 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                            | Q(service__category__icontains=q)
                            | Q(subcontractor__name__icontains=q) | Q(subcontractor__code__icontains=q)
                            | Q(scope_description__icontains=q) | Q(service_location__icontains=q))
+        if params.get("unified") == "1":
+            from .selectors.unified import capability_queryset, parse_filters
+            from .selectors.subcontractors import subcontractor_directory_page
+            matched_companies = subcontractor_directory_page(company=company, params=params).page_obj.paginator.object_list.order_by().values('pk')
+            qs = capability_queryset(company=company, kind='subcontractor', filters=parse_filters(kind='subcontractor', params=params), query=q)
+            qs = qs.filter(subcontractor_id__in=matched_companies).select_related('subcontractor', 'service')
         for obj in qs.order_by("service__name", "subcontractor__name", "scope_description", "service_location").iterator(chunk_size=500):
             rows.append([
                 obj.subcontractor.code, obj.service.code, obj.scope_description,

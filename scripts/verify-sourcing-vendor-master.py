@@ -69,7 +69,7 @@ for marker in (
     "SourcingVendor.objects.for_company(company)",
     "vendor_directory_scale_annotations",
     "Q(_contact_match=True)",
-    'Prefetch("supply_offers"',
+    "annotate_first_capability",
     "Q(_material_match=True)",
 ):
     if marker not in selectors:
@@ -121,7 +121,7 @@ for marker in (
     "vendor_contact_delete",
     "vendor_delete",
     "create_vendor_with_materials",
-    "material_type_preview",
+    "_capability_fragment",
     "SourcingVendorNewMaterialFormSet",
     "can_create_materials",
     "new_material_formset",
@@ -143,9 +143,13 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, material, material type/category, contact, address, CR or VAT", "Material Types", "data-material-types-tooltip", "data-material-types-all", "page_obj.paginator.count", "New Vendor"):
+for marker in ("Search vendor, material, specification, brand, model, contact or VAT", "Material Types", "data-provider-expand", "data-unified-results", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
+unified_selector = text('apps/sourcing/selectors/unified.py')
+for marker in ('OuterRef', 'Exists', 'filter_company_capabilities', 'annotate_first_capability', 'company=company'):
+    if marker not in unified_selector:
+        fail(f"unified vendor search hardening missing: {marker}")
 detail_template = text("templates/sourcing/vendors/detail.html")
 for marker in ("Supply Catalog", "Contact Persons", "Activity", "Delete Vendor Permanently", "Archived · Inactive", "Lifecycle"):
     if marker not in detail_template:

@@ -452,12 +452,18 @@ class VendorSourcingMasterTests(TestCase):
         response = self.client.get(reverse("sourcing:vendor_list"))
         self.assertEqual(response.status_code, 200)
         listed = next(item for item in response.context["vendors"] if item.pk == vendor.pk)
-        self.assertEqual(listed.material_type_preview, ["PPE", "Electrical", "HVAC"])
-        self.assertEqual(listed.material_type_all, ["PPE", "Electrical", "HVAC", "Civil"])
-        self.assertEqual(listed.material_type_more_count, 1)
+        self.assertEqual(listed.supply_item_count, 5)
+        self.assertEqual(listed.first_capability, "Cable")
         self.assertContains(response, "Material Types")
-        self.assertContains(response, 'data-material-types-all="PPE, Electrical, HVAC, Civil"')
-        self.assertContains(response, "+1")
+        self.assertContains(response, 'data-provider-expand=')
+        self.assertNotContains(response, 'data-material-types-all=')
+        expanded = self.client.get(reverse('sourcing:vendor_list'), {
+            'fragment': 'capabilities', 'provider': vendor.pk,
+        })
+        self.assertEqual(expanded.status_code, 200)
+        self.assertEqual(expanded.context['offer_page'].paginator.count, 5)
+        self.assertContains(expanded, 'Gloves')
+        self.assertContains(expanded, 'Cable')
 
         type_search = self.client.get(reverse("sourcing:vendor_list"), {"q": "Electrical"})
         self.assertEqual(type_search.context["page_obj"].paginator.count, 1)

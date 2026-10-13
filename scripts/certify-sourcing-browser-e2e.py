@@ -142,9 +142,10 @@ def main() -> int:
             return page.url
 
         def rapid_finder(path: str, final_value: str, expected_text: str, scenario: str) -> None:
+            """Certify live company-first search + on-demand capability expansion."""
             started = perf_counter()
             page.goto(urljoin(base, path), wait_until="domcontentloaded")
-            selector = '[data-sourcing-finder-root] form[data-sourcing-live-finder] input[name="q"]'
+            selector = 'form[data-unified-form] input[name="q"]'
             search = page.locator(selector)
             search.wait_for(state="visible")
             for value in (final_value[:5], final_value[:10], final_value[:15], final_value):
@@ -152,18 +153,21 @@ def main() -> int:
                 page.wait_for_timeout(80)
             page.wait_for_timeout(1100)
             active = page.locator(selector)
-            active.wait_for(state="visible")
             if active.input_value() != final_value:
                 failures.append(f"{scenario} lost final rapid-search value")
+            page.locator('[data-unified-results] .sourcing-unified-expand').first.wait_for(state="visible")
+            rows = bounded_rows(scenario, '[data-unified-results] .sourcing-table > tbody > tr:not(.sourcing-unified-expansion)')
+            page.locator('[data-unified-results] .sourcing-unified-expand').first.click()
+            page.locator('.sourcing-unified-offer-table tbody tr').first.wait_for(state="visible")
             page.get_by_text(expected_text, exact=False).first.wait_for(state="visible")
-            rows = bounded_rows(scenario, ".sourcing-table--finder tbody tr")
+            bounded_rows(scenario + "-capabilities", '.sourcing-unified-offer-table tbody tr')
             record(scenario, started, rows=rows, query=final_value)
 
         def first_action_href(link_text: str) -> str:
-            row = page.locator(".sourcing-table--finder tbody tr").filter(has=page.locator("details.sourcing-row-menu")).first
-            row.locator("details.sourcing-row-menu summary").click()
-            link = row.get_by_role("link", name=link_text, exact=True)
-            href = link.get_attribute("href")
+            link = page.locator('.sourcing-unified-offer-table tbody tr').first.get_by_role(
+                'link', name=link_text, exact=True,
+            )
+            href = link.get_attribute('href')
             if not href:
                 failures.append(f"missing {link_text!r} action href")
                 return ""
@@ -190,7 +194,7 @@ def main() -> int:
         record("vendor-supply-catalog", started, rows=vendor_catalog_rows, vendor=VENDOR_CODE)
 
         # Material Finder -> history -> Verify -> immutable history evidence.
-        rapid_finder("app/sourcing/vendors/?view=offers", MATERIAL_QUERY, MATERIAL_QUERY, "material-finder")
+        rapid_finder("app/sourcing/vendors/", MATERIAL_QUERY, MATERIAL_QUERY, "material-finder")
         history_url = first_action_href("Verification history")
         verify_url = first_action_href("Verify now")
         if not history_url or not verify_url:
@@ -231,7 +235,7 @@ def main() -> int:
         record("manpower-workforce-catalog", started, rows=workforce_rows, supplier=MANPOWER_CODE)
 
         # Workforce Finder -> history -> Verify -> immutable history evidence.
-        rapid_finder("app/sourcing/manpower-suppliers/?view=offers", TRADE_QUERY, TRADE_QUERY, "workforce-finder")
+        rapid_finder("app/sourcing/manpower-suppliers/", TRADE_QUERY, TRADE_QUERY, "workforce-finder")
         workforce_history_url = first_action_href("Verification history")
         workforce_verify_url = first_action_href("Verify now")
         if not workforce_history_url or not workforce_verify_url:

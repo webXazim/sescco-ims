@@ -20,6 +20,7 @@ from django.db import IntegrityError
 from django.db.transaction import atomic
 from uuid import UUID
 from .models.base import clean_text, normalize_text
+from .freshness import sourcing_freshness_policy
 
 from .access import (
     membership_can_manage_sourcing_masters,
@@ -64,6 +65,7 @@ from .exchange import (
 )
 from .models import (
     SourcingAvailability,
+    SourcingRateBasis,
     SourcingEntityStatus,
     SourcingMaterial,
     SourcingService,
@@ -119,6 +121,7 @@ from .selectors.workforce_history import (
     workforce_revisions,
 )
 from .selectors.vendors import PAGE_SIZES, vendor_directory_page, vendor_history
+from .selectors.unified import capability_queryset, parse_filters
 from .selectors.subcontractor_catalog import (
     catalog_page as subcontractor_catalog_page,
     catalog_history_page as subcontractor_catalog_history_page,
@@ -528,11 +531,90 @@ def _render_integrated_offers(request: HttpRequest, *, kind: str) -> HttpRespons
     return render(request, template, context)
 
 
+def _legacy_directory_query(request):
+    """Old view=offers links are safe permanent bookmark inputs, not a second UI."""
+    if request.GET.get('view') != 'offers':
+        return None
+    params = request.GET.copy()
+    params.pop('view', None)
+    for old_key in ('vendor', 'supplier', 'subcontractor'):
+        if params.get(old_key) and not params.get('q'):
+            params['q'] = params[old_key]
+        params.pop(old_key, None)
+    # The old offer-level sorting fields do not apply to provider rows.
+    if params.get('sort') not in {'name', 'code', 'city', 'updated', 'verified'}:
+        params.pop('sort', None)
+    return redirect(f"{request.path}?{params.urlencode()}" if params else request.path)
+
+
+def _capability_fragment(request, *, kind):
+    """Paginated on-demand detail for one company; no global offer-prefetch."""
+    from uuid import UUID
+    from .selectors.unified import KINDS
+    provider_models = {
+        'vendor': SourcingVendor,
+        'manpower': SourcingManpowerSupplier,
+        'subcontractor': SourcingSubcontractor,
+    }
+    try:
+        provider_id = UUID(request.GET.get('provider', ''))
+    except (TypeError, AttributeError, ValueError):
+        raise Http404('Invalid provider')
+    provider = get_object_or_404(provider_models[kind].objects.for_company(request.company), pk=provider_id)
+    filters = parse_filters(kind=kind, params=request.GET)
+    text = str(request.GET.get('q') or '').strip()[:160]
+    # A company-name search should display its offers rather than an empty tray.
+    provider_text = f"{provider.name} {provider.code} {getattr(provider, 'display_name', '')}".casefold()
+    if text and text.casefold() in provider_text:
+        text = ''
+    qs = capability_queryset(company=request.company, kind=kind, filters=filters,
+                             provider_id=provider.pk, query=text)
+    master_fk = {'vendor': 'material', 'manpower': 'trade', 'subcontractor': 'service'}[kind]
+    qs = qs.select_related(master_fk).order_by(f'{master_fk}__normalized_name', 'pk')
+    try:
+        page_num = max(1, int(str(request.GET.get('cap_page') or '1')))
+    except (ValueError, TypeError):
+        page_num = 1
+    page = Paginator(qs, 20).get_page(page_num)
+    return render(request, 'sourcing/unified/capabilities.html', {
+        'offers': page.object_list, 'offer_page': page, 'kind': kind,
+        'provider': provider, 'can_manage': {
+            'vendor': membership_can_manage_vendor_sourcing,
+            'manpower': membership_can_manage_manpower_sourcing,
+            'subcontractor': membership_can_manage_subcontractor_sourcing,
+        }[kind](_membership(request)),
+    })
+
+
+def _unified_context(request, *, kind):
+    from .selectors.material_finder import material_finder_categories
+    from .selectors.workforce_finder import workforce_finder_categories
+    from .selectors.service_finder import service_finder_categories
+    filters = parse_filters(kind=kind, params=request.GET)
+    categories = {
+        'vendor': material_finder_categories,
+        'manpower': workforce_finder_categories,
+        'subcontractor': service_finder_categories,
+    }[kind](company=request.company)
+    return {
+        'capability_filters': filters,
+        'capability_categories': categories,
+        'availability_choices': SourcingAvailability.choices,
+        'freshness_policy': sourcing_freshness_policy(company=request.company),
+        'kind': kind,
+        'rate_basis_choices': (SourcingRateBasis.choices if kind == 'manpower'
+                               else SourcingServiceRateBasis.choices if kind == 'subcontractor' else ()),
+    }
+
+
 @login_required
 def vendor_list(request: HttpRequest) -> HttpResponse:
     _require_vendor_view(request)
-    if request.GET.get("view") == "offers":
-        return _render_integrated_offers(request, kind="vendor")
+    old_url = _legacy_directory_query(request)
+    if old_url is not None:
+        return old_url
+    if request.GET.get('fragment') == 'capabilities':
+        return _capability_fragment(request, kind='vendor')
     directory = vendor_directory_page(company=request.company, params=request.GET)
     base_qs = SourcingVendor.objects.for_company(request.company)
     counts = {
@@ -548,46 +630,7 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
         page_subtitle="Reference vendors SESCCO may call for materials. This directory does not create Inventory suppliers or stock.",
     )
     vendors = list(directory.page_obj.object_list)
-    # The directory is a quick sourcing reference. Show at most three DIFFERENT
-    # material types (Material category, falling back to Material name). Rank each
-    # type deterministically by the latest activity recorded for any of its active
-    # offers; quantity is only a tie-break because quantities may use different units.
-    # The full catalog stays behind the Vendor profile and is already prefetched.
-    for vendor in vendors:
-        ranked_types = {}
-        for offer in getattr(vendor, "directory_active_material_offers", ()):
-            material = offer.material
-            label = str(material.category or material.name or "").strip()
-            if not label:
-                continue
-            key = label.casefold()
-            activity_at = max(
-                timestamp
-                for timestamp in (offer.updated_at, offer.last_verified_at)
-                if timestamp is not None
-            )
-            quantity = offer.available_quantity if offer.available_quantity is not None else Decimal("-1")
-            score = (activity_at, quantity)
-            current = ranked_types.get(key)
-            if current is None or score > current[1]:
-                ranked_types[key] = (label, score)
-
-        labels = [
-            label
-            for label, _score in sorted(
-                ranked_types.values(),
-                key=lambda item: (item[1][0], item[1][1], item[0].casefold()),
-                reverse=True,
-            )
-        ]
-        vendor.material_type_preview = labels[:3]
-        # Keep the complete ranked list on the paginated Vendor object as well. The
-        # table renders only three compact labels, while hover/focus can expose every
-        # material type without making the directory row taller.
-        vendor.material_type_all = labels
-        vendor.material_type_more_count = max(0, len(labels) - 3)
-        vendor.material_type_count = len(labels)
-    directory.page_obj.object_list = vendors
+    context.update(_unified_context(request, kind='vendor'))
     context.update(
         directory=directory,
         page_obj=directory.page_obj,
@@ -1045,8 +1088,11 @@ def vendor_contact_delete(request: HttpRequest, vendor_id, contact_id) -> HttpRe
 @login_required
 def manpower_supplier_list(request: HttpRequest) -> HttpResponse:
     _require_manpower_view(request)
-    if request.GET.get("view") == "offers":
-        return _render_integrated_offers(request, kind="workforce")
+    old_url = _legacy_directory_query(request)
+    if old_url is not None:
+        return old_url
+    if request.GET.get('fragment') == 'capabilities':
+        return _capability_fragment(request, kind='manpower')
     directory = manpower_directory_page(company=request.company, params=request.GET)
     base_qs = SourcingManpowerSupplier.objects.for_company(request.company)
     counts = {
@@ -1061,6 +1107,7 @@ def manpower_supplier_list(request: HttpRequest) -> HttpResponse:
         page_title="Manpower Suppliers",
         page_subtitle="Reference manpower companies SESCCO may call on demand. This directory does not create Rental Payroll suppliers or workers.",
     )
+    context.update(_unified_context(request, kind='manpower'))
     context.update(
         directory=directory,
         page_obj=directory.page_obj,
@@ -1601,8 +1648,14 @@ def workforce_offer_history(request: HttpRequest, supplier_id, offer_id) -> Http
 def _legacy_finder_redirect(request: HttpRequest, *, destination: str) -> HttpResponse:
     """Existing links stay usable while all finder UI lives in the directory."""
     params = request.GET.copy()
-    params["view"] = "offers"
-    return redirect(f"{reverse(destination)}?{params.urlencode()}")
+    for old_key in ('vendor', 'supplier', 'subcontractor'):
+        if params.get(old_key) and not params.get('q'):
+            params['q'] = params[old_key]
+        params.pop(old_key, None)
+    if params.get('sort') not in {'name', 'code', 'city', 'updated', 'verified'}:
+        params.pop('sort', None)
+    address = reverse(destination)
+    return redirect(f"{address}?{params.urlencode()}" if params else address)
 
 
 @login_required
@@ -2317,8 +2370,11 @@ def _subcontractor_context(request, obj, page_title=None):
 @login_required
 def subcontractor_list(request: HttpRequest) -> HttpResponse:
     _require_subcontractor_view(request)
-    if request.GET.get("view") == "offers":
-        return _render_integrated_offers(request, kind="service")
+    old_url = _legacy_directory_query(request)
+    if old_url is not None:
+        return old_url
+    if request.GET.get('fragment') == 'capabilities':
+        return _capability_fragment(request, kind='subcontractor')
     directory = subcontractor_directory_page(company=request.company, params=request.GET)
     qs = SourcingSubcontractor.objects.for_company(request.company)
     counts = {
@@ -2332,6 +2388,7 @@ def subcontractor_list(request: HttpRequest) -> HttpResponse:
         page_subtitle="Reference companies SESCCO may call for services. No inventory, purchasing, project or payroll transactions.",
     )
     subcontractors = stamp_subcontractor_freshness(company=request.company, records=list(directory.page_obj.object_list))
+    context.update(_unified_context(request, kind='subcontractor'))
     context.update(directory=directory, page_obj=directory.page_obj, subcontractors=subcontractors,
                    counts=counts, page_sizes=SUBCONTRACTOR_PAGE_SIZES,
                    can_manage=membership_can_manage_subcontractor_sourcing(_membership(request)))

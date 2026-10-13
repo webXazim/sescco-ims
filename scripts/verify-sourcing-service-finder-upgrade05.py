@@ -22,6 +22,8 @@ urls = source("apps/sourcing/urls.py")
 access = source("apps/sourcing/access.py")
 nav = source("templates/sourcing/sidebar.html")
 page = source("templates/sourcing/subcontractors/_offers.html")
+unified = source('templates/sourcing/subcontractors/list.html')
+assert 'data-unified-form' in unified and 'data-unified-results' in unified and 'data-provider-expand' in unified
 home = source("templates/sourcing/home.html")
 profile = source("templates/sourcing/subcontractors/detail.html")
 tests = source("apps/sourcing/tests/test_service_finder.py")
@@ -37,7 +39,7 @@ assert 'sourcing:subcontractor_list' in nav
 assert 'subcontractor_list' in home
 assert 'sourcing:subcontractor_list' in profile or 'sourcing:service_finder' in profile
 assert '_legacy_finder_redirect(request, destination="sourcing:subcontractor_list")' in views
-assert 'request.GET.get("view") == "offers"' in views
+assert '_legacy_directory_query(request)' in views
 for marker in (
     '.objects.for_company(company)',
     'is_active=True',

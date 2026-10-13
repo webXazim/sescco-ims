@@ -1,4 +1,6 @@
 from __future__ import annotations
+from .unified import filter_company_capabilities, annotate_first_capability
+
 
 from dataclasses import dataclass
 
@@ -81,6 +83,9 @@ def manpower_directory_page(*, company, params) -> ManpowerDirectoryResult:
             | Q(_contact_match=True)
             | Q(_trade_match=True)
         )
+
+    qs = filter_company_capabilities(queryset=qs, company=company, kind='manpower', params=params)
+    qs = annotate_first_capability(queryset=qs, company=company, kind='manpower', params=params)
 
     field = ALLOWED_SORTS[sort]
     order = f"-{field}" if direction == "desc" else field

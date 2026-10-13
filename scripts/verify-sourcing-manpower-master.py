@@ -121,7 +121,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/manpower/list.html")
-for marker in ("Search supplier, contact, phone, email, CR or VAT", "Columns", "page_obj.paginator.count", "New Manpower Supplier"):
+for marker in ("Search supplier, trade, category, skills, contact, CR or VAT", "Columns", "page_obj.paginator.count", "New Manpower Supplier"):
     if marker not in list_template:
         fail(f"Manpower directory UI missing: {marker}")
 detail_template = text("templates/sourcing/manpower/detail.html")

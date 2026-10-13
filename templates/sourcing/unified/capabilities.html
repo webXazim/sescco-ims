@@ -1,0 +1,27 @@
+<div class="sourcing-unified-capabilities" data-capabilities-list>
+  <div class="sourcing-unified-cap-head"><strong>{{ offer_page.paginator.count }} matching {% if kind == 'vendor' %}supply item{{ offer_page.paginator.count|pluralize }}{% elif kind == 'manpower' %}workforce type{{ offer_page.paginator.count|pluralize }}{% else %}service{{ offer_page.paginator.count|pluralize }}{% endif %}</strong><span>Reference information · confirm with provider before use</span></div>
+  {% if offers %}
+  <div class="sourcing-table-wrap"><table class="sourcing-table sourcing-unified-offer-table"><thead><tr><th>{% if kind == 'vendor' %}Material{% elif kind == 'manpower' %}Trade{% else %}Service{% endif %}</th><th>Scope / location</th><th>Availability</th><th>Quantity</th><th>Reference rate</th><th>Lead time</th><th>Last verified</th><th>Manage</th></tr></thead><tbody>
+    {% for offer in offers %}<tr>
+      <td>{% if kind == 'vendor' %}<strong>{{ offer.material.name }}</strong><small class="cell-note">{{ offer.material.code }} · {{ offer.material.category }}</small>{% elif kind == 'manpower' %}<strong>{{ offer.trade.name }}</strong><small class="cell-note">{{ offer.trade.code }} · {{ offer.trade.category }}</small>{% else %}<strong>{{ offer.service.name }}</strong><small class="cell-note">{{ offer.service.code }} · {{ offer.service.category }}</small>{% endif %}</td>
+      <td>{% if kind == 'vendor' %}{{ offer.specification|default:'—' }}<small class="cell-note">{{ offer.brand }} {{ offer.model }}</small>{% elif kind == 'manpower' %}{{ offer.work_location|default:'—' }}{% else %}{{ offer.scope_description|default:'—' }}<small class="cell-note">{{ offer.service_location }}</small>{% endif %}</td>
+      <td>{{ offer.get_availability_display }}</td>
+      <td>{% if kind == 'subcontractor' %}—{% elif offer.available_quantity != None %}{{ offer.available_quantity }} {% if kind == 'vendor' %}{{ offer.unit|default:offer.material.default_unit }}{% else %}workers{% endif %}{% else %}Unknown{% endif %}</td>
+      <td>{% if offer.rate != None %}{{ offer.currency }} {{ offer.rate }}{% if kind != 'vendor' %} / {{ offer.get_rate_basis_display }}{% endif %}{% if offer.rate_valid_until %}<small class="cell-note">Valid to {{ offer.rate_valid_until|date:'d M Y' }}</small>{% endif %}{% else %}Unknown{% endif %}</td>
+      <td>{% if kind == 'manpower' %}{{ offer.mobilization_lead_time|default:'—' }}{% else %}{{ offer.lead_time|default:'—' }}{% endif %}</td>
+      <td>{% if offer.last_verified_at %}{{ offer.last_verified_at|date:'d M Y' }}{% else %}Never{% endif %}</td>
+      <td><div class="sourcing-unified-cap-actions">
+        {% if kind == 'vendor' %}<a href="{% url 'sourcing:vendor_offer_history' provider.pk offer.pk %}">Verification history</a>{% if can_manage %}<a href="{% url 'sourcing:vendor_offer_verify' provider.pk offer.pk %}">Verify now</a><a href="{% url 'sourcing:vendor_offer_edit' provider.pk offer.pk %}">Edit reference</a>{% endif %}
+        {% elif kind == 'manpower' %}<a href="{% url 'sourcing:workforce_offer_history' provider.pk offer.pk %}">Verification history</a>{% if can_manage %}<a href="{% url 'sourcing:workforce_offer_verify' provider.pk offer.pk %}">Verify now</a><a href="{% url 'sourcing:workforce_offer_edit' provider.pk offer.pk %}">Edit reference</a>{% endif %}
+        {% else %}<a href="{% url 'sourcing:subcontractor_service_history' provider.pk offer.pk %}">Verification history</a>{% if can_manage %}<a href="{% url 'sourcing:subcontractor_service_verify' provider.pk offer.pk %}">Verify now</a><a href="{% url 'sourcing:subcontractor_service_edit' provider.pk offer.pk %}">Edit reference</a>{% endif %}{% endif %}
+      </div></td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="sourcing-unified-no-offers">No matching active capabilities. Try clearing a filter, or inspect the company profile.</p>{% endif %}
+  <div class="sourcing-unified-cap-footer">
+    {% if offer_page.has_previous %}<button type="button" data-cap-page="{{ offer_page.previous_page_number }}">Previous 20</button>{% endif %}
+    <span>Page {{ offer_page.number }} of {{ offer_page.paginator.num_pages }}</span>
+    {% if offer_page.has_next %}<button type="button" data-cap-page="{{ offer_page.next_page_number }}">Next 20</button>{% endif %}
+    {% if kind == 'vendor' %}<a href="{% url 'sourcing:vendor_detail' provider.pk %}#catalog">Open Vendor catalog</a>{% elif kind == 'manpower' %}<a href="{% url 'sourcing:manpower_supplier_detail' provider.pk %}#workforce">Open Supplier profile</a>{% else %}<a href="{% url 'sourcing:subcontractor_detail' provider.pk %}#service-catalog">Open Subcontractor services</a>{% endif %}
+  </div>
+</div>

@@ -1,5 +1,6 @@
 """Bounded, tenant-scoped subcontractor sourcing directory queries."""
 from dataclasses import dataclass
+from .unified import filter_company_capabilities, annotate_first_capability
 
 from django.core.paginator import Paginator
 
@@ -87,6 +88,9 @@ def subcontractor_directory_page(*, company, params):
             | Q(cr_number__icontains=query) | Q(vat_number__icontains=query)
             | Q(service_coverage__icontains=query) | Q(contact_hit=True) | Q(service_hit=True)
         )
+    qs = filter_company_capabilities(queryset=qs, company=company, kind='subcontractor', params=params)
+    qs = annotate_first_capability(queryset=qs, company=company, kind='subcontractor', params=params)
+
     field = SORTS[sort]
     qs = qs.order_by(("-" if direction == "desc" else "") + field, "pk")
     paginator = Paginator(qs, page_size)

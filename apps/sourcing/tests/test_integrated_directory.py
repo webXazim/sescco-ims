@@ -75,22 +75,28 @@ class IntegratedSourcingDirectoryTests(TestCase):
             self.assertNotContains(response, 'href="/app/sourcing/service-finder/"')
 
     def test_catalog_search_is_on_main_url_with_live_filters_and_page_limits(self):
-        for route, search, expected in (
-            ("sourcing:vendor_list", "Reinforcement steel", "Rebar 16mm"),
-            ("sourcing:manpower_supplier_list", "HVAC Technician", "AC Technician"),
-            ("sourcing:subcontractor_list", "Cooling Works", "Air Conditioning"),
+        for route, search, provider, label in (
+            ("sourcing:vendor_list", "Reinforcement steel", self.vendor, "Rebar 16mm"),
+            ("sourcing:manpower_supplier_list", "HVAC Technician", self.supplier, "AC Technician"),
+            ("sourcing:subcontractor_list", "Cooling Works", self.subcontractor, "Air Conditioning"),
         ):
             response = self.client.get(reverse(route), {
-                "view": "offers", "q": search, "page_size": "99999",
-                "sort": "unknown__unsafe", "dir": "invalid", "rate_min": "NaN",
+                "q": search, "page_size": "99999", "sort": "unknown__unsafe",
+                "dir": "invalid", "rate_min": "NaN",
             })
             self.assertEqual(response.status_code, 200)
-            self.assertContains(response, expected)
             self.assertEqual(response.context["page_obj"].paginator.count, 1)
-            self.assertEqual(response.context["finder"].page_size, 50)
-            self.assertContains(response, 'name="view" value="offers"')
-            self.assertContains(response, 'data-sourcing-live-finder')
-            self.assertContains(response, "view=offers")
+            self.assertEqual(response.context["directory"].page_size, 50)
+            self.assertContains(response, 'data-unified-form')
+            self.assertContains(response, 'data-unified-results')
+            self.assertContains(response, f'data-provider-row="{provider.pk}"')
+            self.assertNotContains(response, 'sourcing-directory-views')
+            detail = self.client.get(reverse(route), {
+                "fragment": "capabilities", "provider": provider.pk, "q": search,
+            })
+            self.assertEqual(detail.status_code, 200)
+            self.assertContains(detail, label)
+            self.assertContains(detail, 'Verification history')
 
     def test_old_finder_bookmarks_redirect_to_integrated_views(self):
         for old, new in (
@@ -101,17 +107,43 @@ class IntegratedSourcingDirectoryTests(TestCase):
             response = self.client.get(reverse(old), {"q": "Steel", "freshness": "fresh"})
             self.assertEqual(response.status_code, 302)
             self.assertTrue(response["Location"].startswith(reverse(new) + "?"))
-            self.assertIn("view=offers", response["Location"])
+            self.assertNotIn("view=offers", response["Location"])
             self.assertIn("q=Steel", response["Location"])
+            old_tab = self.client.get(reverse(new), {"view": "offers", "q": "Steel"})
+            self.assertEqual(old_tab.status_code, 302)
+            self.assertNotIn("view=offers", old_tab["Location"])
 
     def test_company_and_offer_results_do_not_cross_tenant_boundary(self):
         hidden_vendor = SourcingVendor.objects.create(company=self.another, code="FOREIGN", name="Foreign Supplies")
         hidden_material = SourcingMaterial.objects.create(company=self.another, code="FOREIGNM", name="Secret Rebar")
         SourcingVendorOffer.objects.create(company=self.another, vendor=hidden_vendor, material=hidden_material)
-        for params in ({"q": "Secret Rebar"}, {"view": "offers", "q": "Secret Rebar"}):
-            response = self.client.get(reverse("sourcing:vendor_list"), params)
-            self.assertEqual(response.context["page_obj"].paginator.count, 0)
-            self.assertNotContains(response, "Foreign Supplies")
+        response = self.client.get(reverse("sourcing:vendor_list"), {"q": "Secret Rebar"})
+        self.assertEqual(response.context["page_obj"].paginator.count, 0)
+        self.assertNotContains(response, "Foreign Supplies")
+        self.assertEqual(self.client.get(reverse('sourcing:vendor_list'), {
+            'fragment': 'capabilities', 'provider': hidden_vendor.pk,
+        }).status_code, 404)
+
+    def test_capability_filters_match_one_offer_and_preserve_company_result(self):
+        other = SourcingMaterial.objects.create(company=self.company, code='IM002', name='Paint', category='Finishes')
+        SourcingVendorOffer.objects.create(company=self.company, vendor=self.vendor, material=other,
+                                           rate='50', availability='available')
+        # Category and rate must be satisfied by ONE offer, not two offers from the same vendor.
+        route = reverse('sourcing:vendor_list')
+        mismatch = self.client.get(route, {'category': 'Civil', 'rate_max': '100', 'availability': 'available'})
+        self.assertEqual(mismatch.context['page_obj'].paginator.count, 0)
+        match = self.client.get(route, {'category': 'Finishes', 'rate_max': '100', 'availability': 'available'})
+        self.assertEqual(match.context['page_obj'].paginator.count, 1)
+        self.assertContains(match, 'Civil Supply')
+        detail = self.client.get(route, {'fragment': 'capabilities', 'provider': self.vendor.pk,
+                                         'category': 'Finishes', 'rate_max': '100'})
+        self.assertContains(detail, 'Paint')
+        self.assertNotContains(detail, 'Rebar 16mm')
+        exported = export_rows(company=self.company, dataset='vendor_catalog', params={
+            'unified': '1', 'category': 'Finishes', 'rate_max': '100', 'availability': 'available',
+        })
+        self.assertEqual(len(exported), 1)
+        self.assertEqual(exported[0][1], 'IM002')
 
     def test_filtered_exports_match_catalog_alias_and_active_reference(self):
         self.assertEqual(
@@ -136,26 +168,20 @@ class IntegratedSourcingDirectoryTests(TestCase):
         )
 
     def test_server_pagination_is_bounded_and_sort_is_deterministic(self):
-        # Many matching references still yield only the requested page, never
-        # an unbounded set of rows in the directory response.
         vendors = [
-            SourcingVendor.objects.create(
-                company=self.company, code=f"IPAG-{i:04d}", name=f"Paging Vendor {i:04d}",
-            ) for i in range(113)
+            SourcingVendor.objects.create(company=self.company, code=f"IPAG-{i:04d}",
+                                         name=f"Paging Vendor {i:04d}") for i in range(113)
         ]
         SourcingVendorOffer.objects.bulk_create([
-            SourcingVendorOffer(
-                company=self.company, vendor=vendor, material=self.material,
-                specification=f"Bulk {index:04d}",
-            ) for index, vendor in enumerate(vendors)
+            SourcingVendorOffer(company=self.company, vendor=vendor, material=self.material,
+                                specification=f"Bulk {index:04d}") for index, vendor in enumerate(vendors)
         ])
         response = self.client.get(reverse("sourcing:vendor_list"), {
-            "view": "offers", "q": "Rebar 16mm", "page_size": "25", "page": "3",
-            "sort": "vendor", "dir": "desc",
+            "q": "Rebar 16mm", "page_size": "25", "page": "3", "sort": "name", "dir": "desc",
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].paginator.count, 114)
-        self.assertEqual(len(response.context["offers"]), 25)
+        self.assertEqual(len(response.context["vendors"]), 25)
         self.assertContains(response, "Page 3 of 5")
-        self.assertContains(response, "sort=vendor")
-        self.assertContains(response, "view=offers")
+        self.assertContains(response, 'data-unified-results')
+        self.assertNotContains(response, 'view=offers')

@@ -87,9 +87,9 @@ for needle in (
     'MANPOWER_CODE = "SDEMO-P00001"',
     'TRADE_QUERY = "SDEMO Trade 001"',
     'app/sourcing/vendors/',
-    'app/sourcing/vendors/?view=offers',
+    'form[data-unified-form] input[name="q"]',
     'app/sourcing/manpower-suppliers/',
-    'app/sourcing/manpower-suppliers/?view=offers',
+    'sourcing-unified-offer-table',
     'vendor-supply-catalog',
     'vendor-quick-verification',
     'workforce-quick-verification',
@@ -140,6 +140,13 @@ for needle in (".sourcing-row-menu__floating-panel", "position:fixed!important",
         fail(f"Sourcing unclipped row-menu CSS missing: {needle}")
 
 finder_js = text("static/sourcing/js/finder-scale.js")
+unified_js = text("static/sourcing/js/unified-directory.js")
+for needle in ("new AbortController()", "DOMParser", "setTimeout", "data-unified-results", "data-provider-expand"):
+    if needle not in unified_js:
+        fail(f"unified realtime sourcing directory lacks {needle}")
+for rel in ("templates/sourcing/vendors/list.html", "templates/sourcing/manpower/list.html", "templates/sourcing/subcontractors/list.html"):
+    if "data-unified-form" not in text(rel) or "data-unified-results" not in text(rel):
+        fail(f"unified directory surface is missing from {rel}")
 for needle in ("new AbortController()", 'debounce = setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 350)', "serial !== requestSerial"):
     if needle not in finder_js:
         fail(f"Finder browser-scale authority missing: {needle}")

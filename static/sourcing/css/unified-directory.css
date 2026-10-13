@@ -1,0 +1,27 @@
+.sourcing-unified-intro{color:#51677d;font-size:.91rem;margin:8px 0 18px;line-height:1.5}
+.sourcing-unified-filters{grid-column:1/-1;width:100%;border-top:1px solid #e3e8ef;padding:13px 0 0;margin-top:10px}
+.sourcing-unified-filters summary{font-weight:700;cursor:pointer;color:#18304b;user-select:none}
+.sourcing-unified-summary-help{font-weight:400;color:#6a7d90;margin-left:12px;font-size:.85rem}
+.sourcing-unified-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}
+.sourcing-unified-filter-grid label{min-width:0;display:flex;flex-direction:column;gap:6px;font-size:.83rem;font-weight:600;color:#30475e}
+.sourcing-unified-filter-grid input,.sourcing-unified-filter-grid select{width:100%;min-width:0}
+.sourcing-unified-filter-buttons{align-self:end;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.sourcing-unified-note{font-size:.8rem;color:#65768b;margin:7px 0 0}
+.sourcing-unified-expand{display:inline-block;border:1px solid #cdd9e6;border-radius:7px;background:#f6f9fc;padding:7px 10px;color:#0a3e68;font-weight:600;font-size:.82rem;cursor:pointer;margin-top:6px;text-align:left}
+.sourcing-unified-expand:hover,.sourcing-unified-expand:focus-visible{border-color:#6a9dc4;background:#eaf3fb}
+.sourcing-unified-expansion:not([hidden]){background:#f8fbfe}
+.sourcing-unified-expansion>td{padding:14px!important;white-space:normal}
+.sourcing-unified-capabilities{border:1px solid #d8e4ee;border-radius:9px;background:#fff;overflow:hidden}
+.sourcing-unified-cap-head{padding:13px 17px;display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid #e1eaf2}
+.sourcing-unified-cap-head span{color:#687b8b;font-size:.82rem}
+.sourcing-unified-offer-table{min-width:900px}
+.sourcing-unified-cap-footer{padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.sourcing-unified-cap-footer button{padding:6px 12px;border:1px solid #cbd7e1;border-radius:7px;cursor:pointer;background:#fff}
+.sourcing-unified-cap-footer a{margin-left:auto}
+.sourcing-unified-no-offers{padding:15px}
+.sourcing-unified-live-status{font-size:.78rem;color:#5d7185;min-width:90px}
+.sourcing-unified-loading{opacity:.5;transition:opacity .12s}
+@media(max-width:1080px){.sourcing-unified-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:590px){.sourcing-unified-filter-grid{grid-template-columns:1fr}.sourcing-unified-summary-help{display:block;margin-left:0}.sourcing-unified-cap-head{display:block}}
+
+.sourcing-unified-cap-actions{display:flex;flex-direction:column;gap:4px}

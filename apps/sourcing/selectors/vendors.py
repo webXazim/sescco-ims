@@ -1,9 +1,11 @@
 from __future__ import annotations
+from .unified import filter_company_capabilities, annotate_first_capability
+
 
 from dataclasses import dataclass
 
 from django.core.paginator import Paginator
-from django.db.models import Prefetch, Q
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import AuditArea, AuditEvent
@@ -88,17 +90,8 @@ def vendor_directory_page(*, company, params) -> VendorDirectoryResult:
             | Q(_material_match=True)
         )
 
-    # One bounded relation query per page gives the list enough information to render
-    # up to three material-type labels without an N+1 query per Vendor.
-    active_material_offers = (
-        SourcingVendorOffer.objects.for_company(company)
-        .filter(is_active=True, material__is_active=True)
-        .select_related("material")
-        .order_by("material__category", "material__normalized_name", "pk")
-    )
-    qs = qs.prefetch_related(
-        Prefetch("supply_offers", queryset=active_material_offers, to_attr="directory_active_material_offers")
-    )
+    qs = filter_company_capabilities(queryset=qs, company=company, kind='vendor', params=params)
+    qs = annotate_first_capability(queryset=qs, company=company, kind='vendor', params=params)
 
     field = ALLOWED_SORTS[sort]
     order = f"-{field}" if direction == "desc" else field
