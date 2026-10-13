@@ -1,23 +1,21 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Manpower Suppliers · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.124">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.125">{% endblock %}
 {% block content %}
 <section class="sourcing-page-head">
   <div>
     <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Manpower Suppliers</strong></nav>
     <h1>Manpower Suppliers</h1>
-    <p>Reference companies SESCCO may call for workers. This directory never creates Rental Payroll suppliers, workers, assignments, settlements or payroll.</p>
   </div>
   {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:manpower_supplier_create' %}">+ New Manpower Supplier</a>{% endif %}
   {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a><a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>{% endif %}
 </section>
 
-<p class="sourcing-unified-intro">Find companies and compare their matching {% if kind == 'vendor' %}materials{% elif kind == 'manpower' %}workforce{% else %}services{% endif %} in one directory. Open a company's capabilities below to review quantities, rates and verification details.</p>
 
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar sourcing-toolbar--directory" data-unified-form method="get" action="{% url 'sourcing:manpower_supplier_list' %}">
-    <label class="sourcing-search sourcing-search--directory"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search supplier, trade, category, skills, contact, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
+    <div class="search-field sourcing-directory-search"><span class="search-glyph" aria-hidden="true"></span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search suppliers, trades or contacts…" aria-label="Search manpower directory" autocomplete="off"></div>
     <div class="sourcing-toolbar__actions">
       <select class="sourcing-select" name="status" aria-label="Manpower supplier status">
         <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active Suppliers ({{ counts.active }})</option>
@@ -91,4 +89,4 @@
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.123"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.124"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.123"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.125"></script>{% endblock %}

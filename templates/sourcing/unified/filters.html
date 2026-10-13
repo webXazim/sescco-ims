@@ -1,5 +1,5 @@
 <details class="sourcing-unified-filters" {% if capability_filters.active or request.GET.tag %}open{% endif %}>
-  <summary>Capability filters <span class="sourcing-unified-summary-help">Tags, category, availability, rates, location, verification</span></summary>
+  <summary>Advanced filters</summary>
   <div class="sourcing-unified-filter-grid">
     <label><span>Company tag</span><input class="sourcing-input" type="search" name="tag" value="{{ request.GET.tag|default:'' }}" list="sourcing-provider-tags" maxlength="40" placeholder="Electrical, Mechanical, Civil"></label>
     <label><span>Category / type</span><select name="category" class="sourcing-select"><option value="">All categories</option>{% for item in capability_categories %}<option value="{{ item }}"{% if capability_filters.category == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
@@ -11,5 +11,4 @@
     {% if rate_basis_choices %}<label><span>Rate basis</span><select class="sourcing-select" name="rate_basis"><option value="all">All rate bases</option>{% for value,label in rate_basis_choices %}<option value="{{ value }}"{% if capability_filters.rate_basis == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
     <div class="sourcing-unified-filter-buttons"><button class="sourcing-btn sourcing-btn--primary" type="submit">Apply filters</button><a class="sourcing-btn" href="{{ request.path }}" data-unified-reset>Clear all</a></div>
   </div>
-  <p class="sourcing-unified-note">Filters must match the same active capability record. Rates are references in their original currency and basis; compare like-for-like.</p>
 </details>

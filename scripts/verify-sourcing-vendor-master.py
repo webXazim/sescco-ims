@@ -143,7 +143,7 @@ for rel in (
 ):
     text(rel)
 list_template = text("templates/sourcing/vendors/list.html")
-for marker in ("Search vendor, material, specification, brand, model, contact or VAT", "Active Materials", "data-column=\"tags\"", "data-provider-expand", "data-unified-results", "page_obj.paginator.count", "New Vendor"):
+for marker in ("search-field sourcing-directory-search", "Search vendors, materials or contacts", "Active Materials", "data-column=\"tags\"", "data-provider-expand", "data-unified-results", "page_obj.paginator.count", "New Vendor"):
     if marker not in list_template:
         fail(f"Vendor directory UI missing: {marker}")
 unified_selector = text('apps/sourcing/selectors/unified.py')

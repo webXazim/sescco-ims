@@ -8,7 +8,7 @@
   let results = document.querySelector('[data-unified-results]');
   if (!results) return;
   const liveStatus = document.createElement('span');
-  liveStatus.className = 'sourcing-unified-live-status';
+  liveStatus.className = 'sourcing-unified-live-status sr-only';
   liveStatus.setAttribute('role', 'status');
   liveStatus.setAttribute('aria-live', 'polite');
   form.appendChild(liveStatus);

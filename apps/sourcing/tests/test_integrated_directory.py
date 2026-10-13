@@ -59,6 +59,23 @@ class IntegratedSourcingDirectoryTests(TestCase):
             scope_description="Duct supply and installation", rate="600", currency="SAR",
         )
 
+    def test_directory_search_uses_inventory_control_without_extra_copy(self):
+        """Sourcing company views share Inventory's compact magnifier input."""
+        for route in (
+            "sourcing:vendor_list", "sourcing:manpower_supplier_list",
+            "sourcing:subcontractor_list",
+        ):
+            response = self.client.get(reverse(route))
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'class="search-field sourcing-directory-search"')
+            self.assertContains(response, 'class="search-glyph"')
+            self.assertContains(response, 'data-unified-form')
+            self.assertContains(response, '<summary>Advanced filters</summary>')
+            self.assertNotContains(response, 'sourcing-unified-intro')
+            self.assertNotContains(response, 'Live search')
+            self.assertNotContains(response, 'sourcing-unified-summary-help')
+            self.assertNotContains(response, 'data-capabilities-slot')
+
     def test_main_company_views_search_catalog_aliases_without_duplicates(self):
         for route, search, expected in (
             ("sourcing:vendor_list", "Reinforcement steel", "Civil Supply"),

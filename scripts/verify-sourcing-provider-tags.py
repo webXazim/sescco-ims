@@ -44,6 +44,8 @@ for name, kind in (('vendors','Active Materials'), ('manpower','Active Trades'),
 for path in ('templates/sourcing/unified/tags_cell.html','templates/sourcing/unified/tag_options.html'):
     source(path)
 assert 'data-subcontractor-table' in source('static/sourcing/js/unified-directory.js')
-assert 'Tags, category' in source('templates/sourcing/unified/filters.html')
+filters = source('templates/sourcing/unified/filters.html')
+assert '<summary>Advanced filters</summary>' in filters
+assert 'name="tag"' in filters and 'name="category"' in filters
 assert 'def test_' in source('apps/sourcing/tests/test_provider_directory_tags.py')
 print('Verified provider tags, bounded master counts, tenant isolation, 3 matching directory UIs, and regression coverage.')
