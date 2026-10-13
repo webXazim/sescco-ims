@@ -1,16 +1,46 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Subcontractors · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.125">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.126">{% endblock %}
 {% block content %}
-<section class="sourcing-page-head"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Subcontractors</strong></nav><h1>Subcontractors</h1></div><div class="sourcing-page-actions">{% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'subcontractors' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a><a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'subcontractor_service_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>{% endif %} {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:subcontractor_create' %}">+ New Subcontractor</a>{% endif %}</div></section>
+<section class="sourcing-page-head sourcing-page-head--directory">
+  <div class="sourcing-page-head__title"><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Subcontractors</strong></nav><h1>Subcontractors</h1></div>
+  <div class="sourcing-page-actions" aria-label="Subcontractors actions">
+    {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:subcontractor_create' %}">+ New Subcontractor</a>{% endif %}
+    {% if SOURCING_ACCESS.export %}
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'subcontractors' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'subcontractor_service_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>
+    {% endif %}
+  </div>
+</section>
 
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar sourcing-toolbar--directory" data-unified-form method="get" action="{% url 'sourcing:subcontractor_list' %}">
     <div class="search-field sourcing-directory-search"><span class="search-glyph" aria-hidden="true"></span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search subcontractors, services or contacts…" aria-label="Search subcontractors directory" autocomplete="off"></div>
     <div class="sourcing-toolbar__actions"><select class="sourcing-select" name="status" aria-label="Subcontractor status">
       <option value="active" {% if directory.status == 'active' %}selected{% endif %}>Active ({{ counts.active }})</option><option value="inactive" {% if directory.status == 'inactive' %}selected{% endif %}>Inactive ({{ counts.inactive }})</option><option value="archived" {% if directory.status == 'archived' %}selected{% endif %}>Archived ({{ counts.archived }})</option><option value="trash" {% if directory.status == 'trash' %}selected{% endif %}>Trash ({{ counts.trash }})</option><option value="all" {% if directory.status == 'all' %}selected{% endif %}>All non-trash</option>
-    </select><select class="sourcing-select sourcing-select--small" name="page_size" aria-label="Rows per page">{% for size in page_sizes %}<option value="{{ size }}" {% if directory.page_size == size %}selected{% endif %}>{{ size }} / page</option>{% endfor %}</select><details class="sourcing-popover sourcing-column-menu" data-column-menu><summary title="Choose columns" aria-label="Choose columns">Columns</summary><div class="sourcing-popover__panel"><strong>Visible columns</strong><label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label><label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label><label><input type="checkbox" data-column-toggle="mobile" checked> Mobile</label><label><input type="checkbox" data-column-toggle="location" checked> Location</label><label><input type="checkbox" data-column-toggle="tags" checked> Tags</label><label><input type="checkbox" data-column-toggle="capabilities" checked> Active Services</label><label><input type="checkbox" data-column-toggle="updated" checked> Updated</label></div></details></div>
+    </select><select class="sourcing-select sourcing-select--small" name="page_size" aria-label="Rows per page">{% for size in page_sizes %}<option value="{{ size }}" {% if directory.page_size == size %}selected{% endif %}>{{ size }} / page</option>{% endfor %}</select><details class="sourcing-popover sourcing-column-menu" data-column-menu>
+        <summary title="Choose visible table columns" aria-label="Choose columns">Columns</summary>
+        <div class="sourcing-popover__panel sourcing-column-panel">
+          <div class="sourcing-column-panel__heading"><strong>Visible columns</strong><span data-column-count></span></div>
+          <div class="sourcing-column-panel__items">
+            <label><input type="checkbox" data-column-toggle="provider" checked> Subcontractor</label>
+            <label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label>
+            <label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label>
+            <label><input type="checkbox" data-column-toggle="mobile" checked> Mobile</label>
+            <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
+            <label><input type="checkbox" data-column-toggle="tags" checked> Tags</label>
+            <label><input type="checkbox" data-column-toggle="capabilities" checked> Active Services</label>
+            <label><input type="checkbox" data-column-toggle="status" checked> Status</label>
+            <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
+            <label><input type="checkbox" data-column-toggle="actions" checked> Actions</label>
+          </div>
+          <div class="sourcing-column-panel__actions">
+            <button type="button" data-columns-all>Show all</button>
+            <button type="button" data-columns-compact>Compact</button>
+          </div>
+        </div>
+      </details></div>
     <div class="sourcing-directory-sort"><label for="subcontractor-sort"><span>Sort by</span><select id="subcontractor-sort" name="sort" class="sourcing-select"><option value="name"{% if directory.sort == 'name' %} selected{% endif %}>Name</option><option value="code"{% if directory.sort == 'code' %} selected{% endif %}>Code</option><option value="city"{% if directory.sort == 'city' %} selected{% endif %}>City</option><option value="verified"{% if directory.sort == 'verified' %} selected{% endif %}>Last verified</option><option value="updated"{% if directory.sort == 'updated' %} selected{% endif %}>Recently updated</option></select></label><label for="subcontractor-direction"><span>Order</span><select id="subcontractor-direction" name="dir" class="sourcing-select"><option value="asc"{% if directory.direction == 'asc' %} selected{% endif %}>Ascending</option><option value="desc"{% if directory.direction == 'desc' %} selected{% endif %}>Descending</option></select></label></div>
     {% include "sourcing/unified/filters.html" %}{% include "sourcing/unified/tag_options.html" %}
   </form>
@@ -19,24 +49,24 @@
   <div class="sourcing-table-wrap" tabindex="0" role="region" aria-label="Subcontractors table">
     <table class="sourcing-table" data-subcontractor-table>
       <thead><tr>
-        <th>Subcontractor</th><th data-column="contact">Primary Contact</th>
+        <th data-column="provider">Subcontractor</th><th data-column="contact">Primary Contact</th>
         <th data-column="email">Contact Email</th><th data-column="mobile">Mobile</th>
         <th data-column="location">Location</th><th data-column="tags">Tags</th>
-        <th data-column="capabilities">Active Services</th><th>Status</th>
-        <th data-column="updated">Updated</th><th class="row-menu-col"><span class="sr-only">Actions</span></th>
+        <th data-column="capabilities">Active Services</th><th data-column="status">Status</th>
+        <th data-column="updated">Updated</th><th data-column="actions" class="row-menu-col"><span class="sr-only">Actions</span></th>
       </tr></thead><tbody>
       {% for obj in subcontractors %}
       <tr data-provider-row="{{ obj.pk }}">
-        <td class="sourcing-vendor-cell"><a href="{% url 'sourcing:subcontractor_detail' obj.pk %}"><strong>{{ obj.display_name|default:obj.name }}</strong><small>{{ obj.code }}{% if obj.cr_number %} · CR {{ obj.cr_number }}{% endif %}</small></a></td>
+        <td data-column="provider" class="sourcing-vendor-cell"><a href="{% url 'sourcing:subcontractor_detail' obj.pk %}"><strong>{{ obj.display_name|default:obj.name }}</strong><small>{{ obj.code }}{% if obj.cr_number %} · CR {{ obj.cr_number }}{% endif %}</small></a></td>
         <td data-column="contact">{{ obj.primary_contact_name|default:'—' }}{% if obj.contact_count %}<small class="cell-note">{{ obj.contact_count }} saved contact{{ obj.contact_count|pluralize }}</small>{% endif %}</td>
         <td data-column="email">{% if obj.email %}<a class="plain-link" href="mailto:{{ obj.email }}">{{ obj.email }}</a>{% else %}—{% endif %}</td>
         <td data-column="mobile">{{ obj.mobile|default:'—' }}</td>
         <td data-column="location">{{ obj.city|default:'—' }}{% if obj.region %}, {{ obj.region }}{% endif %}</td>
         <td data-column="tags">{% include "sourcing/unified/tags_cell.html" with provider=obj %}</td>
         <td data-column="capabilities" class="sourcing-capability-cell"><button type="button" class="sourcing-unified-expand sourcing-unified-modal-trigger" data-provider-expand="{{ obj.pk }}" data-provider-label="{{ obj.display_name|default:obj.name|escape }}" data-provider-kind="Subcontractor" aria-haspopup="dialog" aria-controls="sourcing-capability-modal">{{ obj.active_service_type_count }} service{{ obj.active_service_type_count|pluralize }}</button>{% if obj.first_capability %}<small class="cell-note">{{ obj.first_capability }}</small>{% endif %}</td>
-        <td>{% if obj.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>{% elif obj.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif obj.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
+        <td data-column="status">{% if obj.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Trash</span>{% elif obj.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif obj.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
         <td data-column="updated"><time datetime="{{ obj.updated_at|date:'c' }}">{{ obj.updated_at|date:'d M Y' }}</time><small class="cell-note">{{ obj.freshness_label }}</small></td>
-        <td class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Subcontractor actions">⋯</summary><div><a href="{% url 'sourcing:subcontractor_detail' obj.pk %}">View</a>{% if can_manage and not obj.archived_at and not obj.deleted_at %}<a href="{% url 'sourcing:subcontractor_edit' obj.pk %}">Edit</a>{% endif %}</div></details></td>
+        <td data-column="actions" class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Subcontractor actions">⋯</summary><div><a href="{% url 'sourcing:subcontractor_detail' obj.pk %}">View</a>{% if can_manage and not obj.archived_at and not obj.deleted_at %}<a href="{% url 'sourcing:subcontractor_edit' obj.pk %}">Edit</a>{% endif %}</div></details></td>
       </tr>
       {% empty %}<tr><td colspan="10"><div class="sourcing-empty"><strong>No subcontractors found</strong><p>Try another search, tag, or status filter.</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:subcontractor_create' %}">New Subcontractor</a>{% endif %}</div></td></tr>{% endfor %}
       </tbody></table>
@@ -46,4 +76,4 @@
 </section>
 {% endblock %}
 
-{% block scripts %}<script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.125"></script>{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.126"></script>{% endblock %}

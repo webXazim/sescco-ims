@@ -1,15 +1,20 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Manpower Suppliers · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.125">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.126">{% endblock %}
 {% block content %}
-<section class="sourcing-page-head">
-  <div>
+<section class="sourcing-page-head sourcing-page-head--directory">
+  <div class="sourcing-page-head__title">
     <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Manpower Suppliers</strong></nav>
     <h1>Manpower Suppliers</h1>
   </div>
-  {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:manpower_supplier_create' %}">+ New Manpower Supplier</a>{% endif %}
-  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a><a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>{% endif %}
+  <div class="sourcing-page-actions" aria-label="Manpower Suppliers actions">
+    {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:manpower_supplier_create' %}">+ New Manpower Supplier</a>{% endif %}
+    {% if SOURCING_ACCESS.export %}
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>
+    {% endif %}
+  </div>
 </section>
 
 
@@ -28,15 +33,25 @@
         {% for size in page_sizes %}<option value="{{ size }}" {% if directory.page_size == size %}selected{% endif %}>{{ size }} / page</option>{% endfor %}
       </select>
       <details class="sourcing-popover sourcing-column-menu" data-column-menu>
-        <summary title="Choose columns" aria-label="Choose columns">Columns</summary>
-        <div class="sourcing-popover__panel">
-          <strong>Visible columns</strong>
-          <label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label>
-          <label><input type="checkbox" data-column-toggle="email" checked> Email</label>
-          <label><input type="checkbox" data-column-toggle="phone" checked> Phone</label>
-          <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
-          <label><input type="checkbox" data-column-toggle="tags" checked> Tags</label><label><input type="checkbox" data-column-toggle="capabilities" checked> Active Trades</label>
-          <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
+        <summary title="Choose visible table columns" aria-label="Choose columns">Columns</summary>
+        <div class="sourcing-popover__panel sourcing-column-panel">
+          <div class="sourcing-column-panel__heading"><strong>Visible columns</strong><span data-column-count></span></div>
+          <div class="sourcing-column-panel__items">
+            <label><input type="checkbox" data-column-toggle="provider" checked> Manpower Supplier</label>
+            <label><input type="checkbox" data-column-toggle="contact" checked> Primary Contact</label>
+            <label><input type="checkbox" data-column-toggle="email" checked> Contact Email</label>
+            <label><input type="checkbox" data-column-toggle="phone" checked> Phone</label>
+            <label><input type="checkbox" data-column-toggle="location" checked> Location</label>
+            <label><input type="checkbox" data-column-toggle="tags" checked> Tags</label>
+            <label><input type="checkbox" data-column-toggle="capabilities" checked> Active Trades</label>
+            <label><input type="checkbox" data-column-toggle="status" checked> Status</label>
+            <label><input type="checkbox" data-column-toggle="updated" checked> Updated</label>
+            <label><input type="checkbox" data-column-toggle="actions" checked> Actions</label>
+          </div>
+          <div class="sourcing-column-panel__actions">
+            <button type="button" data-columns-all>Show all</button>
+            <button type="button" data-columns-compact>Compact</button>
+          </div>
         </div>
       </details>
     </div>
@@ -66,19 +81,19 @@
 
   <div class="sourcing-table-wrap">
     <table class="sourcing-table" data-manpower-table>
-      <thead><tr><th>Manpower Supplier</th><th data-column="contact">Primary Contact</th><th data-column="email">Email</th><th data-column="phone">Phone</th><th data-column="location">Location</th><th data-column="tags">Tags</th><th data-column="capabilities">Active Trades</th><th>Status</th><th data-column="updated">Updated</th><th class="row-menu-col"><span class="sr-only">Actions</span></th></tr></thead>
+      <thead><tr><th data-column="provider">Manpower Supplier</th><th data-column="contact">Primary Contact</th><th data-column="email">Email</th><th data-column="phone">Phone</th><th data-column="location">Location</th><th data-column="tags">Tags</th><th data-column="capabilities">Active Trades</th><th data-column="status">Status</th><th data-column="updated">Updated</th><th data-column="actions" class="row-menu-col"><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {% for supplier in suppliers %}
         <tr data-provider-row="{{ supplier.pk }}">
-          <td class="sourcing-vendor-cell"><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}"><strong>{{ supplier.name }}</strong><small>{{ supplier.code }}{% if supplier.cr_number %} · CR {{ supplier.cr_number }}{% endif %}</small></a></td>
+          <td data-column="provider" class="sourcing-vendor-cell"><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}"><strong>{{ supplier.name }}</strong><small>{{ supplier.code }}{% if supplier.cr_number %} · CR {{ supplier.cr_number }}{% endif %}</small></a></td>
           <td data-column="contact">{{ supplier.primary_contact_name|default:'—' }}{% if supplier.contact_count %}<small class="cell-note">{{ supplier.contact_count }} saved contact{{ supplier.contact_count|pluralize }}</small>{% endif %}</td>
           <td data-column="email">{% if supplier.email %}<a class="plain-link" href="mailto:{{ supplier.email }}">{{ supplier.email }}</a>{% else %}—{% endif %}</td>
           <td data-column="phone">{{ supplier.phone|default:supplier.mobile|default:'—' }}</td>
           <td data-column="location">{% if supplier.city or supplier.region %}{{ supplier.city }}{% if supplier.city and supplier.region %}, {% endif %}{{ supplier.region }}{% else %}—{% endif %}</td>
           <td data-column="tags">{% include "sourcing/unified/tags_cell.html" with provider=supplier %}</td><td data-column="capabilities" class="sourcing-capability-cell"><button type="button" class="sourcing-unified-expand sourcing-unified-modal-trigger" data-provider-expand="{{ supplier.pk }}" data-provider-label="{{ supplier.display_name|default:supplier.name|escape }}" data-provider-kind="Manpower supplier" aria-haspopup="dialog" aria-controls="sourcing-capability-modal">{{ supplier.active_trade_count }} trade{{ supplier.active_trade_count|pluralize }}</button>{% if supplier.first_capability %}<small class="cell-note">{{ supplier.first_capability }} · {% if supplier.first_capability_rate != None %}{{ supplier.first_capability_currency }} {{ supplier.first_capability_rate }}{% else %}Rate unknown{% endif %}</small>{% endif %}</td>
-          <td>{% if supplier.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>{% elif supplier.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif supplier.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
+          <td data-column="status">{% if supplier.deleted_at %}<span class="sourcing-pill sourcing-pill--danger">Legacy Trash</span>{% elif supplier.archived_at %}<span class="sourcing-pill sourcing-pill--muted">Archived</span>{% elif supplier.status == 'active' %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
           <td data-column="updated"><time datetime="{{ supplier.updated_at|date:'c' }}">{{ supplier.updated_at|date:"d M Y" }}</time></td>
-          <td class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Manpower Supplier actions">⋯</summary><div><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">View</a>{% if can_manage and not supplier.deleted_at and not supplier.archived_at %}<a href="{% url 'sourcing:manpower_supplier_edit' supplier.id %}">Edit</a>{% endif %}</div></details></td>
+          <td data-column="actions" class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Manpower Supplier actions">⋯</summary><div><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}">View</a>{% if can_manage and not supplier.deleted_at and not supplier.archived_at %}<a href="{% url 'sourcing:manpower_supplier_edit' supplier.id %}">Edit</a>{% endif %}</div></details></td>
         </tr>
         {% empty %}<tr><td colspan="10"><div class="sourcing-empty"><strong>No Manpower Suppliers found</strong><p>{% if directory.query %}Try a different search or status filter.{% else %}Add the first reference Manpower Supplier when you are ready.{% endif %}</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_create' %}">New Manpower Supplier</a>{% endif %}</div></td></tr>{% endfor %}
       </tbody>
@@ -89,4 +104,4 @@
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.123"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.125"></script>{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.126"></script>{% endblock %}

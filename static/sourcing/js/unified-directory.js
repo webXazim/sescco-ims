@@ -40,14 +40,54 @@
       link.href = dest.pathname + dest.search;
     });
   }
+  // A directory-specific preference, independent of company filters, backed only by
+  // optional browser storage. Server-rendered rows retain the correct default if JS fails.
+  const columnToggles = [...form.querySelectorAll('[data-column-toggle]')];
+  const columnKeys = columnToggles.map((toggle) => toggle.dataset.columnToggle);
+  const columnStorageKey = `sescco:sourcing:directory-columns:v2:${location.pathname}`;
+  const compactKeys = new Set(['provider', 'tags', 'capabilities', 'status', 'actions']);
+  const readColumns = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(columnStorageKey) || '{}');
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
+      columnToggles.forEach((toggle) => {
+        if (typeof saved[toggle.dataset.columnToggle] === 'boolean') {
+          toggle.checked = saved[toggle.dataset.columnToggle];
+        }
+      });
+      // Never strand the user with a completely blank table.
+      if (!columnToggles.some((toggle) => toggle.checked)) {
+        columnToggles.forEach((toggle) => { toggle.checked = true; });
+      }
+    } catch (_) { /* private browsing or unavailable local storage */ }
+  };
+  const saveColumns = () => {
+    try {
+      const state = Object.fromEntries(columnToggles.map((toggle) => [toggle.dataset.columnToggle, toggle.checked]));
+      localStorage.setItem(columnStorageKey, JSON.stringify(state));
+    } catch (_) { /* preference is still active in this page */ }
+  };
   function applyColumns() {
     const table = results.querySelector('[data-vendor-table], [data-manpower-table], [data-subcontractor-table]');
     if (!table) return;
-    form.querySelectorAll('[data-column-toggle]').forEach((toggle) => {
+    columnToggles.forEach((toggle) => {
       table.querySelectorAll(`[data-column="${toggle.dataset.columnToggle}"]`)
         .forEach((cell) => { cell.hidden = !toggle.checked; });
     });
+    const visible = columnToggles.filter((toggle) => toggle.checked).length;
+    const count = form.querySelector('[data-column-count]');
+    if (count) count.textContent = `${visible} of ${columnKeys.length}`;
+    // Empty-result messages occupy all visible columns, never a fixed width.
+    table.querySelectorAll('td[colspan]').forEach((cell) => { cell.colSpan = visible; });
   }
+  function setColumnPreset(preset) {
+    columnToggles.forEach((toggle) => {
+      toggle.checked = preset === 'all' || compactKeys.has(toggle.dataset.columnToggle);
+    });
+    saveColumns();
+    applyColumns();
+  }
+  readColumns();
   function resetLoading() {
     results.removeAttribute('aria-busy');
     results.classList.remove('sourcing-unified-loading');
@@ -112,6 +152,11 @@
   });
   form.addEventListener('change', (event) => {
     if (event.target.matches('[data-column-toggle]')) {
+      if (!columnToggles.some((toggle) => toggle.checked)) {
+        event.target.checked = true;
+        liveStatus.textContent = 'At least one column must remain visible';
+      }
+      saveColumns();
       applyColumns();
       return;
     }
@@ -121,6 +166,16 @@
     }
   });
   form.addEventListener('click', (event) => {
+    if (event.target.closest('[data-columns-all]')) {
+      event.preventDefault();
+      setColumnPreset('all');
+      return;
+    }
+    if (event.target.closest('[data-columns-compact]')) {
+      event.preventDefault();
+      setColumnPreset('compact');
+      return;
+    }
     const reset = event.target.closest('[data-unified-reset]');
     if (!reset) return;
     event.preventDefault();

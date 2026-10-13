@@ -115,6 +115,31 @@ class IntegratedSourcingDirectoryTests(TestCase):
             self.assertContains(detail, label)
             self.assertContains(detail, 'Verification history')
 
+    def test_all_directory_columns_are_controllable_and_header_actions_grouped(self):
+        """Columns cover the whole company table, with a shared header action group."""
+        column_keys = (
+            'provider', 'contact', 'email', 'location', 'tags',
+            'capabilities', 'status', 'updated', 'actions',
+        )
+        for route, phone_key, label in (
+            ('sourcing:vendor_list', 'mobile', 'Vendor'),
+            ('sourcing:manpower_supplier_list', 'phone', 'Manpower Supplier'),
+            ('sourcing:subcontractor_list', 'mobile', 'Subcontractor'),
+        ):
+            with self.subTest(route=route):
+                response = self.client.get(reverse(route))
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'sourcing-page-head--directory')
+                self.assertContains(response, 'class="sourcing-page-actions"')
+                self.assertContains(response, 'data-columns-all')
+                self.assertContains(response, 'data-columns-compact')
+                self.assertContains(response, 'Export companies')
+                self.assertContains(response, 'Export capabilities')
+                self.assertContains(response, label)
+                for column in (*column_keys, phone_key):
+                    self.assertContains(response, f'data-column-toggle="{column}"')
+                    self.assertContains(response, f'data-column="{column}"', count=2)
+
     def test_old_finder_bookmarks_redirect_to_integrated_views(self):
         for old, new in (
             ("sourcing:material_finder", "sourcing:vendor_list"),
