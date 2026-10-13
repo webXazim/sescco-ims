@@ -1,0 +1,12 @@
+{% extends "sourcing/base.html" %}
+{% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
+<form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="sourcing-form-section"><header><h2>Company Identity</h2><p>Independent service provider record; no supplier transactions are created.</p></header><div class="sourcing-form-grid">{% for field in form %}{% if field.name == 'code' or field.name == 'name' or field.name == 'display_name' or field.name == 'cr_number' or field.name == 'vat_number' %}{% include "sourcing/vendors/field.html" %}{% endif %}{% endfor %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Company & Primary Contact</h2></header><div class="sourcing-form-grid">{% for field in form %}{% if field.name == 'company_phone' or field.name == 'company_email' or field.name == 'website' or field.name == 'primary_contact_name' or field.name == 'mobile' or field.name == 'email' %}{% include "sourcing/vendors/field.html" %}{% endif %}{% endfor %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Address & Service Coverage</h2></header><div class="sourcing-form-grid">{% for field in form %}{% if field.name == 'address' or field.name == 'street_number' or field.name == 'district' or field.name == 'city' or field.name == 'region' or field.name == 'postal_code' or field.name == 'service_coverage' %}{% include "sourcing/vendors/field.html" %}{% endif %}{% endfor %}</div></section>
+  <section class="sourcing-form-section"><header><h2>Remarks</h2></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+  <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if subcontractor %}{% url 'sourcing:subcontractor_detail' subcontractor.pk %}{% else %}{% url 'sourcing:subcontractor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label }}</button></footer>
+</form>
+{% endblock %}

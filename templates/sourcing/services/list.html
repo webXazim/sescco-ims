@@ -1,0 +1,59 @@
+{% extends "sourcing/base.html" %}
+{% block title %}Sourcing Services · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head">
+  <div>
+    <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Services</strong></nav>
+    <h1>Sourcing Services</h1>
+    <p>Controlled service types, categories and search aliases for subcontractor reference. No service job, invoice or inventory entry is created.</p>
+  </div>
+  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% url 'sourcing:data_export' 'services' %}?format=xlsx&amp;{{ request.GET.urlencode }}">Export current view</a>{% endif %} {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:service_create' %}">+ New Service</a>{% endif %}
+</section>
+<section class="sourcing-panel">
+  <form class="sourcing-toolbar" method="get">
+    <div class="sourcing-status-strip" aria-label="Service status filters">
+      <a class="{% if directory.status == 'active' %}active{% endif %}" href="?status=active&q={{ directory.query|urlencode }}">Active <span>{{ counts.active }}</span></a>
+      <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?status=inactive&q={{ directory.query|urlencode }}">Inactive <span>{{ counts.inactive }}</span></a>
+      <a class="{% if directory.status == 'all' %}active{% endif %}" href="?status=all&q={{ directory.query|urlencode }}">All <span>{{ counts.active|add:counts.inactive }}</span></a>
+    </div>
+    <div class="sourcing-toolbar__actions">
+      <label class="sourcing-search"><span class="sr-only">Search services</span><input class="sourcing-input" type="search" name="q" value="{{ directory.query }}" placeholder="Search code, service, category or alias"></label>
+      <input type="hidden" name="status" value="{{ directory.status }}">
+      <select class="sourcing-select" name="category" aria-label="Service category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category }}"{% if directory.category == category %} selected{% endif %}>{{ category }}</option>{% endfor %}</select>
+      <select class="sourcing-select" name="page_size" aria-label="Rows per page" onchange="this.form.submit()">{% for size in page_sizes %}<option value="{{ size }}"{% if directory.page_size == size %} selected{% endif %}>{{ size }} rows</option>{% endfor %}</select>
+      <button class="sourcing-btn" type="submit">Search</button>
+    </div>
+  </form>
+  <p class="sourcing-u09-table-hint">Service names and codes are controlled reference data. Scroll the table on smaller screens to see actions.</p>
+  <div class="sourcing-table-wrap" tabindex="0" role="region" aria-label="Services master table">
+    <table class="sourcing-table sourcing-table--materials">
+      <thead><tr><th>Service</th><th>Category</th><th>Aliases</th><th>Rate Basis</th><th class="num">Subcontractors</th><th class="num">Active Entries</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for service in services %}
+        <tr>
+          <td><strong>{{ service.name }}</strong><small class="cell-note">{{ service.code }}</small></td>
+          <td>{{ service.category|default:'—' }}</td>
+          <td>{% if service.aliases %}{{ service.aliases|join:", " }}{% else %}—{% endif %}</td>
+          <td>{{ service.get_default_rate_basis_display|default:'—' }}</td>
+          <td class="num">{{ service.subcontractor_count }}</td><td class="num">{{ service.active_offer_count }}</td>
+          <td>{% if service.is_active %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--warning">Inactive</span>{% endif %}</td>
+          <td>{{ service.updated_at|date:"d M Y" }}</td>
+          <td class="row-menu-col">{% if can_manage %}
+            <details class="sourcing-row-menu"><summary aria-label="Service actions">⋯</summary><div>
+              <a href="{% url 'sourcing:service_edit' service.id %}">Edit</a>
+              <form method="post" action="{% url 'sourcing:service_status' service.id %}">{% csrf_token %}<input type="hidden" name="active" value="{% if service.is_active %}0{% else %}1{% endif %}"><button class="sourcing-row-action" type="submit">Mark {% if service.is_active %}Inactive{% else %}Active{% endif %}</button></form>
+              <form method="post" action="{% url 'sourcing:service_delete' service.id %}" onsubmit="var typed = window.prompt('Type {{ service.code|escapejs }} to permanently delete this unused service:'); this.elements.confirmation.value = typed || ''; return typed === '{{ service.code|escapejs }}';">{% csrf_token %}<input type="hidden" name="confirmation" value=""><button class="sourcing-row-action sourcing-row-action--danger" type="submit">Delete permanently</button></form>
+            </div></details>{% endif %}
+          </td>
+        </tr>
+        {% empty %}<tr><td colspan="9"><div class="sourcing-empty"><strong>No Sourcing Services found</strong><p>Add controlled service references before cataloging Subcontractor capabilities.</p>{% if can_manage %}<a class="sourcing-btn" href="{% url 'sourcing:service_create' %}">New Service</a>{% endif %}</div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav>
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&category={{ directory.category|urlencode }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}
+    <strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&category={{ directory.category|urlencode }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}
+  </nav></footer>{% endif %}
+</section>
+{% endblock %}

@@ -3,7 +3,7 @@
 - Confirm `VERSION` and Payroll static cache-busters are `1.0.70`.
 - Run `python3 scripts/verify-payroll-browser-scale.py` and the complete `./scripts/verify-production-freeze.sh` gate.
 - On the benchmark database, run `python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits` and retain the output as `payroll-browser-scale-report.txt`.
-- From a release/test workstation with Playwright + Chromium, run `python scripts/certify-payroll-browser-scale.py --base-url https://ims.sescco.com --username <benchmark-user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD` and retain `payroll-browser-certification.json`.
+- From a release/test workstation with Playwright + Chromium, run `python scripts/certify-payroll-browser-scale.py --base-url https://ms.sescco.com --username <benchmark-user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD` and retain `payroll-browser-certification.json`.
 - Verify Internal Attendance/OT, Rental Project Timesheets/OT, Assignment Activity/Deployment/Pool and Ctrl/Cmd+K global search remain bounded while rapidly typing, paging and switching routes.
 - Do not certify the browser benchmark if any page remains in a loading state, if stale searches overwrite the final query, or if bounded tables exceed their 100-row server-page contract (Assignment Activity may expand 100 assignment segments into at most 200 lifecycle events).
 - 1.0.70 adds no new schema migration or Payroll formula change; it carries the 1.0.69 PostgreSQL search indexes forward unchanged.
@@ -63,7 +63,7 @@
 - [ ] `python manage.py check --deploy` passes.
 - [ ] `makemigrations --check --dry-run` reports no drift.
 - [ ] A pre-release database and media backup exists.
-- [ ] `ims.sescco.com` DNS resolves to the correct VPS.
+- [ ] `ms.sescco.com` DNS resolves to the correct VPS.
 - [ ] TLS certificate is valid and HTTPS redirect works.
 - [ ] Login, add stock, use stock, filtering and exact export are smoke-tested.
 - [ ] Storekeeper cannot access `/admin/`.

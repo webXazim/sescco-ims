@@ -38,6 +38,7 @@ python3 "${PROJECT_ROOT}/scripts/verify-release-candidate.py"
 
 info "Verifying granular access authority foundation"
 python3 "${PROJECT_ROOT}/scripts/verify-granular-access-authority.py"
+python3 "${PROJECT_ROOT}/scripts/verify-subcontractor-release-extension.py"
 python3 "${PROJECT_ROOT}/scripts/verify-single-access-authority.py"
 python3 "${PROJECT_ROOT}/scripts/verify-user-management-backend.py"
 python3 "${PROJECT_ROOT}/scripts/verify-user-management-ui.py"
@@ -175,6 +176,7 @@ run_manage migrate --check
 
 info "Running focused Sourcing domain/isolation regression"
 run_manage test apps.sourcing.tests.test_domain_foundation --noinput
+run_manage test apps.sourcing.tests.test_subcontractor_directory --noinput
 run_manage test apps.sourcing.tests.test_access_control --noinput
 run_manage test apps.sourcing.tests.test_vendor_master --noinput
 run_manage test apps.sourcing.tests.test_material_catalog --noinput

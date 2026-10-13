@@ -986,9 +986,14 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
     context_object_name = "stock_items"
     paginate_by = 50
 
-    def dispatch(self, request, *args, **kwargs):
+    def get_queryset(self):
+        # Location resolution happens after the workspace/permission checks in dispatch.
+        # A missing or out-of-scope office must not turn the navigation page into a 404.
         self.office_locations = (
-            restrict_inventory_location_queryset(InventoryLocation.objects.for_company(request.company), request.company_membership)
+            restrict_inventory_location_queryset(
+                InventoryLocation.objects.for_company(self.request.company),
+                self.request.company_membership,
+            )
             .filter(
                 location_type=InventoryLocation.Type.OFFICE,
                 is_active=True,
@@ -997,17 +1002,16 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             )
             .order_by("code")
         )
-        selected_code = request.GET.get("location", "").strip()
+        selected_code = self.request.GET.get("location", "").strip()
         if selected_code:
+            # An explicitly requested, unauthorized/nonexistent location still returns 404.
             self.office = get_object_or_404(self.office_locations, code=selected_code)
         else:
             self.office = self.office_locations.first()
-            if self.office is None:
-                raise Http404("No active office inventory location is configured.")
-        return super().dispatch(request, *args, **kwargs)
 
-    def get_queryset(self):
-        queryset = restrict_inventory_stock(stock_items(self.request.company), self.request.company_membership).filter(location=self.office, status=StockItem.Status.ACTIVE)
+        queryset = restrict_inventory_stock(
+            stock_items(self.request.company), self.request.company_membership
+        ).filter(location=self.office, status=StockItem.Status.ACTIVE)
         return apply_stock_search(queryset, self.request.GET.get("q", "")).order_by(
             "material_name", "condition", "supplier_name"
         )
@@ -1016,8 +1020,12 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context.update(
             page_key="office",
-            page_title=self.office.name,
-            page_subtitle="Office-held new, used, and no-value stock.",
+            page_title=self.office.name if self.office else "Office stock",
+            page_subtitle=(
+                "Office-held new, used, and no-value stock."
+                if self.office
+                else "Office inventory locations and stock."
+            ),
             office=self.office,
             office_locations=self.office_locations,
             search_query=self.request.GET.get("q", ""),

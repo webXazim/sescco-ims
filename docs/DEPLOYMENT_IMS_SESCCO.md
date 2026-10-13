@@ -1,6 +1,9 @@
 # Deploying the merged IMS + Payroll platform beside another Docker project
 
-Target domain: `ims.sescco.com`
+Target domain: `ms.sescco.com`
+
+For an existing installation, follow [DOMAIN_CUTOVER.md](DOMAIN_CUTOVER.md)
+instead of generating a new environment or deploying a different application release.
 
 This deployment intentionally does not bind Docker directly to public ports 80
 or 443. The IMS gateway listens only on `127.0.0.1:8087`; the existing host
@@ -8,7 +11,7 @@ Nginx routes the domain to it. Other Compose projects remain isolated.
 
 ## 1. DNS
 
-Create an `A` record for `ims.sescco.com` pointing to the VPS public IPv4
+Create an `A` record for `ms.sescco.com` pointing to the VPS public IPv4
 address. When Cloudflare proxying is used, keep SSL/TLS mode at Full (strict)
 after the origin certificate is installed.
 
@@ -48,9 +51,9 @@ The generated values are written to `.env.production` with mode `600`.
 **Store the Payroll field-encryption key separately in a protected password/secret manager as part of disaster recovery.** Database backups contain only its fingerprint. The supplied defaults already include:
 
 ```text
-IMS_PUBLIC_DOMAIN=ims.sescco.com
-DJANGO_ALLOWED_HOSTS=ims.sescco.com,localhost,127.0.0.1
-DJANGO_CSRF_TRUSTED_ORIGINS=https://ims.sescco.com
+IMS_PUBLIC_DOMAIN=ms.sescco.com
+DJANGO_ALLOWED_HOSTS=ms.sescco.com,localhost,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://ms.sescco.com
 DJANGO_TRUSTED_PROXY_IPS=127.0.0.1,::1,172.20.0.0/16
 IMS_HTTP_PORT=8087
 RUN_STARTUP_TASKS=0
@@ -84,10 +87,10 @@ Install the HTTP-only bootstrap virtual host first:
 
 ```bash
 sudo mkdir -p /var/www/certbot
-sudo cp deploy/host-nginx/ims.sescco.com.bootstrap.conf \
-  /etc/nginx/sites-available/ims.sescco.com
-sudo ln -s /etc/nginx/sites-available/ims.sescco.com \
-  /etc/nginx/sites-enabled/ims.sescco.com
+sudo cp deploy/host-nginx/ms.sescco.com.bootstrap.conf \
+  /etc/nginx/sites-available/ms.sescco.com
+sudo ln -s /etc/nginx/sites-available/ms.sescco.com \
+  /etc/nginx/sites-enabled/ms.sescco.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -96,9 +99,9 @@ Request the certificate, then replace the bootstrap file with the final HTTPS
 configuration:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot -d ims.sescco.com
-sudo cp deploy/host-nginx/ims.sescco.com.conf \
-  /etc/nginx/sites-available/ims.sescco.com
+sudo certbot certonly --webroot -w /var/www/certbot -d ms.sescco.com
+sudo cp deploy/host-nginx/ms.sescco.com.conf \
+  /etc/nginx/sites-available/ms.sescco.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -106,8 +109,8 @@ sudo systemctl reload nginx
 Verify:
 
 ```bash
-curl -I https://ims.sescco.com/login/
-curl https://ims.sescco.com/app/health/ready/
+curl -I https://ms.sescco.com/login/
+curl https://ms.sescco.com/app/health/ready/
 ```
 
 ## 5. Existing Docker reverse proxy instead of host Nginx
@@ -135,7 +138,7 @@ The proxy can reach the upstream at:
 ims-gateway:8080
 ```
 
-Set the external hostname to `ims.sescco.com`, pass the original Host header,
+Set the external hostname to `ms.sescco.com`, pass the original Host header,
 and pass `X-Forwarded-Proto: https`.
 
 ## 6. Routine updates

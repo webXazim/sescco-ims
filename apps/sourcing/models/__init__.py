@@ -8,6 +8,12 @@ from .manpower import (
     SourcingWorkforceOfferRevision,
 )
 from .settings import SourcingSettings
+from .subcontractors import (
+    SourcingSubcontractor, SourcingSubcontractorContact, SourcingService,
+    SourcingServiceRateBasis, SourcingSubcontractorService, SourcingSubcontractorServiceRevision,
+    SourcingSubcontractorVerificationRevision, SourcingSubcontractorDocument,
+    SubcontractorQualificationKind, SubcontractorQualificationReview,
+)
 from .vendors import (
     SourcingMaterial,
     SourcingVendor,
@@ -24,6 +30,16 @@ __all__ = [
     "SourcingMaterial",
     "SourcingRateBasis",
     "SourcingSettings",
+    "SourcingSubcontractor",
+    "SourcingSubcontractorContact",
+    "SourcingService",
+    "SourcingServiceRateBasis",
+    "SourcingSubcontractorService",
+    "SourcingSubcontractorServiceRevision",
+    "SourcingSubcontractorVerificationRevision",
+    "SourcingSubcontractorDocument",
+    "SubcontractorQualificationKind",
+    "SubcontractorQualificationReview",
     "SourcingTrade",
     "SourcingVendor",
     "SourcingVendorContact",

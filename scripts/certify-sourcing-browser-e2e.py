@@ -22,7 +22,7 @@ MAX_ROWS = 100
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run live Chromium E2E certification for SESCCO MS Sourcing Directory.")
-    p.add_argument("--base-url", required=True, help="Application origin, e.g. https://ims.sescco.com")
+    p.add_argument("--base-url", required=True, help="Application origin, e.g. https://ms.sescco.com")
     p.add_argument("--username", default=os.getenv("IMS_SOURCING_BROWSER_USERNAME", os.getenv("IMS_BROWSER_BENCHMARK_USERNAME", "")))
     p.add_argument("--password-env", default="IMS_SOURCING_BROWSER_PASSWORD")
     p.add_argument("--evidence", default="sourcing-browser-certification.json")

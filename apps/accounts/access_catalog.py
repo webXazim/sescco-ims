@@ -110,6 +110,8 @@ class AccessPermission(StrEnum):
     SOURCING_MASTERS_VIEW = "sourcing.masters.view"
     SOURCING_MASTERS_MANAGE = "sourcing.masters.manage"
     SOURCING_EXPORT_EXECUTE = "sourcing.export.execute"
+    SOURCING_SUBCONTRACTORS_VIEW = "sourcing.subcontractors.view"
+    SOURCING_SUBCONTRACTORS_MANAGE = "sourcing.subcontractors.manage"
 
 
 _PERMISSION_LABELS: dict[AccessPermission, str] = {
@@ -124,6 +126,8 @@ _PERMISSION_LABELS.update({
     AccessPermission.SOURCING_MASTERS_VIEW: "Sourcing Reference Masters · View",
     AccessPermission.SOURCING_MASTERS_MANAGE: "Sourcing Reference Masters · Edit",
     AccessPermission.SOURCING_EXPORT_EXECUTE: "Sourcing Directory · Export",
+    AccessPermission.SOURCING_SUBCONTRACTORS_VIEW: "Subcontractor Sourcing · View",
+    AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE: "Subcontractor Sourcing · Edit",
 })
 
 
@@ -246,6 +250,8 @@ SOURCING_MANPOWER_VIEW_PERMISSIONS = frozenset({AccessPermission.SOURCING_MANPOW
 SOURCING_MANPOWER_EDIT_PERMISSIONS = frozenset({AccessPermission.SOURCING_MANPOWER_MANAGE})
 SOURCING_MASTER_VIEW_PERMISSIONS = frozenset({AccessPermission.SOURCING_MASTERS_VIEW})
 SOURCING_MASTER_EDIT_PERMISSIONS = frozenset({AccessPermission.SOURCING_MASTERS_MANAGE})
+SOURCING_SUBCONTRACTOR_VIEW_PERMISSIONS = frozenset({AccessPermission.SOURCING_SUBCONTRACTORS_VIEW})
+SOURCING_SUBCONTRACTOR_EDIT_PERMISSIONS = frozenset({AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE})
 SOURCING_MODULE_PERMISSIONS = frozenset({
     AccessPermission.SOURCING_VENDORS_VIEW,
     AccessPermission.SOURCING_VENDORS_MANAGE,
@@ -254,6 +260,8 @@ SOURCING_MODULE_PERMISSIONS = frozenset({
     AccessPermission.SOURCING_MASTERS_VIEW,
     AccessPermission.SOURCING_MASTERS_MANAGE,
     AccessPermission.SOURCING_EXPORT_EXECUTE,
+    AccessPermission.SOURCING_SUBCONTRACTORS_VIEW,
+    AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE,
 })
 
 

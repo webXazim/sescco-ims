@@ -4,15 +4,16 @@
 {% block title %}Sourcing Directory · {{ APP_NAME }}{% endblock %}
 
 {% block content %}
-<section class="page-header sourcing-access-head">
+<section class="page-header sourcing-access-head sourcing-u09-home-head">
   <div>
     <span class="eyebrow">Reference only</span>
     <h1>Sourcing Directory</h1>
-    <p>Track who SESCCO can call for materials and manpower. Nothing here creates stock, workers, payroll, settlements or accounting entries.</p>
+    <p>Track who SESCCO can call for materials, manpower and subcontracted services. Nothing here creates stock, workers, payroll, projects, settlements or accounting entries.</p>
   </div>
 </section>
 
-<div class="sourcing-access-grid">
+<div class="sourcing-u09-home-guidance" role="note"><strong>Three independent sourcing categories</strong><span>Use Materials to identify goods suppliers, Workforce for labor supply, and Services for subcontractors performing defined work. All records are sourcing references, not project commitments.</span></div>
+<div class="sourcing-access-grid sourcing-access-grid--u09">
   {% if SOURCING_ACCESS.vendors.view %}
   <section class="card sourcing-access-card">
     <div><span class="eyebrow">Vendor sourcing</span><h2>Vendors & Materials</h2></div>
@@ -32,12 +33,21 @@
   </section>
   {% endif %}
 
+  {% if SOURCING_ACCESS.subcontractors.view %}
+  <section class="card sourcing-access-card sourcing-access-card--subcontractors">
+    <div><span class="eyebrow">Service sourcing</span><h2>Subcontractors & Services</h2></div>
+    <p>Find subcontractor capabilities by service, scope, coverage, availability, rates and verification freshness.</p>
+    <span class="status-pill">{% if SOURCING_ACCESS.subcontractors.manage %}Edit access{% else %}View only{% endif %}</span>
+    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_list' %}">Open Subcontractors</a><a class="sourcing-btn" href="{% url 'sourcing:service_finder' %}">Find Service</a></div>
+  </section>
+  {% endif %}
+
   {% if SOURCING_ACCESS.masters.view %}
   <section class="card sourcing-access-card">
-    <div><span class="eyebrow">Reference masters</span><h2>Materials & Trades</h2></div>
-    <p>Controlled sourcing-only material names, worker types and search aliases.</p>
+    <div><span class="eyebrow">Reference masters</span><h2>Materials, Services & Trades</h2></div>
+    <p>Controlled sourcing-only material names, service types, worker trades and search aliases.</p>
     <span class="status-pill">{% if SOURCING_ACCESS.masters.manage %}Edit access{% else %}View only{% endif %}</span>
-    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:material_list' %}">Materials</a><a class="sourcing-btn" href="{% url 'sourcing:trade_list' %}">Worker Types / Trades</a></div>
+    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:material_list' %}">Materials</a><a class="sourcing-btn" href="{% url 'sourcing:trade_list' %}">Worker Types / Trades</a><a class="sourcing-btn" href="{% url 'sourcing:service_list' %}">Services</a></div>
   </section>
   {% endif %}
 </div>

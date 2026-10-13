@@ -13,6 +13,7 @@ htmlcov/
 media/
 staticfiles/
 backups/
+ms-domain-cutover.zip
 .deploy-lock/
 .DS_Store
 

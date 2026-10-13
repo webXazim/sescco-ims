@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from django.core.files.storage import default_storage
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
+from django.utils import timezone
+from django.http import FileResponse
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -18,11 +24,14 @@ from .access import (
     membership_can_view_sourcing_masters,
     membership_can_view_manpower_sourcing,
     membership_can_view_vendor_sourcing,
+    membership_can_view_subcontractor_sourcing,
+    membership_can_manage_subcontractor_sourcing,
     membership_has_any_sourcing_access,
     sourcing_access_context,
 )
 from .forms import (
     SourcingMaterialForm,
+    SourcingServiceForm,
     SourcingManpowerSupplierForm,
     SourcingManpowerContactForm,
     SourcingVendorNewMaterialFormSet,
@@ -33,6 +42,9 @@ from .forms import (
     SourcingVendorForm,
     SourcingVendorOfferForm,
     SourcingVendorOfferVerificationForm,
+    SourcingSubcontractorForm, SourcingSubcontractorDocumentForm,
+    SourcingSubcontractorContactForm, SourcingSubcontractorVerificationForm,
+    SourcingSubcontractorServiceForm, SourcingSubcontractorServiceVerifyForm,
     SourcingImportUploadForm,
     sourcing_material_categories,
 )
@@ -40,6 +52,7 @@ from .exchange import (
     EXPORT_DATASETS,
     IMPORT_DATASETS,
     build_export,
+    build_import_template,
     import_sourcing_rows,
     read_import_rows,
 )
@@ -47,6 +60,7 @@ from .models import (
     SourcingAvailability,
     SourcingEntityStatus,
     SourcingMaterial,
+    SourcingService,
     SourcingManpowerSupplier,
     SourcingManpowerContact,
     SourcingTrade,
@@ -54,6 +68,9 @@ from .models import (
     SourcingVendor,
     SourcingVendorContact,
     SourcingVendorOffer,
+    SourcingSubcontractor,
+    SourcingSubcontractorContact, SourcingSubcontractorService, SourcingServiceRateBasis,
+    SourcingSubcontractorDocument, SubcontractorQualificationReview,
 )
 from .selectors.catalog import PAGE_SIZES as HISTORY_PAGE_SIZES, offer_revision_page
 from .selectors.material_finder import (
@@ -68,6 +85,12 @@ from .selectors.materials import (
     vendor_catalog_overview,
     vendor_catalog_page,
 )
+from .selectors.services_master import (
+    PAGE_SIZES as SERVICE_PAGE_SIZES, service_categories, service_directory_page,
+)
+from .services.services_master import (
+    create_service, update_service, set_service_active, delete_service, suggest_service_code,
+)
 from .selectors.manpower import PAGE_SIZES as MANPOWER_PAGE_SIZES, manpower_directory_page, manpower_history
 from .selectors.trades import PAGE_SIZES as TRADE_PAGE_SIZES, trade_directory_page
 from .selectors.workforce import (
@@ -75,6 +98,9 @@ from .selectors.workforce import (
     PAGE_SIZES as WORKFORCE_CATALOG_PAGE_SIZES,
     workforce_catalog_overview,
     workforce_catalog_page,
+)
+from .selectors.service_finder import (
+    PAGE_SIZES as SERVICE_FINDER_PAGE_SIZES, service_finder_categories, service_finder_page,
 )
 from .selectors.workforce_finder import (
     PAGE_SIZES as WORKFORCE_FINDER_PAGE_SIZES,
@@ -87,6 +113,31 @@ from .selectors.workforce_history import (
     workforce_revisions,
 )
 from .selectors.vendors import PAGE_SIZES, vendor_directory_page, vendor_history
+from .selectors.subcontractor_catalog import (
+    catalog_page as subcontractor_catalog_page,
+    catalog_history_page as subcontractor_catalog_history_page,
+    PAGE_SIZES as SUBCONTRACTOR_CATALOG_PAGE_SIZES,
+    HISTORY_PAGE_SIZES as SUBCONTRACTOR_HISTORY_PAGE_SIZES,
+)
+from .services.subcontractor_catalog import (
+    create_service_offer, update_service_offer, verify_service_offer,
+    set_service_offer_active, delete_service_offer,
+)
+from .selectors.subcontractors import (
+    PAGE_SIZES as SUBCONTRACTOR_PAGE_SIZES, subcontractor_directory_page, subcontractor_history,
+    subcontractor_verification_page, stamp_subcontractor_freshness,
+)
+from .services.subcontractor_verification import verify_subcontractor
+from .services.subcontractor_documents import (
+    create_document, update_document, review_document, delete_document,
+)
+from .services.subcontractors import (
+    suggest_subcontractor_code, create_subcontractor, update_subcontractor,
+    set_subcontractor_status, archive_subcontractor, restore_subcontractor_archive,
+    trash_subcontractor, restore_subcontractor_trash, delete_subcontractor,
+    create_subcontractor_contact, update_subcontractor_contact,
+    deactivate_subcontractor_contact, delete_subcontractor_contact,
+)
 from .services.catalog import (
     create_material,
     create_vendor_offer,
@@ -174,6 +225,16 @@ def _require_manpower_manage(request: HttpRequest) -> None:
         raise PermissionDenied("Manpower Sourcing edit authority is required.")
 
 
+def _require_subcontractor_view(request: HttpRequest) -> None:
+    if not membership_can_view_subcontractor_sourcing(_membership(request)):
+        raise PermissionDenied("Subcontractor Sourcing view authority is required.")
+
+
+def _require_subcontractor_manage(request: HttpRequest) -> None:
+    if not membership_can_manage_subcontractor_sourcing(_membership(request)):
+        raise PermissionDenied("Subcontractor Sourcing edit authority is required.")
+
+
 def _require_master_view(request: HttpRequest) -> None:
     if not membership_can_view_sourcing_masters(_membership(request)):
         raise PermissionDenied("Sourcing Reference Masters view authority is required.")
@@ -190,6 +251,7 @@ def _require_data_exchange(request: HttpRequest) -> None:
         membership_can_export_sourcing(membership)
         or membership_can_manage_vendor_sourcing(membership)
         or membership_can_manage_manpower_sourcing(membership)
+        or membership_can_manage_subcontractor_sourcing(membership)
         or membership_can_manage_sourcing_masters(membership)
     ):
         raise PermissionDenied("Sourcing data-exchange access is required.")
@@ -200,7 +262,9 @@ def _can_import_dataset(membership, dataset: str) -> bool:
         return membership_can_manage_vendor_sourcing(membership)
     if dataset in {"manpower_suppliers", "workforce_catalog"}:
         return membership_can_manage_manpower_sourcing(membership)
-    if dataset in {"materials", "trades"}:
+    if dataset == "subcontractors" or dataset == "subcontractor_service_catalog":
+        return membership_can_manage_subcontractor_sourcing(membership)
+    if dataset in {"materials", "trades", "services"}:
         return membership_can_manage_sourcing_masters(membership)
     return False
 
@@ -212,7 +276,9 @@ def _can_export_dataset(membership, dataset: str) -> bool:
         return membership_can_view_vendor_sourcing(membership)
     if dataset in {"manpower_suppliers", "workforce_catalog"}:
         return membership_can_view_manpower_sourcing(membership)
-    if dataset in {"materials", "trades"}:
+    if dataset in {"subcontractors", "subcontractor_service_catalog"}:
+        return membership_can_view_subcontractor_sourcing(membership)
+    if dataset in {"materials", "trades", "services"}:
         return membership_can_view_sourcing_masters(membership)
     return False
 
@@ -264,7 +330,7 @@ def sourcing_home(request: HttpRequest) -> HttpResponse:
             request,
             page_key="sourcing-home",
             page_title="Sourcing Directory",
-            page_subtitle="Reference-only vendor and manpower sourcing.",
+            page_subtitle="Reference-only vendor, manpower and subcontractor sourcing.",
         ),
     )
 
@@ -1319,6 +1385,44 @@ def material_finder(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+def service_finder(request: HttpRequest) -> HttpResponse:
+    _require_subcontractor_view(request)
+    finder = service_finder_page(company=request.company, params=request.GET)
+    context = _base_context(
+        request,
+        page_key="sourcing-service-finder",
+        page_title="Service Finder",
+        page_subtitle="Find reference subcontractor service capabilities by scope, location, rate basis and verification freshness.",
+    )
+    context.update(
+        finder=finder,
+        page_obj=finder.page_obj,
+        offers=finder.page_obj.object_list,
+        filter_querystring=urlencode({
+            "q": finder.query,
+            "availability": finder.availability,
+            "freshness": finder.freshness,
+            "category": finder.category,
+            "subcontractor": finder.subcontractor,
+            "location": finder.location,
+            "rate_basis": finder.rate_basis,
+            "currency": finder.currency,
+            "rate_min": finder.rate_min,
+            "rate_max": finder.rate_max,
+            "sort": finder.sort,
+            "dir": finder.direction,
+            "page_size": finder.page_size,
+        }),
+        page_sizes=SERVICE_FINDER_PAGE_SIZES,
+        availability_choices=SourcingAvailability.choices,
+        rate_basis_choices=SourcingServiceRateBasis.choices,
+        categories=service_finder_categories(company=request.company),
+        can_manage=membership_can_manage_subcontractor_sourcing(_membership(request)),
+    )
+    return render(request, "sourcing/service_finder/list.html", context)
+
+
+@login_required
 def workforce_finder(request: HttpRequest) -> HttpResponse:
     _require_manpower_view(request)
     finder = workforce_finder_page(company=request.company, params=request.GET)
@@ -1892,3 +1996,672 @@ def data_export(request: HttpRequest, dataset: str) -> HttpResponse:
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@login_required
+def data_import_template(request: HttpRequest, dataset: str) -> HttpResponse:
+    _require_sourcing(request)
+    if not _can_import_dataset(_membership(request), dataset):
+        raise PermissionDenied("Sourcing dataset edit access is required to retrieve import templates.")
+    if request.method != "GET":
+        raise PermissionDenied("Import templates require GET.")
+    try:
+        payload, filename, content_type = build_import_template(
+            dataset=dataset, fmt=request.GET.get("format", "xlsx")
+        )
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+        return redirect("sourcing:data_exchange")
+    response = HttpResponse(payload, content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+# Upgrade 02 — company-scoped Sourcing Services reference master.
+@login_required
+def service_list(request: HttpRequest) -> HttpResponse:
+    _require_master_view(request)
+    directory = service_directory_page(company=request.company, params=request.GET)
+    base_qs = SourcingService.objects.for_company(request.company)
+    context = _base_context(
+        request, page_key="sourcing-services", page_title="Sourcing Services",
+        page_subtitle="Controlled service types for future subcontractor sourcing. No operational service jobs are created.",
+    )
+    context.update(
+        directory=directory, page_obj=directory.page_obj,
+        services=directory.page_obj.object_list, page_sizes=SERVICE_PAGE_SIZES,
+        categories=service_categories(request.company),
+        counts={
+            "active": base_qs.filter(is_active=True).count(),
+            "inactive": base_qs.filter(is_active=False).count(),
+        },
+        can_manage=membership_can_manage_sourcing_masters(_membership(request)),
+    )
+    return render(request, "sourcing/services/list.html", context)
+
+
+@login_required
+def service_create(request: HttpRequest) -> HttpResponse:
+    _require_master_manage(request)
+    categories = service_categories(request.company)
+    if request.method == "POST":
+        form = SourcingServiceForm(request.POST, company=request.company, categories=categories)
+        if form.is_valid():
+            data = {k: v for k, v in form.cleaned_data.items() if k != "new_category"}
+            try:
+                service = create_service(actor_membership=_membership(request), cleaned_data=data, request=request)
+            except ValidationError as exc:
+                _apply_validation_error(form, exc)
+            else:
+                messages.success(request, f"Sourcing Service {service.name} was created.")
+                return redirect("sourcing:service_list")
+    else:
+        form = SourcingServiceForm(initial={"code": suggest_service_code()}, company=request.company, categories=categories)
+    context = _base_context(request, page_key="sourcing-services", page_title="New Sourcing Service",
+                            page_subtitle="Create a controlled service type for Subcontractor sourcing.")
+    context.update(form=form, submit_label="Create Service")
+    return render(request, "sourcing/services/form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def service_edit(request: HttpRequest, service_id) -> HttpResponse:
+    _require_master_manage(request)
+    service = get_object_or_404(SourcingService.objects.for_company(request.company), pk=service_id)
+    categories = service_categories(request.company)
+    if request.method == "POST":
+        form = SourcingServiceForm(request.POST, instance=service, company=request.company, categories=categories)
+        if form.is_valid():
+            data = {k: v for k, v in form.cleaned_data.items() if k != "new_category"}
+            try:
+                update_service(actor_membership=_membership(request), service_id=service.pk,
+                               cleaned_data=data, request=request)
+            except ValidationError as exc:
+                _apply_validation_error(form, exc)
+            else:
+                messages.success(request, "Sourcing Service was updated.")
+                return redirect("sourcing:service_list")
+    else:
+        form = SourcingServiceForm(instance=service, company=request.company, categories=categories)
+    context = _base_context(request, page_key="sourcing-services", page_title="Edit Sourcing Service",
+                            page_subtitle=f"Update {service.code} · {service.name}.")
+    context.update(form=form, service=service, submit_label="Save Service")
+    return render(request, "sourcing/services/form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def service_status(request: HttpRequest, service_id) -> HttpResponse:
+    _require_master_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Service status changes require POST.")
+    is_active = str(request.POST.get("active") or "").lower() in {"1", "true", "yes", "active"}
+    try:
+        service = set_service_active(actor_membership=_membership(request), service_id=service_id,
+                                     is_active=is_active, request=request)
+    except (ValidationError, SourcingService.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{service.name} is now {'Active' if service.is_active else 'Inactive'}.")
+    return redirect("sourcing:service_list")
+
+
+@login_required
+def service_delete(request: HttpRequest, service_id) -> HttpResponse:
+    _require_master_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Service permanent deletion requires POST.")
+    try:
+        result = delete_service(actor_membership=_membership(request), service_id=service_id,
+                                confirmation=request.POST.get("confirmation", ""), request=request)
+    except (ValidationError, SourcingService.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, f"{result['label']} was permanently deleted.")
+    return redirect("sourcing:service_list")
+
+
+# Upgrade 03 · Subcontractor Directory. All access checks precede ORM lookups.
+
+def _subcontractor_context(request, obj, page_title=None):
+    context = _base_context(
+        request, page_key="sourcing-subcontractors",
+        page_title=page_title or obj.display_name or obj.name,
+        page_subtitle=f"{obj.code} · Reference-only subcontractor company",
+    )
+    stamp_subcontractor_freshness(company=request.company, records=[obj])
+    context.update(subcontractor=obj, can_manage=membership_can_manage_subcontractor_sourcing(_membership(request)))
+    return context
+
+
+@login_required
+def subcontractor_list(request: HttpRequest) -> HttpResponse:
+    _require_subcontractor_view(request)
+    directory = subcontractor_directory_page(company=request.company, params=request.GET)
+    qs = SourcingSubcontractor.objects.for_company(request.company)
+    counts = {
+        "active": qs.filter(deleted_at__isnull=True, archived_at__isnull=True, status=SourcingEntityStatus.ACTIVE).count(),
+        "inactive": qs.filter(deleted_at__isnull=True, archived_at__isnull=True, status=SourcingEntityStatus.INACTIVE).count(),
+        "archived": qs.filter(deleted_at__isnull=True, archived_at__isnull=False).count(),
+        "trash": qs.filter(deleted_at__isnull=False).count(),
+    }
+    context = _base_context(
+        request, page_key="sourcing-subcontractors", page_title="Subcontractors",
+        page_subtitle="Reference companies SESCCO may call for services. No inventory, purchasing, project or payroll transactions.",
+    )
+    subcontractors = stamp_subcontractor_freshness(company=request.company, records=list(directory.page_obj.object_list))
+    context.update(directory=directory, page_obj=directory.page_obj, subcontractors=subcontractors,
+                   counts=counts, page_sizes=SUBCONTRACTOR_PAGE_SIZES,
+                   can_manage=membership_can_manage_subcontractor_sourcing(_membership(request)))
+    return render(request, "sourcing/subcontractors/list.html", context)
+
+
+@login_required
+def subcontractor_create(request: HttpRequest) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    form = SourcingSubcontractorForm(request.POST) if request.method == "POST" else SourcingSubcontractorForm(initial={"code": suggest_subcontractor_code()})
+    if request.method == "POST" and form.is_valid():
+        try:
+            obj = create_subcontractor(actor_membership=_membership(request), cleaned_data=form.cleaned_data, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Subcontractor created.")
+            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    context = _base_context(request, page_key="sourcing-subcontractors", page_title="New Subcontractor",
+                            page_subtitle="Add a service-providing company to the independent reference directory.")
+    context.update(form=form, submit_label="Create Subcontractor")
+    return render(request, "sourcing/subcontractors/form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_detail(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_view(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    context = _subcontractor_context(request, obj)
+    contacts = list(SourcingSubcontractorContact.objects.for_company(request.company).filter(subcontractor=obj).order_by("-is_active", "-is_primary", "first_name"))
+    from .freshness import sourcing_freshness_policy, freshness_key, freshness_label
+    policy = sourcing_freshness_policy(company=request.company)
+    catalog = subcontractor_catalog_page(
+        company=request.company, subcontractor=obj,
+        page=request.GET.get("catalog_page") or 1,
+        page_size=request.GET.get("catalog_size") or 10,
+    )
+    for offer in catalog.object_list:
+        offer.freshness_key = freshness_key(offer.last_verified_at, policy=policy)
+        offer.freshness_label = freshness_label(offer.freshness_key)
+    qualification_qs = SourcingSubcontractorDocument.objects.for_company(request.company).filter(subcontractor=obj)
+    today = timezone.localdate()
+    from datetime import timedelta
+    qualification_summary = qualification_qs.aggregate(
+        total=Count("pk"),
+        expired=Count("pk", filter=Q(expires_on__lt=today)),
+        expiring=Count("pk", filter=Q(expires_on__gte=today, expires_on__lte=today + timedelta(days=30))),
+        reviewed=Count("pk", filter=Q(review_status="approved") & (Q(expires_on__isnull=True) | Q(expires_on__gte=today))),
+    )
+    qualification_page = Paginator(qualification_qs.order_by("expires_on", "title", "id"), 10).get_page(request.GET.get("qualification_page", "1"))
+    context.update(qualification_documents=qualification_page.object_list,
+                   qualification_summary=qualification_summary, qualification_page=qualification_page)
+    context.update(contacts=contacts, active_contacts=sum(1 for x in contacts if x.is_active),
+                   contact_form=SourcingSubcontractorContactForm(),
+                   history=subcontractor_history(company=request.company, subcontractor=obj),
+                   service_count=obj.service_offers.filter(company=request.company).count(),
+                   service_catalog_page=catalog,
+                   catalog_page_sizes=SUBCONTRACTOR_CATALOG_PAGE_SIZES)
+    return render(request, "sourcing/subcontractors/detail.html", context)
+
+
+@login_required
+def subcontractor_verify(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    if obj.deleted_at or obj.archived_at or obj.status != SourcingEntityStatus.ACTIVE:
+        raise PermissionDenied("Only active subcontractors can be verified.")
+    form = SourcingSubcontractorVerificationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            verify_subcontractor(
+                actor_membership=_membership(request), subcontractor_id=obj.pk,
+                contact_name=form.cleaned_data["contact_name"],
+                note=form.cleaned_data["note"], request=request,
+            )
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Company profile verification recorded. Service rates require separate verification.")
+            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    context = _subcontractor_context(request, obj, page_title="Verify Subcontractor Company")
+    context.update(form=form)
+    return render(request, "sourcing/subcontractors/verify.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_verification_history(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_view(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    page_obj = subcontractor_verification_page(
+        company=request.company, subcontractor=obj, page=request.GET.get("page") or 1,
+    )
+    context = _subcontractor_context(request, obj, page_title="Company Verification History")
+    context.update(page_obj=page_obj, entries=page_obj.object_list)
+    return render(request, "sourcing/subcontractors/verification_history.html", context)
+
+
+@login_required
+def subcontractor_edit(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id, deleted_at__isnull=True)
+    if obj.archived_at:
+        raise PermissionDenied("Restore the subcontractor before editing.")
+    form = SourcingSubcontractorForm(request.POST or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        try:
+            obj = update_subcontractor(actor_membership=_membership(request), subcontractor_id=obj.pk, cleaned_data=form.cleaned_data, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Subcontractor updated.")
+            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    context = _subcontractor_context(request, obj, page_title="Edit Subcontractor")
+    context.update(form=form, submit_label="Save Changes")
+    return render(request, "sourcing/subcontractors/form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+def _subcontractor_action(request, subcontractor_id, action, success, **kwargs):
+    if request.method != "POST":
+        raise PermissionDenied("Subcontractor lifecycle changes require POST.")
+    _require_subcontractor_manage(request)
+    if not SourcingSubcontractor.objects.for_company(request.company).filter(pk=subcontractor_id).exists():
+        raise Http404("Subcontractor not found.")
+    try:
+        action(actor_membership=_membership(request), subcontractor_id=subcontractor_id, request=request, **kwargs)
+    except (ValidationError, SourcingSubcontractor.DoesNotExist) as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, success)
+    return redirect("sourcing:subcontractor_detail", subcontractor_id=subcontractor_id)
+
+
+@login_required
+def subcontractor_status(request, subcontractor_id):
+    return _subcontractor_action(request, subcontractor_id, set_subcontractor_status,
+                                 "Subcontractor status updated.", status=request.POST.get("status", ""))
+
+
+@login_required
+def subcontractor_archive(request, subcontractor_id):
+    return _subcontractor_action(request, subcontractor_id, archive_subcontractor,
+                                 "Subcontractor archived.", reason=request.POST.get("reason", ""))
+
+
+@login_required
+def subcontractor_restore_archive(request, subcontractor_id):
+    return _subcontractor_action(request, subcontractor_id, restore_subcontractor_archive, "Subcontractor restored from archive.")
+
+
+@login_required
+def subcontractor_trash(request, subcontractor_id):
+    return _subcontractor_action(request, subcontractor_id, trash_subcontractor, "Subcontractor moved to Trash.",
+                                 confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""))
+
+
+@login_required
+def subcontractor_restore_trash(request, subcontractor_id):
+    return _subcontractor_action(request, subcontractor_id, restore_subcontractor_trash, "Subcontractor restored from Trash.")
+
+
+@login_required
+def subcontractor_delete(request, subcontractor_id):
+    if request.method != "POST":
+        raise PermissionDenied("Permanent deletion requires POST.")
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    try:
+        delete_subcontractor(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                             confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+        return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    messages.success(request, "Subcontractor permanently deleted.")
+    return redirect("sourcing:subcontractor_list")
+
+
+@login_required
+def subcontractor_contact_create(request, subcontractor_id):
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Contact creation requires POST.")
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id, deleted_at__isnull=True)
+    form = SourcingSubcontractorContactForm(request.POST)
+    if form.is_valid():
+        try:
+            create_subcontractor_contact(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                                         cleaned_data=form.cleaned_data, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Contact added.")
+            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    context = _subcontractor_context(request, obj, page_title="Add Contact")
+    context.update(form=form, submit_label="Add Contact")
+    return render(request, "sourcing/subcontractors/contact_form.html", context, status=400)
+
+
+@login_required
+def subcontractor_contact_edit(request, subcontractor_id, contact_id):
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id, deleted_at__isnull=True)
+    if obj.archived_at:
+        raise PermissionDenied("Restore the subcontractor before editing contacts.")
+    contact = get_object_or_404(SourcingSubcontractorContact.objects.for_company(request.company), pk=contact_id, subcontractor=obj)
+    form = SourcingSubcontractorContactForm(request.POST or None, instance=contact)
+    if request.method == "POST" and form.is_valid():
+        try:
+            update_subcontractor_contact(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                                         contact_id=contact.pk, cleaned_data=form.cleaned_data, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Contact updated.")
+            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    context = _subcontractor_context(request, obj, page_title="Edit Contact")
+    context.update(form=form, submit_label="Save Contact")
+    return render(request, "sourcing/subcontractors/contact_form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_contact_deactivate(request, subcontractor_id, contact_id):
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Contact deactivation requires POST.")
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    contact = get_object_or_404(SourcingSubcontractorContact.objects.for_company(request.company), pk=contact_id, subcontractor=obj)
+    try:
+        deactivate_subcontractor_contact(actor_membership=_membership(request), subcontractor_id=obj.pk, contact_id=contact.pk, request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(request, "Contact deactivated.")
+    return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+
+
+@login_required
+def subcontractor_contact_delete(request, subcontractor_id, contact_id):
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Contact deletion requires POST.")
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    contact = get_object_or_404(SourcingSubcontractorContact.objects.for_company(request.company), pk=contact_id, subcontractor=obj)
+    try:
+        delete_subcontractor_contact(actor_membership=_membership(request), subcontractor_id=obj.pk, contact_id=contact.pk, request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(request, "Contact deleted.")
+    return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+
+
+# Upgrade 04: independent Subcontractor Service Catalog (reference-only).
+def _service_catalog_return(subcontractor_id):
+    return f"{reverse('sourcing:subcontractor_detail', args=[subcontractor_id])}#service-catalog"
+
+
+def _service_catalog_context(request, subcontractor, title, subtitle):
+    context = _subcontractor_context(request, subcontractor, page_title=title)
+    context.update(page_subtitle=subtitle, can_create_service=membership_can_manage_sourcing_masters(_membership(request)))
+    return context
+
+
+@login_required
+def subcontractor_service_create(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    subcontractor = get_object_or_404(
+        SourcingSubcontractor.objects.for_company(request.company).filter(
+            deleted_at__isnull=True, archived_at__isnull=True), pk=subcontractor_id)
+    if request.method == "POST":
+        form = SourcingSubcontractorServiceForm(request.POST, company=request.company, subcontractor=subcontractor)
+        if form.is_valid():
+            try:
+                create_service_offer(
+                    actor_membership=_membership(request), subcontractor_id=subcontractor.pk,
+                    cleaned_data={k: v for k, v in form.cleaned_data.items() if k not in {"verified_now", "contact_name"}},
+                    verified_now=bool(form.cleaned_data.get("verified_now")),
+                    contact_name=form.cleaned_data.get("contact_name") or "", request=request)
+            except ValidationError as exc:
+                _apply_validation_error(form, exc)
+            else:
+                messages.success(request, "Service capability added to Subcontractor Catalog.")
+                return redirect(_service_catalog_return(subcontractor.pk))
+    else:
+        form = SourcingSubcontractorServiceForm(company=request.company, subcontractor=subcontractor)
+    context = _service_catalog_context(request, subcontractor, "Add Service Capability", "Service scope, coverage and quotation reference.")
+    context.update(form=form, submit_label="Add Service Capability")
+    return render(request, "sourcing/subcontractors/service_form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_service_edit(request: HttpRequest, subcontractor_id, offer_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    subcontractor = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company).filter(
+        deleted_at__isnull=True, archived_at__isnull=True), pk=subcontractor_id)
+    offer = get_object_or_404(SourcingSubcontractorService.objects.for_company(request.company).select_related("service"),
+                              pk=offer_id, subcontractor=subcontractor)
+    if request.method == "POST":
+        form = SourcingSubcontractorServiceForm(request.POST, instance=offer, company=request.company, subcontractor=subcontractor)
+        if form.is_valid():
+            try:
+                update_service_offer(
+                    actor_membership=_membership(request), subcontractor_id=subcontractor.pk, offer_id=offer.pk,
+                    cleaned_data={k: v for k, v in form.cleaned_data.items() if k not in {"verified_now", "contact_name"}},
+                    verified_now=bool(form.cleaned_data.get("verified_now")),
+                    contact_name=form.cleaned_data.get("contact_name") or "", request=request)
+            except ValidationError as exc:
+                _apply_validation_error(form, exc)
+            else:
+                messages.success(request, "Service capability updated.")
+                return redirect(_service_catalog_return(subcontractor.pk))
+    else:
+        form = SourcingSubcontractorServiceForm(instance=offer, company=request.company, subcontractor=subcontractor)
+    context = _service_catalog_context(request, subcontractor, "Edit Service Capability", offer.service.name)
+    context.update(form=form, offer=offer, submit_label="Save Service Capability")
+    return render(request, "sourcing/subcontractors/service_form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_service_verify(request: HttpRequest, subcontractor_id, offer_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    subcontractor = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company).filter(
+        deleted_at__isnull=True, archived_at__isnull=True), pk=subcontractor_id)
+    offer = get_object_or_404(SourcingSubcontractorService.objects.for_company(request.company).select_related("service"),
+                              pk=offer_id, subcontractor=subcontractor)
+    if not offer.is_active:
+        messages.error(request, "Reactivate this service capability before verifying it.")
+        return redirect(_service_catalog_return(subcontractor.pk))
+    if request.method == "POST":
+        form = SourcingSubcontractorServiceVerifyForm(request.POST, instance=offer, subcontractor=subcontractor)
+        if form.is_valid():
+            try:
+                verify_service_offer(
+                    actor_membership=_membership(request), subcontractor_id=subcontractor.pk, offer_id=offer.pk,
+                    cleaned_data={k: v for k, v in form.cleaned_data.items() if k != "contact_name"},
+                    contact_name=form.cleaned_data.get("contact_name") or "", request=request)
+            except ValidationError as exc:
+                _apply_validation_error(form, exc)
+            else:
+                messages.success(request, "Service reference verified; previous values retained in history.")
+                return redirect(_service_catalog_return(subcontractor.pk))
+    else:
+        form = SourcingSubcontractorServiceVerifyForm(instance=offer, subcontractor=subcontractor)
+    context = _service_catalog_context(request, subcontractor, "Verify Service Reference", offer.service.name)
+    context.update(form=form, offer=offer, submit_label="Confirm Verification", verify_mode=True)
+    return render(request, "sourcing/subcontractors/service_form.html", context,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_service_history(request: HttpRequest, subcontractor_id, offer_id) -> HttpResponse:
+    _require_subcontractor_view(request)
+    subcontractor = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    offer = get_object_or_404(SourcingSubcontractorService.objects.for_company(request.company).select_related("service"),
+                              pk=offer_id, subcontractor=subcontractor)
+    page_obj = subcontractor_catalog_history_page(
+        company=request.company, offer=offer,
+        page=request.GET.get("page") or 1, page_size=request.GET.get("page_size") or 25)
+    context = _service_catalog_context(request, subcontractor, "Service Verification History", offer.service.name)
+    context.update(offer=offer, page_obj=page_obj, entries=page_obj.object_list,
+                   page_sizes=SUBCONTRACTOR_HISTORY_PAGE_SIZES)
+    return render(request, "sourcing/subcontractors/service_history.html", context)
+
+
+@login_required
+def subcontractor_service_status(request: HttpRequest, subcontractor_id, offer_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Service Catalog status changes require POST.")
+    get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    get_object_or_404(SourcingSubcontractorService.objects.for_company(request.company), pk=offer_id, subcontractor_id=subcontractor_id)
+    try:
+        set_service_offer_active(
+            actor_membership=_membership(request), subcontractor_id=subcontractor_id, offer_id=offer_id,
+            is_active=str(request.POST.get("active") or "").lower() in {"1", "true", "yes", "active"},
+            request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(request, "Service Catalog status updated.")
+    return redirect(_service_catalog_return(subcontractor_id))
+
+
+@login_required
+def subcontractor_service_delete(request: HttpRequest, subcontractor_id, offer_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Service Catalog permanent removal requires POST.")
+    get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    get_object_or_404(SourcingSubcontractorService.objects.for_company(request.company), pk=offer_id, subcontractor_id=subcontractor_id)
+    try:
+        result = delete_service_offer(
+            actor_membership=_membership(request), subcontractor_id=subcontractor_id, offer_id=offer_id,
+            confirmation=request.POST.get("confirmation") or "", request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(request, f"{result['label']} removed. Verification evidence preserved.")
+    return redirect(_service_catalog_return(subcontractor_id))
+
+
+# Upgrade 07 · Protected, independently reviewed subcontractor qualifications.
+
+
+def _qualification_redirect(subcontractor_id):
+    return reverse("sourcing:subcontractor_detail", args=[subcontractor_id]) + "#qualifications"
+
+
+@login_required
+def subcontractor_document_create(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    if obj.archived_at or obj.deleted_at:
+        raise PermissionDenied("Restore the subcontractor before changing qualifications.")
+    form = SourcingSubcontractorDocumentForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        data = dict(form.cleaned_data)
+        upload = data.pop("upload", None)
+        try:
+            create_document(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                            cleaned_data=data, upload=upload, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Qualification document uploaded for review.")
+            return redirect(_qualification_redirect(obj.pk))
+    ctx = _subcontractor_context(request, obj, page_title="Add Qualification")
+    ctx.update(form=form, submit_label="Upload Qualification", qualification=None)
+    return render(request, "sourcing/subcontractors/document_form.html", ctx,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_document_edit(request: HttpRequest, subcontractor_id, document_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    doc = get_object_or_404(SourcingSubcontractorDocument.objects.for_company(request.company),
+                            subcontractor=obj, pk=document_id)
+    if obj.archived_at or obj.deleted_at:
+        raise PermissionDenied("Restore the subcontractor before changing qualifications.")
+    form = SourcingSubcontractorDocumentForm(request.POST or None, instance=doc)
+    if request.method == "POST" and form.is_valid():
+        data = dict(form.cleaned_data)
+        data.pop("upload", None)  # evidence file is immutable; upload a new document to replace
+        try:
+            update_document(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                            document_id=doc.pk, cleaned_data=data, request=request)
+        except ValidationError as exc:
+            _apply_validation_error(form, exc)
+        else:
+            messages.success(request, "Qualification details saved. Changes require re-review.")
+            return redirect(_qualification_redirect(obj.pk))
+    ctx = _subcontractor_context(request, obj, page_title="Edit Qualification")
+    ctx.update(form=form, submit_label="Save Details", qualification=doc)
+    return render(request, "sourcing/subcontractors/document_form.html", ctx,
+                  status=400 if request.method == "POST" and form.errors else 200)
+
+
+@login_required
+def subcontractor_document_download(request: HttpRequest, subcontractor_id, document_id) -> HttpResponse:
+    _require_subcontractor_view(request)
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    doc = get_object_or_404(SourcingSubcontractorDocument.objects.for_company(request.company),
+                            subcontractor=obj, pk=document_id)
+    try:
+        stream = default_storage.open(doc.storage_key, "rb")
+    except (OSError, FileNotFoundError):
+        raise Http404("Document file unavailable.")
+    response = FileResponse(stream, as_attachment=True, filename=doc.original_name, content_type=doc.content_type)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+def subcontractor_document_review(request: HttpRequest, subcontractor_id, document_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Qualification review requires POST.")
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    get_object_or_404(SourcingSubcontractorDocument.objects.for_company(request.company),
+                      subcontractor=obj, pk=document_id)
+    try:
+        review_document(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                        document_id=document_id, status=request.POST.get("status", ""),
+                        note=request.POST.get("note", ""), request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, "Qualification review recorded.")
+    return redirect(_qualification_redirect(obj.pk))
+
+
+@login_required
+def subcontractor_document_delete(request: HttpRequest, subcontractor_id, document_id) -> HttpResponse:
+    _require_subcontractor_manage(request)
+    if request.method != "POST":
+        raise PermissionDenied("Qualification removal requires POST.")
+    obj = get_object_or_404(SourcingSubcontractor.objects.for_company(request.company), pk=subcontractor_id)
+    get_object_or_404(SourcingSubcontractorDocument.objects.for_company(request.company),
+                      subcontractor=obj, pk=document_id)
+    try:
+        delete_document(actor_membership=_membership(request), subcontractor_id=obj.pk,
+                        document_id=document_id, confirmation=request.POST.get("confirmation", ""), request=request)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(getattr(exc, "messages", [str(exc)])))
+    else:
+        messages.success(request, "Qualification deleted; file scheduled for secure removal.")
+    return redirect(_qualification_redirect(obj.pk))

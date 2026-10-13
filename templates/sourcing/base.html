@@ -11,9 +11,11 @@
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
   <link rel="stylesheet" href="{% static 'sourcing/css/directory.css' %}?v=1.0.117-row-menu-overflow">
+  <link rel="stylesheet" href="{% static 'sourcing/css/refinement.css' %}?v=1.0.118-u09">
   {% block extra_head %}{% endblock %}
 </head>
-<body class="inventory-shell-v2 sourcing-shell-v1" data-page="{{ page_key }}">
+<body class="inventory-shell-v2 sourcing-shell-v1 sourcing-shell-u09" data-page="{{ page_key }}">
+<a class="sourcing-skip-link" href="#sourcing-main-content">Skip to page content</a>
 <div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
   {% include "sourcing/sidebar.html" %}
   <main class="main">
@@ -26,7 +28,7 @@
         {% if SOURCING_ACCESS.export %}<span class="sourcing-access-chip">Export permitted</span>{% endif %}
       </div>
     </header>
-    <div class="content">
+    <div class="content" id="sourcing-main-content" tabindex="-1">
       {% if messages %}<div class="message-stack">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'success' }}">{{ message }}</div>{% endfor %}</div>{% endif %}
       {% block content %}{% endblock %}
     </div>

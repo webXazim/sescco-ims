@@ -69,6 +69,7 @@ _ACTION_VIEW_DEPENDENCIES = {
     AccessPermission.RENTAL_REPORTS_EXPORT.value: AccessPermission.RENTAL_REPORTS_VIEW.value,
     AccessPermission.SOURCING_VENDORS_MANAGE.value: AccessPermission.SOURCING_VENDORS_VIEW.value,
     AccessPermission.SOURCING_MANPOWER_MANAGE.value: AccessPermission.SOURCING_MANPOWER_VIEW.value,
+    AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE.value: AccessPermission.SOURCING_SUBCONTRACTORS_VIEW.value,
     AccessPermission.SOURCING_MASTERS_MANAGE.value: AccessPermission.SOURCING_MASTERS_VIEW.value,
 }
 
@@ -105,6 +106,8 @@ def permission_catalog() -> list[dict[str, str]]:
             AccessPermission.SOURCING_VENDORS_MANAGE.value: "Vendor Sourcing · Edit",
             AccessPermission.SOURCING_MANPOWER_VIEW.value: "Manpower Sourcing · View",
             AccessPermission.SOURCING_MANPOWER_MANAGE.value: "Manpower Sourcing · Edit",
+            AccessPermission.SOURCING_SUBCONTRACTORS_VIEW.value: "Subcontractor Sourcing · View",
+            AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE.value: "Subcontractor Sourcing · Edit",
             AccessPermission.SOURCING_MASTERS_VIEW.value: "Reference Masters · View",
             AccessPermission.SOURCING_MASTERS_MANAGE.value: "Reference Masters · Edit",
             AccessPermission.SOURCING_EXPORT_EXECUTE.value: "Sourcing Data · Export",

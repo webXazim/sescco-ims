@@ -26,6 +26,8 @@ from .models import (
     SourcingAvailability,
     SourcingEntityStatus,
     SourcingMaterial,
+    SourcingService, SourcingServiceRateBasis,
+    SourcingSubcontractor, SourcingSubcontractorService,
     SourcingManpowerSupplier,
     SourcingRateBasis,
     SourcingTrade,
@@ -47,6 +49,11 @@ from .services.manpower import (
     update_manpower_supplier,
 )
 from .services.vendors import create_vendor, set_vendor_status, update_vendor
+from .services.services_master import create_service, update_service, set_service_active
+from .services.subcontractors import create_subcontractor, update_subcontractor, set_subcontractor_status
+from .services.subcontractor_catalog import (
+    create_service_offer, update_service_offer, set_service_offer_active,
+)
 from .services.workforce import (
     create_trade,
     create_workforce_offer,
@@ -65,6 +72,9 @@ IMPORT_DATASETS = (
     ("manpower_suppliers", "Manpower supplier master"),
     ("trades", "Worker type / trade master"),
     ("workforce_catalog", "Workforce catalog"),
+    ("subcontractors", "Subcontractor master"),
+    ("services", "Service master"),
+    ("subcontractor_service_catalog", "Subcontractor Service Catalog"),
 )
 EXPORT_DATASETS = IMPORT_DATASETS
 
@@ -75,6 +85,9 @@ HEADERS = {
     "manpower_suppliers": ["code", "name", "primary_contact_name", "phone", "mobile", "email", "city", "region", "cr_number", "vat_number", "status", "notes", "last_verified_at"],
     "trades": ["code", "name", "category", "aliases", "is_active", "notes"],
     "workforce_catalog": ["supplier_code", "trade_code", "availability", "available_quantity", "rate", "currency", "rate_basis", "overtime_rate", "rate_valid_until", "mobilization_lead_time", "work_location", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
+    "subcontractors": ["code", "name", "display_name", "primary_contact_name", "company_phone", "company_email", "mobile", "email", "website", "address", "street_number", "district", "city", "region", "postal_code", "service_coverage", "cr_number", "vat_number", "status", "notes", "last_verified_at"],
+    "services": ["code", "name", "category", "default_rate_basis", "aliases", "description", "is_active", "notes"],
+    "subcontractor_service_catalog": ["subcontractor_code", "service_code", "scope_description", "service_location", "availability", "rate", "currency", "rate_basis", "rate_valid_until", "lead_time", "verified_now", "contact_name", "verification_note", "is_active", "notes", "last_verified_at"],
 }
 
 REQUIRED_HEADERS = {
@@ -84,6 +97,9 @@ REQUIRED_HEADERS = {
     "manpower_suppliers": {"code", "name"},
     "trades": {"code", "name"},
     "workforce_catalog": {"supplier_code", "trade_code"},
+    "subcontractors": {"code", "name"},
+    "services": {"code", "name"},
+    "subcontractor_service_catalog": {"subcontractor_code", "service_code", "scope_description", "service_location"},
 }
 
 _HEADER_RE = re.compile(r"[^a-z0-9]+")
@@ -156,10 +172,22 @@ def _decimal(value: object, *, field: str) -> Decimal | None:
         parsed = Decimal(raw)
     except InvalidOperation as exc:
         raise ValidationError({field: f"Invalid decimal value {value!r}."}) from exc
+    if not parsed.is_finite():
+        raise ValidationError({field: "A finite decimal is required."})
     if parsed < 0:
         raise ValidationError({field: "Value cannot be negative."})
     return parsed
 
+
+
+def _service_rate(value: object) -> Decimal | None:
+    """Validate the Service rate against its DecimalField(18,4) before model save."""
+    rate = _decimal(value, field="rate")
+    if rate is not None and (
+        rate >= Decimal("100000000000000") or rate.as_tuple().exponent < -4
+    ):
+        raise ValidationError({"rate": "Use at most 14 integer digits and 4 decimal places."})
+    return rate
 
 def _integer(value: object, *, field: str) -> int | None:
     raw = _text(value).replace(",", "")
@@ -280,10 +308,17 @@ def read_import_rows(uploaded_file) -> tuple[list[str], list[dict[str, object]]]
 
 
 def _identity(dataset: str, row: dict[str, object]) -> str:
-    if dataset in {"vendors", "materials", "manpower_suppliers", "trades"}:
+    if dataset in {"vendors", "materials", "manpower_suppliers", "trades", "subcontractors", "services"}:
         return _text(row.get("code")).upper() or "(missing code)"
     if dataset == "vendor_catalog":
         return f"{_text(row.get('vendor_code')).upper()} / {_text(row.get('material_code')).upper()}"
+    if dataset == "subcontractor_service_catalog":
+        return " / ".join((
+            _text(row.get("subcontractor_code")).upper(),
+            _text(row.get("service_code")).upper(),
+            _text(row.get("scope_description")).casefold(),
+            _text(row.get("service_location")).casefold(),
+        ))
     return f"{_text(row.get('supplier_code')).upper()} / {_text(row.get('trade_code')).upper()}"
 
 
@@ -475,6 +510,111 @@ def _upsert_workforce_catalog(*, actor_membership, row, request):
     return "update" if existing else "create", obj
 
 
+
+def _upsert_subcontractor(*, actor_membership, row, request):
+    company = actor_membership.company
+    code = _text(row.get("code")).upper()
+    obj = SourcingSubcontractor.objects.for_company(company).filter(code=code).first()
+    if obj is not None and (obj.deleted_at or obj.archived_at):
+        raise ValidationError("Restore this archived/trashed subcontractor before importing updates.")
+    fields = (
+        "name", "display_name", "primary_contact_name", "company_phone", "company_email",
+        "mobile", "email", "website", "address", "street_number", "district",
+        "city", "region", "postal_code", "service_coverage", "cr_number", "vat_number",
+    )
+    data = {key: _text(row.get(key)) for key in fields}
+    data.update(code=code, notes=str(row.get("notes") or "").strip())
+    subcontractor = (
+        update_subcontractor(actor_membership=actor_membership, subcontractor_id=obj.pk, cleaned_data=data, request=request)
+        if obj else create_subcontractor(actor_membership=actor_membership, cleaned_data=data, request=request)
+    )
+    status = _status(row.get("status"))
+    if subcontractor.status != status:
+        set_subcontractor_status(actor_membership=actor_membership, subcontractor_id=subcontractor.pk,
+                                 status=status, request=request)
+    # last_verified_at from exported files is intentionally ignored. Company
+    # verification must be explicitly confirmed with independent evidence.
+    return ("update" if obj else "create"), subcontractor
+
+
+def _upsert_service(*, actor_membership, row, request):
+    company = actor_membership.company
+    code = _text(row.get("code")).upper()
+    existing = SourcingService.objects.for_company(company).filter(code=code).first()
+    basis = _text(row.get("default_rate_basis")).casefold()
+    if basis and basis not in SourcingServiceRateBasis.values:
+        raise ValidationError({"default_rate_basis": "Choose a valid service rate basis."})
+    data = {
+        "code": code,
+        "name": _text(row.get("name")),
+        "category": _text(row.get("category")),
+        "default_rate_basis": basis,
+        "aliases": _aliases(row.get("aliases")),
+        "description": str(row.get("description") or "").strip(),
+        "notes": str(row.get("notes") or "").strip(),
+    }
+    service = (
+        update_service(actor_membership=actor_membership, service_id=existing.pk, cleaned_data=data, request=request)
+        if existing else create_service(actor_membership=actor_membership, cleaned_data=data, request=request)
+    )
+    active = _bool(row.get("is_active"), default=True)
+    if service.is_active != active:
+        set_service_active(actor_membership=actor_membership, service_id=service.pk, is_active=active, request=request)
+    return ("update" if existing else "create"), service
+
+
+def _upsert_subcontractor_service_catalog(*, actor_membership, row, request):
+    company = actor_membership.company
+    subcontractor_code = _text(row.get("subcontractor_code")).upper()
+    service_code = _text(row.get("service_code")).upper()
+    subcontractor = SourcingSubcontractor.objects.for_company(company).filter(
+        code=subcontractor_code, deleted_at__isnull=True, archived_at__isnull=True,
+    ).first()
+    service = SourcingService.objects.for_company(company).filter(code=service_code).first()
+    if subcontractor is None:
+        raise ValidationError({"subcontractor_code": "Unknown or archived/trashed Subcontractor in this company."})
+    if service is None:
+        raise ValidationError({"service_code": "Unknown Service in this company."})
+    scope = _text(row.get("scope_description"))
+    location = _text(row.get("service_location"))
+    existing = SourcingSubcontractorService.objects.for_company(company).filter(
+        subcontractor=subcontractor, service=service,
+        scope_description__iexact=scope, service_location__iexact=location,
+    ).first()
+    rate_basis = _choice(row.get("rate_basis"), field="rate_basis",
+                         choices=SourcingServiceRateBasis.choices,
+                         default=SourcingServiceRateBasis.QUOTATION)
+    data = {
+        "service": service,
+        "scope_description": scope,
+        "service_location": location,
+        "availability": _availability(row.get("availability")),
+        "rate": _service_rate(row.get("rate")),
+        "currency": _text(row.get("currency")).upper() or "SAR",
+        "rate_basis": rate_basis,
+        "rate_valid_until": _date(row.get("rate_valid_until"), field="rate_valid_until"),
+        "lead_time": _text(row.get("lead_time")),
+        "verification_note": _text(row.get("verification_note"))[:500],
+        "notes": str(row.get("notes") or "").strip(),
+    }
+    verified_now = _bool(row.get("verified_now"), default=False)
+    contact_name = _text(row.get("contact_name"))[:160]
+    offer = (
+        update_service_offer(actor_membership=actor_membership, subcontractor_id=subcontractor.pk,
+                             offer_id=existing.pk, cleaned_data=data, verified_now=verified_now,
+                             contact_name=contact_name, request=request)
+        if existing else
+        create_service_offer(actor_membership=actor_membership, subcontractor_id=subcontractor.pk,
+                             cleaned_data=data, verified_now=verified_now,
+                             contact_name=contact_name, request=request)
+    )
+    active = _bool(row.get("is_active"), default=True)
+    if offer.is_active != active:
+        set_service_offer_active(actor_membership=actor_membership, subcontractor_id=subcontractor.pk,
+                                 offer_id=offer.pk, is_active=active, request=request)
+    # Exported last_verified_at is read-only; only verified_now creates evidence.
+    return ("update" if existing else "create"), offer
+
 _UPSERT = {
     "vendors": _upsert_vendor,
     "materials": _upsert_material,
@@ -482,6 +622,9 @@ _UPSERT = {
     "manpower_suppliers": _upsert_manpower_supplier,
     "trades": _upsert_trade,
     "workforce_catalog": _upsert_workforce_catalog,
+    "subcontractors": _upsert_subcontractor,
+    "services": _upsert_service,
+    "subcontractor_service_catalog": _upsert_subcontractor_service_catalog,
 }
 
 
@@ -536,7 +679,7 @@ def _safe_export_cell(value: object) -> object:
     if isinstance(value, bool):
         return "yes" if value else "no"
     value = str(value)
-    if value.startswith(_FORMULA_PREFIXES):
+    if value.startswith(_FORMULA_PREFIXES) or value.lstrip().startswith(_FORMULA_PREFIXES):
         return "'" + value
     return value
 
@@ -551,7 +694,9 @@ def _query_decimal(value: object) -> Decimal | None:
         if not raw:
             return None
         parsed = Decimal(raw)
-        return parsed if parsed >= 0 else None
+        return (parsed if parsed.is_finite() and parsed >= 0
+                and parsed < Decimal("100000000000000")
+                and parsed.as_tuple().exponent >= -4 else None)
     except (InvalidOperation, ValueError):
         return None
 
@@ -724,6 +869,110 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             qs = qs.filter(Q(supplier__name__icontains=q) | Q(supplier__code__icontains=q) | Q(trade__name__icontains=q) | Q(trade__code__icontains=q) | Q(trade__normalized_aliases__icontains=q) | Q(work_location__icontains=q) | Q(mobilization_lead_time__icontains=q))
         for obj in qs.order_by("trade__name", "supplier__name").iterator(chunk_size=500):
             rows.append([obj.supplier.code, obj.trade.code, obj.availability, obj.available_quantity, obj.rate, obj.currency, obj.rate_basis, obj.overtime_rate, obj.rate_valid_until, obj.mobilization_lead_time, obj.work_location, "", "", obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at])
+    elif dataset == "subcontractors":
+        qs = SourcingSubcontractor.objects.for_company(company)
+        status = _text(params.get("status")).casefold()
+        if status == "trash":
+            qs = qs.filter(deleted_at__isnull=False, purge_after__gt=timezone.now())
+        else:
+            qs = qs.filter(deleted_at__isnull=True)
+            if status in {SourcingEntityStatus.ACTIVE, SourcingEntityStatus.INACTIVE}:
+                qs = qs.filter(archived_at__isnull=True, status=status)
+            elif status == "archived":
+                qs = qs.filter(archived_at__isnull=False)
+        if q:
+            qs = qs.filter(
+                Q(code__icontains=q) | Q(name__icontains=q) | Q(display_name__icontains=q)
+                | Q(primary_contact_name__icontains=q) | Q(company_email__icontains=q)
+                | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q)
+                | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
+                | Q(service_coverage__icontains=q)
+            )
+        for obj in qs.order_by("name", "code").iterator(chunk_size=500):
+            rows.append([
+                obj.code, obj.name, obj.display_name, obj.primary_contact_name,
+                obj.company_phone, obj.company_email, obj.mobile, obj.email,
+                obj.website, obj.address, obj.street_number, obj.district,
+                obj.city, obj.region, obj.postal_code, obj.service_coverage,
+                obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at,
+            ])
+    elif dataset == "services":
+        qs = SourcingService.objects.for_company(company)
+        status = _text(params.get("status")).casefold()
+        if status == "active":
+            qs = qs.filter(is_active=True)
+        elif status == "inactive":
+            qs = qs.filter(is_active=False)
+        category = _text(params.get("category"))
+        if category:
+            qs = qs.filter(category__iexact=category)
+        if q:
+            qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q)
+                           | Q(category__icontains=q) | Q(normalized_aliases__icontains=q))
+        for obj in qs.order_by("category", "name", "code").iterator(chunk_size=500):
+            rows.append([obj.code, obj.name, obj.category, obj.default_rate_basis,
+                         " | ".join(obj.aliases or []), obj.description,
+                         obj.is_active, obj.notes])
+    elif dataset == "subcontractor_service_catalog":
+        qs = SourcingSubcontractorService.objects.for_company(company).select_related(
+            "subcontractor", "service"
+        ).filter(subcontractor__deleted_at__isnull=True)
+        finder_mode = any(key in params for key in (
+            "freshness", "category", "subcontractor", "location", "currency",
+            "rate_min", "rate_max", "page_size", "sort", "dir",
+        ))
+        if finder_mode:
+            qs = qs.filter(is_active=True, service__is_active=True,
+                           subcontractor__archived_at__isnull=True,
+                           subcontractor__status=SourcingEntityStatus.ACTIVE)
+        subcontractor_code = _text(params.get("subcontractor_code"))
+        service_code = _text(params.get("service_code"))
+        subcontractor_filter = _text(params.get("subcontractor"))
+        category = _text(params.get("category"))
+        location = _text(params.get("location"))
+        availability = _text(params.get("availability"))
+        rate_basis = _text(params.get("rate_basis"))
+        currency = _text(params.get("currency")).upper()
+        rate_min = _query_decimal(params.get("rate_min"))
+        rate_max = _query_decimal(params.get("rate_max"))
+        if subcontractor_code:
+            qs = qs.filter(subcontractor__code__iexact=subcontractor_code)
+        if service_code:
+            qs = qs.filter(service__code__iexact=service_code)
+        if subcontractor_filter:
+            qs = qs.filter(Q(subcontractor__name__icontains=subcontractor_filter)
+                           | Q(subcontractor__code__icontains=subcontractor_filter)
+                           | Q(subcontractor__display_name__icontains=subcontractor_filter))
+        if category:
+            qs = qs.filter(service__category__iexact=category)
+        if location:
+            qs = qs.filter(Q(service_location__icontains=location)
+                           | Q(subcontractor__service_coverage__icontains=location)
+                           | Q(subcontractor__city__icontains=location)
+                           | Q(subcontractor__region__icontains=location))
+        if availability in SourcingAvailability.values:
+            qs = qs.filter(availability=availability)
+        if rate_basis in SourcingServiceRateBasis.values:
+            qs = qs.filter(rate_basis=rate_basis)
+        if currency:
+            qs = qs.filter(currency=currency)
+        if rate_min is not None:
+            qs = qs.filter(rate__gte=rate_min)
+        if rate_max is not None:
+            qs = qs.filter(rate__lte=rate_max)
+        qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
+        if q:
+            qs = qs.filter(Q(service__name__icontains=q) | Q(service__code__icontains=q)
+                           | Q(service__normalized_aliases__icontains=q)
+                           | Q(subcontractor__name__icontains=q) | Q(subcontractor__code__icontains=q)
+                           | Q(scope_description__icontains=q) | Q(service_location__icontains=q))
+        for obj in qs.order_by("service__name", "subcontractor__name", "scope_description", "service_location").iterator(chunk_size=500):
+            rows.append([
+                obj.subcontractor.code, obj.service.code, obj.scope_description,
+                obj.service_location, obj.availability, obj.rate, obj.currency,
+                obj.rate_basis, obj.rate_valid_until, obj.lead_time, "", "",
+                obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at,
+            ])
     else:
         raise ValidationError("Unsupported Sourcing export dataset.")
     return rows
@@ -769,3 +1018,23 @@ def build_export(*, actor_membership, dataset: str, fmt: str, params, request=No
         request=request,
     )
     return payload, filename, content_type, len(rows)
+
+
+def build_import_template(*, dataset: str, fmt: str) -> tuple[bytes, str, str]:
+    """Generate a header-only template; no tenant or supplier information leaks."""
+    if dataset not in HEADERS:
+        raise ValidationError("Unsupported Sourcing import dataset.")
+    fmt = _text(fmt).casefold() or "xlsx"
+    if fmt not in {"csv", "xlsx"}:
+        raise ValidationError("Template format must be csv or xlsx.")
+    headers = HEADERS[dataset]
+    filename = f"sescco-sourcing-{dataset}-import-template.{fmt}"
+    if fmt == "csv":
+        stream = io.StringIO(newline="")
+        csv.writer(stream, lineterminator="\n").writerow(headers)
+        return ("\ufeff" + stream.getvalue()).encode("utf-8"), filename, "text/csv; charset=utf-8"
+    workbook = Workbook(write_only=True)
+    workbook.create_sheet(title="Sourcing Import").append(headers)
+    stream = io.BytesIO()
+    workbook.save(stream)
+    return stream.getvalue(), filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

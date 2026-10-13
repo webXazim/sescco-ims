@@ -84,7 +84,7 @@
     "deferred-high-cardinality-bootstrap"
   ],
   "runtime_report": "python manage.py payroll_browser_scale_report --require-benchmark-volume --fail-on-limits",
-  "live_browser_runner": "python scripts/certify-payroll-browser-scale.py --base-url https://ims.sescco.com --username <user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD",
+  "live_browser_runner": "python scripts/certify-payroll-browser-scale.py --base-url https://ms.sescco.com --username <user> --password-env IMS_BROWSER_BENCHMARK_PASSWORD",
   "runtime_evidence": "payroll-browser-scale-report.txt",
   "live_browser_evidence": "payroll-browser-certification.json"
 }

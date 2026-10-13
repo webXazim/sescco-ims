@@ -1,0 +1,33 @@
+<article class="sourcing-card sourcing-card--spaced" id="qualifications">
+  <header class="sourcing-card-head"><div><h2>Qualifications &amp; Documents</h2>
+    <p>{{ qualification_summary.total }} document{{ qualification_summary.total|pluralize }} · {{ qualification_summary.reviewed }} accepted and valid · {{ qualification_summary.expired }} expired · {{ qualification_summary.expiring }} expiring in 30 days</p>
+  </div>{% if can_manage and not subcontractor.archived_at and not subcontractor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:subcontractor_document_create' subcontractor.pk %}">+ Add Qualification</a>{% endif %}</header>
+  <p class="sourcing-catalog-footnote">Acceptance records a document review, not an official accreditation. Expiry always overrides the displayed review status. All files require an authorized download.</p>
+  <p class="sourcing-u09-table-hint">Document downloads are permission checked. Scroll horizontally for review actions on smaller screens.</p>
+  <div class="sourcing-table-wrap" tabindex="0" role="region" aria-label="Qualification documents table"><table class="sourcing-table"><thead><tr><th>Document</th><th>Issuer / Reference</th><th>Valid Until</th><th>Review</th><th>Actions</th></tr></thead><tbody>
+  {% for doc in qualification_documents %}
+  <tr><td><strong>{{ doc.title }}</strong><small class="cell-note">{{ doc.get_kind_display }} · {{ doc.original_name }}</small></td>
+    <td>{{ doc.issuer|default:'—' }}<small class="cell-note">{{ doc.reference_number|default:'No reference' }}</small></td>
+    <td>{{ doc.expires_on|date:'d M Y'|default:'Not specified' }}{% if doc.expires_soon %}<small class="cell-note">Expires within 30 days</small>{% endif %}</td>
+    <td><span class="sourcing-pill {% if doc.expired or doc.review_status == 'rejected' %}sourcing-pill--warning{% elif doc.review_status == 'approved' %}sourcing-pill--success{% else %}sourcing-pill--muted{% endif %}">{{ doc.effective_status }}</span>
+    {% if doc.reviewed_at %}<small class="cell-note">Reviewed {{ doc.reviewed_at|date:'d M Y' }}{% if doc.reviewed_by %} by {{ doc.reviewed_by.get_username }}{% endif %}</small>{% if doc.review_note %}<small class="cell-note">{{ doc.review_note }}</small>{% endif %}{% endif %}</td>
+    <td><a href="{% url 'sourcing:subcontractor_document_download' subcontractor.pk doc.pk %}">Download</a>
+    {% if can_manage and not subcontractor.archived_at and not subcontractor.deleted_at %}
+    <details class="sourcing-row-menu"><summary aria-label="Qualification actions">⋯</summary><div>
+      <a href="{% url 'sourcing:subcontractor_document_edit' subcontractor.pk doc.pk %}">Edit details</a>
+      <form method="post" action="{% url 'sourcing:subcontractor_document_review' subcontractor.pk doc.pk %}">{% csrf_token %}
+        <label for="qualification-review-{{ doc.pk }}">Review note</label><input id="qualification-review-{{ doc.pk }}" name="note" class="sourcing-input" required maxlength="500" placeholder="Evidence checked / reason">
+        <button type="submit" class="sourcing-row-action" name="status" value="approved" {% if doc.expired %}disabled title="Expired documents cannot be accepted"{% endif %}>Accept document</button>
+        <button type="submit" class="sourcing-row-action" name="status" value="rejected">Reject document</button>
+      </form>
+      <form method="post" action="{% url 'sourcing:subcontractor_document_delete' subcontractor.pk doc.pk %}" onsubmit="return window.confirm('Permanently remove the file and document record? Audit metadata is retained.');">{% csrf_token %}
+        <label for="qualification-delete-{{ doc.pk }}">Type {{ doc.title }} to remove</label><input id="qualification-delete-{{ doc.pk }}" name="confirmation" class="sourcing-input" required autocomplete="off">
+        <button type="submit" class="sourcing-row-action sourcing-row-action--danger">Delete document</button>
+      </form>
+    </div></details>{% endif %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="5"><div class="sourcing-empty"><strong>No qualifications on file.</strong><p>Upload insurance, trade licenses, company registration, and other qualification references as needed.</p></div></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if qualification_page.has_other_pages %}<footer class="sourcing-pagination"><span>Showing {{ qualification_page.start_index }}–{{ qualification_page.end_index }} of {{ qualification_page.paginator.count }}</span><nav aria-label="Qualification pages">
+  {% if qualification_page.has_previous %}<a href="?qualification_page={{ qualification_page.previous_page_number }}#qualifications">Previous</a>{% endif %}<strong>Page {{ qualification_page.number }} of {{ qualification_page.paginator.num_pages }}</strong>{% if qualification_page.has_next %}<a href="?qualification_page={{ qualification_page.next_page_number }}#qualifications">Next</a>{% endif %}</nav></footer>{% endif %}
+</article>

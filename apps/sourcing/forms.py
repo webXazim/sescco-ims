@@ -6,6 +6,7 @@ from django.db.models import Q
 from .models import (
     SourcingAvailability,
     SourcingMaterial,
+    SourcingService,
     SourcingManpowerSupplier,
     SourcingManpowerContact,
     SourcingRateBasis,
@@ -14,7 +15,11 @@ from .models import (
     SourcingVendor,
     SourcingVendorContact,
     SourcingVendorOffer,
+    SourcingSubcontractor,
+    SourcingSubcontractorContact,
+    SourcingSubcontractorService,
 )
+from .models.subcontractors import SourcingSubcontractorDocument
 from .models.base import clean_text, normalize_text
 
 
@@ -866,3 +871,248 @@ class SourcingImportUploadForm(forms.Form):
         self.fields["dataset"].choices = tuple(dataset_choices)
         self.fields["dataset"].widget.attrs.setdefault("class", "sourcing-input")
         self.fields["file"].widget.attrs.setdefault("class", "sourcing-input")
+
+
+class SourcingServiceForm(forms.ModelForm):
+    """Controlled company service vocabulary; not an operational service job."""
+
+    code = forms.CharField(required=False, max_length=40, label="Service Code")
+    category = forms.ChoiceField(
+        required=False, label="Service Category", choices=(),
+        widget=forms.Select(attrs={"data-material-category-select": ""}),
+    )
+    new_category = forms.CharField(
+        required=False, max_length=120, label="New Service Category",
+        widget=forms.TextInput(attrs={
+            "placeholder": "Enter a new service category",
+            "autocomplete": "off", "data-new-material-category-input": "",
+        }),
+    )
+    aliases = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "One search alias per line"}),
+        help_text="Alternative terms or abbreviations. Use one per line or comma-separated.",
+    )
+
+    class Meta:
+        model = SourcingService
+        fields = ("code", "name", "category", "default_rate_basis", "aliases", "description", "notes")
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g. HVAC installation", "autocomplete": "off"}),
+            "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Define what this service covers"}),
+            "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Internal sourcing reference notes"}),
+        }
+        labels = {"default_rate_basis": "Default Rate Basis"}
+
+    def __init__(self, *args, company=None, categories=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .selectors.services_master import service_categories
+        self.company = company
+        choices = list(categories) if categories is not None else (service_categories(company) if company else [])
+        self.category_values = choices
+        current = clean_text(self.instance.category) if self.instance and self.instance.pk else ""
+        posted = clean_text(self.data.get(self.add_prefix("category"))) if self.is_bound else ""
+        self.fields["category"].choices = _material_category_choices(
+            categories=choices, current=current, posted=posted
+        )
+        if self.instance and self.instance.pk and not self.is_bound:
+            self.initial["aliases"] = "\n".join(self.instance.aliases or [])
+            self.initial["category"] = current
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "sourcing-input")
+        self.fields["code"].help_text = "Independent Sourcing Services code, not an Inventory reference. Auto-generated if empty."
+
+    def clean_aliases(self):
+        raw = str(self.cleaned_data.get("aliases") or "")
+        aliases, seen = [], set()
+        for chunk in raw.replace(",", "\n").splitlines():
+            alias = clean_text(chunk)
+            key = normalize_text(alias)
+            if alias and key not in seen:
+                aliases.append(alias)
+                seen.add(key)
+        return aliases
+
+    def clean(self):
+        cleaned = super().clean()
+        category = clean_text(cleaned.get("category"))
+        if category == NEW_MATERIAL_CATEGORY_VALUE:
+            candidate = clean_text(cleaned.get("new_category"))
+            if not candidate:
+                self.add_error("new_category", "Enter the new service category.")
+            category = candidate
+        cleaned["category"] = _canonical_material_category(category, self.category_values)
+        if not clean_text(cleaned.get("code")):
+            from .services.services_master import suggest_service_code
+            cleaned["code"] = suggest_service_code()
+        else:
+            cleaned["code"] = clean_text(cleaned["code"]).upper()
+        return cleaned
+
+
+class SourcingSubcontractorForm(forms.ModelForm):
+    """Company-scoped reference profile; deliberately no operational relations."""
+    class Meta:
+        model = SourcingSubcontractor
+        fields = (
+            "code", "name", "display_name", "cr_number", "vat_number",
+            "company_phone", "company_email", "website", "primary_contact_name",
+            "mobile", "email", "address", "street_number", "district",
+            "city", "region", "postal_code", "service_coverage", "notes",
+        )
+        widgets = {
+            "code": forms.TextInput(attrs={"placeholder": "SUB-XXXXXXXX"}),
+            "name": forms.TextInput(attrs={"placeholder": "Legal company name"}),
+            "display_name": forms.TextInput(attrs={"placeholder": "Display name"}),
+            "notes": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "sourcing-input")
+        self.fields["code"].required = False
+        self.fields["display_name"].required = False
+        self.fields["code"].help_text = "Optional; generated when blank."
+
+    def clean(self):
+        result = super().clean()
+        if not result.get("code"):
+            from .services.subcontractors import suggest_subcontractor_code
+            result["code"] = suggest_subcontractor_code()
+        if not result.get("display_name") and result.get("name"):
+            result["display_name"] = result["name"]
+        return result
+
+
+class SourcingSubcontractorContactForm(forms.ModelForm):
+    class Meta:
+        model = SourcingSubcontractorContact
+        fields = (
+            "salutation", "first_name", "last_name", "designation", "department",
+            "email", "work_phone", "mobile", "is_primary", "is_active",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if name not in {"is_primary", "is_active"}:
+                field.widget.attrs.setdefault("class", "sourcing-input")
+
+
+class SourcingSubcontractorServiceForm(forms.ModelForm):
+    """Reference-only service offering, scoped to controlled Services master."""
+    verified_now = forms.BooleanField(
+        required=False, label="Verified now",
+        help_text="Only check this when the subcontractor confirmed the service reference now.",
+    )
+    contact_name = forms.CharField(required=False, max_length=160, label="Spoke With")
+
+    class Meta:
+        model = SourcingSubcontractorService
+        fields = (
+            "service", "scope_description", "service_location", "availability",
+            "rate", "currency", "rate_basis", "rate_valid_until", "lead_time",
+            "verification_note", "notes",
+        )
+        widgets = {
+            "scope_description": forms.TextInput(attrs={"placeholder": "Scope, deliverables, standards or equipment"}),
+            "service_location": forms.TextInput(attrs={"placeholder": "City, region, site or nationwide"}),
+            "rate": forms.NumberInput(attrs={"step": "0.0001", "min": "0", "placeholder": "Blank if not quoted"}),
+            "currency": forms.TextInput(attrs={"maxlength": "3", "placeholder": "SAR"}),
+            "rate_valid_until": forms.DateInput(attrs={"type": "date"}),
+            "lead_time": forms.TextInput(attrs={"placeholder": "Mobilization time, e.g. 2 weeks"}),
+            "verification_note": forms.TextInput(attrs={"placeholder": "How/when the service reference was confirmed"}),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+        labels = {
+            "service": "Service Type", "scope_description": "Scope / Specification",
+            "service_location": "Service Location", "rate": "Reference Rate",
+            "rate_valid_until": "Rate Valid Until", "lead_time": "Mobilization / Lead Time",
+        }
+
+    def __init__(self, *args, company=None, subcontractor=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = SourcingService.objects.none()
+        if company is not None:
+            queryset = SourcingService.objects.for_company(company)
+            current_id = self.instance.service_id if self.instance and self.instance.pk else None
+            queryset = queryset.filter(Q(is_active=True) | Q(pk=current_id)) if current_id else queryset.filter(is_active=True)
+        self.fields["service"].queryset = queryset.order_by("category", "normalized_name", "code")
+        self.fields["service"].empty_label = "Select Service"
+        self.fields["service"].help_text = "Select from Reference → Services; service creation requires master-data permission."
+        self.fields["rate"].help_text = "Quotation/reference only; not a purchase order, approved contract or accounting entry."
+        for name, field in self.fields.items():
+            if name not in {"verified_now"}:
+                field.widget.attrs.setdefault("class", "sourcing-input")
+        if not self.is_bound:
+            self.initial.setdefault("currency", getattr(self.instance, "currency", None) or "SAR")
+            if not (self.instance and self.instance.pk):
+                self.initial["verified_now"] = False
+                if subcontractor is not None:
+                    self.initial["service_location"] = subcontractor.city or ""
+            if self.instance and self.instance.pk and self.instance.service_id:
+                self.initial.setdefault("rate_basis", self.instance.rate_basis)
+
+
+class SourcingSubcontractorServiceVerifyForm(forms.ModelForm):
+    contact_name = forms.CharField(required=False, max_length=160, label="Spoke With")
+
+    class Meta:
+        model = SourcingSubcontractorService
+        fields = (
+            "availability", "rate", "currency", "rate_basis", "rate_valid_until",
+            "lead_time", "verification_note",
+        )
+        widgets = {
+            "rate": forms.NumberInput(attrs={"step": "0.0001", "min": "0", "placeholder": "Blank = not quoted"}),
+            "rate_valid_until": forms.DateInput(attrs={"type": "date"}),
+            "verification_note": forms.TextInput(attrs={"placeholder": "What the subcontractor confirmed"}),
+        }
+
+    def __init__(self, *args, subcontractor=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "sourcing-input")
+        self.fields["rate"].help_text = "Reference quotation only. No transaction or purchase is generated."
+        if not self.is_bound:
+            self.initial.setdefault("currency", getattr(self.instance, "currency", None) or "SAR")
+            if subcontractor is not None:
+                self.initial.setdefault("contact_name", subcontractor.primary_contact_name or "")
+
+
+class SourcingSubcontractorVerificationForm(forms.Form):
+    """A company identity check does not verify individual service rates."""
+    contact_name = forms.CharField(max_length=160, label="Person contacted")
+    note = forms.CharField(max_length=500, label="Verification details", widget=forms.Textarea(attrs={"rows": 4}))
+    confirmed = forms.BooleanField(label="I confirmed the subcontractor company details", required=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if not isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.setdefault("class", "sourcing-input")
+
+
+class SourcingSubcontractorDocumentForm(forms.ModelForm):
+    upload = forms.FileField(required=False, label="Qualification file (PDF, PNG or JPEG, 10 MB maximum)")
+
+    class Meta:
+        model = SourcingSubcontractorDocument
+        fields = ("kind", "title", "reference_number", "issuer", "issued_on", "expires_on", "notes")
+        widgets = {
+            "issued_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "expires_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "notes": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["upload"].required = not bool(self.instance and self.instance.pk)
+
+    def clean_upload(self):
+        upload = self.cleaned_data.get("upload")
+        if upload:
+            from .services.subcontractor_documents import inspect_upload
+            inspect_upload(upload)
+        return upload

@@ -1,0 +1,14 @@
+{% extends "sourcing/base.html" %}
+{% block title %}Verify Company · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><a href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}">{{ subcontractor.code }}</a><span>/</span><strong>Verify Company</strong></nav><h1>Verify Subcontractor Company</h1><p>{{ subcontractor.display_name }} · Confirm the company identity and contact details.</p></div></section>
+<div class="sourcing-reference-banner"><strong>Company verification only.</strong><span>This does not verify Service Catalog availability, rates, or lead times. Verify those separately.</span></div>
+<form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}
+{% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+<section class="sourcing-form-section"><header><h2>Confirmation Evidence</h2><p>Check the legal name, registration numbers, key contacts, location, and service coverage shown on the profile before confirming.</p></header><div class="sourcing-form-grid">
+{% include "sourcing/vendors/field.html" with field=form.contact_name %}
+{% include "sourcing/vendors/field.html" with field=form.note %}
+<div class="sourcing-field sourcing-check-field"><label for="{{ form.confirmed.id_for_label }}">{{ form.confirmed }} {{ form.confirmed.label }}</label>{{ form.confirmed.errors }}</div>
+</div></section>
+<footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">Record Company Verification</button></footer></form>
+{% endblock %}

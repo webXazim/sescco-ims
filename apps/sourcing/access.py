@@ -12,6 +12,10 @@ MANPOWER_SOURCING_PERMISSIONS = frozenset({
     AccessPermission.SOURCING_MANPOWER_VIEW,
     AccessPermission.SOURCING_MANPOWER_MANAGE,
 })
+SUBCONTRACTOR_SOURCING_PERMISSIONS = frozenset({
+    AccessPermission.SOURCING_SUBCONTRACTORS_VIEW,
+    AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE,
+})
 MASTER_SOURCING_PERMISSIONS = frozenset({
     AccessPermission.SOURCING_MASTERS_VIEW,
     AccessPermission.SOURCING_MASTERS_MANAGE,
@@ -19,11 +23,13 @@ MASTER_SOURCING_PERMISSIONS = frozenset({
 ALL_SOURCING_PERMISSIONS = frozenset({
     *VENDOR_SOURCING_PERMISSIONS,
     *MANPOWER_SOURCING_PERMISSIONS,
+    *SUBCONTRACTOR_SOURCING_PERMISSIONS,
     *MASTER_SOURCING_PERMISSIONS,
     AccessPermission.SOURCING_EXPORT_EXECUTE,
 })
 VISIBLE_SOURCING_PERMISSIONS = frozenset({
     AccessPermission.SOURCING_VENDORS_VIEW,
+    AccessPermission.SOURCING_SUBCONTRACTORS_VIEW,
     AccessPermission.SOURCING_MANPOWER_VIEW,
     AccessPermission.SOURCING_MASTERS_VIEW,
 })
@@ -52,6 +58,14 @@ def membership_can_manage_manpower_sourcing(membership) -> bool:
     return membership_has_permission(membership, AccessPermission.SOURCING_MANPOWER_MANAGE)
 
 
+def membership_can_view_subcontractor_sourcing(membership) -> bool:
+    return membership_has_permission(membership, AccessPermission.SOURCING_SUBCONTRACTORS_VIEW)
+
+
+def membership_can_manage_subcontractor_sourcing(membership) -> bool:
+    return membership_has_permission(membership, AccessPermission.SOURCING_SUBCONTRACTORS_MANAGE)
+
+
 def membership_can_view_sourcing_masters(membership) -> bool:
     return membership_has_permission(membership, AccessPermission.SOURCING_MASTERS_VIEW)
 
@@ -74,6 +88,10 @@ def sourcing_access_context(membership) -> dict[str, object]:
         "manpower": {
             "view": membership_can_view_manpower_sourcing(membership),
             "manage": membership_can_manage_manpower_sourcing(membership),
+        },
+        "subcontractors": {
+            "view": membership_can_view_subcontractor_sourcing(membership),
+            "manage": membership_can_manage_subcontractor_sourcing(membership),
         },
         "masters": {
             "view": membership_can_view_sourcing_masters(membership),

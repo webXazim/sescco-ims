@@ -1,0 +1,6 @@
+{% extends "sourcing/base.html" %}
+{% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb"><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><a href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}">{{ subcontractor.display_name }}</a></nav><h1>{{ page_title }}</h1></div></section>
+<form method="post" class="sourcing-form-shell" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}<section class="sourcing-form-section"><header><h2>Contact Person</h2></header><div class="sourcing-form-grid">{% for field in form %}{% include "sourcing/vendors/field.html" %}{% endfor %}</div></section><footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}">Cancel</a><button type="submit" class="sourcing-btn sourcing-btn--primary">{{ submit_label }}</button></footer></form>
+{% endblock %}

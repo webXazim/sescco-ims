@@ -14,6 +14,7 @@ sha256sum -c merge/production-freeze.sha256 >/dev/null \
   || fail 'Frozen production source/configuration changed.'
 
 python3 scripts/verify-granular-access-authority.py
+python3 scripts/verify-subcontractor-release-extension.py
 python3 scripts/verify-single-access-authority.py
 python3 scripts/verify-user-management-backend.py
 python3 scripts/verify-user-management-ui.py

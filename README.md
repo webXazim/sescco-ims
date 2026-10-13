@@ -32,7 +32,7 @@ Core capabilities:
 - legacy workbook preview/import and atomic opening-stock import;
 - protected XLSX/XLSM parsing with archive expansion and path safety limits;
 - private authenticated attachments;
-- unified Inventory + Payroll production deployment at `ims.sescco.com` beside other Docker projects;
+- unified Inventory + Payroll production deployment at `ms.sescco.com` beside other Docker projects;
 - health checks, JSON logs, backups, restore controls and operator documentation.
 
 ## Local development
@@ -84,7 +84,11 @@ Sourcing scale hardening contract: `docs/SOURCING_SCALE_HARDENING.md`.
 Sourcing security certification contract: `docs/SOURCING_SECURITY_CERTIFICATION.md`.
 Final Sourcing browser E2E + production freeze contract: `docs/SOURCING_BROWSER_E2E.md`.
 
-## Production deployment for ims.sescco.com
+## Production deployment for ms.sescco.com
+
+For an already-running IMS installation, use the hostname-only cutover in
+[docs/DOMAIN_CUTOVER.md](docs/DOMAIN_CUTOVER.md). It preserves the existing image,
+database, media and production secrets.
 
 ```bash
 bash scripts/create-production-env.sh
@@ -152,8 +156,8 @@ The benchmark user must have Vendor Sourcing edit and Manpower Sourcing edit aut
 
 The functional seed intentionally creates visible DEMO/RDEMO records and chooses a collision-safe historical month before non-DEMO employment for its finalized synthetic payroll; if that cannot be proven safe, the seed aborts instead of mixing real employees into DEMO payroll history. Use seeding only where test records are wanted.
 
-Docker publishes only `127.0.0.1:8087`. Route `ims.sescco.com` through the
-existing host reverse proxy using `deploy/host-nginx/ims.sescco.com.conf`.
+Docker publishes only `127.0.0.1:8087`. Route `ms.sescco.com` through the
+existing host reverse proxy using `deploy/host-nginx/ms.sescco.com.conf`.
 
 The Compose project, services, networks and volumes all use an `ims` prefix, so
 this release can run beside another project without name or public-port

@@ -1,0 +1,17 @@
+{% extends "sourcing/base.html" %}
+{% block title %}Service Verification History · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact">
+  <div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}#service-catalog">{{ subcontractor.code }}</a><span>/</span><strong>Service History</strong></nav><h1>Service Verification History</h1><p>{{ offer.service.name }}{% if offer.scope_description %} · {{ offer.scope_description }}{% endif %}</p></div>
+  <div class="sourcing-profile-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}#service-catalog">Back to Catalog</a></div>
+</section>
+<div class="sourcing-reference-banner"><strong>Immutable verification evidence.</strong><span>Every confirmed snapshot is retained even after a later edit or reference removal.</span></div>
+<section class="sourcing-card sourcing-card--spaced"><header><h2>Confirmed references</h2><p>{{ page_obj.paginator.count }} verification record{{ page_obj.paginator.count|pluralize }}</p></header>
+<div class="sourcing-verification-timeline">{% for revision in entries %}<article>
+  <div class="sourcing-verification-time"><time datetime="{{ revision.verified_at|date:'c' }}">{{ revision.verified_at|date:'d M Y H:i' }}</time></div>
+  <div class="sourcing-verification-body"><header><strong>{{ revision.actor.get_full_name|default:revision.actor.username|default:'System' }}</strong>{% if revision.contact_name %}<span>Spoke with {{ revision.contact_name }}</span>{% endif %}</header>
+  {% if revision.note %}<p class="sourcing-verification-note">{{ revision.note }}</p>{% endif %}
+  <dl class="sourcing-data-list"><div><dt>Availability</dt><dd>{{ revision.before.availability|default:'—' }} → {{ revision.after.availability|default:'—' }}</dd></div><div><dt>Rate</dt><dd>{{ revision.before.currency|default:'—' }} {{ revision.before.rate|default:'Not quoted' }} → {{ revision.after.currency|default:'—' }} {{ revision.after.rate|default:'Not quoted' }}</dd></div><div><dt>Basis</dt><dd>{{ revision.after.rateBasis|default:'—' }}</dd></div><div><dt>Lead time</dt><dd>{{ revision.after.leadTime|default:'—' }}</dd></div></dl></div>
+</article>{% empty %}<div class="sourcing-empty"><strong>No confirmed service references yet.</strong></div>{% endfor %}</div></section>
+{% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>{{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav aria-label="History pagination">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next</a>{% endif %}</nav></footer>{% endif %}
+{% endblock %}

@@ -252,6 +252,34 @@
     "sourcing.SourcingManpowerContact": {
       "mode": "reference_contact_inactive_hard_delete",
       "notes": "Deactivate preserves the Manpower Supplier contact. Delete permanently removes the contact row and retains the parent audit event."
+    },
+    "sourcing.SourcingSubcontractor": {
+      "mode": "reference_master_archive_hard_delete_legacy_trash",
+      "notes": "Reference-only subcontractor master. Active/Inactive and Archive/Restore lifecycle is planned for the directory milestone; permanent delete may remove its sourcing-owned children while immutable revisions must be detached and preserved. No operational project or inventory cascade."
+    },
+    "sourcing.SourcingSubcontractorContact": {
+      "mode": "reference_contact_inactive_hard_delete",
+      "notes": "A sourcing-only contact that may be deactivated or deleted by the owning subcontractor directory; no employment or payroll effect."
+    },
+    "sourcing.SourcingService": {
+      "mode": "reference_master_inactive_hard_delete",
+      "notes": "Deactivate preserves service vocabulary and catalog references. Permanent delete is blocked while subcontractor catalog entries still use the service. The before snapshot is retained in Sourcing audit evidence."
+    },
+    "sourcing.SourcingSubcontractorService": {
+      "mode": "reference_offer_inactive_hard_delete",
+      "notes": "Reference-only service capability. Inactive preserves history; catalog deletion in a future milestone must detach immutable verification revisions before deleting live capability."
+    },
+    "sourcing.SourcingSubcontractorServiceRevision": {
+      "mode": "immutable_reference_history",
+      "notes": "Append-only subcontractor service verification snapshots; history must remain available after its live catalog entry is removed."
+    },
+    "sourcing.SourcingSubcontractorVerificationRevision": {
+      "mode": "immutable_reference_history",
+      "notes": "Immutable company identity confirmation with detached snapshot after directory deletion; independent of service-rate verification."
+    },
+    "sourcing.SourcingSubcontractorDocument": {
+      "mode": "reference_document_protected_delete",
+      "notes": "Private company-scoped qualification files are accessed only via authorized Sourcing downloads. Document changes and removal are audited; explicit document deletion removes stored file after transaction commit. Parent deletion is blocked while documents remain."
     }
   }
 }

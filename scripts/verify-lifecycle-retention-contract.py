@@ -58,6 +58,7 @@ if not isinstance(models, dict) or not models:
     fail("contract models mapping is missing")
 
 allowed_modes = {
+    "reference_document_protected_delete",
     "access_deactivate_only",
     "access_policy_child_replaceable",
     "access_scope_assignment",

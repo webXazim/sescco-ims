@@ -1,0 +1,21 @@
+{% extends "sourcing/base.html" %}
+{% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
+{% block content %}
+<section class="sourcing-page-head sourcing-page-head--compact"><div>
+  <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><a href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}#qualifications">{{ subcontractor.code }}</a><span>/</span><strong>{{ page_title }}</strong></nav>
+  <h1>{{ page_title }}</h1><p>Private qualification reference for {{ subcontractor.display_name }}.</p>
+</div></section>
+<div class="sourcing-reference-banner"><strong>Restricted document.</strong><span>Only authorized Sourcing users may download this file. Documents must be independently reviewed before they count as accepted.</span></div>
+<form class="sourcing-form-shell" method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+{% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+<section class="sourcing-form-section"><header><h2>Qualification Details</h2><p>Enter certificate identity and dates. Expired records are clearly marked regardless of review status.</p></header>
+<div class="sourcing-form-grid">
+{% for field in form %}{% if field.name != 'upload' and field.name != 'notes' %}{% include 'sourcing/vendors/field.html' %}{% endif %}{% endfor %}
+</div></section>
+<section class="sourcing-form-section"><header><h2>Document</h2>
+{% if qualification %}<p>The existing file is retained unchanged. For a replacement, upload a new qualification and remove the old record after review.</p>{% else %}<p>PDF, PNG or JPEG, maximum 10 MB. Other types are rejected.</p>{% endif %}</header>
+{% if not qualification %}<div class="sourcing-form-grid sourcing-form-grid--single">{% include 'sourcing/vendors/field.html' with field=form.upload %}</div>{% else %}<a href="{% url 'sourcing:subcontractor_document_download' subcontractor.pk qualification.pk %}">Download current file: {{ qualification.original_name }}</a>{% endif %}
+</section>
+<section class="sourcing-form-section"><header><h2>Internal Notes</h2></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include 'sourcing/vendors/field.html' with field=form.notes %}</div></section>
+<footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}#qualifications">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label }}</button></footer></form>
+{% endblock %}

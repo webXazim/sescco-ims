@@ -13,7 +13,7 @@ from urllib.parse import urljoin
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Run live Chromium checks against SESCCO MS benchmark Payroll screens.")
-    p.add_argument("--base-url", required=True, help="Application origin, e.g. https://ims.sescco.com")
+    p.add_argument("--base-url", required=True, help="Application origin, e.g. https://ms.sescco.com")
     p.add_argument("--username", default=os.getenv("IMS_BROWSER_BENCHMARK_USERNAME", ""))
     p.add_argument("--password-env", default="IMS_BROWSER_BENCHMARK_PASSWORD")
     p.add_argument("--evidence", default="payroll-browser-certification.json")

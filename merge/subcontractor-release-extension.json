@@ -1,0 +1,17 @@
+{
+  "extension_id": "subcontractor-services-upgrade-10",
+  "legacy_release": "1.0.117",
+  "legacy_contract": "merge/granular-access-authority.json",
+  "legacy_permission_catalog_size": 94,
+  "legacy_sorted_permission_keys_sha256": "5779eb3e368b736267df841db18ba8b3df92073b528acdf9abdb3447fd7a4481",
+  "approved_added_permissions": [
+    "sourcing.subcontractors.manage",
+    "sourcing.subcontractors.view"
+  ],
+  "expected_effective_permission_count": 96,
+  "accounts_grant_migration": "apps/accounts/migrations/0013_subcontractor_sourcing_authority.py",
+  "automatic_grant_scope": "role-owner-only",
+  "operational_domain_mutation_allowed": false,
+  "database_and_browser_staging_certification_required": true,
+  "historical_browser_contract_unchanged": true
+}

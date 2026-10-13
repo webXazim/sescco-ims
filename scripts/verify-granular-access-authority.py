@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.0.117"
-EXPECTED_PERMISSION_COUNT = 94
+EXPECTED_PERMISSION_COUNT = 94  # Frozen historical 1.0.117 foundation.
+APPROVED_EXTENSION = {"sourcing.subcontractors.view", "sourcing.subcontractors.manage"}
+LEGACY_CATALOG_SHA256 = "5779eb3e368b736267df841db18ba8b3df92073b528acdf9abdb3447fd7a4481"
 EXPECTED_ROLES = {
     "owner", "operations-admin", "access-admin", "inventory-manager", "storekeeper",
     "finance", "internal-officer", "rental-officer", "rental-supervisor", "reviewer", "auditor",
@@ -40,8 +43,31 @@ if (contract.get("authority") or {}).get("legacy_role_bridge") is not False:
 catalog = text("apps/accounts/access_catalog.py")
 class_block = catalog.split("class AccessPermission(StrEnum):", 1)[-1].split("_PERMISSION_LABELS", 1)[0]
 permissions = re.findall(r'^\s+[A-Z0-9_]+\s*=\s*"([^"]+)"', class_block, flags=re.M)
-if len(permissions) != EXPECTED_PERMISSION_COUNT or len(set(permissions)) != EXPECTED_PERMISSION_COUNT:
-    fail(f"AccessPermission must contain exactly {EXPECTED_PERMISSION_COUNT} unique keys")
+# Preserve the historical 94-key catalog exactly, and accept ONLY the separately
+# approved two-key Subcontractor extension. The historical contract stays immutable.
+extension = json.loads(text("merge/subcontractor-release-extension.json"))
+if extension.get("extension_id") != "subcontractor-services-upgrade-10":
+    fail("unapproved permission extension")
+if extension.get("legacy_release") != VERSION or extension.get("legacy_contract") != "merge/granular-access-authority.json":
+    fail("extension does not target the frozen historical access contract")
+if (extension.get("legacy_permission_catalog_size") != EXPECTED_PERMISSION_COUNT
+        or extension.get("legacy_sorted_permission_keys_sha256") != LEGACY_CATALOG_SHA256
+        or extension.get("approved_added_permissions") != sorted(APPROVED_EXTENSION)
+        or extension.get("expected_effective_permission_count") != EXPECTED_PERMISSION_COUNT + len(APPROVED_EXTENSION)
+        or extension.get("accounts_grant_migration") != "apps/accounts/migrations/0013_subcontractor_sourcing_authority.py"
+        or extension.get("automatic_grant_scope") != "role-owner-only"
+        or extension.get("operational_domain_mutation_allowed") is not False
+        or extension.get("database_and_browser_staging_certification_required") is not True
+        or extension.get("historical_browser_contract_unchanged") is not True):
+    fail("extension contract changes a protected release requirement")
+if len(permissions) != EXPECTED_PERMISSION_COUNT + len(APPROVED_EXTENSION) or len(set(permissions)) != len(permissions):
+    fail("effective AccessPermission catalog must contain exactly 96 unique keys")
+if not APPROVED_EXTENSION.issubset(permissions):
+    fail("required Subcontractor permissions are missing")
+legacy = set(permissions) - APPROVED_EXTENSION
+legacy_digest = hashlib.sha256("\n".join(sorted(legacy)).encode("utf-8")).hexdigest()
+if len(legacy) != EXPECTED_PERMISSION_COUNT or legacy_digest != LEGACY_CATALOG_SHA256:
+    fail("historical 94 permission keys changed or unapproved permissions were added")
 for required in (
     "access.users.manage", "access.profiles.manage", "inventory.stock.receive", "inventory.stock.transfer",
     "inventory.movements.reverse", "internal.attendance.edit", "internal.payroll_runs.approve",
@@ -128,4 +154,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "merge_access_report --fail-on-errors" not in text("scripts/rehearse-production-freeze.sh"):
     fail("production rehearsal lost company/access reconciliation")
 
-print("Verified SESCCO MS 1.0.117 granular access authority: 94 permissions including independent Sourcing grants, system profiles, explicit scopes, request cache and profile-only runtime authority.")
+print("Verified frozen 94-key SESCCO MS 1.0.117 permission catalog plus the exact two-key Subcontractor addendum (96 keys); profile-only authority retained.")
