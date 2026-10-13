@@ -24,7 +24,7 @@ from apps.sourcing.models import (
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class MaterialFinderTests(TestCase):
     def _get(self, path, *args, **kwargs):
-        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        # Bookmarked former Finder URLs now redirect to unified company directories.
         if path.split("?", 1)[0] in (
             reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
             reverse("sourcing:service_finder"),
@@ -121,9 +121,16 @@ class MaterialFinderTests(TestCase):
         self.client.force_login(viewer)
         response = self._get(reverse("sourcing:material_finder"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Materials & Rates")
         self.assertContains(response, "Eastern Steel")
-        self.assertNotContains(response, "Edit reference")
+        self.assertContains(response, 'data-unified-form')
+        # Verification/editing actions live in the on-demand capability panel.
+        detail = self.client.get(reverse('sourcing:vendor_list'), {
+            'fragment': 'capabilities', 'provider': self.vendor_a.pk,
+        })
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, 'Rebar 12mm')
+        self.assertContains(detail, 'Verification history')
+        self.assertNotContains(detail, 'Edit reference')
 
         self.client.force_login(master_only)
         self.assertEqual(self._get(reverse("sourcing:material_finder")).status_code, 403)
@@ -243,8 +250,19 @@ class MaterialFinderTests(TestCase):
             reverse("sourcing:material_finder"),
             {"q": "Benchmark", "page_size": 50, "page": 2},
         )
-        self.assertEqual(page_two.context["page_obj"].paginator.count, 53)
-        self.assertEqual(len(page_two.context["offers"]), 3)
+        # The unified directory paginates matching COMPANIES, not individual offers.
+        self.assertEqual(page_two.context["page_obj"].paginator.count, 1)
+        self.assertEqual(page_two.context["page_obj"].number, 1)
+        # All 53 matching offers remain paginatable in the expanded company row.
+        detail = self.client.get(reverse('sourcing:vendor_list'), {
+            'fragment': 'capabilities', 'provider': self.vendor_a.pk,
+            'q': 'Benchmark', 'cap_page': 3,
+        })
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.context['offer_page'].paginator.count, 53)
+        self.assertEqual(detail.context['offer_page'].number, 3)
+        self.assertEqual(len(detail.context['offers']), 13)
+        self.assertContains(detail, 'Benchmark ')
 
     def test_vendor_editor_gets_edit_action_from_finder(self):
         editor, _ = self._member(
@@ -258,4 +276,10 @@ class MaterialFinderTests(TestCase):
         self.client.force_login(editor)
         response = self._get(reverse("sourcing:material_finder"), {"q": "Rebar"})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, reverse("sourcing:vendor_offer_edit", args=[self.vendor_a.pk, offer.pk]))
+        self.assertContains(response, 'data-provider-expand')
+        detail = self.client.get(reverse('sourcing:vendor_list'), {
+            'fragment': 'capabilities', 'provider': self.vendor_a.pk,
+            'q': 'Rebar',
+        })
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, reverse('sourcing:vendor_offer_edit', args=[self.vendor_a.pk, offer.pk]))

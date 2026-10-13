@@ -30,6 +30,9 @@
     document.querySelectorAll('[data-unified-export]').forEach((link) => {
       const dest = new URL(link.href, location.href);
       dest.search = url.search;
+      // Export the same unified filter set as the screen, even after live typing.
+      // Without this flag export_rows falls back to the legacy offer query.
+      dest.searchParams.set('unified', '1');
       dest.searchParams.set('format', 'xlsx');
       link.href = dest.pathname + dest.search;
     });

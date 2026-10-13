@@ -1,5 +1,5 @@
 {% extends "sourcing/base.html" %}
-{% load static %}
+{% load static sourcing_directory_urls %}
 {% block title %}Manpower Suppliers · {{ APP_NAME }}{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.123">{% endblock %}
 {% block content %}
@@ -10,7 +10,7 @@
     <p>Reference companies SESCCO may call for workers. This directory never creates Rental Payroll suppliers, workers, assignments, settlements or payroll.</p>
   </div>
   {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:manpower_supplier_create' %}">+ New Manpower Supplier</a>{% endif %}
-  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}?unified=1&amp;format=xlsx&amp;{{ request.GET.urlencode }}">Export companies</a><a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}?unified=1&amp;format=xlsx&amp;{{ request.GET.urlencode }}">Export capabilities</a>{% endif %}
+  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a><a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>{% endif %}
 </section>
 
 <p class="sourcing-unified-intro">Find companies and compare their matching {% if kind == 'vendor' %}materials{% elif kind == 'manpower' %}workforce{% else %}services{% endif %} in one directory. Open a company's capabilities below to review quantities, rates and verification details.</p>
@@ -60,9 +60,9 @@
   <div data-unified-results aria-live="polite" aria-atomic="false">
 
   <div class="sourcing-status-strip" aria-label="Manpower supplier filters">
-    <a class="{% if directory.status == 'active' %}active{% endif %}" href="?{{ request.GET.urlencode }}&amp;status=active&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Active <span>{{ counts.active }}</span></a>
-    <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?{{ request.GET.urlencode }}&amp;status=inactive&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Inactive <span>{{ counts.inactive }}</span></a>
-    <a class="{% if directory.status == 'archived' %}active{% endif %}" href="?{{ request.GET.urlencode }}&amp;status=archived&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Archived <span>{{ counts.archived }}</span></a>
+    <a class="{% if directory.status == 'active' %}active{% endif %}" href="{% sourcing_directory_url status='active' page=None %}">Active <span>{{ counts.active }}</span></a>
+    <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="{% sourcing_directory_url status='inactive' page=None %}">Inactive <span>{{ counts.inactive }}</span></a>
+    <a class="{% if directory.status == 'archived' %}active{% endif %}" href="{% sourcing_directory_url status='archived' page=None %}">Archived <span>{{ counts.archived }}</span></a>
   </div>
 
   <div class="sourcing-table-wrap">
@@ -87,7 +87,7 @@
     </table>
   </div>
 
-  {% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav aria-label="Manpower Supplier pages">{% if page_obj.has_previous %}<a href="?{{ request.GET.urlencode }}&amp;page={{ page_obj.previous_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="?{{ request.GET.urlencode }}&amp;page={{ page_obj.next_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
+  {% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav aria-label="Manpower Supplier pages">{% if page_obj.has_previous %}<a href="{% sourcing_directory_url page=page_obj.previous_page_number %}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="{% sourcing_directory_url page=page_obj.next_page_number %}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
   </div>
 </section>
 {% endblock %}

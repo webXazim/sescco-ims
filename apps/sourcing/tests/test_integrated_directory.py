@@ -185,3 +185,49 @@ class IntegratedSourcingDirectoryTests(TestCase):
         self.assertContains(response, "Page 3 of 5")
         self.assertContains(response, 'data-unified-results')
         self.assertNotContains(response, 'view=offers')
+
+    def test_status_and_pagination_links_preserve_filters_without_duplicates(self):
+        from html import unescape
+        from html.parser import HTMLParser
+        from urllib.parse import urlsplit, parse_qs
+        from django.test import RequestFactory
+        from apps.sourcing.templatetags.sourcing_directory_urls import sourcing_directory_url
+
+        class StatusLinks(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.in_status = False
+                self.links = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'div' and 'sourcing-status-strip' in attrs.get('class', '').split():
+                    self.in_status = True
+                if self.in_status and tag == 'a':
+                    self.links.append(attrs['href'])
+
+            def handle_endtag(self, tag):
+                if tag == 'div' and self.in_status:
+                    self.in_status = False
+
+        for route in ('sourcing:vendor_list', 'sourcing:manpower_supplier_list',
+                      'sourcing:subcontractor_list'):
+            page = self.client.get(reverse(route), {'q': '', 'category': 'Civil', 'status': 'active'})
+            self.assertEqual(page.status_code, 200)
+            parser = StatusLinks()
+            parser.feed(page.content.decode())
+            self.assertGreaterEqual(len(parser.links), 3)
+            for href in parser.links:
+                query = parse_qs(urlsplit(unescape(href)).query)
+                self.assertEqual(len(query.get('status', [])), 1)
+                self.assertEqual(query.get('category'), ['Civil'])
+                self.assertNotIn('page', query)
+
+        request = RequestFactory().get('/app/sourcing/vendors/', {'q': 'Rebar', 'page': 5,
+            'status': 'active', 'category': 'Civil'})
+        link = sourcing_directory_url({'request': request}, page=2)
+        params = parse_qs(urlsplit(link).query)
+        self.assertEqual(params['page'], ['2'])
+        self.assertEqual(params['status'], ['active'])
+        self.assertEqual(params['category'], ['Civil'])
+        self.assertEqual(params['q'], ['Rebar'])
