@@ -79,6 +79,7 @@ def manpower_directory_page(*, company, params) -> ManpowerDirectoryResult:
             | Q(cr_number__icontains=query)
             | Q(vat_number__icontains=query)
             | Q(_contact_match=True)
+            | Q(_trade_match=True)
         )
 
     field = ALLOWED_SORTS[sort]

@@ -9,9 +9,17 @@
     <p>Reference companies SESCCO may call for materials. This directory never creates Inventory stock or supplier transactions.</p>
   </div>
   {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_create' %}">+ New Vendor</a>{% endif %}
-  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% url 'sourcing:data_export' 'vendors' %}?format=xlsx&{{ request.GET.urlencode }}">Export current view</a>{% endif %}
+  {% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% if view_mode == 'offers' %}{% url 'sourcing:data_export' 'vendor_catalog' %}{% else %}{% url 'sourcing:data_export' 'vendors' %}{% endif %}?format=xlsx&amp;{{ request.GET.urlencode }}{% if view_mode != 'offers' %}&amp;status={{ directory.status }}{% endif %}">Export current view</a>{% endif %}
 </section>
 
+<nav class="sourcing-directory-views" aria-label="Vendor Directory search modes">
+  <a href="{% url 'sourcing:vendor_list' %}" class="sourcing-directory-views__tab {% if view_mode != 'offers' %}is-active{% endif %}"{% if view_mode != 'offers' %} aria-current="page"{% endif %}>Vendor Directory</a>
+  <a href="{% url 'sourcing:vendor_list' %}?view=offers" class="sourcing-directory-views__tab {% if view_mode == 'offers' %}is-active{% endif %}"{% if view_mode == 'offers' %} aria-current="page"{% endif %}>Materials & Rates</a>
+</nav>
+{% if view_mode == 'offers' %}
+<div class="sourcing-reference-banner"><strong>Reference only</strong><span>Search active catalog references and compare availability, rates and verification dates. Confirm all details with the provider before use; no operational transactions are created.</span></div>
+{% include "sourcing/vendors/_offers.html" %}
+{% else %}
 <section class="sourcing-directory-card">
   <form class="sourcing-toolbar" method="get" action="{% url 'sourcing:vendor_list' %}">
     <label class="sourcing-search"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ directory.query }}" placeholder="Search vendor, material, material type/category, contact, address, CR or VAT" autocomplete="off"><button type="submit">Search</button></label>
@@ -39,14 +47,25 @@
         </div>
       </details>
     </div>
-    <input type="hidden" name="sort" value="{{ directory.sort }}">
-    <input type="hidden" name="dir" value="{{ directory.direction }}">
+    <div class="sourcing-directory-sort">
+      <label>Sort by <select name="sort" class="sourcing-select" aria-label="Sort companies by" onchange="this.form.submit()">
+        <option value="name"{% if directory.sort == 'name' %} selected{% endif %}>Name</option>
+        <option value="code"{% if directory.sort == 'code' %} selected{% endif %}>Code</option>
+        <option value="city"{% if directory.sort == 'city' %} selected{% endif %}>City</option>
+        <option value="verified"{% if directory.sort == 'verified' %} selected{% endif %}>Last verified</option>
+        <option value="updated"{% if directory.sort == 'updated' %} selected{% endif %}>Last updated</option>
+      </select></label>
+      <label>Order <select name="dir" class="sourcing-select" aria-label="Sort direction" onchange="this.form.submit()">
+        <option value="asc"{% if directory.direction == 'asc' %} selected{% endif %}>Ascending</option>
+        <option value="desc"{% if directory.direction == 'desc' %} selected{% endif %}>Descending</option>
+      </select></label>
+    </div>
   </form>
 
   <div class="sourcing-status-strip" aria-label="Vendor filters">
-    <a class="{% if directory.status == 'active' %}active{% endif %}" href="?status=active&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Active <span>{{ counts.active }}</span></a>
-    <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?status=inactive&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Inactive <span>{{ counts.inactive }}</span></a>
-    <a class="{% if directory.status == 'archived' %}active{% endif %}" href="?status=archived&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}">Archived <span>{{ counts.archived }}</span></a>
+    <a class="{% if directory.status == 'active' %}active{% endif %}" href="?status=active&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Active <span>{{ counts.active }}</span></a>
+    <a class="{% if directory.status == 'inactive' %}active{% endif %}" href="?status=inactive&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Inactive <span>{{ counts.inactive }}</span></a>
+    <a class="{% if directory.status == 'archived' %}active{% endif %}" href="?status=archived&q={{ directory.query|urlencode }}&page_size={{ directory.page_size }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Archived <span>{{ counts.archived }}</span></a>
   </div>
 
   <div class="sourcing-table-wrap">
@@ -110,5 +129,6 @@
   </footer>
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endblock %}
+{% block scripts %}{% if view_mode == 'offers' %}<script src="{% static 'sourcing/js/finder-scale.js' %}?v=1.0.118"></script>{% else %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endif %}{% endblock %}

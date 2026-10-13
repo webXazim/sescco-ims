@@ -11,7 +11,7 @@ from typing import Iterable
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 
@@ -27,14 +27,15 @@ from .models import (
     SourcingEntityStatus,
     SourcingMaterial,
     SourcingService, SourcingServiceRateBasis,
-    SourcingSubcontractor, SourcingSubcontractorService,
-    SourcingManpowerSupplier,
+    SourcingSubcontractor, SourcingSubcontractorContact, SourcingSubcontractorService,
+    SourcingManpowerSupplier, SourcingManpowerContact,
     SourcingRateBasis,
     SourcingTrade,
-    SourcingVendor,
+    SourcingVendor, SourcingVendorContact,
     SourcingVendorOffer,
     SourcingWorkforceOffer,
 )
+from .models.base import normalize_text
 from .services.catalog import (
     create_material,
     create_vendor_offer,
@@ -715,6 +716,50 @@ def _apply_freshness_filter(qs, *, company, value: str):
     return qs.filter(last_verified_at__isnull=True)
 
 
+def _directory_export_search(qs, *, company, dataset: str, query: str):
+    """Match capability and contact searches on company exports just like the directory."""
+    if not query:
+        return qs
+    normalized = normalize_text(query)
+    if dataset == "vendors":
+        contacts = SourcingVendorContact.objects.for_company(company).filter(
+            vendor_id=OuterRef("pk"), is_active=True,
+        ).filter(Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                 | Q(email__icontains=query) | Q(mobile__icontains=query)
+                 | Q(work_phone__icontains=query))
+        offers = SourcingVendorOffer.objects.for_company(company).filter(
+            vendor_id=OuterRef("pk"), is_active=True, material__is_active=True,
+        ).filter(Q(material__code__icontains=query) | Q(material__name__icontains=query)
+                 | Q(material__category__icontains=query)
+                 | Q(material__normalized_aliases__icontains=normalized)
+                 | Q(specification__icontains=query) | Q(brand__icontains=query)
+                 | Q(model__icontains=query))
+    elif dataset == "manpower_suppliers":
+        contacts = SourcingManpowerContact.objects.for_company(company).filter(
+            supplier_id=OuterRef("pk"), is_active=True,
+        ).filter(Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                 | Q(email__icontains=query) | Q(mobile__icontains=query)
+                 | Q(work_phone__icontains=query))
+        offers = SourcingWorkforceOffer.objects.for_company(company).filter(
+            supplier_id=OuterRef("pk"), is_active=True, trade__is_active=True,
+        ).filter(Q(trade__code__icontains=query) | Q(trade__name__icontains=query)
+                 | Q(trade__category__icontains=query)
+                 | Q(trade__normalized_aliases__icontains=normalized)
+                 | Q(work_location__icontains=query) | Q(mobilization_lead_time__icontains=query))
+    else:
+        contacts = SourcingSubcontractorContact.objects.for_company(company).filter(
+            subcontractor_id=OuterRef("pk"),
+        ).filter(Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                 | Q(email__icontains=query) | Q(mobile__icontains=query))
+        offers = SourcingSubcontractorService.objects.for_company(company).filter(
+            subcontractor_id=OuterRef("pk"), is_active=True, service__is_active=True,
+        ).filter(Q(service__code__icontains=query) | Q(service__name__icontains=query)
+                 | Q(service__category__icontains=query)
+                 | Q(service__normalized_aliases__icontains=normalized)
+                 | Q(scope_description__icontains=query) | Q(service_location__icontains=query))
+    return qs.annotate(_export_contact_hit=Exists(contacts), _export_offer_hit=Exists(offers))
+
+
 def export_rows(*, company, dataset: str, params) -> list[list[object]]:
     q = _text(params.get("q"))
     rows: list[list[object]] = []
@@ -730,6 +775,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             elif status == "archived":
                 qs = qs.filter(archived_at__isnull=False)
         if q:
+            qs = _directory_export_search(qs, company=company, dataset=dataset, query=q)
             qs = qs.filter(
                 Q(code__icontains=q)
                 | Q(name__icontains=q)
@@ -747,6 +793,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
                 | Q(postal_code__icontains=q)
                 | Q(cr_number__icontains=q)
                 | Q(vat_number__icontains=q)
+                | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([
@@ -772,7 +819,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
     elif dataset == "vendor_catalog":
         qs = SourcingVendorOffer.objects.for_company(company).select_related("vendor", "material", "verified_by").filter(vendor__deleted_at__isnull=True)
         finder_mode = any(key in params for key in ("freshness", "category", "vendor", "location", "rate_min", "rate_max", "page_size", "sort", "dir"))
-        if finder_mode:
+        if finder_mode or params.get("view") == "offers":
             qs = qs.filter(is_active=True, material__is_active=True, vendor__archived_at__isnull=True, vendor__status=SourcingEntityStatus.ACTIVE)
         vendor_code = _text(params.get("vendor_code"))
         material_code = _text(params.get("material_code"))
@@ -800,7 +847,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             qs = qs.filter(rate__lte=rate_max)
         qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
         if q:
-            qs = qs.filter(Q(vendor__name__icontains=q) | Q(vendor__code__icontains=q) | Q(material__name__icontains=q) | Q(material__code__icontains=q) | Q(specification__icontains=q) | Q(brand__icontains=q) | Q(model__icontains=q))
+            qs = qs.filter(Q(vendor__name__icontains=q) | Q(vendor__code__icontains=q) | Q(material__name__icontains=q) | Q(material__code__icontains=q) | Q(material__category__icontains=q) | Q(material__normalized_aliases__icontains=normalize_text(q)) | Q(specification__icontains=q) | Q(brand__icontains=q) | Q(model__icontains=q))
         for obj in qs.order_by("material__name", "vendor__name").iterator(chunk_size=500):
             rows.append([obj.vendor.code, obj.material.code, obj.specification, obj.brand, obj.model, obj.availability, obj.available_quantity, obj.unit, obj.minimum_quantity, obj.rate, obj.currency, obj.rate_valid_until, obj.lead_time, "", "", obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at])
     elif dataset == "manpower_suppliers":
@@ -815,7 +862,9 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             elif status == "archived":
                 qs = qs.filter(archived_at__isnull=False)
         if q:
-            qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(primary_contact_name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q))
+            qs = _directory_export_search(qs, company=company, dataset=dataset, query=q)
+            qs = qs.filter(Q(code__icontains=q) | Q(name__icontains=q) | Q(primary_contact_name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q) | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
+                           | Q(_export_contact_hit=True) | Q(_export_offer_hit=True))
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([obj.code, obj.name, obj.primary_contact_name, obj.phone, obj.mobile, obj.email, obj.city, obj.region, obj.cr_number, obj.vat_number, obj.status, obj.notes, obj.last_verified_at])
     elif dataset == "trades":
@@ -835,7 +884,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
     elif dataset == "workforce_catalog":
         qs = SourcingWorkforceOffer.objects.for_company(company).select_related("supplier", "trade", "verified_by").filter(supplier__deleted_at__isnull=True)
         finder_mode = any(key in params for key in ("freshness", "category", "supplier", "location", "rate_min", "rate_max", "page_size", "sort", "dir"))
-        if finder_mode:
+        if finder_mode or params.get("view") == "offers":
             qs = qs.filter(is_active=True, trade__is_active=True, supplier__archived_at__isnull=True, supplier__status=SourcingEntityStatus.ACTIVE)
         supplier_code = _text(params.get("supplier_code"))
         trade_code = _text(params.get("trade_code"))
@@ -866,7 +915,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             qs = qs.filter(rate__lte=rate_max)
         qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
         if q:
-            qs = qs.filter(Q(supplier__name__icontains=q) | Q(supplier__code__icontains=q) | Q(trade__name__icontains=q) | Q(trade__code__icontains=q) | Q(trade__normalized_aliases__icontains=q) | Q(work_location__icontains=q) | Q(mobilization_lead_time__icontains=q))
+            qs = qs.filter(Q(supplier__name__icontains=q) | Q(supplier__code__icontains=q) | Q(trade__name__icontains=q) | Q(trade__code__icontains=q) | Q(trade__normalized_aliases__icontains=normalize_text(q)) | Q(trade__category__icontains=q) | Q(work_location__icontains=q) | Q(mobilization_lead_time__icontains=q))
         for obj in qs.order_by("trade__name", "supplier__name").iterator(chunk_size=500):
             rows.append([obj.supplier.code, obj.trade.code, obj.availability, obj.available_quantity, obj.rate, obj.currency, obj.rate_basis, obj.overtime_rate, obj.rate_valid_until, obj.mobilization_lead_time, obj.work_location, "", "", obj.verification_note, obj.is_active, obj.notes, obj.last_verified_at])
     elif dataset == "subcontractors":
@@ -881,12 +930,14 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             elif status == "archived":
                 qs = qs.filter(archived_at__isnull=False)
         if q:
+            qs = _directory_export_search(qs, company=company, dataset=dataset, query=q)
             qs = qs.filter(
                 Q(code__icontains=q) | Q(name__icontains=q) | Q(display_name__icontains=q)
                 | Q(primary_contact_name__icontains=q) | Q(company_email__icontains=q)
                 | Q(email__icontains=q) | Q(city__icontains=q) | Q(region__icontains=q)
                 | Q(cr_number__icontains=q) | Q(vat_number__icontains=q)
                 | Q(service_coverage__icontains=q)
+                | Q(_export_contact_hit=True) | Q(_export_offer_hit=True)
             )
         for obj in qs.order_by("name", "code").iterator(chunk_size=500):
             rows.append([
@@ -921,7 +972,7 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
             "freshness", "category", "subcontractor", "location", "currency",
             "rate_min", "rate_max", "page_size", "sort", "dir",
         ))
-        if finder_mode:
+        if finder_mode or params.get("view") == "offers":
             qs = qs.filter(is_active=True, service__is_active=True,
                            subcontractor__archived_at__isnull=True,
                            subcontractor__status=SourcingEntityStatus.ACTIVE)
@@ -963,7 +1014,8 @@ def export_rows(*, company, dataset: str, params) -> list[list[object]]:
         qs = _apply_freshness_filter(qs, company=company, value=params.get("freshness"))
         if q:
             qs = qs.filter(Q(service__name__icontains=q) | Q(service__code__icontains=q)
-                           | Q(service__normalized_aliases__icontains=q)
+                           | Q(service__normalized_aliases__icontains=normalize_text(q))
+                           | Q(service__category__icontains=q)
                            | Q(subcontractor__name__icontains=q) | Q(subcontractor__code__icontains=q)
                            | Q(scope_description__icontains=q) | Q(service_location__icontains=q))
         for obj in qs.order_by("service__name", "subcontractor__name", "scope_description", "service_location").iterator(chunk_size=500):

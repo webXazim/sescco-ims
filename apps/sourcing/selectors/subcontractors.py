@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from django.core.paginator import Paginator
 
 from ..freshness import sourcing_freshness_policy, freshness_key, freshness_label
-from django.db.models import Exists, OuterRef, Q, Count
+from django.db.models import Exists, OuterRef, Q, Count, Subquery, Value, IntegerField
+from django.db.models.functions import Coalesce
+from ..models.base import normalize_text
 from django.utils import timezone
 
 from apps.core.models import AuditArea, AuditEvent
-from ..models import SourcingEntityStatus, SourcingSubcontractor, SourcingSubcontractorContact, SourcingSubcontractorVerificationRevision
+from ..models import SourcingEntityStatus, SourcingSubcontractor, SourcingSubcontractorContact, SourcingSubcontractorVerificationRevision, SourcingSubcontractorService
 
 PAGE_SIZES = (25, 50, 100)
 SORTS = {"name": "normalized_name", "code": "code", "city": "city", "updated": "updated_at", "verified": "last_verified_at"}
@@ -54,26 +56,36 @@ def subcontractor_directory_page(*, company, params):
         elif status == "archived":
             qs = qs.filter(archived_at__isnull=False)
     contact_qs = SourcingSubcontractorContact.objects.for_company(company).filter(subcontractor_id=OuterRef("pk"))
+    service_qs = SourcingSubcontractorService.objects.for_company(company).filter(subcontractor_id=OuterRef("pk"))
+    contact_total = (contact_qs.order_by().values("subcontractor_id")
+                     .annotate(total=Count("pk")).values("total")[:1])
+    service_total = (service_qs.filter(is_active=True, service__is_active=True)
+                     .order_by().values("subcontractor_id")
+                     .annotate(total=Count("pk")).values("total")[:1])
     qs = qs.annotate(
-        contact_count=Count("contacts", filter=Q(contacts__company=company), distinct=True),
-        active_service_count=Count(
-            "service_offers",
-            filter=Q(service_offers__company=company, service_offers__is_active=True,
-                     service_offers__service__is_active=True),
-            distinct=True,
-        ),
+        contact_count=Coalesce(Subquery(contact_total, output_field=IntegerField()), Value(0)),
+        active_service_count=Coalesce(Subquery(service_total, output_field=IntegerField()), Value(0)),
     )
     if query:
-        qs = qs.annotate(contact_hit=Exists(contact_qs.filter(
-            Q(first_name__icontains=query) | Q(last_name__icontains=query)
-            | Q(email__icontains=query) | Q(mobile__icontains=query)
-        ))).filter(
+        normalized = normalize_text(query)
+        qs = qs.annotate(
+            contact_hit=Exists(contact_qs.filter(
+                Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                | Q(email__icontains=query) | Q(mobile__icontains=query)
+            )),
+            service_hit=Exists(service_qs.filter(is_active=True, service__is_active=True).filter(
+                Q(service__code__icontains=query) | Q(service__name__icontains=query)
+                | Q(service__category__icontains=query)
+                | Q(service__normalized_aliases__icontains=normalized)
+                | Q(scope_description__icontains=query) | Q(service_location__icontains=query)
+            )),
+        ).filter(
             Q(code__icontains=query) | Q(name__icontains=query) | Q(display_name__icontains=query)
             | Q(primary_contact_name__icontains=query) | Q(company_phone__icontains=query)
             | Q(company_email__icontains=query) | Q(mobile__icontains=query) | Q(email__icontains=query)
             | Q(city__icontains=query) | Q(region__icontains=query) | Q(address__icontains=query)
             | Q(cr_number__icontains=query) | Q(vat_number__icontains=query)
-            | Q(service_coverage__icontains=query) | Q(contact_hit=True)
+            | Q(service_coverage__icontains=query) | Q(contact_hit=True) | Q(service_hit=True)
         )
     field = SORTS[sort]
     qs = qs.order_by(("-" if direction == "desc" else "") + field, "pk")

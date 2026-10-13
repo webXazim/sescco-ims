@@ -57,11 +57,11 @@ class SourcingBrowserE2EFreezeContractTests(SimpleTestCase):
         for rel in (
             "templates/sourcing/vendors/list.html",
             "templates/sourcing/vendors/detail.html",
-            "templates/sourcing/material_finder/list.html",
+            "templates/sourcing/vendors/_offers.html",
             "templates/sourcing/materials/list.html",
             "templates/sourcing/manpower/list.html",
             "templates/sourcing/manpower/detail.html",
-            "templates/sourcing/workforce_finder/list.html",
+            "templates/sourcing/manpower/_offers.html",
             "templates/sourcing/trades/list.html",
         ):
             self.assertIn("sourcing-row-menu", (ROOT / rel).read_text(encoding="utf-8"))

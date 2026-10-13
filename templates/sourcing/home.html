@@ -19,7 +19,7 @@
     <div><span class="eyebrow">Vendor sourcing</span><h2>Vendors & Materials</h2></div>
     <p>Reference vendor capabilities, quantities, rates and verification freshness.</p>
     <span class="status-pill">{% if SOURCING_ACCESS.vendors.manage %}Edit access{% else %}View only{% endif %}</span>
-    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:vendor_list' %}">Open Vendor Directory</a><a class="sourcing-btn" href="{% url 'sourcing:material_finder' %}">Find Material</a></div>
+    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:vendor_list' %}">Open Vendor Directory</a><a class="sourcing-btn" href="{% url 'sourcing:vendor_list' %}?view=offers">Browse Materials</a></div>
   </section>
   {% endif %}
 
@@ -28,8 +28,8 @@
     <div><span class="eyebrow">Manpower sourcing</span><h2>Suppliers & Workforce</h2></div>
     <p>Reference worker trades, available quantity, rate basis and mobilization.</p>
     <span class="status-pill">{% if SOURCING_ACCESS.manpower.manage %}Edit access{% else %}View only{% endif %}</span>
-    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_list' %}">Open Manpower Suppliers</a><a class="sourcing-btn" href="{% url 'sourcing:workforce_finder' %}">Find Workforce</a></div>
-    <small>Workforce catalogs and Finder remain sourcing-only and separate from Rental Payroll.</small>
+    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_list' %}">Open Manpower Suppliers</a><a class="sourcing-btn" href="{% url 'sourcing:manpower_supplier_list' %}?view=offers">Browse Workforce</a></div>
+    <small>Workforce catalogs remain sourcing-only and separate from Rental Payroll.</small>
   </section>
   {% endif %}
 
@@ -38,7 +38,7 @@
     <div><span class="eyebrow">Service sourcing</span><h2>Subcontractors & Services</h2></div>
     <p>Find subcontractor capabilities by service, scope, coverage, availability, rates and verification freshness.</p>
     <span class="status-pill">{% if SOURCING_ACCESS.subcontractors.manage %}Edit access{% else %}View only{% endif %}</span>
-    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_list' %}">Open Subcontractors</a><a class="sourcing-btn" href="{% url 'sourcing:service_finder' %}">Find Service</a></div>
+    <div class="sourcing-card-actions"><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_list' %}">Open Subcontractors</a><a class="sourcing-btn" href="{% url 'sourcing:subcontractor_list' %}?view=offers">Browse Services</a></div>
   </section>
   {% endif %}
 

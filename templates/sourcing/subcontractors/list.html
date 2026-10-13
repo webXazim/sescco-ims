@@ -1,7 +1,16 @@
 {% extends "sourcing/base.html" %}
+{% load static %}
 {% block title %}Subcontractors · {{ APP_NAME }}{% endblock %}
 {% block content %}
-<section class="sourcing-page-head sourcing-page-head--u09"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Subcontractors</strong></nav><h1>Subcontractors</h1><p>{{ page_subtitle }}</p></div><div class="sourcing-page-actions"><a class="sourcing-btn" href="{% url 'sourcing:service_finder' %}">Service Finder</a>{% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% url 'sourcing:data_export' 'subcontractors' %}?format=xlsx&amp;{{ request.GET.urlencode }}">Export current view</a>{% endif %} {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:subcontractor_create' %}">+ New Subcontractor</a>{% endif %}</div></section>
+<section class="sourcing-page-head sourcing-page-head--u09"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><strong>Subcontractors</strong></nav><h1>Subcontractors</h1><p>{{ page_subtitle }}</p></div><div class="sourcing-page-actions">{% if SOURCING_ACCESS.export %}<a class="sourcing-btn" data-sourcing-export-current href="{% if view_mode == 'offers' %}{% url 'sourcing:data_export' 'subcontractor_service_catalog' %}{% else %}{% url 'sourcing:data_export' 'subcontractors' %}{% endif %}?format=xlsx&amp;{{ request.GET.urlencode }}{% if view_mode != 'offers' %}&amp;status={{ directory.status }}{% endif %}">Export current view</a>{% endif %} {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:subcontractor_create' %}">+ New Subcontractor</a>{% endif %}</div></section>
+<nav class="sourcing-directory-views" aria-label="Subcontractor Directory search modes">
+  <a href="{% url 'sourcing:subcontractor_list' %}" class="sourcing-directory-views__tab {% if view_mode != 'offers' %}is-active{% endif %}"{% if view_mode != 'offers' %} aria-current="page"{% endif %}>Subcontractor Directory</a>
+  <a href="{% url 'sourcing:subcontractor_list' %}?view=offers" class="sourcing-directory-views__tab {% if view_mode == 'offers' %}is-active{% endif %}"{% if view_mode == 'offers' %} aria-current="page"{% endif %}>Services & Rates</a>
+</nav>
+{% if view_mode == 'offers' %}
+<div class="sourcing-reference-banner"><strong>Reference only</strong><span>Search active catalog references and compare availability, rates and verification dates. Confirm all details with the provider before use; no operational transactions are created.</span></div>
+{% include "sourcing/subcontractors/_offers.html" %}
+{% else %}
 <section class="sourcing-u09-stat-grid" aria-label="Subcontractor directory summary">
   <div class="sourcing-u09-stat"><span>Active</span><strong>{{ counts.active }}</strong><small>Active company profiles</small></div>
   <div class="sourcing-u09-stat"><span>Inactive</span><strong>{{ counts.inactive }}</strong><small>Retained references</small></div>
@@ -24,4 +33,5 @@
   </tbody></table></div>
   {% if page_obj.paginator.count %}<footer class="sourcing-pagination"><span>Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</span><nav aria-label="Subcontractor pages">{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</strong>{% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&page_size={{ directory.page_size }}&status={{ directory.status }}&q={{ directory.query|urlencode }}&sort={{ directory.sort }}&dir={{ directory.direction }}">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
 </section>
+{% endif %}
 {% endblock %}

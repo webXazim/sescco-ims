@@ -23,6 +23,15 @@ from apps.sourcing.models import (
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class MaterialFinderTests(TestCase):
+    def _get(self, path, *args, **kwargs):
+        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        if path.split("?", 1)[0] in (
+            reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
+            reverse("sourcing:service_finder"),
+        ):
+            kwargs.setdefault("follow", True)
+        return self.client.get(path, *args, **kwargs)
+
     def setUp(self):
         User = get_user_model()
         self.company = Company.objects.create(name="Material Finder Co", slug="material-finder-co")
@@ -110,14 +119,14 @@ class MaterialFinderTests(TestCase):
         self._offer(days=1)
 
         self.client.force_login(viewer)
-        response = self.client.get(reverse("sourcing:material_finder"))
+        response = self._get(reverse("sourcing:material_finder"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Material Finder")
+        self.assertContains(response, "Materials & Rates")
         self.assertContains(response, "Eastern Steel")
         self.assertNotContains(response, "Edit reference")
 
         self.client.force_login(master_only)
-        self.assertEqual(self.client.get(reverse("sourcing:material_finder")).status_code, 403)
+        self.assertEqual(self._get(reverse("sourcing:material_finder")).status_code, 403)
 
     def test_free_text_search_matches_material_name_and_category_type(self):
         viewer, _ = self._member(
@@ -129,12 +138,12 @@ class MaterialFinderTests(TestCase):
 
         self.client.force_login(viewer)
 
-        material_response = self.client.get(reverse("sourcing:material_finder"), {"q": "Rebar 12mm"})
+        material_response = self._get(reverse("sourcing:material_finder"), {"q": "Rebar 12mm"})
         self.assertEqual(material_response.context["page_obj"].paginator.count, 1)
         self.assertContains(material_response, "Eastern Steel")
         self.assertNotContains(material_response, "Jubail Material Source")
 
-        type_response = self.client.get(reverse("sourcing:material_finder"), {"q": "Electrical"})
+        type_response = self._get(reverse("sourcing:material_finder"), {"q": "Electrical"})
         self.assertEqual(type_response.context["page_obj"].paginator.count, 1)
         self.assertContains(type_response, "Jubail Material Source")
         self.assertNotContains(type_response, "Eastern Steel")
@@ -175,7 +184,7 @@ class MaterialFinderTests(TestCase):
         )
 
         self.client.force_login(viewer)
-        response = self.client.get(reverse("sourcing:material_finder"), {"q": "Steel Bar 12mm"})
+        response = self._get(reverse("sourcing:material_finder"), {"q": "Steel Bar 12mm"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].paginator.count, 2)
         self.assertContains(response, "Eastern Steel")
@@ -202,7 +211,7 @@ class MaterialFinderTests(TestCase):
             ("stale", "Old Vendor"),
             ("never", "Never Vendor"),
         ):
-            response = self.client.get(reverse("sourcing:material_finder"), {"freshness": key})
+            response = self._get(reverse("sourcing:material_finder"), {"freshness": key})
             self.assertEqual(response.context["page_obj"].paginator.count, 1)
             self.assertContains(response, expected_vendor)
 
@@ -223,14 +232,14 @@ class MaterialFinderTests(TestCase):
             )
 
         self.client.force_login(viewer)
-        filtered = self.client.get(
+        filtered = self._get(
             reverse("sourcing:material_finder"),
             {"category": "Electrical", "availability": "limited", "location": "Jubail", "rate_max": "30"},
         )
         self.assertEqual(filtered.context["page_obj"].paginator.count, 1)
         self.assertContains(filtered, "Electrical Cable")
 
-        page_two = self.client.get(
+        page_two = self._get(
             reverse("sourcing:material_finder"),
             {"q": "Benchmark", "page_size": 50, "page": 2},
         )
@@ -247,6 +256,6 @@ class MaterialFinderTests(TestCase):
         )
         offer = self._offer(days=1)
         self.client.force_login(editor)
-        response = self.client.get(reverse("sourcing:material_finder"), {"q": "Rebar"})
+        response = self._get(reverse("sourcing:material_finder"), {"q": "Rebar"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("sourcing:vendor_offer_edit", args=[self.vendor_a.pk, offer.pk]))

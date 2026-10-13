@@ -23,6 +23,15 @@ from apps.sourcing.models import (
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class WorkforceFinderVerificationTests(TestCase):
+    def _get(self, path, *args, **kwargs):
+        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        if path.split("?", 1)[0] in (
+            reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
+            reverse("sourcing:service_finder"),
+        ):
+            kwargs.setdefault("follow", True)
+        return self.client.get(path, *args, **kwargs)
+
     def setUp(self):
         User = get_user_model()
         self.company = Company.objects.create(name="Workforce Finder Co", slug="workforce-finder-co")
@@ -92,13 +101,13 @@ class WorkforceFinderVerificationTests(TestCase):
         )
         self._offer()
         self.client.force_login(viewer)
-        response = self.client.get(reverse("sourcing:workforce_finder"))
+        response = self._get(reverse("sourcing:workforce_finder"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Workforce Finder")
+        self.assertContains(response, "Workforce & Rates")
         self.assertContains(response, "AC Technician")
         self.assertNotContains(response, "Edit reference")
         self.client.force_login(vendor_only)
-        self.assertEqual(self.client.get(reverse("sourcing:workforce_finder")).status_code, 403)
+        self.assertEqual(self._get(reverse("sourcing:workforce_finder")).status_code, 403)
 
     def test_alias_search_company_and_supplier_lifecycle_isolation(self):
         viewer, _ = self._member(
@@ -115,7 +124,7 @@ class WorkforceFinderVerificationTests(TestCase):
         foreign_supplier = SourcingManpowerSupplier.objects.create(company=self.other_company, code="MPS-FOREIGN", name="Foreign Supplier")
         SourcingWorkforceOffer.objects.create(company=self.other_company, supplier=foreign_supplier, trade=foreign_trade)
         self.client.force_login(viewer)
-        response = self.client.get(reverse("sourcing:workforce_finder"), {"q": "A/C Technician"})
+        response = self._get(reverse("sourcing:workforce_finder"), {"q": "A/C Technician"})
         self.assertEqual(response.context["page_obj"].paginator.count, 2)
         self.assertContains(response, "Eastern Workforce")
         self.assertContains(response, "Jubail Workforce")
@@ -134,9 +143,9 @@ class WorkforceFinderVerificationTests(TestCase):
         self._offer(supplier=old_supplier, trade=self.electrician, days=60, basis="day", rate="260")
         self._offer(supplier=never_supplier, trade=self.electrician, days=None, basis="day", rate="270")
         self.client.force_login(viewer)
-        fresh = self.client.get(reverse("sourcing:workforce_finder"), {"freshness": "fresh"})
+        fresh = self._get(reverse("sourcing:workforce_finder"), {"freshness": "fresh"})
         self.assertEqual(fresh.context["page_obj"].paginator.count, 1)
-        filtered = self.client.get(
+        filtered = self._get(
             reverse("sourcing:workforce_finder"),
             {"category": "Electrical", "rate_basis": "day", "location": "Jubail", "rate_max": "255"},
         )
@@ -148,7 +157,7 @@ class WorkforceFinderVerificationTests(TestCase):
                 company=self.company, code=f"MPS-B{index:03d}", name=f"Benchmark Supplier {index:03d}",
             )
             self._offer(supplier=supplier, trade=bench_trade, days=None, qty=None, rate=None, availability="unknown")
-        page_two = self.client.get(reverse("sourcing:workforce_finder"), {"q": "Benchmark Trade", "page_size": 50, "page": 2})
+        page_two = self._get(reverse("sourcing:workforce_finder"), {"q": "Benchmark Trade", "page_size": 50, "page": 2})
         self.assertEqual(page_two.context["page_obj"].paginator.count, 53)
         self.assertEqual(len(page_two.context["offers"]), 3)
 
@@ -185,7 +194,7 @@ class WorkforceFinderVerificationTests(TestCase):
         self.assertEqual(revision.before["availableQuantity"], 4)
         self.assertEqual(revision.after["availableQuantity"], 12)
         self.assertTrue(AuditEvent.objects.filter(company=self.company, area=AuditArea.SOURCING, action="sourcing.workforce_offer.verified", object_id=str(offer.pk)).exists())
-        fresh = self.client.get(reverse("sourcing:workforce_finder"), {"freshness": "fresh", "q": "AC Technician"})
+        fresh = self._get(reverse("sourcing:workforce_finder"), {"freshness": "fresh", "q": "AC Technician"})
         self.assertEqual(fresh.context["page_obj"].paginator.count, 1)
 
     def test_viewer_can_read_history_but_cannot_verify(self):
@@ -208,16 +217,16 @@ class WorkforceFinderVerificationTests(TestCase):
             note="Confirmed",
         )
         self.client.force_login(viewer)
-        history = self.client.get(reverse("sourcing:workforce_offer_history", args=[self.supplier_a.pk, offer.pk]))
+        history = self._get(reverse("sourcing:workforce_offer_history", args=[self.supplier_a.pk, offer.pk]))
         self.assertEqual(history.status_code, 200)
         self.assertContains(history, "Workforce Verification History")
         self.assertContains(history, "Ahmed")
-        self.assertEqual(self.client.get(reverse("sourcing:workforce_offer_verify", args=[self.supplier_a.pk, offer.pk])).status_code, 403)
+        self.assertEqual(self._get(reverse("sourcing:workforce_offer_verify", args=[self.supplier_a.pk, offer.pk])).status_code, 403)
 
     def test_cross_company_history_and_verify_fail_closed(self):
         foreign_trade = SourcingTrade.objects.create(company=self.other_company, code="TRD-X", name="Foreign Trade")
         foreign_supplier = SourcingManpowerSupplier.objects.create(company=self.other_company, code="MPS-X", name="Foreign Supplier")
         foreign_offer = SourcingWorkforceOffer.objects.create(company=self.other_company, supplier=foreign_supplier, trade=foreign_trade)
         self.client.force_login(self.owner_user)
-        self.assertEqual(self.client.get(reverse("sourcing:workforce_offer_history", args=[foreign_supplier.pk, foreign_offer.pk])).status_code, 404)
-        self.assertEqual(self.client.get(reverse("sourcing:workforce_offer_verify", args=[foreign_supplier.pk, foreign_offer.pk])).status_code, 404)
+        self.assertEqual(self._get(reverse("sourcing:workforce_offer_history", args=[foreign_supplier.pk, foreign_offer.pk])).status_code, 404)
+        self.assertEqual(self._get(reverse("sourcing:workforce_offer_verify", args=[foreign_supplier.pk, foreign_offer.pk])).status_code, 404)

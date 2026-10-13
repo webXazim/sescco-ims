@@ -335,9 +335,53 @@ def sourcing_home(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _integrated_offer_querystring(finder, kind: str) -> str:
+    """Canonical, bounded filters for stable pagination and copyable view links."""
+    fields = ["query", "availability", "freshness", "category", "location", "rate_min",
+              "rate_max", "sort", "direction", "page_size"]
+    fields.append({"vendor": "vendor", "workforce": "supplier", "service": "subcontractor"}[kind])
+    if kind in {"workforce", "service"}:
+        fields.append("rate_basis")
+    if kind == "service":
+        fields.append("currency")
+    names = {"query": "q", "direction": "dir"}
+    return urlencode([("view", "offers"), *[(names.get(key, key), getattr(finder, key)) for key in fields]])
+
+
+def _render_integrated_offers(request: HttpRequest, *, kind: str) -> HttpResponse:
+    """Search catalog records on their parent directory, without a second page or N+1 lists."""
+    config = {
+        "vendor": (material_finder_page, material_finder_categories, "sourcing/vendors/list.html",
+                   "sourcing-vendors", "Vendors", "vendor", membership_can_manage_vendor_sourcing),
+        "workforce": (workforce_finder_page, workforce_finder_categories, "sourcing/manpower/list.html",
+                      "sourcing-manpower", "Manpower Suppliers", "supplier", membership_can_manage_manpower_sourcing),
+        "service": (service_finder_page, service_finder_categories, "sourcing/subcontractors/list.html",
+                    "sourcing-subcontractors", "Subcontractors", "subcontractor", membership_can_manage_subcontractor_sourcing),
+    }
+    selector, categories, template, page_key, title, _field, permission = config[kind]
+    finder = selector(company=request.company, params=request.GET)
+    context = _base_context(
+        request, page_key=page_key, page_title=title,
+        page_subtitle="Search and compare sourcing-only company capabilities and their verification freshness.",
+    )
+    context.update(
+        view_mode="offers", finder=finder, page_obj=finder.page_obj,
+        offers=finder.page_obj.object_list, page_sizes=(25, 50, 100),
+        availability_choices=SourcingAvailability.choices,
+        categories=categories(company=request.company),
+        filter_querystring=_integrated_offer_querystring(finder, kind),
+        can_manage=permission(_membership(request)),
+    )
+    if kind == "service":
+        context["rate_basis_choices"] = SourcingServiceRateBasis.choices
+    return render(request, template, context)
+
+
 @login_required
 def vendor_list(request: HttpRequest) -> HttpResponse:
     _require_vendor_view(request)
+    if request.GET.get("view") == "offers":
+        return _render_integrated_offers(request, kind="vendor")
     directory = vendor_directory_page(company=request.company, params=request.GET)
     base_qs = SourcingVendor.objects.for_company(request.company)
     counts = {
@@ -811,6 +855,8 @@ def vendor_contact_delete(request: HttpRequest, vendor_id, contact_id) -> HttpRe
 @login_required
 def manpower_supplier_list(request: HttpRequest) -> HttpResponse:
     _require_manpower_view(request)
+    if request.GET.get("view") == "offers":
+        return _render_integrated_offers(request, kind="workforce")
     directory = manpower_directory_page(company=request.company, params=request.GET)
     base_qs = SourcingManpowerSupplier.objects.for_company(request.company)
     counts = {
@@ -1362,86 +1408,29 @@ def workforce_offer_history(request: HttpRequest, supplier_id, offer_id) -> Http
     return render(request, "sourcing/manpower/workforce_history.html", context)
 
 
+def _legacy_finder_redirect(request: HttpRequest, *, destination: str) -> HttpResponse:
+    """Existing links stay usable while all finder UI lives in the directory."""
+    params = request.GET.copy()
+    params["view"] = "offers"
+    return redirect(f"{reverse(destination)}?{params.urlencode()}")
+
+
 @login_required
 def material_finder(request: HttpRequest) -> HttpResponse:
     _require_vendor_view(request)
-    finder = material_finder_page(company=request.company, params=request.GET)
-    context = _base_context(
-        request,
-        page_key="sourcing-material-finder",
-        page_title="Material Finder",
-        page_subtitle="Find which reference Vendors can supply a material and compare last-known quantity, rate, lead time and verification freshness.",
-    )
-    context.update(
-        finder=finder,
-        page_obj=finder.page_obj,
-        offers=finder.page_obj.object_list,
-        page_sizes=FINDER_PAGE_SIZES,
-        availability_choices=SourcingAvailability.choices,
-        categories=material_finder_categories(company=request.company),
-        can_manage=membership_can_manage_vendor_sourcing(_membership(request)),
-    )
-    return render(request, "sourcing/material_finder/list.html", context)
+    return _legacy_finder_redirect(request, destination="sourcing:vendor_list")
 
 
 @login_required
 def service_finder(request: HttpRequest) -> HttpResponse:
     _require_subcontractor_view(request)
-    finder = service_finder_page(company=request.company, params=request.GET)
-    context = _base_context(
-        request,
-        page_key="sourcing-service-finder",
-        page_title="Service Finder",
-        page_subtitle="Find reference subcontractor service capabilities by scope, location, rate basis and verification freshness.",
-    )
-    context.update(
-        finder=finder,
-        page_obj=finder.page_obj,
-        offers=finder.page_obj.object_list,
-        filter_querystring=urlencode({
-            "q": finder.query,
-            "availability": finder.availability,
-            "freshness": finder.freshness,
-            "category": finder.category,
-            "subcontractor": finder.subcontractor,
-            "location": finder.location,
-            "rate_basis": finder.rate_basis,
-            "currency": finder.currency,
-            "rate_min": finder.rate_min,
-            "rate_max": finder.rate_max,
-            "sort": finder.sort,
-            "dir": finder.direction,
-            "page_size": finder.page_size,
-        }),
-        page_sizes=SERVICE_FINDER_PAGE_SIZES,
-        availability_choices=SourcingAvailability.choices,
-        rate_basis_choices=SourcingServiceRateBasis.choices,
-        categories=service_finder_categories(company=request.company),
-        can_manage=membership_can_manage_subcontractor_sourcing(_membership(request)),
-    )
-    return render(request, "sourcing/service_finder/list.html", context)
+    return _legacy_finder_redirect(request, destination="sourcing:subcontractor_list")
 
 
 @login_required
 def workforce_finder(request: HttpRequest) -> HttpResponse:
     _require_manpower_view(request)
-    finder = workforce_finder_page(company=request.company, params=request.GET)
-    context = _base_context(
-        request,
-        page_key="sourcing-workforce-finder",
-        page_title="Workforce Finder",
-        page_subtitle="Find which reference Manpower Suppliers can provide a worker type and compare last-known quantity, rate, mobilization and verification freshness.",
-    )
-    context.update(
-        finder=finder,
-        page_obj=finder.page_obj,
-        offers=finder.page_obj.object_list,
-        page_sizes=WORKFORCE_FINDER_PAGE_SIZES,
-        availability_choices=SourcingAvailability.choices,
-        categories=workforce_finder_categories(company=request.company),
-        can_manage=membership_can_manage_manpower_sourcing(_membership(request)),
-    )
-    return render(request, "sourcing/workforce_finder/list.html", context)
+    return _legacy_finder_redirect(request, destination="sourcing:manpower_supplier_list")
 
 
 @login_required
@@ -2138,6 +2127,8 @@ def _subcontractor_context(request, obj, page_title=None):
 @login_required
 def subcontractor_list(request: HttpRequest) -> HttpResponse:
     _require_subcontractor_view(request)
+    if request.GET.get("view") == "offers":
+        return _render_integrated_offers(request, kind="service")
     directory = subcontractor_directory_page(company=request.company, params=request.GET)
     qs = SourcingSubcontractor.objects.for_company(request.company)
     counts = {

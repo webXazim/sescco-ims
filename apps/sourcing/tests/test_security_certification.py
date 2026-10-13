@@ -145,7 +145,7 @@ class SourcingSecurityCertificationTests(TestCase):
         )
         vendor_client = self._client_for(vendor_user)
         self.assertEqual(vendor_client.get(reverse("sourcing:vendor_list")).status_code, 200)
-        self.assertEqual(vendor_client.get(reverse("sourcing:material_finder")).status_code, 200)
+        self.assertEqual(vendor_client.get(reverse("sourcing:material_finder"), follow=True).status_code, 200)
         self.assertEqual(vendor_client.get(reverse("sourcing:manpower_supplier_list")).status_code, 403)
         self.assertEqual(vendor_client.get(reverse("sourcing:workforce_finder")).status_code, 403)
 
@@ -155,7 +155,7 @@ class SourcingSecurityCertificationTests(TestCase):
         )
         manpower_client = self._client_for(manpower_user)
         self.assertEqual(manpower_client.get(reverse("sourcing:manpower_supplier_list")).status_code, 200)
-        self.assertEqual(manpower_client.get(reverse("sourcing:workforce_finder")).status_code, 200)
+        self.assertEqual(manpower_client.get(reverse("sourcing:workforce_finder"), follow=True).status_code, 200)
         self.assertEqual(manpower_client.get(reverse("sourcing:vendor_list")).status_code, 403)
         self.assertEqual(manpower_client.get(reverse("sourcing:material_finder")).status_code, 403)
 

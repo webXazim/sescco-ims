@@ -95,7 +95,17 @@ def manpower_directory_scale_annotations(*, company, queryset, contact_query: st
             | Q(mobile__icontains=contact_query)
             | Q(work_phone__icontains=contact_query)
         )
-        queryset = queryset.annotate(_contact_match=Exists(contact_match))
+        trade_match = SourcingWorkforceOffer.objects.for_company(company).filter(
+            supplier_id=OuterRef("pk"), is_active=True, trade__is_active=True,
+        ).filter(
+            Q(trade__code__icontains=contact_query)
+            | Q(trade__name__icontains=contact_query)
+            | Q(trade__category__icontains=contact_query)
+            | Q(trade__normalized_aliases__icontains=normalize_text(contact_query))
+            | Q(work_location__icontains=contact_query)
+            | Q(mobilization_lead_time__icontains=contact_query)
+        )
+        queryset = queryset.annotate(_contact_match=Exists(contact_match), _trade_match=Exists(trade_match))
     return queryset
 
 

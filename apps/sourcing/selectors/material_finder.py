@@ -60,14 +60,16 @@ def _page_size(raw: object) -> int:
 
 
 def _decimal_filter(raw: object) -> tuple[str, Decimal | None]:
-    text = str(raw or "").strip()[:40]
-    if not text:
+    value_text = str(raw or "").strip()[:40]
+    if not value_text:
         return "", None
     try:
-        value = Decimal(text)
+        value = Decimal(value_text)
     except (InvalidOperation, ValueError):
         return "", None
-    if value < 0:
+    if not value.is_finite() or value < 0 or value >= Decimal("100000000000000"):
+        return "", None
+    if value.as_tuple().exponent < -4:
         return "", None
     return format(value, "f"), value
 

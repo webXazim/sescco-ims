@@ -19,6 +19,15 @@ from apps.sourcing.models import SourcingMaterial, SourcingVendor, SourcingVendo
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class VendorVerificationTests(TestCase):
+    def _get(self, path, *args, **kwargs):
+        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        if path.split("?", 1)[0] in (
+            reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
+            reverse("sourcing:service_finder"),
+        ):
+            kwargs.setdefault("follow", True)
+        return self.client.get(path, *args, **kwargs)
+
     def setUp(self):
         User = get_user_model()
         self.company = Company.objects.create(name="Vendor Verify Co", slug="vendor-verify-co")
@@ -147,14 +156,14 @@ class VendorVerificationTests(TestCase):
             note="Confirmed by phone",
         )
         self.client.force_login(viewer)
-        history = self.client.get(reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
+        history = self._get(reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
         self.assertEqual(history.status_code, 200)
         self.assertContains(history, "Verification History")
         self.assertContains(history, "Vendor Contact")
         self.assertContains(history, "1900.0000")
         self.assertNotContains(history, "Save Verification")
         self.assertEqual(
-            self.client.get(reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk])).status_code,
+            self._get(reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk])).status_code,
             403,
         )
         self.assertEqual(
@@ -171,7 +180,7 @@ class VendorVerificationTests(TestCase):
             ),
         )
         self.client.force_login(editor)
-        response = self.client.get(reverse("sourcing:material_finder"), {"q": "Verification Material"})
+        response = self._get(reverse("sourcing:material_finder"), {"q": "Verification Material"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
         self.assertContains(response, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
@@ -179,7 +188,7 @@ class VendorVerificationTests(TestCase):
 
     def test_quick_verification_makes_stale_offer_fresh(self):
         self.client.force_login(self.owner_user)
-        before = self.client.get(reverse("sourcing:material_finder"), {"freshness": "stale"})
+        before = self._get(reverse("sourcing:material_finder"), {"freshness": "stale"})
         self.assertEqual(before.context["page_obj"].paginator.count, 1)
         response = self.client.post(
             reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]),
@@ -197,7 +206,7 @@ class VendorVerificationTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
-        fresh = self.client.get(reverse("sourcing:material_finder"), {"freshness": "fresh"})
+        fresh = self._get(reverse("sourcing:material_finder"), {"freshness": "fresh"})
         self.assertEqual(fresh.context["page_obj"].paginator.count, 1)
 
     def test_cross_company_offer_history_and_verification_fail_closed(self):
@@ -210,10 +219,10 @@ class VendorVerificationTests(TestCase):
         )
         self.client.force_login(self.owner_user)
         self.assertEqual(
-            self.client.get(reverse("sourcing:vendor_offer_history", args=[other_vendor.pk, other_offer.pk])).status_code,
+            self._get(reverse("sourcing:vendor_offer_history", args=[other_vendor.pk, other_offer.pk])).status_code,
             404,
         )
         self.assertEqual(
-            self.client.get(reverse("sourcing:vendor_offer_verify", args=[other_vendor.pk, other_offer.pk])).status_code,
+            self._get(reverse("sourcing:vendor_offer_verify", args=[other_vendor.pk, other_offer.pk])).status_code,
             404,
         )

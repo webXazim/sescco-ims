@@ -1,86 +1,130 @@
+/* Bounded, server-filtered sourcing catalog tables (one URL per sourcing directory).
+   Progressive enhancement: every filter also works as a standard GET form. */
 (() => {
-  let controller = null;
-  let timer = null;
+  let activeController = null;
   let requestSerial = 0;
+  let debounce = null;
 
-  const roots = () => [...document.querySelectorAll("[data-sourcing-finder-root]")];
+  function getRoot() {
+    return document.querySelector('[data-sourcing-finder-root]');
+  }
 
-  const install = (root) => {
-    const form = root.querySelector("form[data-sourcing-live-finder]");
-    if (!form || form.dataset.scaleBound === "1") return;
-    form.dataset.scaleBound = "1";
+  function updateExport(url) {
+    const link = document.querySelector('[data-sourcing-export-current]');
+    if (!link) return;
+    const next = new URL(link.href, window.location.origin);
+    const filters = new URL(url, window.location.origin);
+    next.search = filters.search;
+    next.searchParams.set('format', 'xlsx');
+    link.href = `${next.pathname}${next.search}`;
+  }
 
-    const run = async (url, { push = true } = {}) => {
-      if (controller) controller.abort();
-      controller = new AbortController();
+  function install(root) {
+    const form = root.querySelector('form[data-sourcing-live-finder]');
+    if (!form || form.dataset.scaleBound === '1') return;
+    form.dataset.scaleBound = '1';
+
+    function formUrl() {
+      const url = new URL(form.action, location.origin);
+      const data = new FormData(form);
+      data.delete('page');
+      for (const [key, value] of data.entries()) {
+        if (String(value).trim()) url.searchParams.set(key, String(value));
+      }
+      url.searchParams.set('view', 'offers');
+      return `${url.pathname}${url.search}`;
+    }
+
+    async function run(url, { push = true, expectFormState = false } = {}) {
+      if (activeController) activeController.abort();
+      const controller = new AbortController();
+      activeController = controller;
       const serial = ++requestSerial;
-      root.dataset.loading = "1";
+      const active = document.activeElement;
+      const field = form.contains(active) && active.name ? active.name : null;
+      let caret = null;
+      try {
+        if (field && active instanceof HTMLInputElement && ['search', 'text'].includes(active.type)) {
+          caret = [active.selectionStart, active.selectionEnd];
+        }
+      } catch (_) { /* Some input types do not expose a selection range. */ }
+      root.dataset.loading = '1';
+      root.setAttribute('aria-busy', 'true');
       try {
         const response = await fetch(url, {
-          method: "GET",
-          credentials: "same-origin",
-          headers: { "X-Requested-With": "sourcing-finder-scale" },
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'sourcing-finder-scale' },
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error(`Finder request failed: ${response.status}`);
+        if (!response.ok) throw new Error(`Directory search failed: ${response.status}`);
         const html = await response.text();
-        if (serial !== requestSerial) return;
-        const parsed = new DOMParser().parseFromString(html, "text/html");
-        const replacement = parsed.querySelector("[data-sourcing-finder-root]");
-        if (!replacement) throw new Error("Finder response did not include bounded results root.");
+        if (serial !== requestSerial || !root.isConnected ||
+            (expectFormState && formUrl() !== url)) return;
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        const replacement = parsed.querySelector('[data-sourcing-finder-root]');
+        if (!replacement) throw new Error('Search response did not contain results.');
         root.replaceWith(replacement);
-        if (push) history.pushState({ sourcingFinder: true }, "", url);
-        else history.replaceState({ sourcingFinder: true }, "", url);
+        if (push) history.pushState({ sourcingCatalog: true }, '', url);
+        else history.replaceState({ sourcingCatalog: true }, '', url);
+        updateExport(url);
         install(replacement);
+        if (field) {
+          const replacementField = [...replacement.querySelectorAll('input,select')]
+            .find((element) => element.name === field);
+          if (replacementField) {
+            replacementField.focus({ preventScroll: true });
+            if (caret && typeof replacementField.setSelectionRange === 'function') {
+              replacementField.setSelectionRange(caret[0], caret[1]);
+            }
+          }
+        }
       } catch (error) {
-        if (error && error.name === "AbortError") return;
-        window.location.assign(url);
+        if (error.name !== 'AbortError' && serial === requestSerial) {
+          // Fallback retains all filtering even when JavaScript/network parsing fails.
+          location.assign(url);
+        }
       } finally {
-        const current = document.querySelector("[data-sourcing-finder-root]");
-        if (current) delete current.dataset.loading;
+        if (root.isConnected) {
+          delete root.dataset.loading;
+          root.removeAttribute('aria-busy');
+        }
       }
-    };
+    }
 
-    const submitUrl = () => {
-      const url = new URL(form.action, window.location.origin);
-      const data = new FormData(form);
-      data.delete("page");
-      for (const [key, value] of data.entries()) {
-        if (String(value).trim() !== "") url.searchParams.set(key, String(value));
+    function queueSearch() {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => run(formUrl(), { push: false, expectFormState: true }), 650);
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      clearTimeout(debounce);
+      run(formUrl(), { push: true });
+    });
+    form.addEventListener('input', (event) => {
+      const input = event.target;
+      if (input instanceof HTMLInputElement && ['search', 'number', 'text'].includes(input.type)) {
+        queueSearch();
       }
-      return `${url.pathname}${url.search}`;
-    };
-
-    form.addEventListener("submit", (event) => {
+    });
+    form.addEventListener('change', (event) => {
+      if (event.target instanceof HTMLSelectElement) {
+        clearTimeout(debounce);
+        run(formUrl(), { push: true });
+      }
+    });
+    root.addEventListener('click', (event) => {
+      const link = event.target.closest('.sourcing-pagination a');
+      if (!link) return;
+      const url = new URL(link.href, location.origin);
+      if (url.origin !== location.origin || url.pathname !== location.pathname) return;
       event.preventDefault();
-      clearTimeout(timer);
-      run(submitUrl());
+      clearTimeout(debounce);
+      run(`${url.pathname}${url.search}`, { push: true });
     });
+  }
 
-    form.addEventListener("input", (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement)) return;
-      if (!["search", "number"].includes(target.type)) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => run(submitUrl(), { push: false }), 350);
-    });
-
-    form.addEventListener("change", (event) => {
-      if (!(event.target instanceof HTMLSelectElement)) return;
-      clearTimeout(timer);
-      run(submitUrl(), { push: false });
-    });
-
-    root.addEventListener("click", (event) => {
-      const link = event.target.closest(".sourcing-pagination a");
-      if (!link || !link.href) return;
-      const url = new URL(link.href, window.location.origin);
-      if (url.origin !== window.location.origin) return;
-      event.preventDefault();
-      run(`${url.pathname}${url.search}`);
-    });
-  };
-
-  roots().forEach(install);
-  window.addEventListener("popstate", () => window.location.reload());
+  const root = getRoot();
+  if (root) install(root);
+  window.addEventListener('popstate', () => location.reload());
 })();

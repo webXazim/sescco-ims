@@ -22,6 +22,15 @@ from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
 class ServiceFinderTests(TestCase):
+    def _get(self, path, *args, **kwargs):
+        # Bookmarked former Finder URLs now redirect to catalog tabs on their directories.
+        if path.split("?", 1)[0] in (
+            reverse("sourcing:material_finder"), reverse("sourcing:workforce_finder"),
+            reverse("sourcing:service_finder"),
+        ):
+            kwargs.setdefault("follow", True)
+        return self.client.get(path, *args, **kwargs)
+
     def setUp(self):
         self.company = Company.objects.create(name="Services Finder A", slug="services-finder-a")
         self.other_company = Company.objects.create(name="Services Finder B", slug="services-finder-b")
@@ -72,20 +81,20 @@ class ServiceFinderTests(TestCase):
         url = reverse("sourcing:service_finder")
         view_user = self._viewer("view", (AccessPermission.SOURCING_SUBCONTRACTORS_VIEW.value,))
         self.client.force_login(view_user)
-        response = self.client.get(url)
+        response = self._get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "HVAC Installation")
-        self.assertContains(response, "Service Finder")
+        self.assertContains(response, "Services & Rates")
         self.assertContains(response, reverse("sourcing:subcontractor_service_history", args=[self.sub.pk, offer.pk]))
         self.assertNotContains(response, "Verify now")
         self.assertNotContains(response, "Edit reference")
-        self.assertContains(response, reverse("sourcing:service_finder"))
+        self.assertContains(response, reverse("sourcing:subcontractor_list") + "?view=offers")
         vendor = self._viewer("vendor", (AccessPermission.SOURCING_VENDORS_VIEW.value,))
         self.client.force_login(vendor)
-        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(self._get(url).status_code, 403)
         self.client.force_login(self.owner)
-        self.assertContains(self.client.get(url), "Verify now")
-        self.assertContains(self.client.get(reverse("sourcing:home")), "Find Service")
+        self.assertContains(self._get(url), "Verify now")
+        self.assertContains(self._get(reverse("sourcing:home")), "Browse Services")
 
     def test_company_and_lifecycle_isolation(self):
         visible = self._offer()
@@ -112,24 +121,24 @@ class ServiceFinderTests(TestCase):
         result = service_finder_page(company=self.company, params={})
         self.assertEqual(result.page_obj.paginator.count, 1)
         self.assertEqual(result.page_obj.object_list[0].pk, visible.pk)
-        self.assertNotIn("Foreign Welding", self.client.get(reverse("sourcing:service_finder")).content.decode())
+        self.assertNotIn("Foreign Welding", self._get(reverse("sourcing:service_finder")).content.decode())
 
     def test_alias_scope_company_coverage_and_filters(self):
         self._offer(days=2, rate="350", basis="day")
         self._offer(sub=self.sub_b, service=self.calibration, days=12, scope="Metrology instruments",
                     location="Jubail", rate="5500", basis="job", currency="USD", availability="limited")
         base = reverse("sourcing:service_finder")
-        alias = self.client.get(base, {"q": "Air conditioning installation"})
+        alias = self._get(base, {"q": "Air conditioning installation"})
         self.assertEqual(alias.context["page_obj"].paginator.count, 1)
         self.assertContains(alias, "Alpha Mechanical")
-        self.assertEqual(self.client.get(base, {"q": "Metrology"}).context["page_obj"].paginator.count, 1)
-        response = self.client.get(base, {"category": "Technical", "location": "Jubail", "subcontractor": "Bravo",
+        self.assertEqual(self._get(base, {"q": "Metrology"}).context["page_obj"].paginator.count, 1)
+        response = self._get(base, {"category": "Technical", "location": "Jubail", "subcontractor": "Bravo",
                                           "availability": "limited", "rate_basis": "job", "currency": "usd",
                                           "rate_min": "5400", "rate_max": "5600"})
         self.assertEqual(response.context["page_obj"].paginator.count, 1)
         self.assertContains(response, "Laboratory Calibration")
-        self.assertEqual(self.client.get(base, {"location": "Eastern Province"}).context["page_obj"].paginator.count, 1)
-        self.assertEqual(self.client.get(base, {"currency": "SAR", "rate_basis": "job"}).context["page_obj"].paginator.count, 0)
+        self.assertEqual(self._get(base, {"location": "Eastern Province"}).context["page_obj"].paginator.count, 1)
+        self.assertEqual(self._get(base, {"currency": "SAR", "rate_basis": "job"}).context["page_obj"].paginator.count, 0)
 
     def test_freshness_policy_and_missing_or_expired_rates(self):
         fresh = self._offer(days=2)
@@ -139,16 +148,16 @@ class ServiceFinderTests(TestCase):
         url = reverse("sourcing:service_finder")
         for key, expected in (("fresh", fresh), ("needs-verification", middle),
                               ("stale", stale), ("never", never)):
-            result = self.client.get(url, {"freshness": key}).context["page_obj"]
+            result = self._get(url, {"freshness": key}).context["page_obj"]
             self.assertEqual(result.paginator.count, 1)
             self.assertEqual(result.object_list[0].pk, expected.pk)
         middle.rate_valid_until = timezone.localdate() - timedelta(days=1)
         middle.save()
-        result = self.client.get(url, {"q": "Laboratory Calibration"})
+        result = self._get(url, {"q": "Laboratory Calibration"})
         self.assertContains(result, "Not quoted")
         fresh.rate_valid_until = timezone.localdate() - timedelta(days=1)
         fresh.save()
-        self.assertContains(self.client.get(url, {"q": "SV-HVAC", "freshness": "fresh"}), "Rate expired")
+        self.assertContains(self._get(url, {"q": "SV-HVAC", "freshness": "fresh"}), "Rate expired")
 
     def test_validated_input_sorting_and_bounded_pagination(self):
         service = SourcingService.objects.create(company=self.company, code="SV-LOAD", name="Bulk Service")
@@ -157,13 +166,13 @@ class ServiceFinderTests(TestCase):
                 company=self.company, code=f"SUB-L{index:03d}", name=f"Load Provider {index:03d}")
             self._offer(sub=obj, service=service, scope="Bulk", rate=None, days=None)
         url = reverse("sourcing:service_finder")
-        response = self.client.get(url, {"q": "Bulk Service", "page_size": "25", "page": "2", "sort": "subcontractor", "dir": "desc"})
+        response = self._get(url, {"q": "Bulk Service", "page_size": "25", "page": "2", "sort": "subcontractor", "dir": "desc"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].paginator.count, 56)
         self.assertEqual(len(response.context["offers"]), 25)
         self.assertContains(response, "Page 2 of 3")
         self.assertContains(response, "sort=subcontractor")
-        bad = self.client.get(url, {"page_size": "99999", "page": "bogus", "sort": "secret__field",
+        bad = self._get(url, {"page_size": "99999", "page": "bogus", "sort": "secret__field",
                                     "availability": "not-a-choice", "rate_min": "NaN", "rate_max": "Infinity",
                                     "currency": "<script>"})
         self.assertEqual(bad.status_code, 200)
@@ -171,7 +180,7 @@ class ServiceFinderTests(TestCase):
         self.assertEqual((finder.page_size, finder.sort, finder.availability), (50, "service", "all"))
         self.assertEqual((finder.rate_min, finder.rate_max, finder.currency), ("", "", ""))
         self.assertLessEqual(len(bad.context["offers"]), 50)
-        tiny = self.client.get(url, {"rate_min": "1e-999999", "rate_max": "0e-999999"})
+        tiny = self._get(url, {"rate_min": "1e-999999", "rate_max": "0e-999999"})
         self.assertEqual(tiny.status_code, 200)
         self.assertEqual(tiny.context["finder"].rate_min, "")
         self.assertEqual(tiny.context["finder"].rate_max, "0")

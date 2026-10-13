@@ -190,7 +190,7 @@ def main() -> int:
         record("vendor-supply-catalog", started, rows=vendor_catalog_rows, vendor=VENDOR_CODE)
 
         # Material Finder -> history -> Verify -> immutable history evidence.
-        rapid_finder("app/sourcing/material-finder/", MATERIAL_QUERY, MATERIAL_QUERY, "material-finder")
+        rapid_finder("app/sourcing/vendors/?view=offers", MATERIAL_QUERY, MATERIAL_QUERY, "material-finder")
         history_url = first_action_href("Verification history")
         verify_url = first_action_href("Verify now")
         if not history_url or not verify_url:
@@ -231,7 +231,7 @@ def main() -> int:
         record("manpower-workforce-catalog", started, rows=workforce_rows, supplier=MANPOWER_CODE)
 
         # Workforce Finder -> history -> Verify -> immutable history evidence.
-        rapid_finder("app/sourcing/workforce-finder/", TRADE_QUERY, TRADE_QUERY, "workforce-finder")
+        rapid_finder("app/sourcing/manpower-suppliers/?view=offers", TRADE_QUERY, TRADE_QUERY, "workforce-finder")
         workforce_history_url = first_action_href("Verification history")
         workforce_verify_url = first_action_href("Verify now")
         if not workforce_history_url or not workforce_verify_url:

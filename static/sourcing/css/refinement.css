@@ -299,3 +299,23 @@
     animation-duration: .01ms !important;
   }
 }
+
+/* Integrated sourcing catalog search: directory and offers share one module page. */
+.sourcing-directory-views { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 20px; border-bottom:1px solid #dce4eb; padding-bottom:10px; }
+.sourcing-directory-views__tab { display:inline-flex; align-items:center; border:1px solid #dce4eb; border-radius:9px; padding:10px 15px; background:#fff; color:#354860; font-weight:700; text-decoration:none; }
+.sourcing-directory-views__tab:hover { background:#f0f5f9; }
+.sourcing-directory-views__tab.is-active { color:#082f53; border-color:#a5c7e2; background:#e9f3fa; }
+.sourcing-directory-sort { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:0 16px 14px; }
+.sourcing-directory-sort label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:650; color:#4e6277; }
+.sourcing-directory-sort .sourcing-select { min-width:135px; }
+.sourcing-finder-card[data-loading="1"] { opacity:.78; }
+@media (max-width:740px) { .sourcing-directory-views__tab { flex:1; justify-content:center; } .sourcing-directory-sort { padding:12px; } }
+
+/* Allow the company search / filters / sort controls to wrap on narrow screens. */
+.sourcing-toolbar:has(.sourcing-directory-sort) { flex-wrap: wrap; }
+.sourcing-toolbar .sourcing-directory-sort { margin-left: auto; padding: 2px 0; }
+@media (max-width: 980px) {
+  .sourcing-toolbar .sourcing-directory-sort { margin-left: 0; width: 100%; }
+  .sourcing-toolbar .sourcing-search { flex-basis: 100%; max-width: 100%; }
+  .sourcing-toolbar .sourcing-toolbar__actions { flex-wrap: wrap; }
+}
