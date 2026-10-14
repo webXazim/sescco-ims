@@ -21,8 +21,10 @@ from ..models import (
 TRASH_RETENTION_DAYS = 30
 
 
-def suggest_manpower_supplier_code() -> str:
-    return f"MPS-{uuid4().hex[:8].upper()}"
+def suggest_manpower_supplier_code(*, name: str = "", company=None):
+    from .provider_codes import next_provider_code
+    return next_provider_code(prefix="MPS", name=name, company=company, model=SourcingManpowerSupplier)
+
 
 
 def _supplier_snapshot(supplier: SourcingManpowerSupplier) -> dict[str, object]:
@@ -93,7 +95,7 @@ def _audit(*, supplier, actor_membership, action: str, before=None, after=None, 
 def create_manpower_supplier(*, actor_membership, cleaned_data: dict[str, object], request=None) -> SourcingManpowerSupplier:
     data = dict(cleaned_data)
     if not str(data.get("code") or "").strip():
-        data["code"] = suggest_manpower_supplier_code()
+        data["code"] = suggest_manpower_supplier_code(name=data.get("name", ""), company=actor_membership.company)
     supplier = SourcingManpowerSupplier(company=actor_membership.company, **data)
     supplier.save()
     _audit(supplier=supplier, actor_membership=actor_membership, action="sourcing.manpower_supplier.created", after=_supplier_snapshot(supplier), request=request)

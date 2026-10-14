@@ -35,6 +35,7 @@ from .access import (
     membership_has_any_sourcing_access,
     sourcing_access_context,
 )
+from .onboarding_forms import SourcingManpowerOnboardingFormSet, SourcingSubcontractorOnboardingFormSet
 from .forms import (
     SourcingMaterialForm,
     SourcingServiceForm,
@@ -1122,30 +1123,56 @@ def manpower_supplier_list(request: HttpRequest) -> HttpResponse:
 @login_required
 def manpower_supplier_create(request: HttpRequest) -> HttpResponse:
     _require_manpower_manage(request)
-    if request.method == "POST":
-        form = SourcingManpowerSupplierForm(request.POST)
-        if form.is_valid():
-            try:
-                supplier = create_manpower_supplier(
-                    actor_membership=_membership(request),
-                    cleaned_data=form.cleaned_data,
-                    request=request,
-                )
-            except ValidationError as exc:
-                _apply_validation_error(form, exc)
-            else:
-                messages.success(request, f"Manpower Supplier {supplier.name} was created.")
-                return redirect("sourcing:manpower_supplier_detail", supplier_id=supplier.pk)
-    else:
-        form = SourcingManpowerSupplierForm(initial={"code": suggest_manpower_supplier_code()})
-    context = _base_context(
-        request,
-        page_key="sourcing-manpower",
-        page_title="New Manpower Supplier",
-        page_subtitle="Add a reference-only source SESCCO may call for workers. Nothing here creates Rental Payroll suppliers, workers or assignments.",
+    membership = _membership(request)
+    allow_masters = membership_can_manage_sourcing_masters(membership)
+    bound = request.method == "POST" and "supply_items-TOTAL_FORMS" in request.POST
+    offers = SourcingManpowerOnboardingFormSet(
+        request.POST if bound else None,
+        prefix="supply_items",
+        form_kwargs={"company": request.company, "can_create_master": allow_masters},
     )
-    context.update(form=form, submit_label="Create Manpower Supplier")
-    return render(request, "sourcing/manpower/form.html", context, status=400 if request.method == "POST" and form.errors else 200)
+    form = SourcingManpowerSupplierForm(request.POST if request.method == "POST" else None,
+                                       company=request.company)
+    if request.method == "POST":
+        if not bound and any(key.startswith("supply_items-") for key in request.POST):
+            form.add_error(None, "Incomplete workforce editor submission. Reload the form.")
+        form_ok = form.is_valid()
+        offers_ok = offers.is_valid() if bound else True
+        if form_ok and offers_ok and not form.non_field_errors():
+            try:
+                with atomic():
+                    supplier = create_manpower_supplier(
+                        actor_membership=membership, cleaned_data=form.cleaned_data, request=request)
+                    for offer_form in offers.forms:
+                        data = offer_form.cleaned_data
+                        if not data or data.get("DELETE"):
+                            continue
+                        trade = data.get("trade")
+                        if data.get("draft_master"):
+                            if not allow_masters:
+                                raise ValidationError("Reference Masters edit permission required.")
+                            trade = create_trade(actor_membership=membership,
+                                                 cleaned_data=data["draft_master"], request=request)
+                        create_workforce_offer(
+                            actor_membership=membership, supplier_id=supplier.pk,
+                            cleaned_data={**offer_form.offer_data(), "trade": trade},
+                            verified_now=data.get("verified_now", False),
+                            contact_name=data.get("contact_name", ""), request=request,
+                        )
+            except (ValidationError, IntegrityError) as exc:
+                _apply_validation_error(form, exc if isinstance(exc, ValidationError)
+                                        else ValidationError("Unable to save provider and capabilities. Check for duplicate records."))
+            else:
+                messages.success(request, f"Manpower Supplier {supplier.name} created with workforce capabilities.")
+                return redirect("sourcing:manpower_supplier_detail", supplier_id=supplier.pk)
+    context = _base_context(
+        request, page_key="sourcing-manpower", page_title="New Manpower Supplier",
+        page_subtitle="Reference-only manpower source.",
+    )
+    context.update(form=form, offer_formset=offers, can_create_master=allow_masters,
+                   show_capabilities=True, submit_label="Create Manpower Supplier")
+    return render(request, "sourcing/manpower/form.html", context,
+                  status=400 if request.method == "POST" and (form.errors or offers.errors) else 200)
 
 
 @login_required
@@ -2398,20 +2425,54 @@ def subcontractor_list(request: HttpRequest) -> HttpResponse:
 @login_required
 def subcontractor_create(request: HttpRequest) -> HttpResponse:
     _require_subcontractor_manage(request)
-    form = SourcingSubcontractorForm(request.POST) if request.method == "POST" else SourcingSubcontractorForm(initial={"code": suggest_subcontractor_code()})
-    if request.method == "POST" and form.is_valid():
-        try:
-            obj = create_subcontractor(actor_membership=_membership(request), cleaned_data=form.cleaned_data, request=request)
-        except ValidationError as exc:
-            _apply_validation_error(form, exc)
-        else:
-            messages.success(request, "Subcontractor created.")
-            return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
+    membership = _membership(request)
+    allow_masters = membership_can_manage_sourcing_masters(membership)
+    bound = request.method == "POST" and "supply_items-TOTAL_FORMS" in request.POST
+    offers = SourcingSubcontractorOnboardingFormSet(
+        request.POST if bound else None,
+        prefix="supply_items",
+        form_kwargs={"company": request.company, "can_create_master": allow_masters},
+    )
+    form = SourcingSubcontractorForm(request.POST if request.method == "POST" else None,
+                                    company=request.company)
+    if request.method == "POST":
+        if not bound and any(key.startswith("supply_items-") for key in request.POST):
+            form.add_error(None, "Incomplete service editor submission. Reload the form.")
+        form_ok = form.is_valid()
+        offers_ok = offers.is_valid() if bound else True
+        if form_ok and offers_ok and not form.non_field_errors():
+            try:
+                with atomic():
+                    obj = create_subcontractor(actor_membership=membership,
+                                               cleaned_data=form.cleaned_data, request=request)
+                    for offer_form in offers.forms:
+                        data = offer_form.cleaned_data
+                        if not data or data.get("DELETE"):
+                            continue
+                        service = data.get("service")
+                        if data.get("draft_master"):
+                            if not allow_masters:
+                                raise ValidationError("Reference Masters edit permission required.")
+                            service = create_service(actor_membership=membership,
+                                                     cleaned_data=data["draft_master"], request=request)
+                        create_service_offer(
+                            actor_membership=membership, subcontractor_id=obj.pk,
+                            cleaned_data={**offer_form.offer_data(), "service": service},
+                            verified_now=data.get("verified_now", False),
+                            contact_name=data.get("contact_name", ""), request=request,
+                        )
+            except (ValidationError, IntegrityError) as exc:
+                _apply_validation_error(form, exc if isinstance(exc, ValidationError)
+                                        else ValidationError("Unable to save provider and capabilities. Check for duplicate records."))
+            else:
+                messages.success(request, "Subcontractor created with service capabilities.")
+                return redirect("sourcing:subcontractor_detail", subcontractor_id=obj.pk)
     context = _base_context(request, page_key="sourcing-subcontractors", page_title="New Subcontractor",
-                            page_subtitle="Add a service-providing company to the independent reference directory.")
-    context.update(form=form, submit_label="Create Subcontractor")
+                            page_subtitle="Independent reference-only service provider.")
+    context.update(form=form, offer_formset=offers, can_create_master=allow_masters,
+                   show_capabilities=True, submit_label="Create Subcontractor")
     return render(request, "sourcing/subcontractors/form.html", context,
-                  status=400 if request.method == "POST" and form.errors else 200)
+                  status=400 if request.method == "POST" and (form.errors or offers.errors) else 200)
 
 
 @login_required

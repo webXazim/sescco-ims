@@ -49,7 +49,10 @@
     help.className = 'sourcing-tag-editor__hint';
     help.textContent = 'Enter or comma to add · Backspace to remove · Up to 10 tags';
     tokens.appendChild(input);
-    widget.append(tokens, options);
+    // Keep the listbox outside clipping form cards/footers. A fixed-position
+    // popup can flip above the input when the field is near the viewport edge.
+    widget.append(tokens);
+    document.body.appendChild(options);
     field.insertAdjacentElement('afterend', widget);
     widget.insertAdjacentElement('afterend', message);
     message.insertAdjacentElement('afterend', help);
@@ -79,6 +82,33 @@
       input.setAttribute('aria-expanded', 'false');
       input.removeAttribute('aria-activedescendant');
     };
+    const positionOptions = () => {
+      if (options.hidden) return;
+      const rect = widget.getBoundingClientRect();
+      const edge = 8;
+      const gap = 5;
+      // Do not leave a detached popup visible if the containing form scrolls away.
+      if (rect.bottom < edge || rect.top > window.innerHeight - edge) {
+        closeOptions(); return;
+      }
+      const width = Math.min(rect.width, window.innerWidth - edge * 2);
+      const left = Math.max(edge, Math.min(rect.left, window.innerWidth - width - edge));
+      const below = Math.max(0, window.innerHeight - rect.bottom - gap - edge);
+      const above = Math.max(0, rect.top - gap - edge);
+      const naturalHeight = Math.min(options.scrollHeight, 240);
+      const flipAbove = below < naturalHeight && above > below;
+      const available = flipAbove ? above : below;
+      const height = Math.min(naturalHeight, Math.max(0, available));
+      if (height < 36) { closeOptions(); return; }
+      options.style.left = `${left}px`;
+      options.style.width = `${width}px`;
+      options.style.maxHeight = `${height}px`;
+      options.style.top = `${flipAbove ? rect.top - gap - height : rect.bottom + gap}px`;
+    };
+    const repositionOnScroll = () => { if (!options.hidden) positionOptions(); };
+    // Capture also catches scrolls from nested form sections and the page itself.
+    document.addEventListener('scroll', repositionOnScroll, { capture: true, passive: true });
+    window.addEventListener('resize', repositionOnScroll, { passive: true });
     const renderOptions = () => {
       currentSuggestions = matches(input.value);
       activeIndex = -1;
@@ -98,6 +128,7 @@
       });
       options.hidden = false;
       input.setAttribute('aria-expanded', 'true');
+      positionOptions();
     };
     const render = () => {
       tokens.querySelectorAll('[data-tag-token]').forEach((node) => node.remove());
@@ -176,6 +207,7 @@
         event.preventDefault(); input.focus(); return;
       }
       field.value = tags.join(', ');
+      closeOptions();
     });
   });
 })();

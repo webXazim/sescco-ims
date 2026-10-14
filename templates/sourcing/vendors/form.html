@@ -65,8 +65,8 @@
         <div class="sourcing-onboarding-discard-confirm" data-onboarding-confirm hidden role="alertdialog" aria-labelledby="sourcing-onboarding-discard-title" aria-describedby="sourcing-onboarding-discard-description" aria-modal="true">
           <div class="sourcing-onboarding-discard-card">
             <span class="sourcing-onboarding-discard-icon" aria-hidden="true">!</span>
-            <h3 id="sourcing-onboarding-discard-title">Discard unsaved changes?</h3>
-            <p id="sourcing-onboarding-discard-description">This supply item has changes that have not been added to the Vendor. Closing now will lose those changes.</p>
+            <h3 id="sourcing-onboarding-discard-title">Discard supply item changes?</h3>
+            <p id="sourcing-onboarding-discard-description">This supply item has unsaved edits. Discarding returns to the Vendor form without adding the item.</p>
             <div class="sourcing-onboarding-discard-actions">
               <button type="button" class="sourcing-btn sourcing-btn--primary" data-onboarding-keep>Keep editing</button>
               <button type="button" class="sourcing-btn sourcing-onboarding-discard" data-onboarding-discard>Discard changes</button>
@@ -91,5 +91,5 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
-{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.121-unified"><link rel="stylesheet" href="{% static 'sourcing/css/vendor-onboarding.css' %}?v=1.0.128"><link rel="stylesheet" href="{% static 'sourcing/css/provider-tag-editor.css' %}?v=1.0.126">{% endblock %}
-{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/vendor-onboarding.js' %}?v=1.0.127"></script><script defer src="{% static 'sourcing/js/vendor-code.js' %}?v=1.0.126"></script><script defer src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/provider-tag-editor.js' %}?v=1.0.125"></script>{% endblock %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.121-unified"><link rel="stylesheet" href="{% static 'sourcing/css/vendor-onboarding.css' %}?v=1.0.128"><link rel="stylesheet" href="{% static 'sourcing/css/provider-tag-editor.css' %}?v=1.0.130">{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/vendor-onboarding.js' %}?v=1.0.127"></script><script defer src="{% static 'sourcing/js/vendor-code.js' %}?v=1.0.126"></script><script defer src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/provider-tag-editor.js' %}?v=1.0.130"></script>{% endblock %}

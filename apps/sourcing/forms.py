@@ -311,11 +311,21 @@ class SourcingManpowerSupplierForm(SourcingProviderTagsFormMixin, forms.ModelFor
             "vat_number": "VAT Number",
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
+        self._company = company
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "sourcing-input")
-        self.fields["code"].help_text = "Independent Sourcing code; it is not a Rental Payroll supplier code."
+        self.fields["code"].required = False
+        self.fields["code"].help_text = "Optional. Generated from the supplier name if blank."
+
+    def clean(self):
+        data = super().clean()
+        if not clean_text(data.get("code")):
+            from .services.manpower import suggest_manpower_supplier_code
+            data["code"] = suggest_manpower_supplier_code(
+                name=data.get("name", ""), company=self._company)
+        return data
 
 
 class SourcingManpowerContactForm(forms.ModelForm):
@@ -1171,19 +1181,20 @@ class SourcingSubcontractorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, company=None, **kwargs):
+        self._company = company
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "sourcing-input")
         self.fields["code"].required = False
         self.fields["display_name"].required = False
-        self.fields["code"].help_text = "Optional; generated when blank."
+        self.fields["code"].help_text = "Optional. Generated from the company name if blank."
 
     def clean(self):
         result = super().clean()
         if not result.get("code"):
             from .services.subcontractors import suggest_subcontractor_code
-            result["code"] = suggest_subcontractor_code()
+            result["code"] = suggest_subcontractor_code(name=result.get("name", ""), company=self._company)
         if not result.get("display_name") and result.get("name"):
             result["display_name"] = result["name"]
         return result

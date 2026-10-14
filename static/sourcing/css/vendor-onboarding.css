@@ -110,3 +110,5 @@
 @media(max-width:520px){
   .sourcing-onboarding-material-dialog .sourcing-reference-master-fields .sourcing-form-grid{grid-template-columns:1fr}
 }
+
+.sourcing-provider-code-preview{display:block;color:#607388;font-size:12px;line-height:1.4;margin-top:4px}

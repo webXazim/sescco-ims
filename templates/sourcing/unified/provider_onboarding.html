@@ -1,0 +1,19 @@
+<section class="sourcing-form-section sourcing-onboarding" data-provider-onboarding data-kind="{{ onboarding_kind }}">
+  <header><h2>{% if onboarding_kind == 'trade' %}Workforce Capabilities{% else %}Service Capabilities{% endif %}</h2></header>
+  <div class="sourcing-onboarding-body">
+    {{ offer_formset.management_form }}
+    {% for error in offer_formset.non_form_errors %}<div class="sourcing-form-errors">{{ error }}</div>{% endfor %}
+    <div class="sourcing-onboarding-summary" data-onboarding-summary aria-live="polite"></div>
+    <div class="sourcing-onboarding-actions"><button type="button" class="sourcing-btn sourcing-btn--primary" data-onboarding-add>+ Add {% if onboarding_kind == 'trade' %}Workforce{% else %}Service{% endif %} Capability</button></div>
+    {% if not can_create_master %}<p class="sourcing-material-permission-note">You can select existing references. Creating new masters requires Reference Masters edit access.</p>{% endif %}
+    <noscript><p class="sourcing-form-errors">JavaScript is needed to add capabilities during onboarding; you may add them after creating this provider.</p></noscript>
+    <dialog class="sourcing-onboarding-dialog" data-onboarding-dialog aria-labelledby="sourcing-onboarding-dialog-title">
+      <div class="sourcing-onboarding-dialog-head"><h2 id="sourcing-onboarding-dialog-title">Add Capability</h2><button type="button" class="sourcing-onboarding-close" data-onboarding-cancel aria-label="Close capability editor">×</button></div>
+      <div class="sourcing-onboarding-dialog-rows" data-onboarding-rows>{% for offer_form in offer_formset.forms %}{% include 'sourcing/unified/provider_onboarding_row.html' with kind=onboarding_kind %}{% endfor %}</div>
+      <div class="sourcing-onboarding-dialog-error" role="alert" data-onboarding-error hidden></div>
+      <div class="sourcing-onboarding-discard-confirm" data-onboarding-confirm hidden role="alertdialog" aria-modal="true" aria-label="Discard capability changes"><div class="sourcing-onboarding-discard-card"><h3>Discard capability changes?</h3><p>These unsaved edits will be lost. The provider form will be kept.</p><div class="sourcing-onboarding-discard-actions"><button type="button" class="sourcing-btn sourcing-btn--primary" data-onboarding-keep>Keep editing</button><button type="button" class="sourcing-btn sourcing-onboarding-discard" data-onboarding-discard>Discard changes</button></div></div></div>
+      <div class="sourcing-onboarding-dialog-actions"><button type="button" class="sourcing-btn" data-onboarding-cancel>Cancel</button><button type="button" class="sourcing-btn sourcing-btn--primary" data-onboarding-done>Add to Provider</button></div>
+    </dialog>
+    <template data-onboarding-template>{% include 'sourcing/unified/provider_onboarding_row.html' with offer_form=offer_formset.empty_form kind=onboarding_kind %}</template>
+  </div>
+</section>

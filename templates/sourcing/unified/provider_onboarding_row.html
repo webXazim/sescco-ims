@@ -1,0 +1,68 @@
+<div class="sourcing-onboarding-editor" data-onboarding-row{% if offer_form.errors %} data-onboarding-invalid="1"{% endif %} hidden>
+  <span class="sourcing-onboarding-delete" hidden>{{ offer_form.DELETE }}</span>
+  {% if offer_form.non_field_errors %}<div class="sourcing-form-errors">{{ offer_form.non_field_errors }}</div>{% endif %}
+  <section class="sourcing-onboarding-editor-section">
+    <div class="sourcing-onboarding-section-heading"><strong>{% if kind == 'trade' %}Workforce Capability{% else %}Service Capability{% endif %}</strong></div>
+    <div class="sourcing-form-grid">
+      <div class="sourcing-onboarding-reference">
+        {% if kind == 'trade' %}{% include 'sourcing/reference_lookup_field.html' with field=offer_form.trade kind='trade' can_create_master=False %}{% else %}{% include 'sourcing/reference_lookup_field.html' with field=offer_form.service kind='service' can_create_master=False %}{% endif %}
+        {% if can_create_master %}<button type="button" class="sourcing-btn sourcing-onboarding-create-material" data-onboarding-new-master>+ Create new {% if kind == 'trade' %}trade{% else %}service{% endif %}</button>{% endif %}
+      </div>
+      {% if kind == 'trade' %}
+        {% include 'sourcing/vendors/field.html' with field=offer_form.work_location %}
+        {% include 'sourcing/vendors/field.html' with field=offer_form.mobilization_lead_time %}
+      {% else %}
+        {% include 'sourcing/vendors/field.html' with field=offer_form.scope_description %}
+        {% include 'sourcing/vendors/field.html' with field=offer_form.service_location %}
+      {% endif %}
+    </div>
+    {% if can_create_master %}
+    <div class="sourcing-onboarding-staged-material" data-onboarding-staged-master hidden>
+      <div><strong data-onboarding-staged-name>New reference</strong><small>New controlled reference staged for provider save</small></div>
+      <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit {% if kind == 'trade' %}trade{% else %}service{% endif %}</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Choose existing</button></div>
+    </div>
+    <dialog class="sourcing-onboarding-material-dialog sourcing-onboarding-master" data-onboarding-master hidden aria-label="New Sourcing {% if kind == 'trade' %}Trade{% else %}Service{% endif %}">
+      <header class="sourcing-onboarding-material-head"><h2>New Sourcing {% if kind == 'trade' %}Trade{% else %}Service{% endif %}</h2><button type="button" class="sourcing-onboarding-close" data-material-dismiss aria-label="Close reference editor">×</button></header>
+      <div class="sourcing-onboarding-material-body">
+        <div class="sourcing-reference-master-fields">
+          <section class="sourcing-form-section"><header><h2>{% if kind == 'trade' %}Trade Identity{% else %}Service Identity{% endif %}</h2></header><div class="sourcing-form-grid">
+            {% include 'sourcing/vendors/field.html' with field=offer_form.new_master_code %}
+            {% include 'sourcing/vendors/field.html' with field=offer_form.new_master_name required_visual=True %}
+            <div data-material-category-scope>
+              {% include 'sourcing/vendors/field.html' with field=offer_form.new_master_category %}
+              {% if kind == 'service' %}<div data-new-material-category-field{% if offer_form.new_master_category.value != '__new__' %} hidden{% endif %}>{% include 'sourcing/vendors/field.html' with field=offer_form.new_master_new_category %}</div>{% endif %}
+            </div>
+            {% if kind == 'service' %}{% include 'sourcing/vendors/field.html' with field=offer_form.new_master_default_rate_basis %}{% endif %}
+          </div></section>
+          <section class="sourcing-form-section"><header><h2>{% if kind == 'trade' %}Search Aliases{% else %}Scope &amp; Aliases{% endif %}</h2></header><div class="sourcing-form-grid sourcing-form-grid--single">
+            {% if kind == 'service' %}{% include 'sourcing/vendors/field.html' with field=offer_form.new_master_description %}{% endif %}
+            {% include 'sourcing/vendors/field.html' with field=offer_form.new_master_aliases %}
+          </div></section>
+          <section class="sourcing-form-section"><header><h2>Remarks</h2></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include 'sourcing/vendors/field.html' with field=offer_form.new_master_notes %}</div></section>
+        </div>
+      </div>
+      <div class="sourcing-onboarding-material-error" role="alert" data-material-error hidden></div>
+      <div class="sourcing-onboarding-material-confirm" data-material-confirm hidden role="alertdialog" aria-label="Discard reference changes" aria-modal="true"><div class="sourcing-onboarding-material-confirm-card"><h3>Discard reference changes?</h3><p>Unsaved reference edits will be lost. Your capability draft will remain open.</p><div><button type="button" class="sourcing-btn sourcing-btn--primary" data-material-keep>Keep editing</button><button type="button" class="sourcing-btn sourcing-onboarding-discard" data-material-discard>Discard changes</button></div></div></div>
+      <footer class="sourcing-onboarding-material-actions"><button type="button" class="sourcing-btn" data-material-dismiss>Cancel</button><button type="button" class="sourcing-btn sourcing-btn--primary" data-material-save>Use this {% if kind == 'trade' %}trade{% else %}service{% endif %}</button></footer>
+    </dialog>
+    {% endif %}
+  </section>
+  <section class="sourcing-onboarding-editor-section"><div class="sourcing-onboarding-section-heading"><strong>Availability</strong></div><div class="sourcing-form-grid">
+    {% include 'sourcing/vendors/field.html' with field=offer_form.availability %}
+    {% if kind == 'trade' %}{% include 'sourcing/vendors/field.html' with field=offer_form.available_quantity %}{% endif %}
+    {% if kind == 'service' %}{% include 'sourcing/vendors/field.html' with field=offer_form.lead_time %}{% endif %}
+  </div></section>
+  <section class="sourcing-onboarding-editor-section"><div class="sourcing-onboarding-section-heading"><strong>Reference Rate</strong></div><div class="sourcing-form-grid">
+    {% include 'sourcing/vendors/field.html' with field=offer_form.rate %}
+    {% include 'sourcing/vendors/field.html' with field=offer_form.currency %}
+    {% include 'sourcing/vendors/field.html' with field=offer_form.rate_basis %}
+    {% if kind == 'trade' %}{% include 'sourcing/vendors/field.html' with field=offer_form.overtime_rate %}{% endif %}
+    {% include 'sourcing/vendors/field.html' with field=offer_form.rate_valid_until %}
+  </div></section>
+  <section class="sourcing-onboarding-editor-section"><div class="sourcing-onboarding-section-heading"><strong>Verification</strong></div><div class="sourcing-form-grid">
+    {% include 'sourcing/vendors/field.html' with field=offer_form.contact_name %}
+    {% include 'sourcing/vendors/field.html' with field=offer_form.verification_note %}
+    <div class="sourcing-field sourcing-check-field"><label for="{{ offer_form.verified_now.id_for_label }}">{{ offer_form.verified_now }} {{ offer_form.verified_now.label }}</label></div>
+  </div></section>
+  <section class="sourcing-onboarding-editor-section"><div class="sourcing-onboarding-section-heading"><strong>Remarks</strong></div><div class="sourcing-form-grid sourcing-form-grid--single">{% include 'sourcing/vendors/field.html' with field=offer_form.notes %}</div></section>
+</div>

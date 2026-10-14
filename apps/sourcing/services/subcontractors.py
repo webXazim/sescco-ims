@@ -22,8 +22,10 @@ from ..models import (
 TRASH_RETENTION_DAYS = 30
 
 
-def suggest_subcontractor_code():
-    return f"SUB-{uuid4().hex[:8].upper()}"
+def suggest_subcontractor_code(*, name: str = "", company=None):
+    from .provider_codes import next_provider_code
+    return next_provider_code(prefix="SUB", name=name, company=company, model=SourcingSubcontractor)
+
 
 
 def _snapshot(obj):
@@ -79,7 +81,7 @@ def _writable(subcontractor):
 @transaction.atomic
 def create_subcontractor(*, actor_membership, cleaned_data, request=None):
     data = dict(cleaned_data)
-    data["code"] = data.get("code") or suggest_subcontractor_code()
+    data["code"] = data.get("code") or suggest_subcontractor_code(name=data.get("name", ""), company=actor_membership.company)
     subcontractor = SourcingSubcontractor(company=actor_membership.company, **data)
     subcontractor.save()
     _audit(subcontractor=subcontractor, actor_membership=actor_membership, action="sourcing.subcontractor.created", after=_snapshot(subcontractor), request=request)
