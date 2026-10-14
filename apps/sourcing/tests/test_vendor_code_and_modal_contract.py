@@ -56,6 +56,35 @@ class VendorCodeAndModalTests(TestCase):
                       'data-onboarding-cancel', 'data-onboarding-done'):
             self.assertContains(page, token)
 
+    def test_nested_material_modal_uses_exact_standalone_sections_and_fields(self):
+        """Both creation entry points must render the same controlled master
+        layout, while onboarding retains its atomic offer-formset field names.
+        """
+        standalone = self.client.get(reverse('sourcing:material_create'))
+        vendor = self.client.get(reverse('sourcing:vendor_create'))
+        self.assertEqual(standalone.status_code, 200)
+        self.assertEqual(vendor.status_code, 200)
+        for label in ('Material Identity', 'Search Aliases', 'Remarks'):
+            self.assertContains(standalone, label)
+            self.assertContains(vendor, label)
+        self.assertContains(vendor, 'data-reference-master-fields="material"')
+        self.assertContains(vendor, 'data-onboarding-master')
+        for base, nested in (
+            ('code', 'new_material_code'),
+            ('name', 'new_material_name'),
+            ('category', 'new_material_category'),
+            ('new_category', 'new_material_new_category'),
+            ('default_unit', 'new_material_default_unit'),
+            ('aliases', 'new_material_aliases'),
+            ('notes', 'new_material_notes'),
+        ):
+            self.assertContains(standalone, f'name="{base}"')
+            self.assertContains(vendor, f'name="supply_items-0-{nested}"')
+        self.assertContains(vendor, 'data-material-category-scope')
+        self.assertContains(vendor, 'data-new-material-category-field')
+        self.assertContains(vendor, 'data-material-confirm')
+        self.assertContains(vendor, 'data-material-save')
+
     def test_new_material_editor_is_a_nested_modal_with_discard_guard(self):
         page = self.client.get(reverse('sourcing:vendor_create'))
         self.assertEqual(page.status_code, 200)

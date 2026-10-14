@@ -850,13 +850,36 @@ class SourcingVendorOnboardingOfferForm(SourcingVendorOfferForm):
     only persisted once the entire Vendor formset validates and saves atomically.
     """
 
-    new_material_code = forms.CharField(required=False, max_length=40, label="Material Code")
-    new_material_name = forms.CharField(required=False, max_length=200, label="Material Name")
+    # These are optional on the parent offer, since an existing Material may be
+    # selected instead. The nested editor validates the name/category when used,
+    # then SourcingMaterialForm validates the full draft during Vendor save.
+    new_material_code = forms.CharField(
+        required=False, max_length=40, label="Code",
+        widget=forms.TextInput(attrs={"placeholder": "Auto-generated if blank", "autocomplete": "off"}),
+        help_text="Independent Sourcing code; not an Inventory item code. Auto-generated if blank.",
+    )
+    new_material_name = forms.CharField(
+        required=False, max_length=200, label="Name",
+        widget=forms.TextInput(attrs={"placeholder": "Material / item name", "autocomplete": "off"}),
+    )
     new_material_category = forms.ChoiceField(required=False, choices=(), label="Material Category / Type")
-    new_material_new_category = forms.CharField(required=False, max_length=120, label="New Category / Type")
-    new_material_default_unit = forms.CharField(required=False, max_length=40, label="Default Unit")
-    new_material_aliases = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}), label="Search Aliases")
-    new_material_notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}), label="Material Notes")
+    new_material_new_category = forms.CharField(
+        required=False, max_length=120, label="New Category / Type",
+        widget=forms.TextInput(attrs={"placeholder": "Enter a new material category / type"}),
+        help_text="The new category/type becomes available for later materials when this Vendor is saved.",
+    )
+    new_material_default_unit = forms.CharField(
+        required=False, max_length=40, label="Default Unit",
+        widget=forms.TextInput(attrs={"placeholder": "pcs, box, kg, m, ton ..."}),
+    )
+    new_material_aliases = forms.CharField(
+        required=False, label="Aliases",
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "One alias per line, e.g.\nReinforcement Bar\nSteel Bar"}),
+        help_text="Optional search aliases. One alias per line or comma-separated.",
+    )
+    new_material_notes = forms.CharField(
+        required=False, label="Notes", widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Reference notes for this Sourcing Material"}),
+    )
 
     def __init__(self, *args, can_create_materials=False, categories=None, **kwargs):
         self.company = kwargs.get("company")

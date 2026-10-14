@@ -165,9 +165,19 @@ for marker in ('<dialog class="sourcing-onboarding-material-dialog',
                'data-onboarding-edit-master'):
     if marker not in material_editor_template:
         fail(f"Nested controlled-material modal missing: {marker}")
-for marker in ("offer_form.material", "offer_form.specification", "offer_form.available_quantity", "offer_form.rate", "offer_form.verified_now", "new_material_name"):
-    if marker not in text("templates/sourcing/vendors/onboarding_offer_row.html"):
+for marker in ("offer_form.material", "offer_form.specification", "offer_form.available_quantity", "offer_form.rate", "offer_form.verified_now"):
+    if marker not in material_editor_template:
         fail(f"Full supply-item editor missing: {marker}")
+if '{% include "sourcing/reference_master_fields/material.html" with onboarding_material=True %}' not in material_editor_template:
+    fail("Onboarding Material modal must reuse the standalone Material form sections")
+shared_material = text("templates/sourcing/reference_master_fields/material.html")
+for marker in ('Material Identity', 'Search Aliases', 'Remarks', 'onboarding_material',
+               'offer_form.new_material_code', 'offer_form.new_material_name',
+               'offer_form.new_material_category', 'offer_form.new_material_new_category',
+               'offer_form.new_material_default_unit', 'offer_form.new_material_aliases',
+               'offer_form.new_material_notes'):
+    if marker not in shared_material:
+        fail(f"Shared Material form field parity missing: {marker}")
 onboarding_js = text("static/sourcing/js/vendor-onboarding.js")
 for marker in ('dialogMaster.showModal()', 'masterSnapshot(row)', 'restoreMaster(row, before)',
                'stagedMaster(row, true)', "dialogMaster.addEventListener('cancel'", "data-material-confirm"):

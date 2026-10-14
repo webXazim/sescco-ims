@@ -25,17 +25,7 @@
       </header>
       <div class="sourcing-onboarding-material-body">
         <p class="sourcing-onboarding-material-notice">This reference and its supply capability will be created together only when you save the Vendor.</p>
-        <div class="sourcing-form-grid">
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_name %}
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_code %}
-          <div data-material-category-scope>
-            {% include "sourcing/vendors/field.html" with field=offer_form.new_material_category %}
-            <div data-new-material-category-field hidden>{% include "sourcing/vendors/field.html" with field=offer_form.new_material_new_category %}</div>
-          </div>
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_default_unit %}
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_aliases %}
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_notes %}
-        </div>
+        {% include "sourcing/reference_master_fields/material.html" with onboarding_material=True %}
       </div>
       <div class="sourcing-onboarding-material-error" role="alert" data-material-error hidden></div>
       <div class="sourcing-onboarding-material-confirm" data-material-confirm hidden role="alertdialog" aria-label="Discard new material changes" aria-modal="true">

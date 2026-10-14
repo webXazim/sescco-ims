@@ -1,13 +1,51 @@
+{# Shared controlled-material form sections for standalone creation/editing and
+   the draft material modal inside New Vendor → Add Supply Item.  Both paths
+   keep the same field ordering and explanatory content. #}
 <div class="sourcing-reference-master-fields" data-reference-master-fields="material">
-  <section class="sourcing-form-section"><header><h2>Material Identity</h2><p>Independent Sourcing vocabulary used for Vendor capability tracking.</p></header><div class="sourcing-form-grid">
-    {% include "sourcing/vendors/field.html" with field=form.code %}
-    {% include "sourcing/vendors/field.html" with field=form.name %}
-    <div data-material-category-scope>
-      {% include "sourcing/vendors/field.html" with field=form.category %}
-      <div data-new-material-category-field{% if form.category.value != '__new__' %} hidden{% endif %}>{% include "sourcing/vendors/field.html" with field=form.new_category %}</div>
+  <section class="sourcing-form-section">
+    <header><h2>Material Identity</h2><p>Independent Sourcing vocabulary used for Vendor capability tracking.</p></header>
+    <div class="sourcing-form-grid">
+      {% if onboarding_material %}
+        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_code %}
+        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_name required_visual=True %}
+        <div data-material-category-scope>
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_category %}
+          <div data-new-material-category-field{% if offer_form.new_material_category.value != '__new__' %} hidden{% endif %}>
+            {% include "sourcing/vendors/field.html" with field=offer_form.new_material_new_category %}
+          </div>
+        </div>
+        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_default_unit %}
+      {% else %}
+        {% include "sourcing/vendors/field.html" with field=form.code %}
+        {% include "sourcing/vendors/field.html" with field=form.name %}
+        <div data-material-category-scope>
+          {% include "sourcing/vendors/field.html" with field=form.category %}
+          <div data-new-material-category-field{% if form.category.value != '__new__' %} hidden{% endif %}>
+            {% include "sourcing/vendors/field.html" with field=form.new_category %}
+          </div>
+        </div>
+        {% include "sourcing/vendors/field.html" with field=form.default_unit %}
+      {% endif %}
     </div>
-    {% include "sourcing/vendors/field.html" with field=form.default_unit %}
-  </div></section>
-  <section class="sourcing-form-section"><header><h2>Search Aliases</h2><p>Use aliases to avoid duplicate item names while still finding common terminology.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.aliases %}</div></section>
-  <section class="sourcing-form-section"><header><h2>Remarks</h2><p>Reference notes only; no Inventory or accounting effect.</p></header><div class="sourcing-form-grid sourcing-form-grid--single">{% include "sourcing/vendors/field.html" with field=form.notes %}</div></section>
+  </section>
+  <section class="sourcing-form-section">
+    <header><h2>Search Aliases</h2><p>Use aliases to avoid duplicate item names while still finding common terminology.</p></header>
+    <div class="sourcing-form-grid sourcing-form-grid--single">
+      {% if onboarding_material %}
+        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_aliases %}
+      {% else %}
+        {% include "sourcing/vendors/field.html" with field=form.aliases %}
+      {% endif %}
+    </div>
+  </section>
+  <section class="sourcing-form-section">
+    <header><h2>Remarks</h2><p>Reference notes only; no Inventory or accounting effect.</p></header>
+    <div class="sourcing-form-grid sourcing-form-grid--single">
+      {% if onboarding_material %}
+        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_notes %}
+      {% else %}
+        {% include "sourcing/vendors/field.html" with field=form.notes %}
+      {% endif %}
+    </div>
+  </section>
 </div>
