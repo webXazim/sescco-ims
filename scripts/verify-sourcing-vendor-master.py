@@ -158,10 +158,21 @@ form_template = text("templates/sourcing/vendors/form.html")
 for marker in ("Supply Items", "+ Add Supply Item", "data-onboarding-dialog", "data-onboarding-template", "offer_formset.management_form"):
     if marker not in form_template:
         fail(f"Vendor supply-item onboarding UI missing: {marker}")
+material_editor_template = text("templates/sourcing/vendors/onboarding_offer_row.html")
+for marker in ('<dialog class="sourcing-onboarding-material-dialog',
+               'data-onboarding-master', 'data-material-save', 'data-material-confirm',
+               'data-material-discard', 'data-onboarding-staged-material',
+               'data-onboarding-edit-master'):
+    if marker not in material_editor_template:
+        fail(f"Nested controlled-material modal missing: {marker}")
 for marker in ("offer_form.material", "offer_form.specification", "offer_form.available_quantity", "offer_form.rate", "offer_form.verified_now", "new_material_name"):
     if marker not in text("templates/sourcing/vendors/onboarding_offer_row.html"):
         fail(f"Full supply-item editor missing: {marker}")
 onboarding_js = text("static/sourcing/js/vendor-onboarding.js")
+for marker in ('dialogMaster.showModal()', 'masterSnapshot(row)', 'restoreMaster(row, before)',
+               'stagedMaster(row, true)', "dialogMaster.addEventListener('cancel'", "data-material-confirm"):
+    if marker not in onboarding_js:
+        fail(f"Material-modal draft protection missing: {marker}")
 for marker in ("data-onboarding-add", "data-onboarding-done", "data-onboarding-cancel", "supply_items-TOTAL_FORMS", "data-onboarding-master", "requestDismiss()", "data-onboarding-confirm", "data-onboarding-discard"):
     if marker not in onboarding_js:
         fail(f"Supply-item onboarding browser behavior missing: {marker}")

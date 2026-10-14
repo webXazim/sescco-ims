@@ -14,21 +14,38 @@
       {% include "sourcing/vendors/field.html" with field=offer_form.unit %}
     </div>
     {% if can_create_materials %}
-    <div class="sourcing-onboarding-master" data-onboarding-master hidden>
-      <div class="sourcing-onboarding-master-heading"><strong>New controlled Sourcing Material</strong><button type="button" class="sourcing-btn" data-onboarding-existing-master>Choose existing instead</button></div>
-      <p>This company-wide master and its supply capability are created together when you save the Vendor.</p>
-      <div class="sourcing-form-grid">
-        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_name %}
-        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_code %}
-        <div data-material-category-scope>
-          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_category %}
-          <div data-new-material-category-field hidden>{% include "sourcing/vendors/field.html" with field=offer_form.new_material_new_category %}</div>
-        </div>
-        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_default_unit %}
-        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_aliases %}
-        {% include "sourcing/vendors/field.html" with field=offer_form.new_material_notes %}
-      </div>
+    <div class="sourcing-onboarding-staged-material" data-onboarding-staged-material hidden>
+      <div><strong data-onboarding-staged-name>New material</strong><small>Controlled material draft · saved together with this Vendor</small></div>
+      <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit material</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Use existing material</button></div>
     </div>
+    <dialog class="sourcing-onboarding-material-dialog sourcing-onboarding-master" data-onboarding-master hidden aria-label="Create new Sourcing Material">
+      <header class="sourcing-onboarding-material-head">
+        <div><span class="sourcing-onboarding-material-eyebrow">REFERENCE MASTER</span><h2>New Sourcing Material</h2><p>Add the controlled material details without leaving this supply item.</p></div>
+        <button type="button" class="sourcing-onboarding-close" data-material-dismiss aria-label="Close new material dialog">×</button>
+      </header>
+      <div class="sourcing-onboarding-material-body">
+        <p class="sourcing-onboarding-material-notice">This reference and its supply capability will be created together only when you save the Vendor.</p>
+        <div class="sourcing-form-grid">
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_name %}
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_code %}
+          <div data-material-category-scope>
+            {% include "sourcing/vendors/field.html" with field=offer_form.new_material_category %}
+            <div data-new-material-category-field hidden>{% include "sourcing/vendors/field.html" with field=offer_form.new_material_new_category %}</div>
+          </div>
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_default_unit %}
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_aliases %}
+          {% include "sourcing/vendors/field.html" with field=offer_form.new_material_notes %}
+        </div>
+      </div>
+      <div class="sourcing-onboarding-material-error" role="alert" data-material-error hidden></div>
+      <div class="sourcing-onboarding-material-confirm" data-material-confirm hidden role="alertdialog" aria-label="Discard new material changes" aria-modal="true">
+        <div class="sourcing-onboarding-material-confirm-card">
+          <h3>Discard material changes?</h3><p>These changes have not been added to the supply item. Closing now will lose them.</p>
+          <div><button type="button" class="sourcing-btn sourcing-btn--primary" data-material-keep>Keep editing</button><button type="button" class="sourcing-btn sourcing-onboarding-discard" data-material-discard>Discard changes</button></div>
+        </div>
+      </div>
+      <footer class="sourcing-onboarding-material-actions"><button type="button" class="sourcing-btn" data-material-dismiss>Cancel</button><button type="button" class="sourcing-btn sourcing-btn--primary" data-material-save>Use this material</button></footer>
+    </dialog>
     {% endif %}
   </section>
   <section class="sourcing-onboarding-editor-section">

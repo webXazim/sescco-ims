@@ -58,3 +58,32 @@
 .sourcing-onboarding-discard{border-color:#efb5ac;color:#ad3026}
 .sourcing-field .sourcing-vendor-code-preview{font-size:12px;color:#61758a;margin-top:0}
 @media(max-width:780px){.sourcing-onboarding-dialog{max-height:calc(100dvh - 20px);width:calc(100vw - 20px)}.sourcing-onboarding-dialog-head{padding:16px}.sourcing-onboarding-dialog-actions{padding:12px 16px}.sourcing-onboarding-discard-card{padding:20px}}
+
+/* Controlled material entry uses its own top-layer modal; the offer form remains
+   in the parent dialog and is still submitted together with the Vendor. */
+.sourcing-onboarding-staged-material{display:flex;grid-column:1/-1;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f2f7fc;border:1px solid #cadbeb;border-radius:10px;min-width:0}
+.sourcing-onboarding-staged-material>div:first-child{display:grid;gap:3px;min-width:0}
+.sourcing-onboarding-staged-material strong{font-size:14px;overflow-wrap:anywhere;color:#173958}
+.sourcing-onboarding-staged-material small{color:#63768b;font-size:12px}
+.sourcing-onboarding-staged-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sourcing-onboarding-material-dialog{display:none;flex-direction:column;position:fixed;inset:0;margin:auto;padding:0!important;width:min(840px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:min(86dvh,800px);background:#fff;color:#182739;border:1px solid #d5e0ea;border-radius:15px;box-shadow:0 25px 70px rgba(10,25,45,.26);overflow:hidden}
+.sourcing-onboarding-material-dialog[open]{display:flex}
+.sourcing-onboarding-material-dialog::backdrop{background:rgba(11,23,39,.56)}
+.sourcing-onboarding-material-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px 24px 17px;border-bottom:1px solid #e5ebf2;flex:none;background:#fff}
+.sourcing-onboarding-material-eyebrow{font-size:11px;font-weight:750;letter-spacing:.09em;color:#627d96}
+.sourcing-onboarding-material-head h2{font-size:21px;line-height:1.25;margin:4px 0 6px;color:#172639}
+.sourcing-onboarding-material-head p{font-size:13px;line-height:1.5;color:#63758a;margin:0}
+.sourcing-onboarding-material-body{padding:22px 24px;overflow:auto;overscroll-behavior:contain;min-height:0;flex:1}
+.sourcing-onboarding-material-notice{padding:11px 13px;background:#f5f8fc;border:1px solid #e0e9f3;border-radius:9px;font-size:13px!important;line-height:1.5;color:#516981!important;margin:0 0 18px!important}
+.sourcing-onboarding-material-dialog .sourcing-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.sourcing-onboarding-material-dialog .sourcing-field{min-width:0}
+.sourcing-onboarding-material-dialog .sourcing-input{width:100%;max-width:100%}
+.sourcing-onboarding-material-dialog [data-material-category-scope]{display:grid;gap:10px;align-content:start}
+.sourcing-onboarding-material-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex:none;background:#fff;border-top:1px solid #e5ebf2;padding:14px 24px}
+.sourcing-onboarding-material-error{margin:0 24px 12px;padding:10px 12px;border:1px solid #f4a69f;background:#fff4f3;color:#a52620;border-radius:9px;font-size:13px}
+.sourcing-onboarding-material-confirm{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:rgba(19,34,54,.4);z-index:20}
+.sourcing-onboarding-material-confirm-card{background:#fff;border-radius:14px;border:1px solid #dae2eb;box-shadow:0 20px 55px #10233b44;padding:24px;width:min(430px,100%)}
+.sourcing-onboarding-material-confirm h3{font-size:18px;margin:0 0 10px}
+.sourcing-onboarding-material-confirm p{font-size:14px;line-height:1.5;color:#5d7188;margin:0 0 20px}
+.sourcing-onboarding-material-confirm-card>div{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:680px){.sourcing-onboarding-material-dialog{max-height:calc(100dvh - 20px);width:calc(100vw - 20px);max-width:calc(100vw - 20px)}.sourcing-onboarding-material-dialog .sourcing-form-grid{grid-template-columns:1fr;gap:14px}.sourcing-onboarding-material-head{padding:17px}.sourcing-onboarding-material-body{padding:18px}.sourcing-onboarding-material-actions{padding:13px 17px}.sourcing-onboarding-staged-material{align-items:stretch;flex-direction:column}}

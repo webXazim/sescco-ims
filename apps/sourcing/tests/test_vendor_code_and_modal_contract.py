@@ -55,3 +55,23 @@ class VendorCodeAndModalTests(TestCase):
         for token in ('data-onboarding-confirm', 'data-onboarding-keep', 'data-onboarding-discard',
                       'data-onboarding-cancel', 'data-onboarding-done'):
             self.assertContains(page, token)
+
+    def test_new_material_editor_is_a_nested_modal_with_discard_guard(self):
+        page = self.client.get(reverse('sourcing:vendor_create'))
+        self.assertEqual(page.status_code, 200)
+        for marker in (
+            'class="sourcing-onboarding-material-dialog sourcing-onboarding-master"',
+            'data-onboarding-master',
+            'data-material-save',
+            'data-material-confirm',
+            'data-material-keep',
+            'data-material-discard',
+            'data-onboarding-staged-material',
+            'data-onboarding-edit-master',
+        ):
+            self.assertContains(page, marker)
+        # New controlled material fields continue to belong to the parent
+        # formset; they must not be posted separately before Vendor save.
+        for field in ('new_material_name', 'new_material_code', 'new_material_category',
+                      'new_material_default_unit', 'new_material_aliases', 'new_material_notes'):
+            self.assertContains(page, f'supply_items-0-{field}')
