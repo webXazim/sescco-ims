@@ -2,11 +2,15 @@
   <span class="sourcing-onboarding-delete" hidden>{{ offer_form.DELETE }}</span>
   {% if offer_form.non_field_errors %}<div class="sourcing-form-errors">{{ offer_form.non_field_errors }}</div>{% endif %}
   <section class="sourcing-onboarding-editor-section">
-    <div class="sourcing-onboarding-section-heading"><strong>Material Capability</strong><small>Same sourcing material and specifications as Vendor → Add Supply Item.</small></div>
+    <div class="sourcing-onboarding-section-heading"><strong>Material Details</strong></div>
     <div class="sourcing-form-grid">
       <div class="sourcing-onboarding-reference">
         {% include "sourcing/reference_lookup_field.html" with field=offer_form.material kind="material" %}
-        {% if can_create_materials %}<button type="button" class="sourcing-btn sourcing-onboarding-create-material" data-onboarding-new-master>+ Create new material</button>{% endif %}
+        {% if can_create_materials %}<button type="button" class="sourcing-btn sourcing-onboarding-create-material" data-onboarding-new-master>+ Create new material</button>
+        <div class="sourcing-onboarding-staged-material" data-onboarding-staged-material hidden>
+          <div><span class="sourcing-onboarding-staged-kicker">NEW MATERIAL · DRAFT</span><strong data-onboarding-staged-name>New material</strong></div>
+          <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit material</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Choose existing</button></div>
+        </div>{% endif %}
       </div>
       {% include "sourcing/vendors/field.html" with field=offer_form.specification %}
       {% include "sourcing/vendors/field.html" with field=offer_form.brand %}
@@ -14,10 +18,6 @@
       {% include "sourcing/vendors/field.html" with field=offer_form.unit %}
     </div>
     {% if can_create_materials %}
-    <div class="sourcing-onboarding-staged-material" data-onboarding-staged-material hidden>
-      <div><strong data-onboarding-staged-name>New material</strong><small>Controlled material draft · saved together with this Vendor</small></div>
-      <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit material</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Use existing material</button></div>
-    </div>
     <dialog class="sourcing-onboarding-material-dialog sourcing-onboarding-master" data-onboarding-master hidden aria-label="Create new Sourcing Material">
       <header class="sourcing-onboarding-material-head">
         <div><h2>New Sourcing Material</h2></div>
@@ -38,7 +38,7 @@
     {% endif %}
   </section>
   <section class="sourcing-onboarding-editor-section">
-    <div class="sourcing-onboarding-section-heading"><strong>Availability</strong><small>Quantities are sourcing references; they do not create Inventory stock.</small></div>
+    <div class="sourcing-onboarding-section-heading"><strong>Availability</strong></div>
     <div class="sourcing-form-grid">
       {% include "sourcing/vendors/field.html" with field=offer_form.availability %}
       {% include "sourcing/vendors/field.html" with field=offer_form.available_quantity %}
@@ -47,7 +47,7 @@
     </div>
   </section>
   <section class="sourcing-onboarding-editor-section">
-    <div class="sourcing-onboarding-section-heading"><strong>Reference Rate</strong><small>Supplier quotation only. Never creates purchasing or accounting entries.</small></div>
+    <div class="sourcing-onboarding-section-heading"><strong>Reference Rate</strong></div>
     <div class="sourcing-form-grid">
       {% include "sourcing/vendors/field.html" with field=offer_form.rate %}
       {% include "sourcing/vendors/field.html" with field=offer_form.currency %}
@@ -55,7 +55,7 @@
     </div>
   </section>
   <section class="sourcing-onboarding-editor-section">
-    <div class="sourcing-onboarding-section-heading"><strong>Verification</strong><small>Mark verified only when a supplier actually confirmed the information.</small></div>
+    <div class="sourcing-onboarding-section-heading"><strong>Verification</strong></div>
     <div class="sourcing-form-grid">
       {% include "sourcing/vendors/field.html" with field=offer_form.contact_name %}
       {% include "sourcing/vendors/field.html" with field=offer_form.verification_note %}

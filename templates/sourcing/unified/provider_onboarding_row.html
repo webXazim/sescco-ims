@@ -6,7 +6,11 @@
     <div class="sourcing-form-grid">
       <div class="sourcing-onboarding-reference">
         {% if kind == 'trade' %}{% include 'sourcing/reference_lookup_field.html' with field=offer_form.trade kind='trade' can_create_master=False %}{% else %}{% include 'sourcing/reference_lookup_field.html' with field=offer_form.service kind='service' can_create_master=False %}{% endif %}
-        {% if can_create_master %}<button type="button" class="sourcing-btn sourcing-onboarding-create-material" data-onboarding-new-master>+ Create new {% if kind == 'trade' %}trade{% else %}service{% endif %}</button>{% endif %}
+        {% if can_create_master %}<button type="button" class="sourcing-btn sourcing-onboarding-create-material" data-onboarding-new-master>+ Create new {% if kind == 'trade' %}trade{% else %}service{% endif %}</button>
+        <div class="sourcing-onboarding-staged-material" data-onboarding-staged-master hidden>
+          <div><span class="sourcing-onboarding-staged-kicker">NEW {% if kind == 'trade' %}TRADE{% else %}SERVICE{% endif %} · DRAFT</span><strong data-onboarding-staged-name>New reference</strong></div>
+          <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit {% if kind == 'trade' %}trade{% else %}service{% endif %}</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Choose existing</button></div>
+        </div>{% endif %}
       </div>
       {% if kind == 'trade' %}
         {% include 'sourcing/vendors/field.html' with field=offer_form.work_location %}
@@ -17,10 +21,6 @@
       {% endif %}
     </div>
     {% if can_create_master %}
-    <div class="sourcing-onboarding-staged-material" data-onboarding-staged-master hidden>
-      <div><strong data-onboarding-staged-name>New reference</strong><small>New controlled reference staged for provider save</small></div>
-      <div class="sourcing-onboarding-staged-actions"><button type="button" class="sourcing-btn" data-onboarding-edit-master>Edit {% if kind == 'trade' %}trade{% else %}service{% endif %}</button><button type="button" class="sourcing-btn" data-onboarding-existing-master>Choose existing</button></div>
-    </div>
     <dialog class="sourcing-onboarding-material-dialog sourcing-onboarding-master" data-onboarding-master hidden aria-label="New Sourcing {% if kind == 'trade' %}Trade{% else %}Service{% endif %}">
       <header class="sourcing-onboarding-material-head"><h2>New Sourcing {% if kind == 'trade' %}Trade{% else %}Service{% endif %}</h2><button type="button" class="sourcing-onboarding-close" data-material-dismiss aria-label="Close reference editor">×</button></header>
       <div class="sourcing-onboarding-material-body">
