@@ -1,0 +1,192 @@
+/*
+ * SESCCO MS — cross-module readability layer (2026-10).
+ * Loaded LAST by Inventory, Administration, Sourcing and Payroll.
+ * Text-only refinements: no data, layout, print, permission or JS changes.
+ * Core body 14px, controls 13–14px, secondary information >= 12px.
+ * Explicit icon/symbol fonts and print layouts are intentionally excluded.
+ */
+@media screen {
+  /* Shared application shell: consistent secondary type in all modules. */
+  .inventory-shell-v2 .brand-sub,
+  .inventory-shell-v2 .topbar-context span,
+  .inventory-shell-v2 .platform-switcher__copy small,
+  .inventory-shell-v2 .platform-switcher__item-copy small,
+  .inventory-shell-v2 .platform-account__copy small,
+  .ui-v2-root .ui-v2-sidebar__brand-copy span,
+  .ui-v2-root .ui-v2-switcher-copy small,
+  .ui-v2-root .ui-v2-switcher-menu__copy small,
+  .ui-v2-root .ui-v2-account__copy small { font-size: 12px; line-height: 1.4; }
+
+  .inventory-shell-v2 .nav-label,
+  .inventory-shell-v2 .platform-switcher__label,
+  .ui-v2-root .ui-v2-nav-group__label,
+  .ui-v2-root .ui-v2-account-menu__section-label,
+  .ui-v2-root .ui-v2-switcher-menu__label { font-size: 11.5px; line-height: 1.4; }
+
+  .inventory-shell-v2 .brand-name,
+  .inventory-shell-v2 .nav-link,
+  .ui-v2-root .ui-v2-sidebar__brand-copy strong,
+  .ui-v2-root .ui-v2-nav-item { font-size: 13px; line-height: 1.4; }
+
+  /* Inventory: tabular data and supporting descriptions should be legible. */
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .content :is(
+    .cell-sub, .micro, .help, .card-meta, .stat-note, .stat-top,
+    .result-meta, .activity-sub, .action-desc, .valuation-copy p,
+    .valuation-total small, .project-client, .project-stat span,
+    .popover-section-head span, .archive-result-head,
+    .saved-filters, .preview-label, .range-inputs > span
+  ) { font-size: 12px; line-height: 1.45; }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .content :is(
+    .field-label, .page-subtitle, .card-title, .btn, .search-field input,
+    .top-search input, .input, .select, .textarea
+  ) { font-size: 13px; }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .content :is(th, .table th) {
+    font-size: 12px; line-height: 1.4;
+  }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .content :is(td, .table td) {
+    font-size: 13px; line-height: 1.45;
+  }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .content :is(.tag, .status, .filter-chip) {
+    font-size: 11.5px; line-height: 1.35; min-height: 24px;
+  }
+
+  /* Sourcing: keep compact tables and inline capability dialogs readable. */
+  .sourcing-shell-v1 .sourcing-table th { font-size: 12px; line-height: 1.4; }
+  .sourcing-shell-v1 .sourcing-table td { font-size: 13.5px; line-height: 1.5; }
+  .sourcing-shell-v1 :is(.cell-note, .sourcing-unified-note, .sourcing-form-section header p,
+    .sourcing-field small, .sourcing-muted, .sourcing-pagination, .sourcing-breadcrumb) {
+    font-size: 12px; line-height: 1.45;
+  }
+  .sourcing-shell-v1 :is(.sourcing-input, .sourcing-select, .sourcing-search input,
+    .sourcing-field label, .sourcing-btn) { font-size: 13px; }
+  .sourcing-shell-v1 .sourcing-row-menu a { font-size: 13px; }
+
+  /* Administration: this module had multiple 8.5–10px live text rules. */
+  .access-shell-v1 .access-breadcrumb { font-size: 12px; }
+  .access-shell-v1 .access-sidebar-note span,
+  .access-shell-v1 .access-panel__head p,
+  .access-shell-v1 .access-panel__head-meta,
+  .access-shell-v1 .access-page-head p,
+  .access-shell-v1 .access-drawer__header p,
+  .access-shell-v1 .access-confirm__identity small,
+  .access-shell-v1 .access-profile-card__head span,
+  .access-shell-v1 .access-scope-card__copy span,
+  .access-shell-v1 .access-section-head span,
+  .access-shell-v1 .access-form-note,
+  .access-shell-v1 .access-footnote,
+  .access-shell-v1 .access-history-card > header span,
+  .access-shell-v1 .access-history-card > footer,
+  .access-shell-v1 .access-history-no-diff,
+  .access-shell-v1 .access-history-diff > div,
+  .access-shell-v1 .access-history-diff strong,
+  .access-shell-v1 .access-table-sub,
+  .access-shell-v1 .access-profile-copy small,
+  .access-shell-v1 .access-user-copy small { font-size: 12px; line-height: 1.45; }
+
+  .access-shell-v1 .access-eyebrow,
+  .access-shell-v1 .access-panel__head > div:first-child > span,
+  .access-shell-v1 .access-history-action,
+  .access-shell-v1 .access-detail-item span,
+  .access-shell-v1 .access-authority-chip small,
+  .access-shell-v1 .access-profile-tag,
+  .access-shell-v1 .access-scope-pill,
+  .access-shell-v1 .access-status,
+  .access-shell-v1 .access-date small,
+  .access-shell-v1 .access-scope-chip,
+  .access-shell-v1 .access-history-change { font-size: 11.5px; line-height: 1.4; }
+
+  .access-shell-v1 .access-search > span,
+  .access-shell-v1 .access-loading,
+  .access-shell-v1 .access-empty,
+  .access-shell-v1 .access-error,
+  .access-shell-v1 .access-view-only-switch small,
+  .access-shell-v1 .access-permission-group > header span,
+  .access-shell-v1 .access-permission-item small,
+  .access-shell-v1 .access-scope-empty,
+  .access-shell-v1 .access-profile-card__head strong { font-size: 12px; line-height: 1.45; }
+
+  .access-shell-v1 .access-view-only-switch strong,
+  .access-shell-v1 .access-permission-group > header strong,
+  .access-shell-v1 .access-permission-item strong { font-size: 12.5px; line-height: 1.4; }
+
+  .access-shell-v1 .access-table th,
+  .access-shell-v1 .access-filter,
+  .access-shell-v1 .access-field > span,
+  .access-shell-v1 .access-field > label,
+  .access-shell-v1 .access-scope-card__copy strong,
+  .access-shell-v1 .access-scope-result strong,
+  .access-shell-v1 .access-scope-result small,
+  .access-shell-v1 .access-detail-item strong,
+  .access-shell-v1 .access-section-head strong,
+  .access-shell-v1 .access-profile-card__head strong,
+  .access-shell-v1 .access-history-card > header strong,
+  .access-shell-v1 .access-drawer-action strong,
+  .access-shell-v1 .access-table-footer,
+  .access-shell-v1 .access-date { font-size: 12.5px; line-height: 1.4; }
+
+  .access-shell-v1 .access-table td,
+  .access-shell-v1 .access-user-copy strong,
+  .access-shell-v1 .access-profile-copy strong,
+  .access-shell-v1 .access-confirm__identity strong,
+  .access-shell-v1 .access-form-alert,
+  .access-shell-v1 .access-drawer-action small,
+  .access-shell-v1 .access-filter .select,
+  .access-shell-v1 .access-password-tool,
+  .access-shell-v1 .access-scope-picker input,
+  .access-shell-v1 .access-scope-card .access-select { font-size: 13px; line-height: 1.45; }
+
+  .access-shell-v1 .access-search input,
+  .access-shell-v1 .access-input,
+  .access-shell-v1 .access-select { font-size: 14px; }
+  .access-shell-v1 .access-field-error { font-size: 12px; line-height: 1.4; }
+  .access-shell-v1 .access-form-alert { line-height: 1.5; overflow-wrap: anywhere; }
+  .access-shell-v1 .access-drawer__body { overflow-wrap: break-word; }
+  .access-shell-v1 .access-table { min-width: 1080px; }
+  .access-shell-v1 .access-table td { height: auto; min-height: 70px; padding-block: 13px; }
+  .access-shell-v1 .access-scope-pill,
+  .access-shell-v1 .access-profile-tag,
+  .access-shell-v1 .access-status { height: auto; min-height: 25px; padding-block: 4px; }
+  .access-shell-v1 .access-scope-card__head { grid-template-columns: minmax(0,1fr) minmax(126px, 150px); }
+  .access-shell-v1 .access-panel__head p { max-width: 72ch; }
+
+  /* Payroll: protect large operational tables; grow readable text, not icons. */
+  .ui-v2-root { font-size: 14px; }
+  .ui-v2-root :is(.ui-v2-caption, .ui-v2-eyebrow, .ui-v2-prs-menu-note,
+    .ui-v2-prs-menu-rich small, .ui-v2-account-menu__section-label,
+    .ui-v2-command__copy small, .ui-v2-switcher-menu__copy small,
+    .metric__meta, .metric__label, .card-meta, .panel__head p,
+    .notice-row small, .menu__item small, .ui-v2-prs-account-identity small,
+    .ui-v2-prs-menu-header span, .workspace-switcher small,
+    .workspace-menu-item small, .account-menu__item small,
+    .account-menu__identity small, .ui-v2-account-menu__item small,
+    .ui-v2-prs-dropdown-menu small,
+    .workspace-context-banner small, .action-tile span,
+    .report-catalog__item small, .report-viewer__head p,
+    .report-source-note p, .report-kpis span,
+    .settings-field small, .settings-switch small,
+    .settings-panel__head p, .settings-policy-note p,
+    .settings-letterhead-card p, .form-hint, .field-hint,
+    .table-secondary, .text-muted, .document-preview-toolbar__meta span
+  ) { font-size: 12px; line-height: 1.45; }
+
+  .ui-v2-root :is(.data-table th, .ui-v2-data-table th, .report-table th,
+    .timesheet-table th, .ui-v2-table th) { font-size: 12px; line-height: 1.4; }
+  .ui-v2-root :is(.data-table td, .ui-v2-data-table td, .report-table td,
+    .timesheet-table td, .ui-v2-table td) { font-size: 13px; line-height: 1.45; }
+  .ui-v2-root :is(.data-table, .report-table, .timesheet-table, .ui-v2-table,
+    .settings-nav button, .report-catalog__item strong, .action-tile strong,
+    .ui-v2-nav-item, .ui-v2-command__copy strong,
+    .settings-field strong, .settings-switch strong) { font-size: 13px; }
+  .ui-v2-root :is(.search-field input, .select, .input,
+    .ui-v2-payroll-operational-select, .ui-v2-payroll-dense-select,
+    input:not([type="checkbox"]):not([type="radio"]),
+    textarea, select) { font-size: 13px; }
+  .ui-v2-root :is(.table-secondary, .metric__meta, .ui-v2-prs-notification-menu .notice-row small) {
+    white-space: normal; overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 720px) {
+    .access-shell-v1 .access-scope-card__head { grid-template-columns: 1fr; }
+    .access-shell-v1 .access-table { min-width: 740px; }
+  }
+}
