@@ -149,6 +149,89 @@
   .access-shell-v1 .access-scope-card__head { grid-template-columns: minmax(0,1fr) minmax(126px, 150px); }
   .access-shell-v1 .access-panel__head p { max-width: 72ch; }
 
+  /* Administration: profile register must wrap long coverage; the global td
+     rule is nowrap and previously let coverage paint over Permissions. */
+  .access-shell-v1 .access-panel[id="users"],
+  .access-shell-v1 .access-panel[id="profiles"],
+  .access-shell-v1 .access-panel[id="history"] {
+    scroll-margin-top: 74px;
+  }
+  .access-shell-v1 .access-profile-table {
+    min-width: 1120px;
+    table-layout: fixed;
+  }
+  .access-shell-v1 .access-profile-table .access-profile-col-name { width: 27%; }
+  .access-shell-v1 .access-profile-table .access-profile-col-coverage { width: 30%; }
+  .access-shell-v1 .access-profile-table .access-profile-col-count { width: 13%; }
+  .access-shell-v1 .access-profile-table .access-profile-col-users { width: 12%; }
+  .access-shell-v1 .access-profile-table .access-profile-col-type { width: 12%; }
+  .access-shell-v1 .access-profile-table .access-profile-col-actions { width: 6%; }
+  .access-shell-v1 .access-profile-table th,
+  .access-shell-v1 .access-profile-table td {
+    padding-inline: 15px;
+    white-space: normal;
+    vertical-align: middle;
+    overflow-wrap: break-word;
+  }
+  .access-shell-v1 .access-profile-table td { line-height: 1.45; }
+  .access-shell-v1 .access-profile-table .access-profile-copy strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+  }
+  .access-shell-v1 .access-profile-table .access-profile-copy small {
+    max-width: none;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.45;
+  }
+  .access-shell-v1 .access-coverage-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .access-shell-v1 .access-coverage-tag {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 4px 8px;
+    border: 1px solid #e1e6ec;
+    border-radius: 6px;
+    background: #f7f9fb;
+    color: #41576e;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.4;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .access-shell-v1 .access-coverage-empty { color: var(--access-muted); }
+  .access-shell-v1 .access-permission-count {
+    display: grid;
+    justify-items: start;
+    align-content: center;
+    gap: 3px;
+    min-width: 0;
+  }
+  .access-shell-v1 .access-permission-count strong {
+    font-size: 15px;
+    line-height: 1.3;
+    color: var(--access-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .access-shell-v1 .access-permission-count .access-table-sub {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .access-shell-v1 .access-profile-table .access-assigned-users {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Payroll: protect large operational tables; grow readable text, not icons. */
   .ui-v2-root { font-size: 14px; }
   .ui-v2-root :is(.ui-v2-caption, .ui-v2-eyebrow, .ui-v2-prs-menu-note,
@@ -188,5 +271,12 @@
   @media (max-width: 720px) {
     .access-shell-v1 .access-scope-card__head { grid-template-columns: 1fr; }
     .access-shell-v1 .access-table { min-width: 740px; }
+    /* The shared mobile hide rule applies to the Users table only. Access
+       Profiles must keep its Permissions and Type columns when scrolling. */
+    .access-shell-v1 .access-profile-table { min-width: 1120px; }
+    .access-shell-v1 .access-profile-table :is(th, td):nth-child(3),
+    .access-shell-v1 .access-profile-table :is(th, td):nth-child(5) {
+      display: table-cell;
+    }
   }
 }

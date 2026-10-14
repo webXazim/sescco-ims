@@ -402,11 +402,6 @@
     card.innerHTML = `<div class="access-profile-card__head"><div><strong>${htmlEscape(profile.name)}</strong><span>${htmlEscape(profile.description || "Persisted company Access Profile.")}</span></div><span class="access-profile-tag">${profile.permissions.length} permissions</span></div><div class="access-profile-tags">${groups.map((g) => `<span class="access-profile-tag">${htmlEscape(g)}</span>`).join("") || '<span class="access-profile-tag">No operational pages</span>'}</div>`;
   }
 
-  function profileCoverage(profile) {
-    const groups = permissionGroups(profile);
-    return groups.length ? groups.join(" · ") : "No operational pages";
-  }
-
   function renderProfiles() {
     if (!els.profileRows) return;
     els.profileRows.replaceChildren();
@@ -419,9 +414,15 @@
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
       nameTd.innerHTML = `<div class="access-profile-copy"><strong>${htmlEscape(profile.name)}</strong><small>${htmlEscape(profile.description || "No description")}</small></div>`;
-      const coverageTd = document.createElement("td"); coverageTd.textContent = profileCoverage(profile);
-      const permissionsTd = document.createElement("td"); permissionsTd.innerHTML = `<strong>${Number(profile.permissions?.length || 0)}</strong><small class="access-table-sub"> exact permissions</small>`;
-      const usersTd = document.createElement("td"); usersTd.textContent = String(Number(profile.assignedUsers || 0));
+      const coverageTd = document.createElement("td");
+      const coverage = permissionGroups(profile);
+      coverageTd.innerHTML = coverage.length
+        ? `<div class="access-coverage-list" aria-label="Permission coverage">${coverage.map((group) => `<span class="access-coverage-tag">${htmlEscape(group)}</span>`).join("")}</div>`
+        : '<span class="access-coverage-empty">No operational pages</span>';
+      const permissionsTd = document.createElement("td");
+      permissionsTd.innerHTML = `<div class="access-permission-count"><strong>${Number(profile.permissions?.length || 0)}</strong><small class="access-table-sub">Exact permissions</small></div>`;
+      const usersTd = document.createElement("td"); usersTd.className = "access-assigned-users";
+      usersTd.textContent = String(Number(profile.assignedUsers || 0));
       const typeTd = document.createElement("td"); typeTd.innerHTML = `<span class="access-status ${profile.active === false ? "is-inactive" : "is-active"}">${profile.system ? "Built-in" : (profile.active === false ? "Inactive custom" : "Custom")}</span>`;
       const actionTd = document.createElement("td"); actionTd.className = "access-actions-col";
       const action = document.createElement("button"); action.className = "access-row-action"; action.type = "button"; action.title = profile.system || !canManageProfiles ? "View profile" : "Edit profile"; action.setAttribute("aria-label", `${action.title} ${profile.name}`); action.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
@@ -996,7 +997,73 @@
   els.historyPrev?.addEventListener("click", () => { if (!state.historyHasPrevious) return; state.historyPage = Math.max(1, state.historyPage - 1); loadAccessHistory(); });
   els.historyNext?.addEventListener("click", () => { if (!state.historyHasNext) return; state.historyPage += 1; loadAccessHistory(); });
 
-  loadUsers();
-  if (canViewProfiles || canManageProfiles) loadProfiles().catch((error) => { if (els.profileRows) els.profileRows.innerHTML = `<tr><td colspan="6"><div class="access-error">${htmlEscape(error.message || "Could not load Access Profiles.")}</div></td></tr>`; });
-  if (canViewAudit) loadAccessHistory();
+  // The sections share one URL. Keep the fixed sidebar and breadcrumb synchronized
+  // with hash navigation and normal scrolling, not permanently selected on Users.
+  const accessNavLinks = [...document.querySelectorAll('.access-sidebar .nav-link[href^="#"]')]
+    .filter((link) => document.getElementById(link.hash.slice(1)));
+  const accessSections = accessNavLinks.map((link) => ({
+    link, section: document.getElementById(link.hash.slice(1)),
+    label: link.querySelector('span')?.textContent?.trim() || 'Users',
+  }));
+  const currentSectionLabel = byId('accessCurrentSection');
+  let sectionScrollFrame = 0;
+
+  function setActiveSection(id) {
+    for (const {link, section, label} of accessSections) {
+      const active = section.id === id;
+      link.classList.toggle('active', active);
+      if (active) {
+        link.setAttribute('aria-current', 'location');
+        if (currentSectionLabel) currentSectionLabel.textContent = label;
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    }
+  }
+  function syncSectionFromScroll() {
+    sectionScrollFrame = 0;
+    if (!accessSections.length) return;
+    const threshold = 120;
+    let selected = accessSections[0];
+    for (const item of accessSections) {
+      if (item.section.getBoundingClientRect().top <= threshold) selected = item;
+    }
+    setActiveSection(selected.section.id);
+  }
+  function queueSectionSync() {
+    if (sectionScrollFrame) return;
+    sectionScrollFrame = requestAnimationFrame(syncSectionFromScroll);
+  }
+  function syncFromHash({reveal = false} = {}) {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const match = accessSections.find(({section}) => section.id === id);
+    if (match) {
+      setActiveSection(id);
+      if (reveal) match.section.scrollIntoView({behavior: 'auto', block: 'start'});
+    } else {
+      syncSectionFromScroll();
+    }
+  }
+  for (const {link, section} of accessSections) {
+    link.addEventListener('click', () => {
+      // Native anchors retain keyboard navigation, history and copyable URLs.
+      setActiveSection(section.id);
+    });
+  }
+  window.addEventListener('hashchange', () => {
+    syncFromHash();
+  });
+  window.addEventListener('scroll', () => {
+    queueSectionSync();
+  }, {passive: true});
+  syncFromHash();
+  // An incoming deep link must remain accurate after the asynchronous registers
+  // populate (their rows can change the page height beneath the anchor).
+  const initialHash = location.hash;
+  const initialLoads = [loadUsers()];
+  if (canViewProfiles || canManageProfiles) initialLoads.push(loadProfiles().catch((error) => { if (els.profileRows) els.profileRows.innerHTML = `<tr><td colspan="6"><div class="access-error">${htmlEscape(error.message || "Could not load Access Profiles.")}</div></td></tr>`; }));
+  if (canViewAudit) initialLoads.push(loadAccessHistory());
+  if (initialHash) Promise.allSettled(initialLoads).then(() => {
+    if (location.hash === initialHash) syncFromHash({reveal: true});
+  });
 })();

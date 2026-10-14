@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/form-validation.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/access-management.css' %}?v=1.0.117">
-  <link rel="stylesheet" href="{% static 'platform/css/typography-readability.css' %}?v=1.0.118" />
+  <link rel="stylesheet" href="{% static 'platform/css/typography-readability.css' %}?v=1.0.119" />
 </head>
 <body class="inventory-shell-v2 access-shell-v1" data-page="administration-users">
 <div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
@@ -36,7 +36,7 @@
     <nav class="nav inventory-sidebar__nav" aria-label="Administration sections">
       <div class="nav-group inventory-nav-group">
         <div class="nav-label">Access control</div>
-        <a class="nav-link active" href="#users" aria-current="page">
+        <a class="nav-link active" href="#users" aria-current="location">
           <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM18 8v6m3-3h-6"/></svg>
           <span>Users</span>
         </a>
@@ -96,7 +96,7 @@
       <button class="menu-button" data-sidebar-toggle aria-label="Open navigation">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
-      <nav class="access-breadcrumb" aria-label="Breadcrumb"><span>Administration</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><strong>Users</strong></nav>
+      <nav class="access-breadcrumb" aria-label="Breadcrumb"><span>Administration</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><strong id="accessCurrentSection">Users</strong></nav>
       <div class="top-actions access-top-actions">
         {% if 'access.profiles.manage' in ACCESS_CONTEXT.effective_access.permissions %}
         <button class="btn btn-sm" type="button" data-access-add-profile>
@@ -165,6 +165,7 @@
         </header>
         <div class="access-table-wrap" id="accessProfileTableWrap" aria-busy="true">
           <table class="access-table access-profile-table">
+            <colgroup><col class="access-profile-col-name"><col class="access-profile-col-coverage"><col class="access-profile-col-count"><col class="access-profile-col-users"><col class="access-profile-col-type"><col class="access-profile-col-actions"></colgroup>
             <thead><tr><th>Profile</th><th>Coverage</th><th>Permissions</th><th>Assigned users</th><th>Type</th><th class="access-actions-col"><span class="sr-only">Actions</span></th></tr></thead>
             <tbody id="accessProfileRows"><tr><td colspan="6"><div class="access-loading">Loading Access Profiles…</div></td></tr></tbody>
           </table>
@@ -232,6 +233,6 @@
 <script src="{% static 'platform/js/form-validation.js' %}"></script>
 <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
 <script src="{% static 'platform/js/inventory-shell.js' %}"></script>
-<script src="{% static 'platform/js/access-management.js' %}?v=1.0.117"></script>
+<script src="{% static 'platform/js/access-management.js' %}?v=1.0.117&amp;admin_ui=2"></script>
 </body>
 </html>
