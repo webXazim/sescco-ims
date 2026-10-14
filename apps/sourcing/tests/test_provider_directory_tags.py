@@ -76,6 +76,48 @@ class ProviderDirectoryTagTests(TestCase):
             provider.refresh_from_db()
             self.assertEqual(provider.tags, ['Safety'])
 
+    def test_tag_typing_search_filter_and_export_are_consistent_across_directories(self):
+        """Company tag search must work even without offers; exact filter must not match longer tags."""
+        datasets = (
+            (SourcingVendor, 'sourcing:vendor_list', 'vendors'),
+            (SourcingManpowerSupplier, 'sourcing:manpower_supplier_list', 'manpower_suppliers'),
+            (SourcingSubcontractor, 'sourcing:subcontractor_list', 'subcontractors'),
+        )
+        for i, (model, route, dataset) in enumerate(datasets):
+            tagged = model.objects.create(company=self.company, code=f'ENG-{i}',
+                                          name=f'Alpha provider {i}', tags=['Electrical', 'Instrumentation'])
+            model.objects.create(company=self.company, code=f'LONG-{i}',
+                                 name=f'Long provider {i}', tags=['Electrical Works'])
+            model.objects.create(company=self.other, code=f'HIDDEN-{i}',
+                                 name=f'Hidden provider {i}', tags=['Electrical'])
+            url = reverse(route)
+            # Live free-text search is intentionally substring-based for tags.
+            found = self.client.get(url, {'q': 'electri'})
+            self.assertEqual(found.context['page_obj'].paginator.count, 2)
+            # The Advanced Filters tag selector matches a complete tag, case-insensitively.
+            exact = self.client.get(url, {'tag': 'electrical'})
+            self.assertEqual(exact.context['page_obj'].paginator.count, 1)
+            self.assertContains(exact, tagged.name)
+            self.assertNotContains(exact, f'Long provider {i}')
+            # Tag and free-text conditions compose; no records from another tenant.
+            combined = self.client.get(url, {'tag': 'Electrical', 'q': 'Alpha'})
+            self.assertEqual(combined.context['page_obj'].paginator.count, 1)
+            mismatch = self.client.get(url, {'tag': 'Electrical', 'q': 'Long'})
+            self.assertEqual(mismatch.context['page_obj'].paginator.count, 0)
+            exported = export_rows(company=self.company, dataset=dataset,
+                                   params={'unified': '1', 'tag': 'electrical'})
+            self.assertEqual(len(exported), 1)
+            self.assertEqual(exported[0][0], tagged.code)
+
+    def test_all_provider_forms_render_same_enhanced_tag_widget(self):
+        for url in ('sourcing:vendor_create', 'sourcing:manpower_supplier_create',
+                    'sourcing:subcontractor_create'):
+            response = self.client.get(reverse(url))
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'data-provider-tag-field')
+            self.assertContains(response, 'provider-tag-editor.js')
+            self.assertContains(response, 'provider-tag-editor.css')
+
     def test_vendor_active_material_count_deduplicates_offers(self):
         vendor = SourcingVendor.objects.create(company=self.company, name='Electrician', code='ELEC', tags=['Electrical'])
         material = SourcingMaterial.objects.create(company=self.company, name='Cable', code='CABLE')

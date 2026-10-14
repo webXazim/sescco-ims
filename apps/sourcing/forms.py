@@ -108,8 +108,8 @@ def _canonical_material_category(value: object, categories=()) -> str:
 class SourcingVendorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
     tags = forms.CharField(
         required=False, label="Company tags",
-        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
-        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil", "list": "sourcing-provider-tags", "data-provider-tag-field": "1"}),
+        help_text="Type a tag and press Enter to add it. Add up to 10 tags; remove tags with ×. These classify the company, not its individual capabilities.",
     )
 
     materials = forms.ModelMultipleChoiceField(
@@ -271,8 +271,8 @@ class SourcingVendorContactForm(forms.ModelForm):
 class SourcingManpowerSupplierForm(SourcingProviderTagsFormMixin, forms.ModelForm):
     tags = forms.CharField(
         required=False, label="Company tags",
-        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
-        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil", "list": "sourcing-provider-tags", "data-provider-tag-field": "1"}),
+        help_text="Type a tag and press Enter to add it. Add up to 10 tags; remove tags with ×. These classify the company, not its individual capabilities.",
     )
 
     class Meta:
@@ -1129,8 +1129,8 @@ class SourcingSubcontractorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
     """Company-scoped reference profile; no operational relations."""
     tags = forms.CharField(
         required=False, label="Company tags",
-        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil, Mechanical", "list": "sourcing-provider-tags"}),
-        help_text="Up to 10 classifications, separated by commas. Example: Electrical, Instrumentation. Tags are independent of active capabilities.",
+        widget=forms.TextInput(attrs={"class": "sourcing-input", "placeholder": "Electrical, Civil", "list": "sourcing-provider-tags", "data-provider-tag-field": "1"}),
+        help_text="Type a tag and press Enter to add it. Add up to 10 tags; remove tags with ×. These classify the company, not its individual capabilities.",
     )
 
     class Meta:

@@ -1,4 +1,5 @@
 {% extends "sourcing/base.html" %}
+{% load static %}
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
@@ -11,3 +12,6 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if subcontractor %}{% url 'sourcing:subcontractor_detail' subcontractor.pk %}{% else %}{% url 'sourcing:subcontractor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label }}</button></footer>
 </form>
 {% endblock %}
+
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/provider-tag-editor.css' %}?v=1.0.125">{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/provider-tag-editor.js' %}?v=1.0.125"></script>{% endblock %}

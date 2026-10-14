@@ -43,6 +43,16 @@ for name, kind in (('vendors','Active Materials'), ('manpower','Active Trades'),
     assert 'data-provider-expand' in html
 for path in ('templates/sourcing/unified/tags_cell.html','templates/sourcing/unified/tag_options.html'):
     source(path)
+# All three company forms share the exact same progressive tag editor.
+for name in ('vendors', 'manpower', 'subcontractors'):
+    html = source(f'templates/sourcing/{name}/form.html')
+    assert 'sourcing/unified/tag_options.html' in html
+    assert 'provider-tag-editor.js' in html and 'provider-tag-editor.css' in html
+editor = source('static/sourcing/js/provider-tag-editor.js')
+for contract in ('data-provider-tag-field', "event.key === 'Enter'", "event.key === 'Backspace'", 'tags.join', 'role', 'listbox'):
+    assert contract in editor, f'Missing tag editor contract: {contract}'
+source('static/sourcing/css/provider-tag-editor.css')
+assert forms.count('"data-provider-tag-field": "1"') == 3
 assert 'data-subcontractor-table' in source('static/sourcing/js/unified-directory.js')
 filters = source('templates/sourcing/unified/filters.html')
 assert '<summary>Advanced filters</summary>' in filters

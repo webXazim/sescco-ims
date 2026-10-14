@@ -1,0 +1,19 @@
+/* Shared Sourcing Company Tag editor — accessible chips, typeahead and mobile layout. */
+.sourcing-tag-editor{position:relative;min-height:44px;border:1px solid #cfd7e2;border-radius:9px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.035)}
+.sourcing-tag-editor:focus-within{border-color:#6e9bc7;box-shadow:0 0 0 3px rgba(45,111,166,.12)}
+.sourcing-tag-editor.has-error{border-color:#dc5f55}
+.sourcing-tag-editor__tokens{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 9px;min-width:0}
+.sourcing-tag-editor__chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:3px 5px 3px 9px;border-radius:7px;background:#eef5fc;border:1px solid #cbddeb;color:#1c4667;font-size:13px;font-weight:600;line-height:24px;overflow-wrap:anywhere}
+.sourcing-tag-editor__chip span{min-width:0;overflow-wrap:anywhere}
+.sourcing-tag-editor__chip button{display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:5px;background:transparent;color:#415d74;font:inherit;font-size:20px;cursor:pointer}
+.sourcing-tag-editor__chip button:hover,.sourcing-tag-editor__chip button:focus-visible{background:#d9e9f7;color:#173e60;outline:0}
+.sourcing-tag-editor__input{flex:1 1 190px;min-width:125px;height:30px;outline:0;border:0!important;background:transparent!important;box-shadow:none!important;padding:0 5px!important;font:inherit;font-size:14px;color:#17283d}
+.sourcing-tag-editor__input::placeholder{color:#8593a3}
+.sourcing-tag-editor__suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:250px;overflow-y:auto;padding:5px;border:1px solid #d1dbe7;border-radius:9px;background:#fff;box-shadow:0 12px 26px rgba(18,37,55,.14);z-index:120}
+.sourcing-tag-editor__suggestions[hidden]{display:none}
+.sourcing-tag-editor__option{display:block;width:100%;padding:9px 12px;border:0;border-radius:6px;background:#fff;text-align:left;font:inherit;font-size:13px;color:#29435e;cursor:pointer}
+.sourcing-tag-editor__option:hover,.sourcing-tag-editor__option[aria-selected="true"]{background:#edf5fd;color:#0e456d}
+.sourcing-tag-editor__hint{margin-top:6px;color:#61758a;font-size:12px}
+.sourcing-tag-editor__error{margin-top:6px;color:#ab302b;font-size:13px;font-weight:600}
+.sourcing-tag-editor__error[hidden]{display:none}
+@media(max-width:600px){.sourcing-tag-editor__input{flex-basis:145px}.sourcing-tag-editor__chip{font-size:12.5px}}
