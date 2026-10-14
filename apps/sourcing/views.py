@@ -36,6 +36,7 @@ from .access import (
     sourcing_access_context,
 )
 from .onboarding_forms import SourcingManpowerOnboardingFormSet, SourcingSubcontractorOnboardingFormSet
+from .onboarding_categories import pending_master_categories
 from .forms import (
     SourcingMaterialForm,
     SourcingServiceForm,
@@ -649,6 +650,15 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
     membership = _membership(request)
     can_create_materials = membership_can_manage_sourcing_masters(membership)
     category_values = sourcing_material_categories(request.company)
+    if request.method == "POST" and can_create_materials:
+        category_values = list(dict.fromkeys([
+            *category_values,
+            *pending_master_categories(
+                request.POST, category_field="new_material_category",
+                new_category_field="new_material_new_category",
+                name_field="new_material_name",
+            ),
+        ]))
     formset_kwargs = {
         "prefix": "new_materials",
         "form_kwargs": {"company": request.company, "categories": category_values},
@@ -2428,10 +2438,22 @@ def subcontractor_create(request: HttpRequest) -> HttpResponse:
     membership = _membership(request)
     allow_masters = membership_can_manage_sourcing_masters(membership)
     bound = request.method == "POST" and "supply_items-TOTAL_FORMS" in request.POST
+    from .selectors.services_master import service_categories
+    category_values = service_categories(request.company)
+    if bound and allow_masters:
+        category_values = list(dict.fromkeys([
+            *category_values,
+            *pending_master_categories(
+                request.POST, category_field="new_master_category",
+                new_category_field="new_master_new_category",
+                name_field="new_master_name",
+            ),
+        ]))
     offers = SourcingSubcontractorOnboardingFormSet(
         request.POST if bound else None,
         prefix="supply_items",
-        form_kwargs={"company": request.company, "can_create_master": allow_masters},
+        form_kwargs={"company": request.company, "can_create_master": allow_masters,
+                     "categories": category_values},
     )
     form = SourcingSubcontractorForm(request.POST if request.method == "POST" else None,
                                     company=request.company)

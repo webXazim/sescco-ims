@@ -5,6 +5,11 @@
   if (!root) return;
   const kind = root.dataset.kind;
   if (!['trade', 'service'].includes(kind)) return;
+  const stagedCategories = window.SourcingStagedCategories?.create(root, {
+    categoryField: 'new_master_category', newCategoryField: 'new_master_new_category',
+    nameField: 'new_master_name', stagedKey: 'onboardingNewMaster',
+    freeText: kind === 'trade',
+  });
   const masterField = kind;
   const capabilityLabel = kind === 'trade' ? 'Workforce Capability' : 'Service Capability';
   const dialog = root.querySelector('[data-onboarding-dialog]');
@@ -81,6 +86,7 @@
     const button = row.querySelector('[data-onboarding-new-master]');
     if (!staged || !lookup || !button) return;
     row.dataset.onboardingNewMaster = enabled ? '1' : '0';
+    stagedCategories?.refresh();
     lookup.hidden = enabled;
     button.hidden = enabled;
     staged.hidden = !enabled;
@@ -195,10 +201,12 @@
       sync();
     }
     if (value(row, 'new_master_name')) stagedMaster(row, true);
+    stagedCategories?.mount(row);
     document.dispatchEvent(new CustomEvent('sourcing:reference-lookup-mount', { detail: { root: row } }));
   }
   function activeRows() { return [...rows.querySelectorAll('[data-onboarding-row]')].filter(row => !deleted(row)); }
   function renderSummary() {
+    stagedCategories?.refresh();
     summary.replaceChildren();
     const items = activeRows();
     if (!items.length) {

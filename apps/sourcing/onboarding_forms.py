@@ -23,9 +23,10 @@ class DraftCapabilityMixin:
     master_field = ''
     master_fields = ()
 
-    def __init__(self, *args, can_create_master=False, **kwargs):
+    def __init__(self, *args, can_create_master=False, categories=None, **kwargs):
         self.master_company = kwargs.get('company')
         self.can_create_master = can_create_master
+        self.staged_categories = categories
         super().__init__(*args, **kwargs)
         self.fields[self.master_field].required = False
         for name in self.master_fields:
@@ -36,7 +37,10 @@ class DraftCapabilityMixin:
             if name == 'category' and self.master_field == 'service':
                 from .selectors.services_master import service_categories
                 from .forms import _material_category_choices
-                new_field.choices = _material_category_choices(categories=service_categories(self.master_company))
+                new_field.choices = _material_category_choices(
+                    categories=self.staged_categories if self.staged_categories is not None
+                    else service_categories(self.master_company)
+                )
                 new_field.widget.attrs['data-material-category-select'] = ''
             if name == 'new_category':
                 new_field.widget.attrs['data-new-material-category-input'] = ''
@@ -69,7 +73,9 @@ class DraftCapabilityMixin:
                 if master_data['code'] and qs.filter(code__iexact=master_data['code']).exists():
                     self.add_error('new_master_code', 'This reference code already exists.')
             if self.master_field == 'service':
-                master_form = self.master_form(data=master_data, company=self.master_company)
+                master_form = self.master_form(
+                    data=master_data, company=self.master_company, categories=self.staged_categories
+                )
             else:
                 master_form = self.master_form(data=master_data)
             if not master_form.is_valid():

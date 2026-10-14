@@ -34,6 +34,7 @@ python3 scripts/verify-sourcing-migration-state-hotfix.py
 python3 scripts/verify-sourcing-domain-foundation.py
 python3 scripts/verify-sourcing-access-control.py
 python3 scripts/verify-sourcing-vendor-master.py
+python3 scripts/verify-sourcing-staged-categories.py
 python3 scripts/verify-sourcing-material-catalog.py
 python3 scripts/verify-sourcing-material-finder.py
 python3 scripts/verify-sourcing-vendor-verification.py

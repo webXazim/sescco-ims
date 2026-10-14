@@ -3,6 +3,7 @@
   'use strict';
   const root = document.querySelector('[data-supply-onboarding]');
   if (!root) return;
+  const stagedCategories = window.SourcingStagedCategories?.create(root, { categoryField: 'new_material_category', newCategoryField: 'new_material_new_category', nameField: 'new_material_name', stagedKey: 'onboardingNewMaterial' });
   const dialog = root.querySelector('[data-onboarding-dialog]');
   const rows = root.querySelector('[data-onboarding-rows]');
   const summary = root.querySelector('[data-onboarding-summary]');
@@ -77,6 +78,7 @@
     const button = row.querySelector('[data-onboarding-new-master]');
     if (!staged || !lookup || !button) return;
     row.dataset.onboardingNewMaterial = enabled ? '1' : '0';
+    stagedCategories?.refresh();
     lookup.hidden = enabled;
     button.hidden = enabled;
     staged.hidden = !enabled;
@@ -191,10 +193,12 @@
       sync();
     }
     if (value(row, 'new_material_name')) stagedMaster(row, true);
+    stagedCategories?.mount(row);
     document.dispatchEvent(new CustomEvent('sourcing:reference-lookup-mount', { detail: { root: row } }));
   }
   function activeRows() { return [...rows.querySelectorAll('[data-onboarding-row]')].filter(row => !deleted(row)); }
   function renderSummary() {
+    stagedCategories?.refresh();
     summary.replaceChildren();
     const items = activeRows();
     if (!items.length) {

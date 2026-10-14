@@ -895,7 +895,7 @@ class SourcingVendorOnboardingOfferForm(SourcingVendorOfferForm):
         self.company = kwargs.get("company")
         super().__init__(*args, **kwargs)
         self.can_create_materials = can_create_materials
-        self.categories = categories
+        self.categories = categories or ()
         self.fields["material"].required = False
         self.fields["new_material_category"].choices = _material_category_choices(
             categories=categories or (),
@@ -921,6 +921,12 @@ class SourcingVendorOnboardingOfferForm(SourcingVendorOfferForm):
         }
         wants_new = any(clean_text(value) for value in new_values.values())
         if wants_new:
+            chosen_category = clean_text(new_values["category"])
+            if chosen_category and chosen_category != NEW_MATERIAL_CATEGORY_VALUE and not any(
+                clean_text(allowed).casefold() == chosen_category.casefold()
+                for allowed in self.categories
+            ):
+                self.add_error("new_material_category", "Choose an existing or staged category, or add a new one.")
             if not self.can_create_materials:
                 self.add_error("new_material_name", "Reference Masters edit access is required to create a new material.")
             if cleaned.get("material"):
