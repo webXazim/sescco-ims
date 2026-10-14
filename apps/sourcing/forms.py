@@ -183,6 +183,7 @@ class SourcingVendorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
 
     def __init__(self, *args, company=None, include_materials=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self._vendor_company = company
         # Vendor onboarding is intentionally progressive: operators can save a partial
         # reference record and complete commercial/contact details later. Code/name are
         # normalized in clean() so the model still receives a safe unique identity.
@@ -207,7 +208,7 @@ class SourcingVendorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
             )
         else:
             self.fields.pop("materials", None)
-        self.fields["code"].help_text = "Optional. A unique Vendor code is generated automatically when left blank."
+        self.fields["code"].help_text = "Optional. Leave blank for a readable VND code based on the company name; repeated prefixes receive a numeric suffix."
         self.fields["name"].help_text = "Optional. If blank, Display Name is used; if both are blank, a temporary name is generated."
         self.fields["display_name"].help_text = "Optional directory name. If blank, Company / Vendor Name is used."
         self.fields["company_phone"].help_text = "Vendor company switchboard or official business number."
@@ -216,12 +217,11 @@ class SourcingVendorForm(SourcingProviderTagsFormMixin, forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         code = str(cleaned.get("code") or "").strip().upper()
-        if not code:
-            from .services.vendors import suggest_vendor_code
-
-            code = suggest_vendor_code()
         name = " ".join(str(cleaned.get("name") or "").split())
         display_name = " ".join(str(cleaned.get("display_name") or "").split())
+        if not code:
+            from .services.vendors import suggest_vendor_code
+            code = suggest_vendor_code(name=name or display_name, company=self._vendor_company)
         if not name:
             name = display_name or f"Vendor {code}"
         if not display_name:

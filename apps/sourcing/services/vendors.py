@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from uuid import uuid4
+from django.utils.text import slugify
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -21,8 +21,26 @@ from ..models import (
 TRASH_RETENTION_DAYS = 30
 
 
-def suggest_vendor_code() -> str:
-    return f"VND-{uuid4().hex[:8].upper()}"
+def suggest_vendor_code(*, name: str = "", company=None) -> str:
+    """Readable, tenant-unique VND code. No random UUID in the company identity.
+
+    A numeric suffix handles distinct names that share a shortened/normalized slug.
+    Unicode names retain their own letters; an unnamed draft uses UNNAMED.
+    The database uniqueness constraint remains the ultimate authority.
+    """
+    normalized = slugify(str(name or "").strip(), allow_unicode=True).upper()
+    base = "VND-" + (normalized[:26].rstrip("-") or "UNNAMED")
+    if company is None:
+        return base
+    used = SourcingVendor.objects.for_company(company)
+    if not used.filter(code=base).exists():
+        return base
+    for suffix in range(2, 100000):
+        ending = f"-{suffix}"
+        candidate = base[:30 - len(ending)].rstrip("-") + ending
+        if not used.filter(code=candidate).exists():
+            return candidate
+    raise ValidationError({"code": "Unable to allocate a unique Vendor code."})
 
 
 def _vendor_snapshot(vendor: SourcingVendor) -> dict[str, object]:
@@ -96,10 +114,16 @@ def _audit(*, vendor, actor_membership, action: str, before=None, after=None, me
 
 
 @transaction.atomic
-def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=None) -> SourcingVendor:
+def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=None, auto_code=False) -> SourcingVendor:
     data = dict(cleaned_data)
-    if not str(data.get("code") or "").strip():
-        data["code"] = suggest_vendor_code()
+    if auto_code or not str(data.get("code") or "").strip():
+        # Serialize auto-code allocation for this tenant in databases supporting
+        # SELECT FOR UPDATE. Concurrent creates cannot pick the same suffix.
+        actor_membership.company.__class__.objects.select_for_update().get(pk=actor_membership.company.pk)
+        data["code"] = suggest_vendor_code(
+            name=data.get("name") or data.get("display_name") or "",
+            company=actor_membership.company,
+        )
     vendor = SourcingVendor(company=actor_membership.company, **data)
     vendor.save()
     _audit(vendor=vendor, actor_membership=actor_membership, action="sourcing.vendor.created", after=_vendor_snapshot(vendor), request=request)
@@ -108,7 +132,7 @@ def create_vendor(*, actor_membership, cleaned_data: dict[str, object], request=
 
 @transaction.atomic
 def create_vendor_with_materials(
-    *, actor_membership, cleaned_data: dict[str, object], materials=(), new_materials=(), offers=(), request=None
+    *, actor_membership, cleaned_data: dict[str, object], materials=(), new_materials=(), offers=(), request=None, auto_code=False
 ) -> SourcingVendor:
     """Create a Vendor and optionally seed its Supply Catalog in one transaction.
 
@@ -121,6 +145,7 @@ def create_vendor_with_materials(
         actor_membership=actor_membership,
         cleaned_data=cleaned_data,
         request=request,
+        auto_code=auto_code,
     )
     from .catalog import create_material, create_vendor_offer
 

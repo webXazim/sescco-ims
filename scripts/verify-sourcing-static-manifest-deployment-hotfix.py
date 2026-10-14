@@ -31,6 +31,7 @@ ASSETS = (
     "sourcing/js/reference-lookup.js",
     "sourcing/css/reference-lookup.css",
     "sourcing/js/vendor-onboarding.js",
+    "sourcing/js/vendor-code.js",
     "sourcing/css/vendor-onboarding.css",
 )
 

@@ -15,6 +15,36 @@
   let isNew = false;
   let snapshot = null;
   let committed = false;
+  let baseline = '';
+  const confirm = root.querySelector('[data-onboarding-confirm]');
+  const keepButton = root.querySelector('[data-onboarding-keep]');
+  const discardButton = root.querySelector('[data-onboarding-discard]');
+  function stateOf(row) {
+    // Includes lookup search, chosen hidden material id and all draft fields.
+    return JSON.stringify([...row.querySelectorAll('input, select, textarea')].map(item => [
+      item.name || item.dataset.referenceSearch || item.outerHTML.slice(0, 100),
+      item.type === 'checkbox' || item.type === 'radio' ? item.checked : item.value,
+    ]));
+  }
+  function dirty() { return !!active && stateOf(active) !== baseline; }
+  function hideWarning() {
+    confirm.hidden = true;
+    [dialog.querySelector('[data-onboarding-rows]'),
+     dialog.querySelector('.sourcing-onboarding-dialog-head'),
+     dialog.querySelector('.sourcing-onboarding-dialog-actions')].forEach(node => { if (node) node.inert = false; });
+  }
+  function showWarning() {
+    confirm.hidden = false;
+    [dialog.querySelector('[data-onboarding-rows]'),
+     dialog.querySelector('.sourcing-onboarding-dialog-head'),
+     dialog.querySelector('.sourcing-onboarding-dialog-actions')].forEach(node => { if (node) node.inert = true; });
+    keepButton.focus();
+  }
+  function requestDismiss() {
+    if (!dialog.open || !active) return;
+    if (dirty()) { showWarning(); return; }
+    dialog.close();
+  }
 
   function field(row, suffix) {
     return [...row.querySelectorAll('input,textarea,select')].find(input => input.name.endsWith(`-${suffix}`));
@@ -93,11 +123,13 @@
     active = row;
     isNew = fresh;
     committed = false;
+    hideWarning();
     snapshot = fresh ? null : row.cloneNode(true);
     error.hidden = true; error.textContent = '';
     rows.querySelectorAll('[data-onboarding-row]').forEach(item => { item.hidden = item !== row; });
     dialog.querySelector('#sourcing-onboarding-dialog-title').textContent = fresh ? 'Add Supply Item' : 'Edit Supply Item';
     dialog.showModal();
+    baseline = stateOf(row);
     if (fresh) row.querySelector('[data-reference-search]')?.focus();
     else row.querySelector('.has-error input,.has-error select,.has-error textarea')?.focus();
   }
@@ -123,10 +155,11 @@
     open(row, true);
     renderSummary();
   }
-  function cancel() { if (dialog.open) dialog.close(); }
+  function cancel() { requestDismiss(); }
   function close() {
     if (!active) return;
     const row = active;
+    hideWarning();
     if (!committed) {
       if (isNew) setDeleted(row, true);
       else if (snapshot) {
@@ -141,7 +174,7 @@
       }
     }
     rows.querySelectorAll('[data-onboarding-row]').forEach(item => { item.hidden = true; });
-    active = null; snapshot = null;
+    active = null; snapshot = null; baseline = '';
     renderSummary();
   }
   function done() {
@@ -171,7 +204,13 @@
   dialog.querySelectorAll('[data-onboarding-cancel]').forEach(button => button.addEventListener('click', cancel));
   dialog.querySelector('[data-onboarding-done]').addEventListener('click', done);
   dialog.addEventListener('close', close);
-  dialog.addEventListener('click', event => { if (event.target === dialog) cancel(); });
+  dialog.addEventListener('click', event => { if (event.target === dialog) requestDismiss(); });
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault(); // Escape also requires dirty-draft confirmation.
+    if (confirm.hidden) requestDismiss(); else { hideWarning(); active.querySelector('input:not([type="hidden"]),textarea,select')?.focus(); }
+  });
+  keepButton.addEventListener('click', () => { hideWarning(); active?.querySelector('input:not([type="hidden"]), textarea, select')?.focus(); });
+  discardButton.addEventListener('click', () => { hideWarning(); dialog.close(); });
   dialog.addEventListener('keydown', event => {
     if (event.key === 'Enter' && event.target.matches('input:not([type="button"]):not([type="submit"])') &&
         !event.target.matches('[data-reference-search]')) event.preventDefault();

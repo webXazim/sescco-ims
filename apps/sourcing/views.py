@@ -730,6 +730,7 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
                     materials=materials,
                     new_materials=new_materials,
                     offers=complete_offers,
+                    auto_code=not str(request.POST.get("code") or "").strip(),
                     request=request,
                 )
             except ValidationError as exc:
@@ -756,7 +757,6 @@ def vendor_create(request: HttpRequest) -> HttpResponse:
                 return redirect("sourcing:vendor_detail", vendor_id=vendor.pk)
     else:
         form = SourcingVendorForm(
-            initial={"code": suggest_vendor_code()},
             company=request.company,
             include_materials=True,
         )

@@ -162,9 +162,19 @@ for marker in ("offer_form.material", "offer_form.specification", "offer_form.av
     if marker not in text("templates/sourcing/vendors/onboarding_offer_row.html"):
         fail(f"Full supply-item editor missing: {marker}")
 onboarding_js = text("static/sourcing/js/vendor-onboarding.js")
-for marker in ("data-onboarding-add", "data-onboarding-done", "data-onboarding-cancel", "supply_items-TOTAL_FORMS", "data-onboarding-master"):
+for marker in ("data-onboarding-add", "data-onboarding-done", "data-onboarding-cancel", "supply_items-TOTAL_FORMS", "data-onboarding-master", "requestDismiss()", "data-onboarding-confirm", "data-onboarding-discard"):
     if marker not in onboarding_js:
         fail(f"Supply-item onboarding browser behavior missing: {marker}")
+for marker in ("suggest_vendor_code", 'name=data.get("name")', "select_for_update()"):
+    if marker not in services:
+        fail(f"Name-based Vendor code contract missing: {marker}")
+for marker in ('vendor_code_preview=show_materials', 'data-onboarding-confirm', 'data-onboarding-discard'):
+    if marker not in form_template:
+        fail(f"Vendor form safety affordance missing: {marker}")
+if "data-vendor-code-preview" not in text("templates/sourcing/vendors/field.html"):
+    fail("Vendor code preview field is missing")
+if "Generated on save" not in text("static/sourcing/js/vendor-code.js"):
+    fail("Name-derived Vendor code preview script missing")
 forms = text("apps/sourcing/forms.py")
 for marker in ("class SourcingVendorNewMaterialForm", "SourcingVendorNewMaterialFormSet", "NEW_MATERIAL_CATEGORY_VALUE"):
     if marker not in forms:
