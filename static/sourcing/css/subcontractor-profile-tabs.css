@@ -1,0 +1,18 @@
+/* Six profile sections use the same underlined tabs as Vendor and Manpower. */
+.sourcing-subcontractor-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.sourcing-subcontractor-tabs [role="tab"] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.sourcing-subcontractor-tabs [role="tab"]:focus-visible {
+  outline: 2px solid #2168a0;
+  outline-offset: -3px;
+  border-radius: 3px;
+}
+[data-sourcing-panel][role="tabpanel"][hidden] { display: none !important; }

@@ -49,6 +49,7 @@ python3 scripts/verify-sourcing-browser-e2e.py
 python3 scripts/verify-sourcing-provider-tags.py
 python3 scripts/verify-sourcing-capability-modal-create.py
 python3 scripts/verify-sourcing-subcontractor-upgrade09.py
+python3 scripts/verify-sourcing-subcontractor-profile-tabs.py
 
 bash scripts/verify-payroll-frontend.sh
 

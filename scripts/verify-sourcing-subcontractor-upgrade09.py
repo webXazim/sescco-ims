@@ -29,9 +29,9 @@ assert "for_company(company)" in selector
 ast.parse(selector)
 
 profile = read("templates/sourcing/subcontractors/detail.html")
-for text in ('id="company-information"', 'id="service-catalog"', 'id="contacts"', 'id="activity"', 'id="lifecycle"', 'href="#qualifications"'):
+for text in ('id="company-information"', 'id="service-catalog"', 'id="contacts"', 'id="activity"', 'id="lifecycle"', 'data-sourcing-tab="qualifications"'):
     assert text in profile
-assert "{% if can_manage %}<a href=\"#lifecycle\"" in profile
+assert '{% if can_manage %}<button' in profile and 'data-sourcing-tab="lifecycle"' in profile
 assert 'id="qualifications"' in read("templates/sourcing/subcontractors/_qualifications.html")
 
 finder = read("templates/sourcing/subcontractors/_offers.html")

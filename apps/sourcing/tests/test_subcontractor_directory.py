@@ -135,6 +135,19 @@ class SubcontractorDirectoryTests(TestCase):
         self.client.force_login(viewer)
         response = self.client.get(reverse("sourcing:subcontractor_detail", args=[self.obj.pk]))
         self.assertEqual(response.status_code, 200)
-        for anchor in ("#company-information", "#service-catalog", "#qualifications", "#contacts", "#activity"):
-            self.assertContains(response, 'href="' + anchor + '"')
-        self.assertNotContains(response, 'href="#lifecycle"')
+        for section in ("company-information", "service-catalog", "qualifications", "contacts", "activity"):
+            self.assertContains(response, f'data-sourcing-tab="{section}"')
+            self.assertContains(response, f'data-sourcing-panel="{section}"')
+        self.assertContains(response, 'role="tablist"')
+        self.assertContains(response, 'subcontractor-profile-tabs.js')
+        self.assertNotContains(response, 'data-sourcing-tab="lifecycle"')
+        self.assertNotContains(response, 'data-sourcing-panel="lifecycle"')
+
+    def test_subcontractor_profile_owner_can_use_lifecycle_tab(self):
+        self.client.force_login(self.owner_user)
+        response = self.client.get(reverse("sourcing:subcontractor_detail", args=[self.obj.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-sourcing-tab="lifecycle"')
+        self.assertContains(response, 'data-sourcing-panel="lifecycle"')
+        self.assertContains(response, 'id="service-catalog"')
+        self.assertContains(response, 'id="qualifications"')
