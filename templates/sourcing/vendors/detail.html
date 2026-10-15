@@ -1,5 +1,6 @@
 {% extends "sourcing/base.html" %}
 {% load static %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.148"><link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145"><link rel="stylesheet" href="{% static 'sourcing/css/capability-editor.css' %}?v=1.0.148">{% endblock %}
 {% block title %}{{ vendor.display_name|default:vendor.name }} · {{ APP_NAME }}{% endblock %}
 {% block content %}
 <nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:vendor_list' %}">Vendors</a><span>/</span><strong>{{ vendor.code }}</strong></nav>
@@ -52,7 +53,7 @@
       <div class="sourcing-empty sourcing-overview-empty">
         <strong>No material items recorded</strong>
         <p>Add reference materials this Vendor may be able to supply.</p>
-        {% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">Add Supply Item</a>{% endif %}
+        {% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn" data-sourcing-capability-modal href="{% url 'sourcing:vendor_offer_create' vendor.id %}">Add Supply Item</a>{% endif %}
       </div>
     {% endif %}
   </article>
@@ -74,7 +75,7 @@
 
 <section data-sourcing-panel="catalog" hidden>
   <article class="sourcing-card">
-    <header class="sourcing-card-head"><div><h2>Supply Catalog</h2><p>Reference items this Vendor may be able to supply. Quantities and rates are last-known sourcing information, not live stock.</p></div><div class="sourcing-card-actions"><span class="sourcing-count">{{ active_catalog_count }} active</span>{% if can_export_pdf %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_catalog_pdf' vendor.id %}">Export catalog PDF</a>{% endif %}{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">+ Add Supply Item</a>{% endif %}</div></header>
+    <header class="sourcing-card-head"><div><h2>Supply Catalog</h2><p>Reference items this Vendor may be able to supply. Quantities and rates are last-known sourcing information, not live stock.</p></div><div class="sourcing-card-actions"><span class="sourcing-count">{{ active_catalog_count }} active</span>{% if can_export_pdf %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_catalog_pdf' vendor.id %}">Export catalog PDF</a>{% endif %}{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" data-sourcing-capability-modal href="{% url 'sourcing:vendor_offer_create' vendor.id %}">+ Add Supply Item</a>{% endif %}</div></header>
     <div class="sourcing-table-wrap sourcing-catalog-table-wrap">
       <table class="sourcing-table sourcing-table--catalog">
         <thead><tr><th>Material</th><th>Specification</th><th>Availability</th><th class="num">Qty</th><th class="num">Rate</th><th>Lead Time</th><th>Verified</th><th>Status</th><th></th></tr></thead>
@@ -88,7 +89,7 @@
           <td>{% if offer.last_verified_at %}{{ offer.last_verified_at|date:"d M Y" }}<small class="cell-note">{{ offer.last_verified_at|timesince }} ago</small>{% else %}<span class="sourcing-pill sourcing-pill--warning">Never verified</span>{% endif %}</td>
           <td>{% if offer.is_active %}<span class="sourcing-pill sourcing-pill--success">Active</span>{% else %}<span class="sourcing-pill sourcing-pill--muted">Inactive</span>{% endif %}</td>
           <td class="row-menu-col"><details class="sourcing-row-menu"><summary aria-label="Supply item actions">⋯</summary><div><a href="{% url 'sourcing:vendor_offer_history' vendor.id offer.id %}">Verification history</a>{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}{% if offer.is_active %}<a href="{% url 'sourcing:vendor_offer_verify' vendor.id offer.id %}">Verify now</a>{% endif %}<a href="{% url 'sourcing:vendor_offer_edit' vendor.id offer.id %}">Edit reference</a><form method="post" action="{% url 'sourcing:vendor_offer_status' vendor.id offer.id %}">{% csrf_token %}<input type="hidden" name="active" value="{% if offer.is_active %}0{% else %}1{% endif %}"><button class="sourcing-row-action" type="submit">Mark {% if offer.is_active %}Inactive{% else %}Active{% endif %}</button></form><form method="post" action="{% url 'sourcing:vendor_offer_delete' vendor.id offer.id %}" onsubmit="return window.confirm('Permanently delete this Supply Catalog item? This cannot be restored.');">{% csrf_token %}<button class="sourcing-row-action sourcing-row-action--danger" type="submit">Delete permanently</button></form>{% endif %}</div></details></td>
-        </tr>{% empty %}<tr><td colspan="9"><div class="sourcing-empty"><strong>No Supply Catalog items yet</strong><p>Add the materials, quantities and reference rates this Vendor can provide.</p>{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">Add Supply Item</a>{% endif %}</div></td></tr>{% endfor %}</tbody>
+        </tr>{% empty %}<tr><td colspan="9"><div class="sourcing-empty"><strong>No Supply Catalog items yet</strong><p>Add the materials, quantities and reference rates this Vendor can provide.</p>{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn" data-sourcing-capability-modal href="{% url 'sourcing:vendor_offer_create' vendor.id %}">Add Supply Item</a>{% endif %}</div></td></tr>{% endfor %}</tbody>
       </table>
     </div>
     {% if catalog_page_obj.paginator.count %}<footer class="sourcing-pagination sourcing-pagination--catalog"><span>Showing {{ catalog_page_obj.start_index }}–{{ catalog_page_obj.end_index }} of {{ catalog_page_obj.paginator.count }}</span><nav aria-label="Vendor catalog pages">{% if catalog_page_obj.has_previous %}<a href="?catalog_page={{ catalog_page_obj.previous_page_number }}&catalog_page_size={{ catalog_page_size }}#catalog">Previous</a>{% else %}<span class="disabled">Previous</span>{% endif %}<strong>Page {{ catalog_page_obj.number }} of {{ catalog_page_obj.paginator.num_pages }}</strong>{% if catalog_page_obj.has_next %}<a href="?catalog_page={{ catalog_page_obj.next_page_number }}&catalog_page_size={{ catalog_page_size }}#catalog">Next</a>{% else %}<span class="disabled">Next</span>{% endif %}</nav></footer>{% endif %}
@@ -106,3 +107,5 @@
 <section data-sourcing-panel="activity" hidden><article class="sourcing-card"><header><h2>Activity</h2><p>Immutable Sourcing audit events for this Vendor.</p></header><div class="sourcing-timeline">{% for event in history %}<div><time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|date:"d M Y H:i" }}</time><span><strong>{{ event.action }}</strong><small>{{ event.actor_display_name|default:event.actor_username|default:'System' }}</small></span></div>{% empty %}<div class="sourcing-empty"><p>No Vendor activity recorded yet.</p></div>{% endfor %}</div></article></section>
 {% endblock %}
 {% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endblock %}
+
+{% block scripts %}{{ block.super }}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/capability-editor.js' %}?v=1.0.148"></script>{% endblock %}

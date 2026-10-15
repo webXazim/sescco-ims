@@ -112,26 +112,3 @@
 .sourcing-unified-modal__header-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .sourcing-unified-modal .sourcing-unified-cap-head{position:relative;min-height:54px}
 .sourcing-unified-modal .sourcing-unified-cap-tools{margin:0}
-.sourcing-capability-editor{position:fixed;inset:0;z-index:2100;display:none}
-.sourcing-capability-editor.is-open{display:block}
-.sourcing-capability-editor__backdrop{position:absolute;inset:0;background:rgba(18,31,49,.52);backdrop-filter:blur(2px)}
-.sourcing-capability-editor__panel{position:relative;display:flex;flex-direction:column;margin:4vh auto;width:min(1080px,calc(100vw - 24px));height:min(92dvh,920px);border-radius:16px;border:1px solid #dbe3ed;background:#fff;overflow:hidden;box-shadow:0 24px 70px rgba(10,20,40,.26)}
-.sourcing-capability-editor__head{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:14px 22px;border-bottom:1px solid #e5eaf0;flex:none}
-.sourcing-capability-editor__head h2{margin:0;font-size:21px;line-height:1.3}
-.sourcing-capability-editor__body{min-height:0;overflow:auto;overscroll-behavior:contain;flex:1;background:#fff}
-.sourcing-capability-editor__body .sourcing-form-shell{width:100%;max-width:none;margin:0;border:0;border-radius:0;box-shadow:none}
-.sourcing-capability-editor__body .sourcing-form-section{padding:18px 22px;grid-template-columns:minmax(150px,210px) minmax(0,1fr);gap:20px}
-.sourcing-capability-editor__body .sourcing-form-actions{position:sticky;bottom:0;background:#fff;z-index:3;border-top:1px solid #e4eaf1;padding:14px 22px}
-.sourcing-capability-editor__body .sourcing-reference-lookup{min-width:0}
-.sourcing-capability-editor__error{margin:14px 20px;color:#a52821;font-size:14px}
-.sourcing-capability-editor__recovered{margin:14px 22px;padding:10px 13px;border-radius:8px;background:#eff7f3;color:#286045;font-size:13px}
-.sourcing-capability-editor__confirm{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:20px;background:rgba(16,27,42,.54)}
-.sourcing-capability-editor__confirm[hidden]{display:none!important}
-.sourcing-capability-editor__confirm-card{width:min(430px,100%);padding:24px;border-radius:14px;border:1px solid #dbe2eb;background:#fff;box-shadow:0 20px 60px rgba(5,17,32,.24)}
-.sourcing-capability-editor__confirm-card h3{margin:0 0 8px;font-size:19px}
-.sourcing-capability-editor__confirm-card p{margin:0 0 20px;color:#637287;font-size:14px;line-height:1.5}
-.sourcing-capability-editor__confirm-card>div{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}
-.sourcing-capability-editor__discard{border-color:#f1b6b0!important;color:#ae3124!important}
-@media(max-width:760px){.sourcing-unified-modal__header-controls{gap:8px}.sourcing-unified-modal__header-tools{gap:6px}.sourcing-capability-editor__panel{margin:8px auto;width:calc(100vw - 16px);height:calc(100dvh - 16px)}.sourcing-capability-editor__head{padding:12px 14px}.sourcing-capability-editor__head h2{font-size:18px}}
-
-@media(max-width:760px){.sourcing-capability-editor__body .sourcing-form-section{grid-template-columns:1fr;gap:14px;padding:17px}}

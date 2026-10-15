@@ -147,7 +147,7 @@ for marker in ("Search code, trade, category or alias", "New Trade", "Suppliers"
     if marker not in trade_list:
         fail(f"Trade master UI missing: {marker}")
 manpower_detail = text("templates/sourcing/manpower/detail.html")
-for marker in ("+ Add Worker Type", "Available", "OT Rate", "Mobilization", "Rental Payroll workers"):
+for marker in ("+ Add Workforce", "Available", "OT Rate", "Mobilization", "Rental Payroll workers"):
     if marker not in manpower_detail:
         fail(f"Workforce Catalog profile UI missing: {marker}")
 workforce_form = text("templates/sourcing/manpower/workforce_form.html")

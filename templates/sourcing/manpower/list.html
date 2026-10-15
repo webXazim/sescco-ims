@@ -1,7 +1,7 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Manpower Suppliers · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.146"><link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.146"><link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145"><link rel="stylesheet" href="{% static 'sourcing/css/capability-editor.css' %}?v=1.0.148">{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--directory">
   <div class="sourcing-page-head__title">
@@ -104,4 +104,4 @@
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.147"></script>{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/capability-editor.js' %}?v=1.0.148"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.147"></script>{% endblock %}
