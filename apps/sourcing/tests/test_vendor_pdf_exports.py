@@ -1,6 +1,9 @@
 """Read-only Vendor Sourcing PDF export authorization and data-scope tests."""
 from __future__ import annotations
 
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlsplit
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -13,6 +16,22 @@ from apps.sourcing.models import SourcingMaterial, SourcingVendor, SourcingVendo
 from apps.sourcing.pdf_exports import company_report_rows, catalog_report_rows
 from apps.sourcing.selectors.vendors import vendor_directory_page
 from apps.sourcing.tests.support import SOURCING_HTTP_TEST_STORAGES
+
+
+class _ExportLinkParser(HTMLParser):
+    """Extract rendered export URLs, not just route names in page HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != 'a':
+            return
+        values = dict(attrs)
+        if 'data-unified-export' in values:
+            self.links.append(values.get('href', ''))
+
 
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=SOURCING_HTTP_TEST_STORAGES)
@@ -98,6 +117,44 @@ class VendorPDFExportTests(TestCase):
         self.client.force_login(exporter)
         self.assertEqual(self.client.get(reverse('sourcing:vendor_directory_pdf')).status_code, 200)
         self.assertEqual(self.client.get(reverse('sourcing:vendor_catalog_pdf', args=[self.vendor.pk])).status_code, 200)
+
+    def test_directory_export_links_have_valid_paths_with_and_without_filters(self):
+        """A clean directory must not append request.path after the export URL."""
+        expected_paths = {
+            'sourcing:vendor_list': (
+                reverse('sourcing:data_export', args=['vendors']),
+                reverse('sourcing:vendor_directory_pdf'),
+                reverse('sourcing:data_export', args=['vendor_catalog']),
+            ),
+            'sourcing:subcontractor_list': (
+                reverse('sourcing:data_export', args=['subcontractors']),
+                reverse('sourcing:data_export', args=['subcontractor_service_catalog']),
+            ),
+            'sourcing:manpower_supplier_list': (
+                reverse('sourcing:data_export', args=['manpower_suppliers']),
+                reverse('sourcing:data_export', args=['workforce_catalog']),
+            ),
+        }
+        for name, expected in expected_paths.items():
+            with self.subTest(directory=name):
+                path = reverse(name)
+                for params in ({}, {'q': 'Electrical', 'status': 'active', 'page': '3'}):
+                    response = self.client.get(path, params)
+                    self.assertEqual(response.status_code, 200)
+                    links = _ExportLinkParser()
+                    links.feed(response.content.decode('utf-8'))
+                    self.assertEqual(len(links.links), len(expected))
+                    for url, correct_path in zip(links.links, expected):
+                        parsed = urlsplit(url)
+                        self.assertEqual(parsed.path, correct_path)
+                        self.assertNotIn(path, parsed.path.removeprefix(correct_path))
+                        query = parse_qs(parsed.query)
+                        self.assertNotIn('page', query)
+                        if params:
+                            self.assertEqual(query.get('q'), ['Electrical'])
+                            self.assertEqual(query.get('status'), ['active'])
+                        elif correct_path == reverse('sourcing:vendor_directory_pdf'):
+                            self.assertEqual(parsed.query, '')
 
     def test_export_actions_only_render_for_authorized_users(self):
         page = self.client.get(reverse('sourcing:vendor_list'))

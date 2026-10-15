@@ -9,7 +9,7 @@ register = template.Library()
 
 
 @register.simple_tag(takes_context=True)
-def sourcing_directory_url(context, **updates):
+def sourcing_directory_url(context, *, query_only=False, **updates):
     request = context.get("request")
     if request is None:
         raise ValueError("Sourcing directory links require the request context processor")
@@ -23,4 +23,8 @@ def sourcing_directory_url(context, **updates):
             # Single value, never append to a pre-existing GET parameter.
             params.setlist(key, [str(value)])
     query = params.urlencode()
-    return "?" + query if query else request.path
+    # Directory navigation links need a path when no filters are set, whereas
+    # exports append this result after an independently reversed endpoint.
+    # Appending request.path to an export endpoint creates a broken URL such as
+    # /vendors/export/pdf/app/sourcing/vendors/ on a clean directory page.
+    return "?" + query if query else ("" if query_only else request.path)

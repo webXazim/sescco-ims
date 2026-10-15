@@ -11,9 +11,9 @@
   <div class="sourcing-page-actions" aria-label="Vendors actions">
     {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_create' %}">+ New Vendor</a>{% endif %}
     {% if SOURCING_ACCESS.export %}
-    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendors' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a>
-    <a class="sourcing-btn" data-unified-export data-unified-export-pdf href="{% url 'sourcing:vendor_directory_pdf' %}{% sourcing_directory_url page=None %}">Companies PDF</a>
-    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendor_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendors' %}{% sourcing_directory_url unified='1' format='xlsx' page=None query_only=True %}">Export companies</a>
+    <a class="sourcing-btn" data-unified-export data-unified-export-pdf href="{% url 'sourcing:vendor_directory_pdf' %}{% sourcing_directory_url page=None query_only=True %}">Companies PDF</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendor_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None query_only=True %}">Export capabilities</a>
     {% endif %}
   </div>
 </section>

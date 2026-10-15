@@ -11,8 +11,8 @@
   <div class="sourcing-page-actions" aria-label="Manpower Suppliers actions">
     {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:manpower_supplier_create' %}">+ New Manpower Supplier</a>{% endif %}
     {% if SOURCING_ACCESS.export %}
-    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a>
-    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'manpower_suppliers' %}{% sourcing_directory_url unified='1' format='xlsx' page=None query_only=True %}">Export companies</a>
+    <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'workforce_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None query_only=True %}">Export capabilities</a>
     {% endif %}
   </div>
 </section>
