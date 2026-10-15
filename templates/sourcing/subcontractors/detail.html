@@ -1,4 +1,5 @@
 {% extends "sourcing/base.html" %}
+{% load static %}
 {% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.148"><link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145"><link rel="stylesheet" href="{% static 'sourcing/css/capability-editor.css' %}?v=1.0.148">{% endblock %}
 {% block title %}{{ subcontractor.display_name }} · {{ APP_NAME }}{% endblock %}
 {% block content %}

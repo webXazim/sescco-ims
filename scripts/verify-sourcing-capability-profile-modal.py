@@ -17,5 +17,8 @@ for kind in ('vendors', 'manpower', 'subcontractors'):
         assert 'reference-lookup.js' in tpl
     detail=read(f'templates/sourcing/{kind}/detail.html')
     assert 'data-sourcing-capability-modal' in detail
+    # Django template libraries are not inherited through {% extends %}.
+    # All three profile templates use {% static %} to load the modal assets.
+    assert '{% load static %}' in detail, f'{kind} profile must load the static tag library'
 assert "window.SourcingCapabilityEditor?.open" in read('static/sourcing/js/unified-directory.js')
 print('PASS: six Sourcing views share the same native capability create modal and validation contract')
