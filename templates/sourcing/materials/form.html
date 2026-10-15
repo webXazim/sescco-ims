@@ -3,10 +3,10 @@
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:material_list' %}">Materials</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
-<form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}
+<form class="sourcing-form-shell" method="post" novalidate data-sourcing-page-draft data-sourcing-company="{{ request.company.pk }}">{% csrf_token %}
   {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
   {% include "sourcing/reference_master_fields/material.html" %}
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% url 'sourcing:material_list' %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label }}</button></footer>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.117-inline-materials"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}

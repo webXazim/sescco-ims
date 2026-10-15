@@ -76,6 +76,42 @@ class IntegratedSourcingDirectoryTests(TestCase):
             self.assertNotContains(response, 'sourcing-unified-summary-help')
             self.assertNotContains(response, 'data-capabilities-slot')
 
+    def test_capability_modal_add_actions_for_all_three_provider_types(self):
+        """Each capability tray links to the authorized existing creation form."""
+        for list_route, create_route, provider, label in (
+            ('sourcing:vendor_list', 'sourcing:vendor_offer_create', self.vendor, 'Add Supply Item'),
+            ('sourcing:manpower_supplier_list', 'sourcing:workforce_offer_create', self.supplier, 'Add Workforce'),
+            ('sourcing:subcontractor_list', 'sourcing:subcontractor_service_create', self.subcontractor, 'Add Service'),
+        ):
+            with self.subTest(route=list_route):
+                response = self.client.get(reverse(list_route), {
+                    'fragment': 'capabilities', 'provider': str(provider.pk),
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, reverse(create_route, args=[provider.pk]))
+                self.assertContains(response, label)
+                self.assertContains(response, 'data-capability-create')
+                self.assertContains(response, 'data-capability-refresh')
+                self.assertContains(response, 'target="_blank"')
+                self.assertEqual(self.client.get(reverse(create_route, args=[provider.pk])).status_code, 200)
+
+    def test_capability_modal_hides_add_actions_for_archived_providers(self):
+        from django.utils import timezone
+        for list_route, provider in (
+            ('sourcing:vendor_list', self.vendor),
+            ('sourcing:manpower_supplier_list', self.supplier),
+            ('sourcing:subcontractor_list', self.subcontractor),
+        ):
+            with self.subTest(route=list_route):
+                provider.archived_at = timezone.now()
+                provider.save(update_fields=['archived_at'])
+                detail = self.client.get(reverse(list_route), {
+                    'fragment': 'capabilities', 'provider': str(provider.pk),
+                })
+                self.assertEqual(detail.status_code, 200)
+                self.assertNotContains(detail, 'data-capability-create')
+                self.assertContains(detail, 'data-capability-refresh')
+
     def test_main_company_views_search_catalog_aliases_without_duplicates(self):
         for route, search, expected in (
             ("sourcing:vendor_list", "Reinforcement steel", "Civil Supply"),

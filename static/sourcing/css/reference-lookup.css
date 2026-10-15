@@ -42,3 +42,29 @@
 .sourcing-reference-dialog [aria-invalid="true"]{border-color:#d92d20!important;}
 .sourcing-reference-dialog-content .sourcing-field .field-error{color:#b42318;}
 @media(max-width:720px){.sourcing-reference-dialog-content .sourcing-form-section{grid-template-columns:minmax(0,1fr);gap:14px;padding:18px}.sourcing-reference-dialog-content .sourcing-form-grid{grid-template-columns:minmax(0,1fr)}.sourcing-reference-dialog-heading{padding:18px}.sourcing-reference-dialog .sourcing-reference-modal-actions{padding:14px 18px;}}
+
+/* Large catalogs: show a bounded, keyboard-accessible list with incremental results. */
+.sourcing-reference-options{max-height:min(300px,42dvh);scrollbar-gutter:stable;}
+.sourcing-reference-more{width:100%;padding:12px 14px;border:0;border-top:1px solid #dce5ee;background:#f5f8fc;color:#204b73;font:inherit;font-size:13px;font-weight:700;text-align:center;cursor:pointer;}
+.sourcing-reference-more:hover,.sourcing-reference-more:focus-visible{background:#eaf2fb;outline-offset:-3px;}
+.sourcing-reference-option:focus-visible{outline:2px solid #417dab;outline-offset:-3px;}
+/* Quick-create uses a fixed header/footer; only the reference fields scroll. */
+.sourcing-reference-dialog[open]{display:flex;flex-direction:column;max-height:min(89dvh,850px);overflow:hidden;}
+.sourcing-reference-dialog-form{display:flex;flex-direction:column;min-height:0;height:100%;}
+.sourcing-reference-dialog-heading{flex:none;padding:18px 24px;}
+.sourcing-reference-dialog-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+.sourcing-reference-dialog .sourcing-reference-modal-actions{flex:none;}
+.sourcing-reference-dialog{position:relative;}
+.sourcing-reference-discard-confirm{position:absolute;inset:0;z-index:30;display:grid;place-items:center;padding:16px;background:rgba(18,35,54,.45)}
+.sourcing-reference-discard-confirm[hidden]{display:none!important;}
+.sourcing-reference-discard-card{width:min(440px,100%);padding:24px;border:1px solid #dde5ed;border-radius:13px;background:#fff;box-shadow:0 20px 55px #10233b44;}
+.sourcing-reference-discard-card h3{margin:0 0 9px;font-size:18px;color:#1b293b;}
+.sourcing-reference-discard-card p{margin:0 0 20px;font-size:14px;color:#53677d;}
+.sourcing-reference-discard-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;}
+.sourcing-reference-discard{color:#ad3026;border-color:#e9bbb5;}
+.sourcing-reference-restored{padding:10px 14px;margin:14px 24px 0;border:1px solid #b6d8c9;border-radius:8px;background:#effaf4;color:#24563e;font-size:13px;}
+@media(max-width:650px){.sourcing-reference-dialog{max-width:calc(100vw - 16px);}.sourcing-reference-options{max-height:200px;}.sourcing-reference-discard-card{padding:18px;}}
+
+.sourcing-reference-dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.sourcing-reference-dialog-close{display:grid;place-items:center;flex:none;width:36px;height:36px;border:1px solid #d4dfe8;border-radius:9px;background:#fff;color:#30475c;font-size:22px;cursor:pointer;}
+.sourcing-reference-dialog-close:hover,.sourcing-reference-dialog-close:focus-visible{background:#f4f8fc;}

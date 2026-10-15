@@ -195,6 +195,7 @@ class VendorVerificationTests(TestCase):
         self.assertContains(detail, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
         self.assertContains(detail, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
         self.assertContains(detail, "Verify now")
+        self.assertContains(detail, reverse("sourcing:vendor_offer_create", args=[self.vendor.pk]))
 
         viewer, _ = self._member(
             username="verify-finder-viewer",
@@ -206,6 +207,8 @@ class VendorVerificationTests(TestCase):
         self.assertContains(readonly_detail, reverse("sourcing:vendor_offer_history", args=[self.vendor.pk, self.offer.pk]))
         self.assertNotContains(readonly_detail, reverse("sourcing:vendor_offer_verify", args=[self.vendor.pk, self.offer.pk]))
         self.assertNotContains(readonly_detail, "Verify now")
+        self.assertNotContains(readonly_detail, reverse("sourcing:vendor_offer_create", args=[self.vendor.pk]))
+        self.assertNotContains(readonly_detail, 'data-capability-create')
 
     def test_quick_verification_makes_stale_offer_fresh(self):
         self.client.force_login(self.owner_user)

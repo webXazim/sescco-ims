@@ -19,6 +19,7 @@
   let modalController = null;
   let activeProvider = null;
   let activeTrigger = null;
+  let refreshOnReturn = false;
 
   function makeURL() {
     const url = new URL(form.action, location.href);
@@ -222,6 +223,7 @@
     const modal = ensureModal();
     activeProvider = trigger.dataset.providerExpand;
     activeTrigger = trigger;
+    refreshOnReturn = false;
     modal.querySelector('#sourcing-capability-modal-title').textContent = trigger.dataset.providerLabel || 'Capability details';
     modal.querySelector('#sourcing-capability-modal-kind').textContent = trigger.dataset.providerKind || 'Capabilities';
     modal.querySelector('#sourcing-capability-modal-subtitle').textContent = 'Scroll through paginated capability records without leaving the directory.';
@@ -239,6 +241,7 @@
     if (activeTrigger) activeTrigger.setAttribute('aria-expanded', 'false');
     activeProvider = null;
     activeTrigger = null;
+    refreshOnReturn = false;
   }
   async function loadCapabilities(provider, page = '1') {
     const modal = ensureModal();
@@ -287,11 +290,32 @@
       await loadCapabilities(expand.dataset.providerExpand, '1');
       return;
     }
+    // The existing edit/create screens enforce the real Sourcing permissions.
+    // They open separately so the directory's modal, search filters and page stay put.
+    if (event.target.closest('[data-capability-create]') && activeProvider) {
+      refreshOnReturn = true;
+      return;
+    }
+    if (event.target.closest('[data-capability-refresh]') && activeProvider) {
+      event.preventDefault();
+      refreshOnReturn = false;
+      const currentPage = document.querySelector('#sourcing-capability-modal [data-capabilities-list]')
+        ?.getAttribute('data-current-page') || '1';
+      await loadCapabilities(activeProvider, currentPage);
+      return;
+    }
     const capPage = event.target.closest('[data-cap-page]');
     if (capPage && activeProvider) {
       event.preventDefault();
       await loadCapabilities(activeProvider, capPage.dataset.capPage || '1');
     }
+  });
+  // The user may have created a capability in the new tab. Refresh matching
+  // results when they return; pagination/filter state remains server-authoritative.
+  window.addEventListener('focus', () => {
+    if (!refreshOnReturn || !activeProvider || !document.getElementById('sourcing-capability-modal')?.classList.contains('is-open')) return;
+    refreshOnReturn = false;
+    loadCapabilities(activeProvider, '1');
   });
   // For back/forward use the browser's normal GET navigation to restore all form state.
   window.addEventListener('popstate', () => location.reload());

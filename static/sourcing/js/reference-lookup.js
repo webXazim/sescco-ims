@@ -30,9 +30,12 @@
     title.id = 'sourcing-reference-modal-title';
     title.textContent = `Add ${titles[kind]}`;
     dialog.setAttribute('aria-labelledby', title.id);
-    const description = document.createElement('p');
-    description.textContent = 'Create a controlled sourcing reference without leaving your capability form.';
-    heading.append(title, description);
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'sourcing-reference-dialog-close';
+    closeButton.setAttribute('aria-label', 'Close reference dialog');
+    closeButton.textContent = '×';
+    heading.append(title, closeButton);
     const content = document.createElement('div');
     content.className = 'sourcing-reference-dialog-content';
     content.textContent = 'Loading reference fields…';
@@ -51,11 +54,88 @@
     panel.append(heading, content, errors, actions);
     dialog.append(panel);
     document.body.append(dialog);
-    dialog.addEventListener('close', () => dialog.remove(), { once: true });
-    cancel.addEventListener('click', () => dialog.close());
-    dialog.addEventListener('click', (event) => {
-      if (event.target === dialog) dialog.close();
+    const actor = document.querySelector('.platform-account__copy strong, .platform-account__identity strong')?.textContent?.trim() || 'unknown';
+    const company = root.closest('form')?.dataset.sourcingCompany || 'no-company';
+    const draftKey = `sescco:sourcing:reference-modal:v1:${encodeURIComponent(actor)}:${encodeURIComponent(company)}:${location.pathname}:${kind}`;
+    let baseline = null, closing = false, savedDraft = null, debounce;
+    const ttl = 24 * 60 * 60 * 1000;
+    function formValues() {
+      return [...panel.querySelectorAll('input[name],select[name],textarea[name]')].map(el => ({
+        name: el.name, value: el.value,
+        checked: ['checkbox', 'radio'].includes(el.type) ? el.checked : null,
+      }));
+    }
+    function changed() { return baseline !== null && JSON.stringify(formValues()) !== baseline; }
+    function preserve() {
+      if (closing || !changed()) return;
+      try {
+        const state = { v: 1, actor, company, path: location.pathname, kind,
+          updated: Date.now(), values: formValues() };
+        const payload = JSON.stringify(state);
+        if (payload.length < 30000) sessionStorage.setItem(draftKey, payload);
+      } catch (_) { /* private browsing: the form remains editable */ }
+    }
+    function clearDraft() { try { sessionStorage.removeItem(draftKey); } catch (_) { /* unavailable */ } }
+    try {
+      const raw = sessionStorage.getItem(draftKey);
+      if (raw) {
+        const entry = JSON.parse(raw);
+        if (entry.v === 1 && entry.actor === actor && entry.company === company && entry.kind === kind &&
+            entry.path === location.pathname && Date.now() - entry.updated < ttl) savedDraft = entry;
+        else clearDraft();
+      }
+    } catch (_) { /* optional restoration */ }
+    const confirm = document.createElement('div');
+    confirm.className = 'sourcing-reference-discard-confirm';
+    confirm.hidden = true;
+    confirm.setAttribute('role', 'alertdialog');
+    confirm.setAttribute('aria-modal', 'true');
+    confirm.setAttribute('aria-label', `Discard ${titles[kind]} changes`);
+    confirm.innerHTML = `<div class="sourcing-reference-discard-card">
+      <h3>Discard unsaved changes?</h3>
+      <p>Your ${titles[kind].toLowerCase()} details have not been saved.</p>
+      <div class="sourcing-reference-discard-actions">
+        <button type="button" class="sourcing-btn sourcing-btn--primary" data-reference-keep>Keep editing</button>
+        <button type="button" class="sourcing-btn sourcing-reference-discard" data-reference-discard>Discard changes</button>
+      </div></div>`;
+    panel.append(confirm);
+    const finish = (discardDraft) => {
+      closing = true;
+      clearTimeout(debounce);
+      if (discardDraft) clearDraft();
+      dialog.close();
+    };
+    function requestClose() {
+      if (!changed()) { finish(true); return; }
+      preserve();
+      confirm.hidden = false;
+      confirm.querySelector('[data-reference-keep]').focus();
+    }
+    confirm.querySelector('[data-reference-keep]').addEventListener('click', () => {
+      confirm.hidden = true;
+      content.querySelector('[name="master-name"]')?.focus();
     });
+    confirm.querySelector('[data-reference-discard]').addEventListener('click', () => finish(true));
+    cancel.addEventListener('click', requestClose);
+    dialog.addEventListener('click', event => { if (event.target === dialog) requestClose(); });
+    dialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      if (confirm.hidden) requestClose();
+      else confirm.hidden = true;
+    });
+    content.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(preserve, 180); });
+    content.addEventListener('change', () => { clearTimeout(debounce); preserve(); });
+    const onUnload = event => {
+      preserve();
+      if (changed()) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', onUnload);
+    window.addEventListener('pagehide', preserve);
+    dialog.addEventListener('close', () => {
+      window.removeEventListener('beforeunload', onUnload);
+      window.removeEventListener('pagehide', preserve);
+      dialog.remove();
+    }, { once: true });
     dialog.showModal();
 
     const controller = new AbortController();
@@ -127,6 +207,23 @@
       }
       content.replaceChildren(fields);
       syncCategories();
+      baseline = JSON.stringify(formValues());
+      if (savedDraft?.values?.length) {
+        const inputMap = new Map(formValues().map(v => [v.name, panel.elements.namedItem(v.name)]));
+        savedDraft.values.forEach(saved => {
+          const element = inputMap.get(saved.name);
+          if (!element) return;
+          if (saved.checked !== null && saved.checked !== undefined) element.checked = !!saved.checked;
+          else if (element.tagName === 'SELECT' && ![...element.options].some(opt => opt.value === saved.value)) return;
+          else element.value = String(saved.value ?? '');
+        });
+        syncCategories();
+        const restored = document.createElement('div');
+        restored.className = 'sourcing-reference-restored';
+        restored.setAttribute('role', 'status');
+        restored.textContent = 'Unsaved reference draft restored after reload.';
+        content.prepend(restored);
+      }
       save.disabled = false;
       content.querySelector('[name="master-name"]')?.focus();
     } catch (exc) {
@@ -152,7 +249,7 @@
           return;
         }
         if (!data.item?.id) throw new Error('Invalid server response.');
-        dialog.close();
+        finish(true);
         done(data.item);
       } catch (exc) {
         errors.textContent = exc.message || 'Unable to save the reference. Please try again.';
@@ -197,12 +294,14 @@
       help.textContent = 'Selected reference. Select Change to choose another item.';
       options.hidden = true; search.hidden = true;
       hidden.dispatchEvent(new Event('change', { bubbles: true }));
+      hidden.dispatchEvent(new Event('sourcing:reference-selected', { bubbles: true }));
     }
-    function listItems(items, query) {
-      clearOptions();
+    function listItems(items, query, {append = false, hasMore = false, page = 1} = {}) {
+      if (!append) clearOptions();
+      else options.querySelector('[data-reference-more]')?.remove();
       options.hidden = false;
       search.setAttribute('aria-expanded', 'true');
-      if (!items.length) {
+      if (!items.length && !append) {
         const info = document.createElement('div');
         info.className = 'sourcing-reference-status';
         info.textContent = query ? 'No matching reference. Try another term or add a new one.' : 'No references available. Add the first item if permitted.';
@@ -219,7 +318,15 @@
         option.addEventListener('click', () => choose(item));
         options.append(option); selectable.push({ element: option, item });
       }
-      help.textContent = query ? 'Search results. Choose the correct controlled item.' : 'Frequently used references shown first; search to find any other item.';
+      if (hasMore && query) {
+        const more = document.createElement('button');
+        more.type = 'button'; more.dataset.referenceMore = '';
+        more.className = 'sourcing-reference-more';
+        more.textContent = 'Load more results';
+        more.addEventListener('click', () => load(query, '', true, page + 1));
+        options.append(more);
+      }
+      help.textContent = query ? 'Matching references · refine your search to narrow results.' : 'Commonly used references · type to search the complete catalog.';
     }
     function highlight(index) {
       activeIndex = index;
@@ -229,26 +336,35 @@
       });
       if (index >= 0) selectable[index].element.scrollIntoView({ block: 'nearest' });
     }
-    async function load(q = '', selectedId = '') {
+    async function load(q = '', selectedId = '', append = false, page = 1) {
       const token = ++requestId;
       if (controller) controller.abort();
       controller = new AbortController();
       options.hidden = false;
-      clearOptions();
-      message(options, 'Searching references…');
+      if (!append) { clearOptions(); message(options, 'Searching references…'); }
+      else options.querySelector('[data-reference-more]')?.remove();
       const url = new URL(root.dataset.endpoint, window.location.href);
       if (selectedId) url.searchParams.set('selected', selectedId);
-      else if (q) url.searchParams.set('q', q.slice(0, 80));
+      else if (q) {
+        url.searchParams.set('q', q.slice(0, 80));
+        if (page > 1) url.searchParams.set('page', String(page));
+      }
       try {
         const response = await fetch(url, { credentials: 'same-origin', signal: controller.signal, headers: { 'Accept': 'application/json' } });
         if (!response.ok) throw new Error('Search is currently unavailable.');
         const result = await response.json();
         if (token !== requestId) return;
         if (selectedId && result.results?.length) { choose(result.results[0]); return; }
-        listItems(result.results || [], q);
+        listItems(result.results || [], q, {append, hasMore: !!result.has_more, page: result.page || page});
       } catch (error) {
         if (error.name === 'AbortError' || token !== requestId) return;
-        message(options, 'Unable to load references. Check your connection and retry.');
+        if (append) {
+          const retry = document.createElement('button');
+          retry.type = 'button'; retry.className = 'sourcing-reference-more';
+          retry.textContent = 'Could not load results · Retry';
+          retry.addEventListener('click', () => load(q, '', true, page));
+          options.append(retry);
+        } else message(options, 'Unable to load references. Check your connection and retry.');
       }
     }
     search.addEventListener('input', () => {
@@ -272,7 +388,23 @@
     search.addEventListener('focus', () => {
       if (!hidden.value) { options.hidden = false; search.setAttribute('aria-expanded', 'true'); }
     });
+    root.addEventListener('sourcing:reference-lookup-restore', event => {
+      const selectedId = String(event.detail?.selectedId || '');
+      if (selectedId) load('', selectedId);
+    });
     root.querySelector('[data-reference-add]')?.addEventListener('click', () => dialogFor(root, choose));
+    if (root.closest('form[data-sourcing-page-draft]')) {
+      const actor = document.querySelector('.platform-account__copy strong, .platform-account__identity strong')?.textContent?.trim() || 'unknown';
+      const company = root.closest('form')?.dataset.sourcingCompany || 'no-company';
+      const key = `sescco:sourcing:reference-modal:v1:${encodeURIComponent(actor)}:${encodeURIComponent(company)}:${location.pathname}:${root.dataset.kind}`;
+      try {
+        const entry = JSON.parse(sessionStorage.getItem(key) || 'null');
+        if (entry?.v === 1 && entry.actor === actor && Date.now() - entry.updated < 86400000 &&
+            entry.path === location.pathname && entry.values?.length) {
+          setTimeout(() => dialogFor(root, choose), 80);
+        }
+      } catch (_) { /* session storage unavailable */ }
+    }
     // Server-side errors restore the posted selection, including a reference not in the top twelve.
     if (hidden.value) load('', hidden.value);
     else load('');

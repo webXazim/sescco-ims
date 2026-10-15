@@ -8,7 +8,7 @@
     <h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p>
   </div>
 </section>
-<form class="sourcing-form-shell" method="post" novalidate>
+<form class="sourcing-form-shell" method="post" novalidate{% if show_materials %} data-sourcing-draft-form{% endif %}>
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -91,5 +91,5 @@
   <footer class="sourcing-form-actions"><a class="sourcing-btn" href="{% if vendor %}{% url 'sourcing:vendor_detail' vendor.id %}{% else %}{% url 'sourcing:vendor_list' %}{% endif %}">Cancel</a><button class="sourcing-btn sourcing-btn--primary" type="submit">{{ submit_label|default:'Save Vendor' }}</button></footer>
 </form>
 {% endblock %}
-{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.121-unified"><link rel="stylesheet" href="{% static 'sourcing/css/vendor-onboarding.css' %}?v=1.0.138"><link rel="stylesheet" href="{% static 'sourcing/css/provider-tag-editor.css' %}?v=1.0.130">{% endblock %}
-{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/onboarding-staged-categories.js' %}?v=1.0.137"></script><script defer src="{% static 'sourcing/js/vendor-onboarding.js' %}?v=1.0.137"></script><script defer src="{% static 'sourcing/js/vendor-code.js' %}?v=1.0.126"></script><script defer src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/provider-tag-editor.js' %}?v=1.0.130"></script>{% endblock %}
+{% block extra_head %}{{ block.super }}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145"><link rel="stylesheet" href="{% static 'sourcing/css/vendor-onboarding.css' %}?v=1.0.141"><link rel="stylesheet" href="{% static 'sourcing/css/provider-tag-editor.css' %}?v=1.0.130">{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.145"></script><script defer src="{% static 'sourcing/js/onboarding-staged-categories.js' %}?v=1.0.137"></script><script defer src="{% static 'sourcing/js/vendor-onboarding.js' %}?v=1.0.141"></script><script defer src="{% static 'sourcing/js/vendor-code.js' %}?v=1.0.126"></script><script defer src="{% static 'sourcing/js/vendor-directory.js' %}?v=1.0.122"></script><script defer src="{% static 'sourcing/js/provider-tag-editor.js' %}?v=1.0.141"></script>{% if show_materials %}<script defer src="{% static 'sourcing/js/sourcing-draft-recovery.js' %}?v=1.0.141"></script>{% endif %}{% endblock %}

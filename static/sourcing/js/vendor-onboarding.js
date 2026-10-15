@@ -330,4 +330,87 @@
   renderSummary();
   const invalidRow = rows.querySelector('[data-onboarding-invalid]');
   if (invalidRow && !deleted(invalidRow)) open(invalidRow, false);
+
+  // Draft recovery uses the same formset row template/initializers as normal onboarding.
+  // It cannot write a reference master or a provider record to the database.
+  function captureDraft() {
+    return {
+      total: Number(total.value) || 0,
+      rows: [...rows.querySelectorAll('[data-onboarding-row]')].map(row => ({
+        staged: row.dataset.onboardingNewMaterial === '1',
+        fields: [...row.querySelectorAll('input[name],select[name],textarea[name]')].map(input => ({
+          name: input.name, value: input.value,
+          checked: input.type === 'checkbox' || input.type === 'radio' ? input.checked : null,
+        })),
+        selectedLabel: row.querySelector('[data-reference-current] .sourcing-reference-selected')?.textContent || '',
+      })),
+      editing: dialog.open ? [...rows.querySelectorAll('[data-onboarding-row]')].indexOf(active) : -1,
+      newEditing: !!isNew,
+      masterEditing: !!active?.querySelector('[data-onboarding-master][open]'),
+    };
+  }
+  function restoreDraft(saved) {
+    if (!saved || !Array.isArray(saved.rows) || saved.rows.length > maximum || saved.rows.length > 50) return;
+    // This API runs only on the create form. Server POST validation remains authoritative.
+    for (let i = rows.querySelectorAll('[data-onboarding-row]').length; i < saved.rows.length; i++) {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = template.innerHTML.replaceAll('__prefix__', String(i)).trim();
+      const row = wrapper.firstElementChild;
+      if (!row) return;
+      rows.append(row);
+      initRow(row);
+    }
+    const all = [...rows.querySelectorAll('[data-onboarding-row]')];
+    total.value = String(all.length);
+    const deferred = [];
+    all.forEach((row, index) => {
+      const record = saved.rows[index];
+      if (!record) return;
+      const controls = [...row.querySelectorAll('input[name],select[name],textarea[name]')];
+      for (const item of record.fields || []) {
+        const control = controls.find(input => input.name === item.name);
+        if (!control || control.type === 'file') continue;
+        if (control.matches('[data-material-category-select]') || control.tagName === 'SELECT') {
+          deferred.push([control, item]);
+        } else {
+          control.value = item.value == null ? '' : String(item.value);
+        }
+        if (item.checked !== null && item.checked !== undefined) control.checked = !!item.checked;
+      }
+      stagedMaster(row, !!record.staged);
+      // An ID is resolved through the existing tenant-scoped lookup endpoint; a
+      // stale or unauthorized ID is not treated as a valid selected reference.
+      const ref = row.querySelector('[data-sourcing-reference-lookup]');
+      const hidden = ref?.querySelector('input[type="hidden"]');
+      if (ref && hidden && hidden.value && !record.staged) {
+        ref.dispatchEvent(new CustomEvent('sourcing:reference-lookup-restore', {
+          detail: { selectedId: hidden.value }, bubbles: false,
+        }));
+      }
+    });
+    // First restore the category draft creators, then refresh the staged option
+    // lists; only then can a later row select an earlier row's unsaved category.
+    deferred.filter(([control, item]) => control.matches('[data-material-category-select]') &&
+      item.value === '__new__').forEach(([control]) => {
+        control.value = '__new__';
+        control.dispatchEvent(new Event('change', { bubbles: false }));
+      });
+    stagedCategories?.refresh();
+    deferred.forEach(([control, item]) => {
+      const desired = item.value == null ? '' : String(item.value);
+      if (control.tagName === 'SELECT' && desired && ![...control.options].some(option => option.value === desired)) return;
+      control.value = desired;
+      control.dispatchEvent(new Event('change', { bubbles: false }));
+    });
+    stagedCategories?.refresh();
+    renderSummary();
+    const editing = Number(saved.editing);
+    if (Number.isInteger(editing) && editing >= 0 && editing < all.length && !deleted(all[editing])) {
+      open(all[editing], !!saved.newEditing);
+      // The nested editor is reopened with values intact; the parent editor
+      // remains open and its own discard confirmation continues to apply.
+      if (saved.masterEditing) all[editing].querySelector('[data-onboarding-edit-master], [data-onboarding-new-master]')?.click();
+    }
+  }
+  window.SourcingOnboardingDraft = { capture: captureDraft, restore: restoreDraft };
 })();

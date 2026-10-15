@@ -206,3 +206,37 @@ class InlineReferenceLookupTests(TestCase):
         self.client.force_login(reader)
         self.assertEqual(self.lookup('material', {'form': '1'}).status_code, 403)
         self.assertEqual(self.lookup('material').status_code, 200)
+
+    def test_reference_search_pages_are_bounded_distinct_and_tenant_scoped(self):
+        SourcingMaterial.objects.bulk_create([
+            SourcingMaterial(company=self.company, code=f'MAT-XL-{i:03d}',
+                name=f'Large Catalog Item {i:03d}', normalized_name=f'large catalog item {i:03d}')
+            for i in range(37)
+        ])
+        first = self.lookup('material', {'q': 'Large Catalog Item', 'page': '1'}).json()
+        second = self.lookup('material', {'q': 'Large Catalog Item', 'page': '2'}).json()
+        fourth = self.lookup('material', {'q': 'Large Catalog Item', 'page': '4'}).json()
+        self.assertEqual(len(first['results']), 12)
+        self.assertTrue(first['has_more'])
+        self.assertEqual(len(second['results']), 12)
+        self.assertTrue(second['has_more'])
+        self.assertEqual(len(fourth['results']), 1)
+        self.assertFalse(fourth['has_more'])
+        self.assertFalse(set(row['id'] for row in first['results']) &
+                         set(row['id'] for row in second['results']))
+        self.assertEqual(self.lookup('material', {'q': 'MAT-SECRET'}).json()['results'], [])
+        self.assertEqual(self.lookup('material', {'q': 'Large', 'page': 'nan'}).status_code, 200)
+
+    def test_capability_pages_provide_recovery_and_shared_modal_controls(self):
+        specs = (
+            ('vendor_offer_create', [self.vendor.pk]),
+            ('workforce_offer_create', [self.supplier.pk]),
+            ('subcontractor_service_create', [self.subcontractor.pk]),
+            ('material_create', []), ('trade_create', []), ('service_create', []),
+        )
+        for route, args in specs:
+            with self.subTest(route=route):
+                response = self.client.get(reverse('sourcing:' + route, args=args))
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'data-sourcing-page-draft')
+                self.assertContains(response, 'sourcing-page-draft.js')

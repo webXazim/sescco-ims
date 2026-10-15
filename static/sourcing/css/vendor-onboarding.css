@@ -143,3 +143,9 @@
   .sourcing-onboarding-staged-material{flex-direction:column;align-items:stretch}
   .sourcing-onboarding-staged-actions .sourcing-btn{flex:1;white-space:normal}
 }
+
+/* Non-intrusive recovery status on all three new-provider forms. */
+.sourcing-draft-notice{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:0 0 14px;padding:11px 15px;border:1px solid #cfe0ef;border-radius:10px;background:#f4f8fc;color:#264663;font-size:13px;line-height:1.45}
+.sourcing-draft-notice[hidden],.sourcing-draft-notice button[hidden]{display:none!important}
+.sourcing-draft-notice__discard{padding:5px 9px;border:1px solid #b8cce0;border-radius:7px;color:#234e72;background:#fff;font:inherit;font-weight:600;cursor:pointer}
+.sourcing-draft-notice__discard:hover,.sourcing-draft-notice__discard:focus-visible{background:#e8f1f9}

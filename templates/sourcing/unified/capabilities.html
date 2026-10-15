@@ -1,5 +1,19 @@
-<div class="sourcing-unified-capabilities" data-capabilities-list>
-  <div class="sourcing-unified-cap-head"><strong>{{ offer_page.paginator.count }} matching {% if kind == 'vendor' %}supply item{{ offer_page.paginator.count|pluralize }}{% elif kind == 'manpower' %}workforce type{{ offer_page.paginator.count|pluralize }}{% else %}service{{ offer_page.paginator.count|pluralize }}{% endif %}</strong><span>Reference information · confirm with provider before use</span></div>
+<div class="sourcing-unified-capabilities" data-capabilities-list data-current-page="{{ offer_page.number }}">
+  <div class="sourcing-unified-cap-head">
+    <strong>{{ offer_page.paginator.count }} matching {% if kind == 'vendor' %}supply item{{ offer_page.paginator.count|pluralize }}{% elif kind == 'manpower' %}workforce type{{ offer_page.paginator.count|pluralize }}{% else %}service{{ offer_page.paginator.count|pluralize }}{% endif %}</strong>
+    <div class="sourcing-unified-cap-tools">
+      <button type="button" class="sourcing-unified-cap-refresh" data-capability-refresh aria-label="Refresh capability list" title="Refresh matching capabilities">Refresh</button>
+      {% if can_manage and not provider.archived_at and not provider.deleted_at %}
+        {% if kind == 'vendor' %}
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:vendor_offer_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Supply Item (opens in new tab)">+ Add Supply Item <span aria-hidden="true">↗</span></a>
+        {% elif kind == 'manpower' %}
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:workforce_offer_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Workforce (opens in new tab)">+ Add Workforce <span aria-hidden="true">↗</span></a>
+        {% else %}
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:subcontractor_service_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Service (opens in new tab)">+ Add Service <span aria-hidden="true">↗</span></a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
   {% if offers %}
   <div class="sourcing-table-wrap"><table class="sourcing-table sourcing-unified-offer-table"><thead><tr><th>{% if kind == 'vendor' %}Material{% elif kind == 'manpower' %}Trade{% else %}Service{% endif %}</th><th>Scope / location</th><th>Availability</th><th>Quantity</th><th>Reference rate</th><th>Lead time</th><th>Last verified</th><th>Manage</th></tr></thead><tbody>
     {% for offer in offers %}<tr>

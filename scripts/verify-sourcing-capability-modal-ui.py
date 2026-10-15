@@ -47,7 +47,14 @@ assert '.sourcing-onboarding-staged-kicker' in css
 assert '@media(max-width:520px)' in css
 
 for view in ['vendors', 'manpower', 'subcontractors']:
-    assert '?v=1.0.138' in source(f'templates/sourcing/{view}/form.html')
+    # Each provider create form must load the shared editor and draft recovery.
+    # Asset cache-buster versions change between releases; a hard-coded old
+    # query string would reject newer, valid production source unexpectedly.
+    html = source(f'templates/sourcing/{view}/form.html')
+    assert 'vendor-onboarding.css' in html, view
+    assert 'reference-lookup.js' in html, view
+    assert 'sourcing-draft-recovery.js' in html, view
+    assert ('vendor-onboarding.js' if view == 'vendors' else 'provider-capability-onboarding.js') in html, view
 
 for path, state_key in [
     ('static/sourcing/js/vendor-onboarding.js', 'onboardingNewMaterial'),

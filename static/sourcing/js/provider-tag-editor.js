@@ -73,7 +73,7 @@
       return suggested.filter((tag) => !tags.some((selected) => norm(selected) === norm(tag))
         && (!query || norm(tag).includes(query))).slice(0, 8);
     };
-    const sync = () => { field.value = tags.join(', '); render(); };
+    const sync = () => { field.value = tags.join(', '); render(); field.dispatchEvent(new Event('change', { bubbles: true })); };
     const closeOptions = () => {
       options.hidden = true;
       options.replaceChildren();
@@ -201,6 +201,14 @@
         add(selected || input.value);
         return;
       }
+    });
+    field.addEventListener('sourcing:draft-restore', () => {
+      tags = [];
+      field.value.split(',').forEach(part => {
+        const tag = canonical(part);
+        if (tag && !tags.some(existing => norm(existing) === norm(tag))) tags.push(tag);
+      });
+      feedback(); render();
     });
     form.addEventListener('submit', (event) => {
       if (input.value.trim() && !add(input.value)) {

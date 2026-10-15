@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from django.core.files.storage import default_storage
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.utils import timezone
 from django.http import FileResponse, JsonResponse
 from urllib.parse import urlencode
@@ -380,19 +380,32 @@ def reference_lookup(request: HttpRequest, kind: str) -> HttpResponse:
                 results += list(queryset.exclude(pk__in=popular_ids)
                                 .order_by("normalized_name", "pk")[:12 - len(results)])
         else:
+            # Prioritize exact/prefix matches, but keep subsequent pages available
+            # for larger catalogs. Querysets are sliced in SQL (not materialized).
             term = normalize_text(raw_query)
-            primary = list(queryset.filter(
+            try:
+                page = max(1, min(int(request.GET.get("page", "1")), 50))
+            except (ValueError, TypeError):
+                page = 1
+            matches = (queryset.filter(
                 Q(normalized_name__startswith=term) | Q(code__istartswith=raw_query)
-            ).order_by("normalized_name", "pk")[:12])
-            results = primary
-            if len(results) < 12:
-                # Substring/alias fallback runs only for the remaining slots.
-                more = queryset.filter(
-                    Q(normalized_name__icontains=term) | Q(category__icontains=raw_query)
-                    | Q(normalized_aliases__icontains=term)
-                ).exclude(pk__in=[entry.pk for entry in primary]).order_by("normalized_name", "pk")[:12 - len(results)]
-                results += list(more)
-        return JsonResponse({"results": [_lookup_result(entry) for entry in results]})
+                | Q(normalized_name__icontains=term) | Q(category__icontains=raw_query)
+                | Q(normalized_aliases__icontains=term)
+            ).annotate(
+                relevance=Case(
+                    When(normalized_name=term, then=Value(0)),
+                    When(normalized_name__startswith=term, then=Value(1)),
+                    When(code__istartswith=raw_query, then=Value(2)),
+                    default=Value(3), output_field=IntegerField(),
+                )
+            ).order_by("relevance", "normalized_name", "pk"))
+            offset = (page - 1) * 12
+            window = list(matches[offset:offset + 13])
+            results = window[:12]
+            return JsonResponse({"results": [_lookup_result(entry) for entry in results],
+                                 "has_more": len(window) > 12, "page": page})
+        return JsonResponse({"results": [_lookup_result(entry) for entry in results],
+                             "has_more": False, "page": 1})
 
     # A user permitted to edit a supplier is NOT automatically permitted to
     # create company-wide master vocabulary. Match the standalone access check.

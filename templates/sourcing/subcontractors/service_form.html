@@ -1,14 +1,14 @@
 {% extends "sourcing/base.html" %}
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}{{ block.super }}{% load static %}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.121-unified" />{% endblock %}
-{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.121-unified"></script>{% endblock %}
+{% block extra_head %}{{ block.super }}{% load static %}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145" />{% endblock %}
+{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.145"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact">
   <div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:subcontractor_list' %}">Subcontractors</a><span>/</span><a href="{% url 'sourcing:subcontractor_detail' subcontractor.pk %}#service-catalog">{{ subcontractor.code }}</a><span>/</span><strong>{{ page_title }}</strong></nav>
   <h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div>
 </section>
 <div class="sourcing-reference-banner"><strong>Service sourcing reference only.</strong><span>Rates and availability are informational supplier references, not approved service contracts or project commitments.</span></div>
-<form class="sourcing-form-shell" method="post" novalidate>{% csrf_token %}
+<form class="sourcing-form-shell" method="post" novalidate data-sourcing-page-draft data-sourcing-company="{{ request.company.pk }}">{% csrf_token %}
   {% if form.non_field_errors %}<div class="sourcing-form-errors">{{ form.non_field_errors }}</div>{% endif %}
   {% if not verify_mode %}
   <section class="sourcing-form-section"><header><h2>Service Capability</h2><p>Choose an existing service and define the exact work this subcontractor can perform.</p></header>

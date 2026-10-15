@@ -319,3 +319,8 @@
   .sourcing-toolbar .sourcing-search { flex-basis: 100%; max-width: 100%; }
   .sourcing-toolbar .sourcing-toolbar__actions { flex-wrap: wrap; }
 }
+
+/* Reload-safe standalone Sourcing form draft status. */
+.sourcing-page-draft-notice{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:11px 15px;margin:0 0 14px;border:1px solid #c6d9e9;border-radius:9px;background:#f3f8fd;color:#244e70;font-size:13px;}
+.sourcing-page-draft-notice [data-page-draft-discard]{cursor:pointer;background:#fff;border:1px solid #c6d9e9;border-radius:7px;padding:7px 12px;color:#244e70;font:inherit;font-weight:650;}
+.sourcing-page-draft-notice [data-page-draft-discard][hidden]{display:none!important;}
