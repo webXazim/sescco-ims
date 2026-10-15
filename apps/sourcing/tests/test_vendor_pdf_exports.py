@@ -128,10 +128,12 @@ class VendorPDFExportTests(TestCase):
             ),
             'sourcing:subcontractor_list': (
                 reverse('sourcing:data_export', args=['subcontractors']),
+                reverse('sourcing:subcontractor_directory_pdf'),
                 reverse('sourcing:data_export', args=['subcontractor_service_catalog']),
             ),
             'sourcing:manpower_supplier_list': (
                 reverse('sourcing:data_export', args=['manpower_suppliers']),
+                reverse('sourcing:manpower_directory_pdf'),
                 reverse('sourcing:data_export', args=['workforce_catalog']),
             ),
         }

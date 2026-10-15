@@ -57,7 +57,11 @@ from .forms import (
     SourcingImportUploadForm,
     sourcing_material_categories,
 )
-from .pdf_exports import MAX_PDF_ROWS, render_vendor_directory_pdf, render_vendor_catalog_pdf
+from .pdf_exports import (
+    MAX_PDF_ROWS, render_vendor_directory_pdf, render_vendor_catalog_pdf,
+    render_manpower_directory_pdf, render_subcontractor_directory_pdf,
+    render_workforce_catalog_pdf, render_subcontractor_catalog_pdf,
+)
 from .exchange import (
     EXPORT_DATASETS,
     IMPORT_DATASETS,
@@ -1192,6 +1196,93 @@ def manpower_supplier_list(request: HttpRequest) -> HttpResponse:
     )
     return render(request, "sourcing/manpower/list.html", context)
 
+
+
+
+def _sourcing_pdf_response(*, content, filename):
+    response = HttpResponse(content, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@require_http_methods(["GET"])
+def manpower_directory_pdf(request: HttpRequest) -> HttpResponse:
+    _require_manpower_view(request)
+    if not _can_export_dataset(_membership(request), "manpower_suppliers"):
+        raise PermissionDenied("Manpower Sourcing view and export authority are required.")
+    directory = manpower_directory_page(company=request.company, params=request.GET)
+    qs = directory.page_obj.paginator.object_list
+    total = directory.page_obj.paginator.count
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many matches; narrow the directory filters.", status=422, content_type="text/plain")
+    return _sourcing_pdf_response(
+        content=render_manpower_directory_pdf(suppliers=qs, total=total, status=directory.status),
+        filename="sourcing-manpower-suppliers.pdf",
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def subcontractor_directory_pdf(request: HttpRequest) -> HttpResponse:
+    _require_subcontractor_view(request)
+    if not _can_export_dataset(_membership(request), "subcontractors"):
+        raise PermissionDenied("Subcontractor Sourcing view and export authority are required.")
+    directory = subcontractor_directory_page(company=request.company, params=request.GET)
+    qs = directory.page_obj.paginator.object_list
+    total = directory.page_obj.paginator.count
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many matches; narrow the directory filters.", status=422, content_type="text/plain")
+    return _sourcing_pdf_response(
+        content=render_subcontractor_directory_pdf(subcontractors=qs, total=total, status=directory.status),
+        filename="sourcing-subcontractors.pdf",
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def workforce_catalog_pdf(request: HttpRequest, supplier_id) -> HttpResponse:
+    _require_manpower_view(request)
+    if not _can_export_dataset(_membership(request), "workforce_catalog"):
+        raise PermissionDenied("Manpower Sourcing view and export authority are required.")
+    supplier = get_object_or_404(
+        SourcingManpowerSupplier.objects.for_company(request.company).filter(deleted_at__isnull=True),
+        pk=supplier_id,
+    )
+    offers = (SourcingWorkforceOffer.objects.for_company(request.company)
+              .filter(supplier=supplier, is_active=True, trade__company=request.company, trade__is_active=True)
+              .select_related("trade").order_by("trade__normalized_name", "pk"))
+    total = offers.count()
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many workforce references to export.", status=422, content_type="text/plain")
+    return _sourcing_pdf_response(
+        content=render_workforce_catalog_pdf(supplier=supplier, offers=offers, total=total),
+        filename="manpower-workforce-catalog.pdf",
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def subcontractor_catalog_pdf(request: HttpRequest, subcontractor_id) -> HttpResponse:
+    _require_subcontractor_view(request)
+    if not _can_export_dataset(_membership(request), "subcontractor_service_catalog"):
+        raise PermissionDenied("Subcontractor Sourcing view and export authority are required.")
+    subcontractor = get_object_or_404(
+        SourcingSubcontractor.objects.for_company(request.company).filter(deleted_at__isnull=True),
+        pk=subcontractor_id,
+    )
+    offers = (SourcingSubcontractorService.objects.for_company(request.company)
+              .filter(subcontractor=subcontractor, is_active=True, service__company=request.company, service__is_active=True)
+              .select_related("service").order_by("service__normalized_name", "pk"))
+    total = offers.count()
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many service references to export.", status=422, content_type="text/plain")
+    return _sourcing_pdf_response(
+        content=render_subcontractor_catalog_pdf(subcontractor=subcontractor, offers=offers, total=total),
+        filename="subcontractor-service-catalog.pdf",
+    )
 
 @login_required
 def manpower_supplier_create(request: HttpRequest) -> HttpResponse:

@@ -41,8 +41,10 @@ views = require(
 )
 require("apps/sourcing/urls.py", '"data-exchange/template/<str:dataset>/"')
 require("templates/sourcing/data_exchange.html", "Blank import templates", "Import CSV / XLSX", "verified_now=yes")
-for t in ("subcontractors/list.html", "services/list.html"):
-    require("templates/sourcing/" + t, "data-sourcing-export-current")
+# Unified directories use the shared export controller. Legacy `data-sourcing-export-current`
+# was removed when the live search/filter directory replaced the finder view.
+require("templates/sourcing/subcontractors/list.html", "data-unified-export", "query_only=True")
+require("templates/sourcing/services/list.html", "data-sourcing-export-current")
 require("templates/sourcing/subcontractors/_offers.html", "data-sourcing-finder-root", "data-sourcing-live-finder")
 require("templates/sourcing/sidebar.html", "SOURCING_ACCESS.subcontractors.manage")
 require("apps/sourcing/tests/test_subcontractor_data_exchange.py",

@@ -163,3 +163,114 @@ def render_vendor_catalog_pdf(*, vendor, offers, total):
         rows=catalog_report_rows(offers), total=total,
         note='Reference prices, quantities and lead times are last-known supplier statements, not stock balances or purchase commitments.',
     )
+
+# Manpower and Subcontractor reports use the same rendering, bounds and escaping
+# as the Vendor reports. The caller supplies a tenant-filtered queryset.
+def manpower_company_report_rows(suppliers):
+    for supplier in suppliers.iterator(chunk_size=200):
+        yield (
+            supplier.name,
+            ', '.join(part for part in (supplier.city, supplier.region) if part),
+            supplier.mobile or supplier.phone,
+            supplier.email,
+            ', '.join(supplier.tags or []),
+            str(supplier.active_trade_count),
+        )
+
+
+def subcontractor_company_report_rows(subcontractors):
+    for obj in subcontractors.iterator(chunk_size=200):
+        location = ', '.join(part for part in (obj.district, obj.city, obj.region) if part)
+        yield (
+            obj.display_name or obj.name,
+            location or obj.address or '',
+            obj.mobile or obj.company_phone,
+            obj.email or obj.company_email,
+            ', '.join(obj.tags or []),
+            str(obj.active_service_type_count),
+        )
+
+
+def workforce_catalog_report_rows(offers):
+    for offer in offers.iterator(chunk_size=200):
+        trade = offer.trade
+        quantity = str(offer.available_quantity) if offer.available_quantity is not None else '-'
+        rate = '-'
+        if offer.rate is not None:
+            rate = f'{offer.currency or "SAR"} {_decimal(offer.rate)} / {offer.get_rate_basis_display()}'
+            if offer.rate_valid_until:
+                rate += f'\nValid to {_date(offer.rate_valid_until)}'
+        if offer.overtime_rate is not None:
+            rate += f'\nOT: {offer.currency or "SAR"} {_decimal(offer.overtime_rate)}'
+        yield (
+            '\n'.join(filter(None, (trade.name, trade.code, trade.category))),
+            offer.get_availability_display(),
+            quantity,
+            rate,
+            offer.work_location or '-',
+            offer.mobilization_lead_time or '-',
+            _date(timezone.localtime(offer.last_verified_at)) if offer.last_verified_at else 'Never',
+        )
+
+
+def subcontractor_catalog_report_rows(offers):
+    for offer in offers.iterator(chunk_size=200):
+        service = offer.service
+        rate = '-'
+        if offer.rate is not None:
+            rate = f'{offer.currency or "SAR"} {_decimal(offer.rate)} / {offer.get_rate_basis_display()}'
+            if offer.rate_valid_until:
+                rate += f'\nValid to {_date(offer.rate_valid_until)}'
+        yield (
+            '\n'.join(filter(None, (service.name, service.code, service.category))),
+            offer.scope_description or '-',
+            offer.service_location or '-',
+            offer.get_availability_display(),
+            rate,
+            offer.lead_time or '-',
+            _date(timezone.localtime(offer.last_verified_at)) if offer.last_verified_at else 'Never',
+        )
+
+
+def render_manpower_directory_pdf(*, suppliers, total, status):
+    return _make_pdf(
+        title='Manpower Supplier Directory',
+        subtitle=f'Sourcing company references  /  Status: {status.title()}',
+        headings=('Supplier Name', 'Location', 'Mobile Number', 'Email Address', 'Tag', 'Active Trades'),
+        widths=(157, 152, 95, 147, 125, 92),
+        rows=manpower_company_report_rows(suppliers), total=total,
+        note='Active Trades counts distinct active worker types; it is not a count of Rental Payroll workers.',
+    )
+
+
+def render_subcontractor_directory_pdf(*, subcontractors, total, status):
+    return _make_pdf(
+        title='Subcontractor Directory',
+        subtitle=f'Sourcing company references  /  Status: {status.title()}',
+        headings=('Subcontractor Name', 'Location', 'Mobile Number', 'Email Address', 'Tag', 'Active Services'),
+        widths=(157, 152, 95, 147, 125, 92),
+        rows=subcontractor_company_report_rows(subcontractors), total=total,
+        note='Active Services counts distinct active service types, not contractual project commitments.',
+    )
+
+
+def render_workforce_catalog_pdf(*, supplier, offers, total):
+    return _make_pdf(
+        title=f'Workforce Catalog - {supplier.name}',
+        subtitle=f'Supplier code: {supplier.code}  /  Active workforce references only',
+        headings=('Trade / Code', 'Availability', 'Available Workers', 'Rate / Basis / OT', 'Work Location', 'Mobilization', 'Last Verified'),
+        widths=(149, 86, 77, 138, 114, 112, 92),
+        rows=workforce_catalog_report_rows(offers), total=total,
+        note='Workforce availability and rates are supplier-reported references, not Payroll counts or approved rates.',
+    )
+
+
+def render_subcontractor_catalog_pdf(*, subcontractor, offers, total):
+    return _make_pdf(
+        title=f'Service Catalog - {subcontractor.display_name or subcontractor.name}',
+        subtitle=f'Subcontractor code: {subcontractor.code}  /  Active service references only',
+        headings=('Service / Code', 'Scope', 'Location', 'Availability', 'Reference Rate', 'Lead Time', 'Last Verified'),
+        widths=(139, 153, 97, 78, 141, 68, 92),
+        rows=subcontractor_catalog_report_rows(offers), total=total,
+        note='Service rates and availability are sourcing reference snapshots, not approved contracts or project commitments.',
+    )

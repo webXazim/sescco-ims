@@ -32,8 +32,8 @@ assert "link.hasAttribute('data-unified-export-pdf')" in script
 assert 'query_only=False' in url_helper and '("" if query_only else request.path)' in url_helper
 for filename, expected in (
     ('templates/sourcing/vendors/list.html', 3),
-    ('templates/sourcing/manpower/list.html', 2),
-    ('templates/sourcing/subcontractors/list.html', 2),
+    ('templates/sourcing/manpower/list.html', 3),
+    ('templates/sourcing/subcontractors/list.html', 3),
 ):
     rows = [line for line in read(filename).splitlines() if 'data-unified-export' in line]
     assert len(rows) == expected and all('query_only=True' in line for line in rows), filename
