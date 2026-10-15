@@ -77,7 +77,7 @@ class IntegratedSourcingDirectoryTests(TestCase):
             self.assertNotContains(response, 'data-capabilities-slot')
 
     def test_capability_modal_add_actions_for_all_three_provider_types(self):
-        """Each capability tray links to the authorized existing creation form."""
+        """Each capability modal exposes an authorized link for in-modal editing."""
         for list_route, create_route, provider, label in (
             ('sourcing:vendor_list', 'sourcing:vendor_offer_create', self.vendor, 'Add Supply Item'),
             ('sourcing:manpower_supplier_list', 'sourcing:workforce_offer_create', self.supplier, 'Add Workforce'),
@@ -92,7 +92,7 @@ class IntegratedSourcingDirectoryTests(TestCase):
                 self.assertContains(response, label)
                 self.assertContains(response, 'data-capability-create')
                 self.assertContains(response, 'data-capability-refresh')
-                self.assertContains(response, 'target="_blank"')
+                self.assertNotContains(response, 'target="_blank"')
                 self.assertEqual(self.client.get(reverse(create_route, args=[provider.pk])).status_code, 200)
 
     def test_capability_modal_hides_add_actions_for_archived_providers(self):

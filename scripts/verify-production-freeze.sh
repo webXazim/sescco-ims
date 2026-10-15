@@ -38,6 +38,7 @@ python3 scripts/verify-sourcing-staged-categories.py
 python3 scripts/verify-sourcing-material-catalog.py
 python3 scripts/verify-sourcing-material-finder.py
 python3 scripts/verify-sourcing-vendor-verification.py
+python3 scripts/verify-sourcing-vendor-pdf-exports.py
 python3 scripts/verify-sourcing-manpower-master.py
 python3 scripts/verify-sourcing-trade-workforce-catalog.py
 python3 scripts/verify-sourcing-workforce-finder.py
@@ -46,6 +47,7 @@ python3 scripts/verify-sourcing-scale-hardening.py
 python3 scripts/verify-sourcing-security-certification.py
 python3 scripts/verify-sourcing-browser-e2e.py
 python3 scripts/verify-sourcing-provider-tags.py
+python3 scripts/verify-sourcing-capability-modal-create.py
 python3 scripts/verify-sourcing-subcontractor-upgrade09.py
 
 bash scripts/verify-payroll-frontend.sh

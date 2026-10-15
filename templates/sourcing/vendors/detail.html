@@ -74,7 +74,7 @@
 
 <section data-sourcing-panel="catalog" hidden>
   <article class="sourcing-card">
-    <header class="sourcing-card-head"><div><h2>Supply Catalog</h2><p>Reference items this Vendor may be able to supply. Quantities and rates are last-known sourcing information, not live stock.</p></div><div class="sourcing-card-actions"><span class="sourcing-count">{{ active_catalog_count }} active</span>{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">+ Add Supply Item</a>{% endif %}</div></header>
+    <header class="sourcing-card-head"><div><h2>Supply Catalog</h2><p>Reference items this Vendor may be able to supply. Quantities and rates are last-known sourcing information, not live stock.</p></div><div class="sourcing-card-actions"><span class="sourcing-count">{{ active_catalog_count }} active</span>{% if can_export_pdf %}<a class="sourcing-btn" href="{% url 'sourcing:vendor_catalog_pdf' vendor.id %}">Export catalog PDF</a>{% endif %}{% if can_manage and not vendor.archived_at and not vendor.deleted_at %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_offer_create' vendor.id %}">+ Add Supply Item</a>{% endif %}</div></header>
     <div class="sourcing-table-wrap sourcing-catalog-table-wrap">
       <table class="sourcing-table sourcing-table--catalog">
         <thead><tr><th>Material</th><th>Specification</th><th>Availability</th><th class="num">Qty</th><th class="num">Rate</th><th>Lead Time</th><th>Verified</th><th>Status</th><th></th></tr></thead>

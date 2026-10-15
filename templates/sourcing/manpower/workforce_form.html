@@ -1,7 +1,7 @@
 {% extends "sourcing/base.html" %}
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
 {% block extra_head %}{{ block.super }}{% load static %}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145" />{% endblock %}
-{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.145"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}
+{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:manpower_supplier_list' %}">Manpower Suppliers</a><span>/</span><a href="{% url 'sourcing:manpower_supplier_detail' supplier.id %}#workforce">{{ supplier.code }}</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
 <div class="sourcing-reference-banner"><strong>Reference-only manpower data.</strong><span>Quantity and rates are what this supplier last told SESCCO. They do not create Rental workers, assignments, timesheets, settlements or Payroll rates.</span></div>

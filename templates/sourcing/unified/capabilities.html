@@ -5,11 +5,11 @@
       <button type="button" class="sourcing-unified-cap-refresh" data-capability-refresh aria-label="Refresh capability list" title="Refresh matching capabilities">Refresh</button>
       {% if can_manage and not provider.archived_at and not provider.deleted_at %}
         {% if kind == 'vendor' %}
-          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:vendor_offer_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Supply Item (opens in new tab)">+ Add Supply Item <span aria-hidden="true">↗</span></a>
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:vendor_offer_create' provider.pk %}" aria-label="Add Supply Item">+ Add Supply Item</a>
         {% elif kind == 'manpower' %}
-          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:workforce_offer_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Workforce (opens in new tab)">+ Add Workforce <span aria-hidden="true">↗</span></a>
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:workforce_offer_create' provider.pk %}" aria-label="Add Workforce">+ Add Workforce</a>
         {% else %}
-          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:subcontractor_service_create' provider.pk %}" target="_blank" rel="noopener" title="Opens in a new tab" aria-label="Add Service (opens in new tab)">+ Add Service <span aria-hidden="true">↗</span></a>
+          <a class="sourcing-btn sourcing-btn--primary sourcing-unified-cap-add" data-capability-create href="{% url 'sourcing:subcontractor_service_create' provider.pk %}" aria-label="Add Service">+ Add Service</a>
         {% endif %}
       {% endif %}
     </div>

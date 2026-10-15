@@ -117,6 +117,7 @@
     });
     confirm.querySelector('[data-reference-discard]').addEventListener('click', () => finish(true));
     cancel.addEventListener('click', requestClose);
+    closeButton.addEventListener('click', requestClose);
     dialog.addEventListener('click', event => { if (event.target === dialog) requestClose(); });
     dialog.addEventListener('cancel', event => {
       event.preventDefault();

@@ -57,6 +57,7 @@ from .forms import (
     SourcingImportUploadForm,
     sourcing_material_categories,
 )
+from .pdf_exports import MAX_PDF_ROWS, render_vendor_directory_pdf, render_vendor_catalog_pdf
 from .exchange import (
     EXPORT_DATASETS,
     IMPORT_DATASETS,
@@ -657,6 +658,54 @@ def vendor_list(request: HttpRequest) -> HttpResponse:
     return render(request, "sourcing/vendors/list.html", context)
 
 
+
+@login_required
+@require_http_methods(["GET"])
+def vendor_directory_pdf(request: HttpRequest) -> HttpResponse:
+    """Print all directory matches (not merely the visible pagination page)."""
+    _require_vendor_view(request)
+    if not _can_export_dataset(_membership(request), "vendors"):
+        raise PermissionDenied("Vendor view and Sourcing export authority are required.")
+    directory = vendor_directory_page(company=request.company, params=request.GET)
+    queryset = directory.page_obj.paginator.object_list
+    total = directory.page_obj.paginator.count
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many matches for a single PDF; narrow the directory filters.", status=422, content_type="text/plain")
+    payload = render_vendor_directory_pdf(vendors=queryset, total=total, status=directory.status)
+    response = HttpResponse(payload, content_type="application/pdf")
+    response["Content-Disposition"] = 'attachment; filename="sourcing-vendors.pdf"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@require_http_methods(["GET"])
+def vendor_catalog_pdf(request: HttpRequest, vendor_id) -> HttpResponse:
+    """Print active supply items of one vendor, with company-scoped access."""
+    _require_vendor_view(request)
+    if not _can_export_dataset(_membership(request), "vendor_catalog"):
+        raise PermissionDenied("Vendor view and Sourcing export authority are required.")
+    vendor = get_object_or_404(
+        SourcingVendor.objects.for_company(request.company).filter(deleted_at__isnull=True),
+        pk=vendor_id,
+    )
+    offers = (
+        SourcingVendorOffer.objects.for_company(request.company)
+        .filter(vendor=vendor, is_active=True, material__company=request.company, material__is_active=True)
+        .select_related("material")
+        .order_by("material__normalized_name", "pk")
+    )
+    total = offers.count()
+    if total > MAX_PDF_ROWS:
+        return HttpResponse("Too many supply items for a single PDF; contact your administrator.", status=422, content_type="text/plain")
+    payload = render_vendor_catalog_pdf(vendor=vendor, offers=offers, total=total)
+    response = HttpResponse(payload, content_type="application/pdf")
+    response["Content-Disposition"] = 'attachment; filename="vendor-supply-catalog.pdf"'
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
 @login_required
 def vendor_create(request: HttpRequest) -> HttpResponse:
     _require_vendor_manage(request)
@@ -853,6 +902,7 @@ def vendor_detail(request: HttpRequest, vendor_id) -> HttpResponse:
         catalog_page_sizes=MATERIAL_PAGE_SIZES,
         history=vendor_history(company=request.company, vendor=vendor),
         can_manage=membership_can_manage_vendor_sourcing(_membership(request)),
+        can_export_pdf=_can_export_dataset(_membership(request), "vendor_catalog"),
         retention_days=TRASH_RETENTION_DAYS,
     )
     return render(request, "sourcing/vendors/detail.html", context)

@@ -1,7 +1,7 @@
 {% extends "sourcing/base.html" %}
 {% load static sourcing_directory_urls %}
 {% block title %}Vendors · {{ APP_NAME }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.127">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'sourcing/css/unified-directory.css' %}?v=1.0.146"><link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145">{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--directory">
   <div class="sourcing-page-head__title">
@@ -12,6 +12,7 @@
     {% if can_manage %}<a class="sourcing-btn sourcing-btn--primary" href="{% url 'sourcing:vendor_create' %}">+ New Vendor</a>{% endif %}
     {% if SOURCING_ACCESS.export %}
     <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendors' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export companies</a>
+    <a class="sourcing-btn" data-unified-export data-unified-export-pdf href="{% url 'sourcing:vendor_directory_pdf' %}{% sourcing_directory_url page=None %}">Companies PDF</a>
     <a class="sourcing-btn" data-unified-export href="{% url 'sourcing:data_export' 'vendor_catalog' %}{% sourcing_directory_url unified='1' format='xlsx' page=None %}">Export capabilities</a>
     {% endif %}
   </div>
@@ -140,4 +141,4 @@
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.127"></script>{% endblock %}
+{% block scripts %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/unified-directory.js' %}?v=1.0.147"></script>{% endblock %}

@@ -1,7 +1,7 @@
 {% extends "sourcing/base.html" %}
 {% block title %}{{ page_title }} · {{ APP_NAME }}{% endblock %}
 {% block extra_head %}{{ block.super }}{% load static %}<link rel="stylesheet" href="{% static 'sourcing/css/reference-lookup.css' %}?v=1.0.145" />{% endblock %}
-{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.145"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}
+{% block scripts %}{{ block.super }}{% load static %}<script defer src="{% static 'sourcing/js/reference-lookup.js' %}?v=1.0.146"></script><script defer src="{% static 'sourcing/js/sourcing-page-draft.js' %}?v=1.0.145"></script>{% endblock %}
 {% block content %}
 <section class="sourcing-page-head sourcing-page-head--compact"><div><nav class="sourcing-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'sourcing:home' %}">Sourcing Directory</a><span>/</span><a href="{% url 'sourcing:vendor_list' %}">Vendors</a><span>/</span><a href="{% url 'sourcing:vendor_detail' vendor.id %}#catalog">{{ vendor.code }}</a><span>/</span><strong>{{ page_title }}</strong></nav><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></section>
 <div class="sourcing-reference-banner"><strong>Reference-only sourcing data.</strong><span>Quantity and rate are what the Vendor last told SESCCO. They do not create stock, purchase costs, payables or accounting entries.</span></div>
