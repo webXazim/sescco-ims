@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404, redirect, render
@@ -9,6 +10,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
+from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
@@ -286,7 +288,10 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
             code=code, deleted_at__isnull=True
         )
-        return render(request, self.template_name, self._context(project))
+        context = self._context(project)
+        if is_delete_dialog_request(request):
+            return delete_dialog_response(context)
+        return render(request, self.template_name, context)
 
     def post(self, request, code):
         project = get_object_or_404(
@@ -294,14 +299,19 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             code=code, deleted_at__isnull=True
         )
         context = self._context(project)
+        is_dialog = is_delete_dialog_request(request)
         if not context["delete_allowed"]:
             context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This project cannot be deleted."
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
             context.update(
                 form_error="Enter a reason and confirm the effect.",
                 reason=request.POST.get("reason", ""),
             )
+            if is_dialog:
+                return delete_dialog_response(context, status=400)
             return render(request, self.template_name, context, status=400)
         try:
             trash_unused_project(
@@ -313,8 +323,12 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             )
         except ValidationError as exc:
             context.update(form_error=exc.messages[0], reason=request.POST.get("reason", ""))
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         messages.success(request, f"Project {code} was deleted with a 30-day recovery window.")
+        if is_dialog:
+            return JsonResponse({"redirect_url": reverse("projects:list")})
         return redirect("projects:list")
 
 

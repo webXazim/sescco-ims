@@ -1,0 +1,23 @@
+SESCCO IMS — Inline Delete Confirmation Modal
+
+Changes:
+- Projects: Delete in project-detail actions now opens an inline confirmation modal.
+- Stock records: Delete from stock-item detail and stock dropdowns opens the same modal.
+- The modal fetches current deletion eligibility and effects; blocked deletions show reasons.
+- Successful submission moves the record to Trash and redirects to the appropriate list.
+- Errors/invalid confirmation stay in the dialog.
+- Original server authorization, typed confirmation token, reason, acknowledgement, tenant scope, history rules, and 30-day recovery are unchanged.
+- Non-JavaScript fallback confirmation pages are retained to preserve accessibility and existing behavior.
+- No model/database migrations are needed.
+
+Validation done:
+- Python source compile check passed.
+- JavaScript syntax check passed.
+- Headless browser smoke tests with simulated HTTP responses: open/close, blocked record, failed confirmation, successful POST redirect passed.
+- Django integration/regression tests added, but could not execute in this sandbox because Django is not installed and package access is unavailable.
+
+When deploying:
+- Copy the changed files to the same relative locations in your existing source tree, or use the complete source zip.
+- Rebuild/restart your existing application using your usual deployment workflow.
+- Run in your own Django environment: python manage.py test apps.projects.tests.test_project_delete_modal apps.inventory.tests.test_stock_delete_modal
+- Keep normal deployment backup and staging validation procedures.

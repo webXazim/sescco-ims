@@ -20,7 +20,7 @@
           <form method="post" action="{% url 'inventory:status' item.reference %}">{% csrf_token %}<input type="hidden" name="action" value="restore"><button class="row-action-option" type="submit"><span>Restore record</span><small>Return it to active inventory</small></button></form>
         {% else %}<div class="row-action-option row-action-disabled" aria-disabled="true"><span>Restore record</span><small>Restore its project, location and unit first</small></div>{% endif %}
       {% endif %}
-      {% if "shared.trash.manage" in ACCESS_CONTEXT.effective_access.permissions %}<div class="row-action-divider"></div><a class="row-action-option row-action-danger" href="{% url 'inventory:delete' item.reference %}"><span>Delete unused</span><small>Only available when no operational history exists</small></a>{% endif %}
+      {% if "shared.trash.manage" in ACCESS_CONTEXT.effective_access.permissions %}<div class="row-action-divider"></div><a class="row-action-option row-action-danger" data-inventory-delete href="{% url 'inventory:delete' item.reference %}"><span>Delete unused</span><small>Only available when no operational history exists</small></a>{% endif %}
     {% endif %}
   </div>
 </details>

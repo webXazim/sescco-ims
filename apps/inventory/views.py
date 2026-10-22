@@ -17,6 +17,7 @@ from django.views.generic import DetailView, ListView, UpdateView
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
 from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
+from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
@@ -651,7 +652,10 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
             restrict_inventory_stock(StockItem.objects.for_company(request.company), request.company_membership),
             reference=reference, deleted_at__isnull=True
         )
-        return render(request, self.template_name, self._context(stock_item))
+        context = self._context(stock_item)
+        if is_delete_dialog_request(request):
+            return delete_dialog_response(context)
+        return render(request, self.template_name, context)
 
     def post(self, request, reference):
         stock_item = get_object_or_404(
@@ -659,11 +663,16 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
             reference=reference, deleted_at__isnull=True
         )
         context = self._context(stock_item)
+        is_dialog = is_delete_dialog_request(request)
         if not context["delete_allowed"]:
             context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This stock record cannot be deleted."
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
             context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
+            if is_dialog:
+                return delete_dialog_response(context, status=400)
             return render(request, self.template_name, context, status=400)
         try:
             trash_unused_stock_item(
@@ -675,8 +684,12 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
             )
         except ValidationError as exc:
             context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         messages.success(request, f"{stock_item.material_name} was moved to Trash for 30 days.")
+        if is_dialog:
+            return JsonResponse({"redirect_url": reverse("inventory:list")})
         return redirect("inventory:list")
 
 
