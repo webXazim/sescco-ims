@@ -495,7 +495,7 @@ class InventoryWorkspaceTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.status, StockItem.Status.ACTIVE)
 
-    def test_stock_delete_is_admin_only_and_protects_history(self):
+    def test_stock_delete_is_admin_only_and_preserves_history(self):
         unused = self.create_item()
         delete_url = reverse("inventory:delete", kwargs={"reference": unused.reference})
         response = self.client.post(
@@ -533,11 +533,12 @@ class InventoryWorkspaceTests(TestCase):
                 "acknowledge": "yes",
             },
         )
-        self.assertEqual(response.status_code, 409)
-        self.assertContains(response, "Archive it instead of deleting it", status_code=409)
+        self.assertRedirects(response, reverse("inventory:list"))
         protected.refresh_from_db()
-        self.assertIsNone(protected.deleted_at)
+        self.assertIsNotNone(protected.deleted_at)
         self.assertTrue(StockItem.objects.filter(pk=protected.pk).exists())
+        self.assertGreater(protected.current_quantity, 0)
+        self.assertTrue(protected.movements.exists())
 
     def test_stock_tables_use_role_aware_action_dropdowns(self):
         item = self.create_item()
@@ -730,7 +731,7 @@ class InventoryWorkspaceTests(TestCase):
 
         confirmation = self.client.get(delete_url)
         self.assertContains(confirmation, str(item.reference)[:8].upper())
-        self.assertContains(confirmation, "unused stock identity")
+        self.assertContains(confirmation, "Remove this record from active Inventory")
         self.assertEqual(
             self.client.post(
                 delete_url, {"confirmation": str(item.reference)[:8].upper()}

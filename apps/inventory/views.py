@@ -629,8 +629,8 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
         decision = lifecycle_decision(stock_item, LifecycleAction.DELETE)
         return {
             "page_key": "inventory",
-            "page_title": "Delete unused stock record",
-            "page_subtitle": "Delete is reserved for an erroneous stock identity that has never acquired operational history.",
+            "page_title": "Delete stock record",
+            "page_subtitle": "Remove this record from active Inventory. Existing balances and history remain preserved for audit and recovery.",
             "record_label": str(stock_item),
             "record_type": "Stock record",
             "confirmation_phrase": decision.confirmation_token,
@@ -642,8 +642,10 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
                 f"Current balance: {stock_item.quantity_display}",
                 f"Movement entries: {stock_item.movements.count()}",
                 f"Attachments: {stock_item.documents.count()}",
-                "Any balance, movement, import, transfer, or attachment history blocks deletion and requires Archive instead.",
-                "An unused deleted record remains recoverable from Trash for 30 days.",
+                "This stock record will disappear from active Inventory and cannot receive further movements while deleted.",
+                "Any remaining quantity will stop appearing in active Inventory totals. This does not create a stock issue, adjustment, or reversal.",
+                "Existing movements, transfers, documents, import references, and audit history remain attached and unchanged.",
+                "You can restore the stock record from Trash for 30 days; historical records remain protected afterwards.",
             ),
         }
 
@@ -687,7 +689,7 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
             if is_dialog:
                 return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        messages.success(request, f"{stock_item.material_name} was moved to Trash for 30 days.")
+        messages.success(request, f"{stock_item.material_name} was moved to Trash for 30 days. Its movement history and balance were preserved.")
         if is_dialog:
             return JsonResponse({"redirect_url": reverse("inventory:list")})
         return redirect("inventory:list")

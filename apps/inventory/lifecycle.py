@@ -93,6 +93,7 @@ class StockItemLifecyclePolicy(LifecyclePolicy):
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DELETE})
 
     def confirmation_token(self, instance: StockItem) -> str:
         return str(instance.reference)[:8].upper()
@@ -129,9 +130,11 @@ class StockItemLifecyclePolicy(LifecyclePolicy):
                 return (LifecycleBlocker(code="unit_inactive", field="stock", message="Restore the unit before restoring this stock record."),)
             return ()
         if action is LifecycleAction.DELETE:
-            total = sum(evidence.values())
-            if total:
-                return (LifecycleBlocker(code="historical_records_exist", field="stock", label="Inventory history", count=total, message="This stock record has balance, movement, document, import, or transfer history. Archive it instead of deleting it."),)
+            # A stock Delete is a recoverable, non-cascading soft deletion, not
+            # an inventory movement or a physical database erase. Keep balances,
+            # attachments, movements, transfers and import references attached
+            # to this hidden record so the audit trail can be recovered intact.
+            # The 30-day Trash window and tombstone retention protect history.
             return ()
         return ()
 

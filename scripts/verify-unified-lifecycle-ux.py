@@ -136,8 +136,8 @@ require(
 )
 require(
     "templates/inventory/stockitem_detail.html",
-    "Delete unused record",
-    "Archive preserves real Inventory history",
+    "Delete stock record",
+    "Movements, transfers, documents and audit history are preserved",
 )
 require(
     "templates/inventory/unit_form.html",

@@ -1,13 +1,21 @@
-"""Stock deletion dialog protects historical inventory and company access."""
+"""Stock delete dialog hides operational records without erasing their history."""
 
 from decimal import Decimal
+from datetime import timedelta
+from uuid import uuid4
+
+from django.core.management import call_command
+from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
 from apps.core.tests.tenant import grant_company_access, primary_company
-from apps.inventory.models import StockItem, Unit
+from apps.inventory.models import StockItem, Unit, StockMovement
+from apps.inventory.services.stock import add_stock, use_stock, InactiveStockError
+from apps.inventory.selectors import stock_items, stock_movements
 from apps.projects.models import Project
 
 
@@ -68,28 +76,103 @@ class StockDeleteDialogTests(TestCase):
         self.item.refresh_from_db()
         self.assertIsNotNone(self.item.deleted_at)
 
-    def test_in_use_stock_is_blocked_inside_modal(self):
-        protected = StockItem.objects.create(
+    def test_quantity_and_movement_history_can_be_soft_deleted_and_restored(self):
+        result = add_stock(
+            user=self.admin,
+            idempotency_key=uuid4(),
+            quantity=Decimal("12"),
+            movement_date=timezone.localdate(),
             project=self.project,
             material_name="Existing material",
             supplier_name="Supplier 2",
             supplier_phone="0500000002",
             unit=self.unit,
-            current_quantity=Decimal("12"),
         )
+        protected = result.movement.stock_item
+        movement_id = result.movement.pk
         self.client.force_login(self.admin)
         url = reverse("inventory:delete", args=[protected.reference])
         details = self.client.get(url, **self.request_kwargs())
-        self.assertFalse(details.json()["delete_allowed"])
-        self.assertTrue(details.json()["blockers"])
+        self.assertEqual(details.status_code, 200)
+        self.assertTrue(details.json()["delete_allowed"])
+        self.assertEqual(details.json()["blockers"], [])
+        self.assertTrue(any("remaining quantity" in effect for effect in details.json()["effects"]))
+        self.assertTrue(any("audit history" in effect for effect in details.json()["effects"]))
+
         response = self.client.post(url, {
             "confirmation": str(protected.reference)[:8].upper(),
-            "reason": "Mistake", "acknowledge": "yes",
+            "reason": "Remove incorrect stock record", "acknowledge": "yes",
         }, **self.request_kwargs())
-        self.assertEqual(response.status_code, 409)
-        self.assertFalse(response.json()["delete_allowed"])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["redirect_url"], reverse("inventory:list"))
+        protected.refresh_from_db()
+        self.assertIsNotNone(protected.deleted_at)
+        self.assertEqual(protected.current_quantity, Decimal("12"))
+        self.assertEqual(protected.deletion_reason, "Remove incorrect stock record")
+        self.assertFalse(stock_items(self.company).filter(pk=protected.pk).exists())
+        self.assertFalse(stock_movements(self.company).filter(pk=movement_id).exists())
+        self.assertEqual(StockMovement.objects.get(pk=movement_id).stock_item_id, protected.pk)
+        self.assertEqual(StockMovement.objects.get(pk=movement_id).new_balance, Decimal("12"))
+
+        # The deleted inventory identity cannot continue receiving operations.
+        with self.assertRaises(InactiveStockError):
+            use_stock(
+                stock_item=protected,
+                user=self.admin,
+                idempotency_key=uuid4(),
+                quantity=Decimal("1"),
+                movement_date=timezone.localdate(),
+                purpose="Should be blocked",
+            )
+
+        response = self.client.post(reverse("inventory:trash_restore", args=["stock", protected.reference]))
+        self.assertEqual(response.status_code, 302)
         protected.refresh_from_db()
         self.assertIsNone(protected.deleted_at)
+        self.assertEqual(protected.current_quantity, Decimal("12"))
+        self.assertTrue(stock_items(self.company).filter(pk=protected.pk).exists())
+        self.assertTrue(stock_movements(self.company).filter(pk=movement_id).exists())
+
+    def test_expired_deleted_stock_with_history_keeps_immutable_tombstone(self):
+        result = add_stock(
+            user=self.admin,
+            idempotency_key=uuid4(),
+            quantity=Decimal("1"),
+            movement_date=timezone.localdate(),
+            project=self.project,
+            material_name="Historical material",
+            supplier_name="Supplier 3",
+            supplier_phone="0500000003",
+            unit=self.unit,
+        )
+        item = result.movement.stock_item
+        self.client.force_login(self.admin)
+        self.client.post(reverse("inventory:delete", args=[item.reference]), {
+            "confirmation": str(item.reference)[:8].upper(),
+            "reason": "Incorrect record", "acknowledge": "yes",
+        })
+        item.refresh_from_db()
+        self.assertIsNotNone(item.deleted_at)
+        item.purge_after = timezone.now() - timedelta(days=1)
+        item.save(update_fields=["purge_after"])
+        call_command("purge_trash")
+        item.refresh_from_db()
+        self.assertIsNotNone(item.deleted_at)
+        self.assertIsNone(item.purge_after)
+        self.assertEqual(item.current_quantity, Decimal("1"))
+        self.assertTrue(StockMovement.objects.filter(pk=result.movement.pk).exists())
+
+    def test_service_enforces_reason_and_confirmation(self):
+        from apps.inventory.services.lifecycle import trash_unused_stock_item
+        from apps.accounts.models import CompanyMembership
+        membership = CompanyMembership.objects.get(user=self.admin, company=self.company)
+        with self.assertRaises(ValidationError):
+            trash_unused_stock_item(
+                actor_membership=membership, stock_item_id=self.item.pk,
+                confirmation=str(self.item.reference)[:8].upper(), reason="",
+            )
+        self.item.refresh_from_db()
+        self.assertIsNone(self.item.deleted_at)
 
     def test_permission_is_enforced_for_get_and_post(self):
         self.client.force_login(self.member)

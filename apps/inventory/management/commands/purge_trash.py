@@ -20,6 +20,11 @@ def _hard_delete_is_history_safe(instance) -> bool:
     relationships are also treated as retained tombstones.
     """
 
+    # An active balance cannot be physically discarded at Trash expiry even
+    # if legacy/imported data lacks a movement row. Keep a hidden tombstone.
+    if isinstance(instance, StockItem) and instance.current_quantity:
+        return False
+
     using = router.db_for_write(instance.__class__, instance=instance)
     collector = Collector(using=using, origin=instance)
     try:

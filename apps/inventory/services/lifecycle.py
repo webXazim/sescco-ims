@@ -70,10 +70,10 @@ def _restore(*, instance, actor_membership: CompanyMembership, audit_action: str
 
 
 def _trash_unused(*, instance, actor_membership: CompanyMembership, confirmation: str, reason: str, audit_action: str, request=None):
-    decision = require_lifecycle_action(instance, LifecycleAction.DELETE, confirmation=confirmation)
+    decision = require_lifecycle_action(instance, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = _snapshot(instance)
     move_to_trash(instance, user=actor_membership.user, reason=reason)
-    record_lifecycle_action(instance=instance, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(instance), reason=reason, audit_action=audit_action, metadata={"guard": "unused-master-only", "retention_days": 30}, request=request)
+    record_lifecycle_action(instance=instance, decision=decision, actor_membership=actor_membership, before=before, after=_snapshot(instance), reason=reason, audit_action=audit_action, metadata={"mode": "recoverable-soft-delete", "history_preserved": True, "retention_days": 30}, request=request)
     return instance
 
 
@@ -137,7 +137,9 @@ def restore_stock_item(*, actor_membership, stock_item_id, request: HttpRequest 
 def trash_unused_stock_item(*, actor_membership, stock_item_id, confirmation, reason, request: HttpRequest | None = None):
     _require_manage_inventory(actor_membership)
     item = StockItem.objects.select_for_update().get(pk=stock_item_id, company=actor_membership.company, deleted_at__isnull=True)
-    return _trash_unused(instance=item, actor_membership=actor_membership, confirmation=confirmation, reason=reason, audit_action="inventory.stock.trashed_unused", request=request)
+    # Preserve the stock balance and every historical foreign key. Deletion
+    # merely hides the record from normal operations until Trash recovery.
+    return _trash_unused(instance=item, actor_membership=actor_membership, confirmation=confirmation, reason=reason, audit_action="inventory.stock.trashed", request=request)
 
 
 @transaction.atomic
