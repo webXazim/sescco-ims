@@ -1,35 +1,35 @@
-{# Shared with Inventory stock items and the Inventory/Payroll project master. #}
+{# Shared delete confirmation for Inventory stock items and Projects. #}
 <dialog class="inventory-delete-dialog" data-inventory-delete-dialog aria-labelledby="inventory-delete-dialog-title" aria-describedby="inventory-delete-dialog-description">
   <div class="inventory-delete-dialog__panel">
     <header class="inventory-delete-dialog__header">
       <div class="inventory-delete-dialog__heading">
-        <span class="inventory-delete-dialog__eyebrow">Delete record</span>
-        <h2 id="inventory-delete-dialog-title" data-delete-title>Confirm deletion</h2>
+        <span class="inventory-delete-dialog__eyebrow">Confirm deletion</span>
+        <h2 id="inventory-delete-dialog-title" data-delete-title>Delete record</h2>
         <p id="inventory-delete-dialog-description" data-delete-subtitle></p>
       </div>
       <button class="inventory-delete-dialog__close" type="button" data-delete-close aria-label="Close confirmation">&times;</button>
     </header>
     <div class="inventory-delete-dialog__content">
-      <p class="inventory-delete-dialog__loading" data-delete-loading role="status">Checking this record and its deletion rules…</p>
+      <p class="inventory-delete-dialog__loading" data-delete-loading role="status">Checking record…</p>
       <div data-delete-details hidden>
         <div class="inventory-delete-dialog__record"><span data-delete-type>Record</span><strong data-delete-record></strong></div>
-        <h3 class="inventory-delete-dialog__section-title">What happens next</h3>
-        <ul class="inventory-delete-dialog__effects" data-delete-effects></ul>
-        <p class="inventory-delete-dialog__notice" data-delete-notice>Moved records can be restored from Trash for <strong data-delete-retention>30 days</strong>. Protected operational and audit history is not erased.</p>
         <div class="alert alert-danger inventory-delete-dialog__error" data-delete-error role="alert" hidden></div>
         <div class="alert alert-warning inventory-delete-dialog__blocked" data-delete-blocked hidden>
           <strong>This record cannot be deleted.</strong>
           <ul data-delete-blockers></ul>
-          <p>Keep the record and use Archive when permitted.</p>
         </div>
         <form method="post" class="inventory-delete-dialog__form" data-delete-form>
           {% csrf_token %}
-          <label class="field"><span class="field-label">Reason for deletion <span aria-hidden="true">*</span></span><textarea class="textarea" name="reason" rows="2" maxlength="1000" required placeholder="Why is this record being deleted?"></textarea><small class="help">The reason is retained in Trash for administrators.</small></label>
-          <label class="field"><span class="field-label">Type <strong data-delete-token></strong> to confirm <span aria-hidden="true">*</span></span><input class="input" name="confirmation" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
-          <label class="inventory-delete-dialog__check"><input type="checkbox" name="acknowledge" value="yes" required><span>I understand that this record will be moved to Trash and its operational scope will change.</span></label>
-          <div class="inventory-delete-dialog__actions"><button class="btn btn-ghost" type="button" data-delete-close>Cancel</button><button class="btn btn-danger inventory-delete-dialog__submit" type="submit" data-delete-submit>Move to Trash</button></div>
+          <label class="field" for="inventory-delete-name">
+            <span class="field-label">Type <strong data-delete-token></strong> to delete</span>
+            <input class="input" id="inventory-delete-name" name="confirmation" autocomplete="off" autocapitalize="off" spellcheck="false" required data-delete-name>
+          </label>
+          <div class="inventory-delete-dialog__actions">
+            <button class="btn btn-ghost" type="button" data-delete-close>Cancel</button>
+            <button class="btn btn-danger inventory-delete-dialog__submit" type="submit" data-delete-submit disabled>Delete</button>
+          </div>
         </form>
-        <div class="inventory-delete-dialog__actions inventory-delete-dialog__blocked-actions" data-delete-blocked-actions hidden><button class="btn" type="button" data-delete-close>Close</button></div>
+        <div class="inventory-delete-dialog__actions" data-delete-blocked-actions hidden><button class="btn" type="button" data-delete-close>Close</button></div>
       </div>
     </div>
   </div>

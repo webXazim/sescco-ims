@@ -28,11 +28,11 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
     supported_actions = frozenset(
         {LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE}
     )
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DELETE})
+    reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
 
     def confirmation_token(self, instance: Project) -> str:
-        return instance.code
+        return instance.name
 
     def dependency_evidence(self, instance: Project, action: LifecycleAction) -> Mapping[str, int]:
         if action is LifecycleAction.ARCHIVE:

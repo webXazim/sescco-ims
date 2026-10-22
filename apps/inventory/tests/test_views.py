@@ -501,7 +501,7 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             delete_url,
             {
-                "confirmation": str(unused.reference)[:8].upper(),
+                "confirmation": unused.material_name,
                 "reason": "Duplicate record",
                 "acknowledge": "yes",
             },
@@ -513,7 +513,7 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             delete_url,
             {
-                "confirmation": str(unused.reference)[:8].upper(),
+                "confirmation": unused.material_name,
                 "reason": "Duplicate record",
                 "acknowledge": "yes",
             },
@@ -528,7 +528,7 @@ class InventoryWorkspaceTests(TestCase):
         response = self.client.post(
             reverse("inventory:delete", kwargs={"reference": protected.reference}),
             {
-                "confirmation": str(protected.reference)[:8].upper(),
+                "confirmation": protected.material_name,
                 "reason": "Entered twice",
                 "acknowledge": "yes",
             },
@@ -724,25 +724,25 @@ class InventoryWorkspaceTests(TestCase):
         self.assertIsNone(item.unit.deleted_at)
         self.assertIsNone(self.supplier.deleted_at)
 
-    def test_trash_requires_detailed_confirmation_and_can_restore_before_expiry(self):
+    def test_trash_requires_name_confirmation_and_can_restore_before_expiry(self):
         item = self.create_item()
         self.client.force_login(self.admin)
         delete_url = reverse("inventory:delete", kwargs={"reference": item.reference})
 
         confirmation = self.client.get(delete_url)
-        self.assertContains(confirmation, str(item.reference)[:8].upper())
+        self.assertContains(confirmation, item.material_name)
         self.assertContains(confirmation, "Remove this record from active Inventory")
         self.assertEqual(
             self.client.post(
-                delete_url, {"confirmation": str(item.reference)[:8].upper()}
+                delete_url, {"confirmation": "wrong name"}
             ).status_code,
-            400,
+            409,
         )
 
         self.client.post(
             delete_url,
             {
-                "confirmation": str(item.reference)[:8].upper(),
+                "confirmation": item.material_name,
                 "reason": "Duplicate purchase entry",
                 "acknowledge": "yes",
             },

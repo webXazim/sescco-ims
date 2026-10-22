@@ -1,32 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><div class="eyebrow">{{ record_type }} deletion</div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
-<div class="detail-grid delete-confirm-grid">
-  <section class="card">
-    <div class="card-head"><div><h2 class="card-title">{{ record_label }}</h2><div class="card-meta">This is a recoverable deletion for {{ retention_days }} days.</div></div></div>
-    <div class="card-body">
-      <h3 class="form-section-title">What will happen</h3>
-      <ul class="effect-list">{% for effect in effects %}<li>{{ effect }}</li>{% endfor %}</ul>
-      <div class="alert alert-warning section-gap"><strong>Recovery window</strong><br>You can restore this record from Trash until the displayed purge date. After {{ retention_days }} days it becomes unavailable for restoration; protected audit evidence remains an internal tombstone where required.</div>
-    </div>
-  </section>
-  <aside class="card">
-    <div class="card-head"><h2 class="card-title">Confirm deletion</h2></div>
-    <div class="card-body form-stack">
-      {% if form_error %}<div class="form-error">{{ form_error }}</div>{% endif %}
-      {% if delete_allowed %}
+<div class="page-head"><div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
+<section class="card" style="max-width:480px">
+  <div class="card-body form-stack">
+    <p><strong>{{ record_label }}</strong></p>
+    {% if form_error %}<div class="alert alert-danger">{{ form_error }}</div>{% endif %}
+    {% if delete_allowed %}
       <form method="post" class="form-stack">{% csrf_token %}
-        <label class="field"><span>Reason for deletion</span><textarea class="textarea" name="reason" rows="4" required>{{ reason }}</textarea><small>This reason is shown in Trash for administrators.</small></label>
-        <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong></span><input class="input" name="confirmation" autocomplete="off" required></label>
-        <label class="confirm-check"><input type="checkbox" name="acknowledge" value="yes" required><span>I understand the effects above and the {{ retention_days }}-day recovery limit.</span></label>
-        <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn btn-danger" type="submit">Move to Trash</button></div>
+        <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong> to delete</span><input class="input" name="confirmation" autocomplete="off" required autofocus></label>
+        <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn btn-danger" type="submit">Delete</button></div>
       </form>
-      {% else %}
-      <div class="alert alert-warning"><strong>Deletion is not available</strong>{% if delete_blockers %}<ul class="effect-list">{% for blocker in delete_blockers %}<li>{{ blocker.message }}{% if blocker.count is not None %} ({{ blocker.count }}){% endif %}</li>{% endfor %}</ul>{% endif %}</div>
-      <p class="micro">Keep this historical record and use Archive instead.</p>
-      <div class="form-actions"><a class="btn" href="{{ cancel_url }}">Back</a></div>
-      {% endif %}
-    </div>
-  </aside>
-</div>
+    {% else %}
+      <div class="alert alert-warning"><strong>Deletion is unavailable</strong><ul>{% for blocker in delete_blockers %}<li>{{ blocker.message }}</li>{% endfor %}</ul></div>
+      <a class="btn" href="{{ cancel_url }}">Back</a>
+    {% endif %}
+  </div>
+</section>
 {% endblock %}

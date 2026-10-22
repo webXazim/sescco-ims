@@ -268,7 +268,7 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         return {
             "page_key": "projects",
             "page_title": "Delete project",
-            "page_subtitle": "Delete the project with a 30-day recovery window without erasing protected Inventory or Rental Manpower history.",
+            "page_subtitle": "Type the project name below to move it to Trash. Recoverable for 30 days.",
             "record_label": str(project),
             "record_type": "Project",
             "confirmation_phrase": decision.confirmation_token,
@@ -305,24 +305,16 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             if is_dialog:
                 return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
-            context.update(
-                form_error="Enter a reason and confirm the effect.",
-                reason=request.POST.get("reason", ""),
-            )
-            if is_dialog:
-                return delete_dialog_response(context, status=400)
-            return render(request, self.template_name, context, status=400)
         try:
             trash_unused_project(
                 actor_membership=request.company_membership,
                 project_id=project.pk,
                 confirmation=request.POST.get("confirmation", ""),
-                reason=request.POST.get("reason", ""),
+                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
                 request=request,
             )
         except ValidationError as exc:
-            context.update(form_error=exc.messages[0], reason=request.POST.get("reason", ""))
+            context.update(form_error=exc.messages[0])
             if is_dialog:
                 return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)

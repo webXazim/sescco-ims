@@ -93,10 +93,9 @@ class StockItemLifecyclePolicy(LifecyclePolicy):
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
     confirmation_required_actions = frozenset({LifecycleAction.DELETE})
-    reason_required_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.DELETE})
 
     def confirmation_token(self, instance: StockItem) -> str:
-        return str(instance.reference)[:8].upper()
+        return instance.material_name
 
     def dependency_evidence(self, instance: StockItem, action: LifecycleAction) -> Mapping[str, int]:
         if action is LifecycleAction.ARCHIVE:

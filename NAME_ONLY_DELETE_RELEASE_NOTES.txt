@@ -1,0 +1,27 @@
+SESCCO IMS – compact name-only delete confirmation
+
+Inventory stock and Projects now ask only for the record name. There are no reason, acknowledgement checkbox, or random confirmation-code inputs.
+
+Inventory stock: type the material name as displayed in the confirmation (e.g., Safety best).
+Projects: type the project name rather than its project code.
+The matching field is checked by the browser for convenience and enforced again by the server against the live record. Case-insensitive; surrounding spaces ignored.
+Deletion is still admin/tenant restricted, audited, recoverable from Trash for 30 days, and preserves historical records. The automatically populated audit reason is 'Confirmed by typing the record name.' if no reason was supplied.
+
+No database migrations. Browser cache-busting version for CSS/JS updated to v1.0.2. Source and shell checksum manifests were regenerated; do not disable integrity verification.
+
+Based on SESCCO_IMS_Stock_Delete_History_Safe_Full_Source.zip (the most recent history-safe release), not the initial older ZIP.
+
+Deployment (recommended: patch only; back up server & database first):
+1. Upload SESCCO_IMS_Name_Only_Delete_Patch.zip to /tmp/ on your VPS.
+2. cd /opt/sites/ims
+3. unzip -o /tmp/SESCCO_IMS_Name_Only_Delete_Patch.zip -d /opt/sites/ims
+4. sha256sum -c merge/production-freeze.sha256
+5. sha256sum -c merge/shell-convergence-assets.sha256
+6. bash scripts/verify-production-freeze.sh
+7. Review and commit intended code changes as required by deployment source-fingerprint policy, then deploy with sudo bash ./scripts/deploy-production.sh.
+8. Hard refresh site after deploying.
+
+Test in configured Django environment before production:
+python manage.py test apps.projects.tests.test_project_delete_modal apps.inventory.tests.test_stock_delete_modal apps.inventory.tests.test_views apps.projects.tests.test_projects --noinput
+
+Local environment had no Django package; Python/JS syntax and source-level scripts are verified, but database-integrated Django tests were not executed.

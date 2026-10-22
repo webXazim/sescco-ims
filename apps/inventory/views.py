@@ -630,7 +630,7 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
         return {
             "page_key": "inventory",
             "page_title": "Delete stock record",
-            "page_subtitle": "Remove this record from active Inventory. Existing balances and history remain preserved for audit and recovery.",
+            "page_subtitle": "Type the stock item name below to move it to Trash. Recoverable for 30 days.",
             "record_label": str(stock_item),
             "record_type": "Stock record",
             "confirmation_phrase": decision.confirmation_token,
@@ -671,21 +671,16 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
             if is_dialog:
                 return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
-            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
-            if is_dialog:
-                return delete_dialog_response(context, status=400)
-            return render(request, self.template_name, context, status=400)
         try:
             trash_unused_stock_item(
                 actor_membership=request.company_membership,
                 stock_item_id=stock_item.pk,
                 confirmation=request.POST.get("confirmation", ""),
-                reason=request.POST.get("reason", ""),
+                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
                 request=request,
             )
         except ValidationError as exc:
-            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            context.update(form_error=_operation_error_message(exc))
             if is_dialog:
                 return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)

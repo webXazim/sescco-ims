@@ -201,7 +201,7 @@ class ProjectWorkspaceTests(TestCase):
 
         response = self.client.post(
             delete_url,
-            {"confirmation": project.code, "reason": "Duplicate", "acknowledge": "yes"},
+            {"confirmation": project.name, "reason": "Duplicate", "acknowledge": "yes"},
         )
         self.assertRedirects(response, reverse("projects:list"))
         project.refresh_from_db()
@@ -225,7 +225,7 @@ class ProjectWorkspaceTests(TestCase):
         response = self.client.post(
             reverse("projects:delete", kwargs={"code": project.code}),
             {
-                "confirmation": project.code,
+                "confirmation": project.name,
                 "reason": "Project cancelled",
                 "acknowledge": "yes",
             },
