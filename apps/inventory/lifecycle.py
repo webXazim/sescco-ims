@@ -81,8 +81,10 @@ class SupplierLifecyclePolicy(LifecyclePolicy):
                 return (LifecycleBlocker(code="not_archived", field="supplier", message="This material supplier is not archived."),)
             return ()
         if action is LifecycleAction.DELETE:
-            if evidence.get("stock_records", 0):
-                return (LifecycleBlocker(code="historical_records_exist", field="supplier", label="Stock records", count=evidence["stock_records"], message="This supplier identity appears in Inventory history. Archive it instead of deleting it."),)
+            # Stock records copy supplier name/phone at creation and do not
+            # cascade from Supplier. Moving the master to Trash is safe even
+            # when its copied identity appears in historic stock/movements.
+            # Preserve those immutable snapshots; only hide this master.
             return ()
         return ()
 

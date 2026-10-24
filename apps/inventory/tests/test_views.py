@@ -694,7 +694,7 @@ class InventoryWorkspaceTests(TestCase):
         self.assertIsNotNone(unit.deleted_at)
         self.assertIsNotNone(supplier.deleted_at)
 
-    def test_used_unit_and_supplier_must_be_archived_not_deleted(self):
+    def test_used_unit_is_protected_but_supplier_can_be_trashed_with_history(self):
         item = self.add_item_stock().movement.stock_item
         self.client.force_login(self.admin)
 
@@ -716,13 +716,16 @@ class InventoryWorkspaceTests(TestCase):
         )
 
         self.assertEqual(unit_response.status_code, 409)
-        self.assertEqual(supplier_response.status_code, 409)
+        self.assertRedirects(supplier_response, reverse("inventory:suppliers"))
         self.assertTrue(Unit.objects.filter(pk=item.unit_id).exists())
         self.assertTrue(Supplier.objects.filter(pk=self.supplier.pk).exists())
         item.unit.refresh_from_db()
         self.supplier.refresh_from_db()
         self.assertIsNone(item.unit.deleted_at)
-        self.assertIsNone(self.supplier.deleted_at)
+        self.assertIsNotNone(self.supplier.deleted_at)
+        self.assertTrue(StockItem.objects.filter(pk=item.pk).exists())
+        self.assertEqual(item.supplier_name, "Gulf Cement")
+        self.assertEqual(item.supplier_phone, "+966 57 368 6575")
 
     def test_trash_requires_name_confirmation_and_can_restore_before_expiry(self):
         item = self.create_item()

@@ -2039,39 +2039,52 @@ class SupplierDeleteView(InventoryAdminRequiredMixin, View):
             normalized_supplier_phone=supplier.normalized_phone,
         ).count()
         return {
-            "page_key": "suppliers", "page_title": "Delete unused supplier",
-            "page_subtitle": "Delete is only for a supplier created by mistake and never copied into Inventory history.",
-            "record_label": str(supplier), "record_type": "Material supplier",
+            "page_key": "suppliers", "page_title": "Delete supplier",
+            "page_subtitle": "Type the supplier name to move it to Trash. Recoverable for 30 days.",
+            "record_label": str(supplier), "record_type": "Supplier",
             "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:supplier_edit", kwargs={"pk": supplier.pk}),
             "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
             "effects": (
-                f"Stock records containing this supplier identity: {stock_count}",
-                "Suppliers already used by stock must be archived, never deleted.",
-                "An unused deleted supplier remains recoverable from Trash for 30 days.",
+                "The supplier will disappear from active supplier lists and new-stock selectors.",
+                f"Existing stock records using this supplier identity: {stock_count}. Their data and movement history will not be changed or deleted.",
+                "The supplier can be restored from Trash for 30 days. Its name and phone are reserved while it is retained; restore it to reuse the same identity.",
             ),
         }
 
     def get(self, request, pk):
         supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
-        return render(request, self.template_name, self._context(supplier))
+        context = self._context(supplier)
+        if is_delete_dialog_request(request):
+            return delete_dialog_response(context)
+        return render(request, self.template_name, context)
 
     def post(self, request, pk):
         supplier = get_object_or_404(Supplier.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         context = self._context(supplier)
+        is_dialog = is_delete_dialog_request(request)
         if not context["delete_allowed"]:
             context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This supplier cannot be deleted."
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
-            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
-            return render(request, self.template_name, context, status=400)
         try:
-            trash_unused_supplier(actor_membership=request.company_membership, supplier_id=supplier.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+            trash_unused_supplier(
+                actor_membership=request.company_membership,
+                supplier_id=supplier.pk,
+                confirmation=request.POST.get("confirmation", ""),
+                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
+                request=request,
+            )
         except ValidationError as exc:
-            context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            context.update(form_error=_operation_error_message(exc))
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        messages.success(request, f"{supplier.name} was moved to Trash for 30 days.")
+        messages.success(request, f"Supplier {supplier.name} was moved to Trash for 30 days. Inventory history is preserved.")
+        if is_dialog:
+            return JsonResponse({"redirect_url": reverse("inventory:suppliers")})
         return redirect("inventory:suppliers")
 
 

@@ -146,7 +146,8 @@ require(
 )
 require(
     "templates/inventory/supplier_form.html",
-    "Delete unused supplier",
+    "Delete supplier",
+    "data-inventory-delete",
     "Archive supplier",
 )
 require(

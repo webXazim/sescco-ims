@@ -144,7 +144,9 @@ require(
     "StockItemStatusView",
     "InventoryLocationStatusView",
 )
-require("templates/partials/sidebar.html", "inventory:locations", "Locations")
+require("templates/partials/sidebar.html", "inventory:units", "inventory:suppliers")
+if "inventory:locations" in text("templates/partials/sidebar.html"):
+    fail("Locations must be hidden from the main inventory sidebar")
 require("templates/inventory/archive_list.html", "Locations")
 require("templates/inventory/location_list.html", "Archived", "Delete unused")
 require("templates/inventory/office_inventory.html", "office_locations")
