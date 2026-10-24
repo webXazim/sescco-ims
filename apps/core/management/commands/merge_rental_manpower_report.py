@@ -59,13 +59,43 @@ class Command(BaseCommand):
         WorkerAssignment = django_apps.get_model("rental_manpower", "WorkerAssignment")
         RentalWorker = django_apps.get_model("rental_manpower", "RentalWorker")
 
-        bad_open_projects = (
-            WorkerAssignment.objects.filter(cancelled_at__isnull=True, effective_to__isnull=True)
-            .filter(Q(project__status__in=[Project.Status.COMPLETED, Project.Status.ARCHIVED]) | Q(project__deleted_at__isnull=False))
-            .count()
+        # Project Archive and Trash are reversible visibility boundaries, not
+        # assignment releases. Their lifecycle policies intentionally retain rental
+        # assignments and timesheet history so restoration is lossless. Do not treat
+        # those retained open segments as a tenant/integrity failure.
+        open_assignments = WorkerAssignment.objects.filter(
+            cancelled_at__isnull=True, effective_to__isnull=True
         )
-        if bad_open_projects:
-            errors.append(f"WorkerAssignment: {bad_open_projects} open assignments target completed/archived/trashed projects")
+        hidden_project_assignments = open_assignments.filter(
+            Q(project__status=Project.Status.ARCHIVED)
+            | Q(project__archived_at__isnull=False)
+            | Q(project__deleted_at__isnull=False)
+        ).count()
+        if hidden_project_assignments:
+            self.stdout.write(
+                "  WorkerAssignment: "
+                f"{hidden_project_assignments} open assignment(s) preserved on archived/trashed projects "
+                "(valid reversible lifecycle state)"
+            )
+
+        # Completing a visible project is different: Project.clean() requires
+        # release/transfer of its open rental assignments first. Keep a hard error
+        # for invalid historical rows, but never silently rewrite assignment dates.
+        completed_open = open_assignments.filter(
+            project__status=Project.Status.COMPLETED,
+            project__archived_at__isnull=True,
+            project__deleted_at__isnull=True,
+        )
+        bad_completed_count = completed_open.count()
+        if bad_completed_count:
+            sample_codes = list(
+                completed_open.order_by().values_list("project__code", flat=True).distinct()[:5]
+            )
+            errors.append(
+                f"WorkerAssignment: {bad_completed_count} open assignments target completed projects "
+                f"(project codes: {', '.join(sample_codes)}). "
+                "Review timesheets, then release/transfer affected workers; no records were modified."
+            )
 
         bad_open_workers = WorkerAssignment.objects.filter(
             cancelled_at__isnull=True,

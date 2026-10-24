@@ -1,6 +1,9 @@
 from datetime import timedelta
+from io import StringIO
 
+from django.core.management import call_command
 from django.apps import apps as django_apps
+from django.core.management.base import CommandError
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
@@ -9,6 +12,7 @@ from apps.accounts.models import CompanyMembership, User
 from apps.accounts.roles import AccessRole
 from apps.core.models import Company
 from apps.projects.models import Project
+from apps.projects.services import archive_project, trash_unused_project
 from apps.rental_manpower.models import WorkerAssignment
 from apps.rental_manpower.selectors.assignments import serialize_assignment
 from apps.rental_manpower.services import assign_worker, create_project, create_supplier, create_worker, release_worker
@@ -82,3 +86,59 @@ class RentalSharedProjectMergeTests(TestCase):
         )
         self.project.save()
         self.assertEqual(self.project.status, Project.Status.COMPLETED)
+
+    def test_reconciliation_allows_open_assignment_on_archived_project(self):
+        assignment = assign_worker(
+            actor_membership=self.owner,
+            worker_id=self.worker.pk,
+            project_id=self.project.reference,
+            trade="Helper", rate_type="Hourly", rate="12.50",
+            effective_date=timezone.localdate() - timedelta(days=5),
+        )
+        archive_project(
+            actor_membership=self.owner, project_id=self.project.pk, reason="Temporarily hidden",
+        )
+        output = StringIO()
+        call_command("merge_rental_manpower_report", "--fail-on-errors", stdout=output)
+        self.assertIn("1 open assignment(s) preserved on archived/trashed projects", output.getvalue())
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.effective_to)
+        self.assertIsNone(assignment.cancelled_at)
+
+    def test_reconciliation_allows_open_assignment_on_trashed_project(self):
+        assignment = assign_worker(
+            actor_membership=self.owner,
+            worker_id=self.worker.pk,
+            project_id=self.project.reference,
+            trade="Helper", rate_type="Hourly", rate="12.50",
+            effective_date=timezone.localdate() - timedelta(days=5),
+        )
+        trash_unused_project(
+            actor_membership=self.owner, project_id=self.project.pk,
+            confirmation=self.project.name, reason="Accidental duplicate",
+        )
+        output = StringIO()
+        call_command("merge_rental_manpower_report", "--fail-on-errors", stdout=output)
+        self.assertIn("1 open assignment(s) preserved on archived/trashed projects", output.getvalue())
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.effective_to)
+        self.assertIsNone(assignment.cancelled_at)
+
+    def test_reconciliation_still_rejects_legacy_completed_project_with_open_assignment(self):
+        assignment = assign_worker(
+            actor_membership=self.owner,
+            worker_id=self.worker.pk,
+            project_id=self.project.reference,
+            trade="Helper", rate_type="Hourly", rate="12.50",
+            effective_date=timezone.localdate() - timedelta(days=5),
+        )
+        # Simulate pre-merge historical data that bypassed the current completion guard.
+        Project.objects.filter(pk=self.project.pk).update(
+            status=Project.Status.COMPLETED, end_date=timezone.localdate(),
+        )
+        with self.assertRaisesMessage(CommandError, "Rental Manpower reconciliation failed"):
+            call_command("merge_rental_manpower_report", "--fail-on-errors",
+                         stdout=StringIO(), stderr=StringIO())
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.effective_to)
+        self.assertIsNone(assignment.cancelled_at)
