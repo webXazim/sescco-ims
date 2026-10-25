@@ -1,11 +1,82 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a>{% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}">Return stock from project</a>{% endif %}{% if office and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}{% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}?source={{ office.pk }}">Transfer from office</a>{% endif %}</div></div>
+<div class="page-head">
+  <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <div class="head-actions">
+    <a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a>
+    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}">Return stock from project</a>{% endif %}
+    {% if office and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}
+    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}?source={{ office.pk }}">Transfer from office</a>{% endif %}
+  </div>
+</div>
 {% if not office %}
 <section class="card section-gap"><div class="empty-state"><strong>No accessible active office location</strong><p>There is no active office inventory location available to your access profile. Ask your inventory administrator to check the office location and your assigned location access.</p>{% if archived_office and "inventory.locations.manage" in ACCESS_CONTEXT.effective_access.permissions %}<form method="post" action="{% url 'inventory:location_status' archived_office.pk %}" class="section-gap">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="return_to" value="office"><button class="btn btn-primary" type="submit">Reactivate {{ archived_office.name }}</button></form>{% endif %}{% if "inventory.locations.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:locations' %}?status=all">Manage office locations</a>{% endif %}</div></section>
 {% else %}
-<section class="card section-gap"><form class="filter-bar" method="get"><div class="search-field"><span class="search-glyph"></span><input name="q" value="{{ search_query }}" placeholder="Search office stock…"></div>{% if office_locations|length > 1 %}<select class="filter-select" name="location" aria-label="Office inventory location">{% for location in office_locations %}<option value="{{ location.code }}"{% if location.pk == office.pk %} selected{% endif %}>{{ location.code }} · {{ location.name }}</option>{% endfor %}</select>{% endif %}<button class="btn btn-sm" type="submit">Search</button></form></section>
-<section class="card section-gap"><div class="table-wrap"><table class="data-table"><thead><tr><th>Material</th><th>Supplier</th><th>Condition</th><th>Quantity</th><th>Estimated unit value</th><th>Updated</th></tr></thead><tbody>{% for item in stock_items %}<tr><td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60 }}</div></td><td>{{ item.supplier_name }}</td><td><span class="status status-neutral">{{ item.get_condition_display }}</span></td><td class="qty">{{ item.quantity_display }}</td><td>{% if item.latest_unit_price is not None %}{{ item.latest_unit_price }}{% else %}—{% endif %}</td><td>{{ item.updated_at|date:"d M Y" }}</td></tr>{% empty %}<tr><td colspan="6"><div class="empty-state"><strong>No office stock found</strong><p>Add materials directly to the office or transfer stock back from a project.</p>{% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table></div></section>
-{% include "partials/pagination.html" %}
+<section class="card explorer">
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date">
+    <div class="explorer-toolbar inventory-explorer-toolbar">
+      <div class="search-field inventory-explorer-search"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
+      <div class="quick-filters inventory-explorer-filters">
+        {% if office_locations|length > 1 %}
+        <select class="filter-select" name="location" aria-label="Office inventory location">{% for location in office_locations %}<option value="{{ location.code }}"{% if location.pk == office.pk %} selected{% endif %}>{{ location.code }} · {{ location.name }}</option>{% endfor %}</select>
+        {% endif %}
+        <details class="condition-filter-menu" data-condition-filter>
+          <summary class="condition-filter-trigger" aria-label="Filter by stock condition">
+            {% with selected_conditions=filter_form.condition.value %}<span data-condition-summary>{% if selected_conditions %}{% if selected_conditions|length == 1 %}Condition · 1{% else %}Condition · {{ selected_conditions|length }}{% endif %}{% else %}Any condition{% endif %}</span>{% endwith %}
+            <span class="condition-filter-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="condition-filter-popover">
+            <div class="condition-filter-head"><strong>Condition</strong><span>Show one or more stock conditions.</span></div>
+            <div class="condition-filter-options">{{ filter_form.condition }}</div>
+            <div class="condition-filter-actions"><button class="btn btn-ghost btn-sm" type="button" data-condition-clear>Clear</button><button class="btn btn-primary btn-sm" type="button" data-condition-done>Done</button></div>
+          </div>
+        </details>
+        {{ filter_form.stock_status }}
+        <div class="date-filter-control" data-date-filter-control>
+          {{ filter_form.date_preset }}
+          <div class="date-range-popover{% if not custom_date_open %} is-hidden{% endif %}" data-quick-date-range role="dialog" aria-label="Custom date range">
+            <div class="date-range-head"><div><strong>Custom date range</strong><span>Latest stock addition date</span></div><button type="button" class="popover-close" data-close-date-range aria-label="Close date range">×</button></div>
+            <div class="date-range-fields">
+              <label><span>From</span>{{ filter_form.date_from }}</label>
+              <label><span>To</span>{{ filter_form.date_to }}</label>
+            </div>
+            {{ filter_form.date_from.errors }}{{ filter_form.date_to.errors }}
+            <div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div>
+          </div>
+        </div>
+        {{ filter_form.sort }}
+        <div class="filter-panel-control">
+          <button class="btn btn-ghost btn-sm premium-control inventory-explorer-icon-control" type="button" data-toggle-filter-panel aria-label="More filters" title="More filters" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span class="sr-only" data-filter-toggle-label>More filters</span></button>
+          <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
+            <div class="popover-section-head"><div><strong>More filters</strong><span>Narrow stock within this office.</span></div></div>
+            <div class="advanced-grid">
+              <div class="field"><label class="field-label">Units</label><div class="check-list compact">{{ filter_form.unit }}</div>{{ filter_form.unit.errors }}</div>
+              <div class="field"><label class="field-label">Quantity range</label><div class="range-inputs">{{ filter_form.quantity_min }}<span>to</span>{{ filter_form.quantity_max }}</div>{{ filter_form.quantity_min.errors }}{{ filter_form.quantity_max.errors }}</div>
+              <div class="field"><label class="field-label">Minimum stock range</label><div class="range-inputs">{{ filter_form.minimum_min }}<span>to</span>{{ filter_form.minimum_max }}</div>{{ filter_form.minimum_min.errors }}{{ filter_form.minimum_max.errors }}</div>
+              <div class="field"><label class="field-label">Latest price range</label><div class="range-inputs">{{ filter_form.price_min }}<span>to</span>{{ filter_form.price_max }}</div>{{ filter_form.price_min.errors }}{{ filter_form.price_max.errors }}</div>
+            </div>
+            <div class="advanced-footer"><p class="micro">Search office material, description, supplier, unit, notes, reference, or user.</p><div class="head-actions"><a class="btn btn-ghost btn-sm" href="{{ clear_url }}">Reset</a><button class="btn btn-primary btn-sm" type="submit">Apply filters</button></div></div>
+          </div>
+        </div>
+        <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
+      </div>
+    </div>
+    {% if filter_form.non_field_errors %}<div class="alert alert-danger filter-error">{{ filter_form.non_field_errors }}</div>{% endif %}
+  </form>
+  <div data-filter-results aria-live="polite">
+    {% include "partials/filter_chips.html" %}
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Material</th><th>Supplier</th><th>Condition</th><th>Quantity</th><th>Estimated unit value</th><th>Updated</th></tr></thead><tbody>
+      {% for item in stock_items %}<tr>
+        <td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60 }}</div></td>
+        <td>{{ item.supplier_name }}</td>
+        <td><span class="status status-neutral">{{ item.get_condition_display }}</span></td>
+        <td class="qty">{{ item.quantity_display }}</td>
+        <td>{% if item.latest_unit_price is not None %}{{ item.latest_unit_price }}{% else %}—{% endif %}</td>
+        <td>{{ item.updated_at|date:"d M Y" }}</td>
+      </tr>{% empty %}<tr><td colspan="6"><div class="empty-state"><strong>{% if filter_chips %}No matching office stock{% else %}No office stock found{% endif %}</strong><p>Try adjusting your filters, add materials to the office, or transfer stock back from a project.</p>{% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}</div></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% include "partials/pagination.html" %}
+  </div>
+</section>
 {% endif %}
 {% endblock %}

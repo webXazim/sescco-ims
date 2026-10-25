@@ -1028,8 +1028,8 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        # Location resolution happens after the workspace/permission checks in dispatch.
-        # A missing or out-of-scope office must not turn the navigation page into a 404.
+        # Resolve the office within the caller's location scope first. Search/filter
+        # parameters must never expand the queryset outside this single office.
         self.office_locations = (
             restrict_inventory_location_queryset(
                 InventoryLocation.objects.for_company(self.request.company),
@@ -1045,14 +1045,13 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
         )
         selected_code = self.request.GET.get("location", "").strip()
         if selected_code:
-            # An explicitly requested, unauthorized/nonexistent location still returns 404.
+            # An explicitly requested, unauthorized/nonexistent office returns 404.
             self.office = get_object_or_404(self.office_locations, code=selected_code)
         else:
             self.office = self.office_locations.first()
         self.archived_office = None
         if self.office is None and not selected_code:
-            # Only show offices already in the user's Inventory Location scope.
-            # Restoring an intentionally archived location requires a deliberate POST.
+            # Restoring a deliberately archived office still requires a POST.
             self.archived_office = restrict_inventory_location_queryset(
                 InventoryLocation.objects.for_company(self.request.company),
                 self.request.company_membership,
@@ -1061,12 +1060,33 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
                 deleted_at__isnull=True,
             ).filter(Q(archived_at__isnull=False) | Q(is_active=False)).order_by("code").first()
 
+        # Reuse the Inventory Explorer's validated filter form and DB filtering,
+        # including multi-condition, low/out-of-stock, units, dates and sorting.
+        # Do not expose project or archived-stock scope on this office-only page.
+        data = _bound_filter_data(
+            self.request,
+            {"status": StockItem.Status.ACTIVE, "date_field": "latest_addition_date", "sort": "updated"},
+        )
+        self.filter_form = StockItemFilterForm(
+            data, company=self.request.company, membership=self.request.company_membership
+        )
+        self.filter_form.fields["location"].queryset = self.office_locations
+        self.filter_form.fields["sort"].choices = [
+            choice for choice in StockItemFilterForm.SORT_CHOICES if choice[0] != "project"
+        ]
+        self.filter_data = {}
         queryset = restrict_inventory_stock(
             stock_items(self.request.company), self.request.company_membership
         ).filter(location=self.office, status=StockItem.Status.ACTIVE)
-        return apply_stock_search(queryset, self.request.GET.get("q", "")).order_by(
-            "material_name", "condition", "supplier_name"
-        )
+        if self.office is None:
+            return queryset.none()
+        if not self.filter_form.is_valid():
+            return queryset.none()
+        self.filter_data = self.filter_form.cleaned_data
+        filtered = filter_stock_items(queryset, self.filter_data)
+        sort = self.filter_data.get("sort") or "updated"
+        # Tie-break by PK for stable pagination when timestamps are identical.
+        return filtered.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["updated"]), "pk")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1081,7 +1101,14 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             office=self.office,
             office_locations=self.office_locations,
             archived_office=self.archived_office,
-            search_query=self.request.GET.get("q", ""),
+            filter_form=self.filter_form,
+            filter_chips=_stock_filter_chips(self.request, self.filter_data) if self.filter_data else [],
+            custom_date_open=self.filter_data.get("date_preset") == "custom",
+            advanced_open=not self.filter_form.is_valid(),
+            clear_url=(
+                f"{reverse('inventory:office')}?{urlencode({'location': self.office.code})}"
+                if self.office and self.request.GET.get("location") else reverse("inventory:office")
+            ),
         )
         return context
 
