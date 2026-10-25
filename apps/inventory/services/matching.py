@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from apps.projects.models import Project
 
-from ..models import StockItem
+from ..models import InventoryLocation, StockItem
 from ..normalization import normalize_phone, normalize_text
 
 
@@ -18,19 +18,25 @@ class StockMatchResult:
 
 def find_stock_matches(
     *,
-    project: Project,
+    project: Project | None = None,
+    location: InventoryLocation | None = None,
     material_name: str,
     supplier_name: str,
     supplier_phone: str,
     condition: str = StockItem.Condition.NEW,
     exclude_pk: int | None = None,
 ) -> StockMatchResult:
-    base = StockItem.objects.for_company(project.company).select_related("project", "unit").filter(
-        project=project,
+    if location is None:
+        if project is None:
+            raise ValueError("A project or inventory location is required for stock matching.")
+        location = project.inventory_location
+    elif project is not None and location.project_id != project.pk:
+        raise ValueError("Project and inventory location do not match.")
+    base = StockItem.objects.for_company(location.company).select_related("project", "unit").filter(
+        location=location,
         condition=condition,
         deleted_at__isnull=True,
-        project__deleted_at__isnull=True,
-    )
+    ).filter(Q(project__isnull=True) | Q(project__deleted_at__isnull=True))
     if exclude_pk:
         base = base.exclude(pk=exclude_pk)
 

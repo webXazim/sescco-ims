@@ -10,6 +10,7 @@ from .views import (
     MovementAttachmentView,
     MovementReversalView,
     OfficeInventoryView,
+    OfficeStockAdditionView,
     StockAdjustmentView,
     StockDocumentAttachmentView,
     StockItemCreateView,
@@ -54,6 +55,7 @@ urlpatterns = [
     path("locations/<int:pk>/delete/", InventoryLocationDeleteView.as_view(), name="location_delete"),
     path("inventory/", StockItemListView.as_view(), name="list"),
     path("office/", OfficeInventoryView.as_view(), name="office"),
+    path("office/add/", OfficeStockAdditionView.as_view(), name="office_add"),
     path("transfers/", StockTransferListView.as_view(), name="transfer_list"),
     path("transfers/new/", StockTransferCreateView.as_view(), name="transfer_create"),
     path(

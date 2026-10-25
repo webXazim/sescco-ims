@@ -15,7 +15,7 @@ from apps.accounts.permissions import user_membership_for_company
 from apps.projects.models import Project
 
 from ..access import location_in_inventory_scope, project_in_inventory_scope
-from ..models import StockItem, StockMovement, StockTransferLine, Supplier, Unit
+from ..models import InventoryLocation, StockItem, StockMovement, StockTransferLine, Supplier, Unit
 from ..normalization import clean_display_text, normalize_phone, normalize_text
 
 
@@ -176,7 +176,8 @@ def add_stock(
     idempotency_key: UUID,
     quantity: Decimal,
     movement_date: date,
-    project: Project,
+    project: Project | None = None,
+    location: InventoryLocation | None = None,
     material_name: str,
     supplier_name: str,
     supplier_phone: str,
@@ -192,15 +193,33 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
-    membership = _require_inventory_permission(user, project.company, AccessPermission.INVENTORY_STOCK_RECEIVE)
-    _require_project_scope(membership, project)
-    if project.deleted_at or unit.deleted_at:
-        raise InactiveStockError("Deleted projects and units cannot receive new stock.")
-    if unit.archived_at or not unit.is_active:
+    if project is None and location is None:
+        raise InventoryOperationError("Choose an active project or office inventory location.")
+    if project is not None:
+        if project.deleted_at or project.status != Project.Status.ACTIVE:
+            raise InactiveStockError("Only active, non-deleted projects can receive stock.")
+        if location is None:
+            try:
+                location = project.inventory_location
+            except InventoryLocation.DoesNotExist as exc:
+                raise InventoryOperationError("The project inventory location is missing.") from exc
+        if location.project_id != project.pk:
+            raise InventoryOperationError("Project and inventory location do not match.")
+    elif location.location_type != InventoryLocation.Type.OFFICE or location.project_id:
+        raise InventoryOperationError("Direct office receipts require an office inventory location.")
+    company = location.company
+    membership = _require_inventory_permission(user, company, AccessPermission.INVENTORY_STOCK_RECEIVE)
+    if project is not None:
+        _require_project_scope(membership, project)
+    if not location_in_inventory_scope(membership, location):
+        raise InventoryOperationError("This inventory location is outside your assigned access scope.")
+    if not location.accepts_stock_activity:
+        raise InactiveStockError("This inventory location cannot receive stock.")
+    if unit.deleted_at or unit.archived_at or not unit.is_active:
         raise InactiveStockError("Only active, non-archived units can be used for new stock activity.")
-    if unit.company_id != project.company_id:
-        raise InventoryOperationError("Project and unit must belong to the same company.")
-    duplicate = _existing_idempotent_result(project.company, idempotency_key)
+    if unit.company_id != company.pk:
+        raise InventoryOperationError("Inventory location and unit must belong to the same company.")
+    duplicate = _existing_idempotent_result(company, idempotency_key)
     if duplicate:
         return duplicate
 
@@ -208,9 +227,6 @@ def add_stock(
     _validate_operation_date(movement_date)
     if unit_price is not None and Decimal(unit_price) < 0:
         raise InventoryOperationError("Unit price cannot be negative.")
-    if project.status != Project.Status.ACTIVE:
-        raise InactiveStockError("Only active projects can receive stock.")
-
     normalized_material = normalize_text(material_name)
     normalized_supplier = normalize_text(supplier_name)
     normalized_phone = normalize_phone(supplier_phone)
@@ -219,17 +235,19 @@ def add_stock(
 
     try:
         with transaction.atomic():
-            # Lock the project before resolving a possibly-new identity. This serializes
-            # concurrent first additions within one project, so two requests cannot both
-            # conclude that the same stock identity is missing and race to create it.
-            locked_project = Project.objects.for_company(project.company).select_for_update().get(pk=project.pk)
-            if locked_project.status != Project.Status.ACTIVE:
+            # Lock the destination location to serialize first receipts into the same
+            # office or project identity, including concurrent requests.
+            locked_location = InventoryLocation.objects.for_company(company).select_for_update(of=("self",)).select_related("project").get(pk=location.pk)
+            if not locked_location.accepts_stock_activity:
+                raise InactiveStockError("This inventory location cannot receive stock.")
+            locked_project = locked_location.project
+            if locked_project and (locked_project.status != Project.Status.ACTIVE or locked_project.deleted_at):
                 raise InactiveStockError("Only active projects can receive stock.")
 
             # Keep suppliers introduced through imports and integrations available in
             # the managed supplier picker without changing historical stock snapshots.
-            supplier_master, supplier_created = Supplier.objects.for_company(locked_project.company).get_or_create(
-                company=locked_project.company,
+            supplier_master, supplier_created = Supplier.objects.for_company(company).get_or_create(
+                company=company,
                 normalized_name=normalized_supplier,
                 normalized_phone=normalized_phone,
                 defaults={
@@ -248,10 +266,10 @@ def add_stock(
                 )
 
             exact = (
-                StockItem.objects.for_company(locked_project.company).select_for_update(of=("self",))
+                StockItem.objects.for_company(company).select_for_update(of=("self",))
                 .select_related("project", "unit")
                 .filter(
-                    project=locked_project,
+                    location=locked_location,
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                     normalized_supplier_phone=normalized_phone,
@@ -269,20 +287,21 @@ def add_stock(
                         f"({stock_item.unit.symbol}), not {unit.name} ({unit.symbol})."
                     )
             else:
-                similar = StockItem.objects.for_company(locked_project.company).filter(
-                    project=locked_project,
+                similar = StockItem.objects.for_company(company).filter(
+                    location=locked_location,
                     condition=StockItem.Condition.NEW,
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                 ).exclude(normalized_supplier_phone=normalized_phone)
                 if similar.exists() and not confirm_similar:
                     raise InventoryOperationError(
-                        "A similar stock record has the same project, material, and supplier "
+                        "A similar stock record has the same location, material, and supplier "
                         "but a different phone number. Review it before creating a separate record."
                     )
                 stock_item = StockItem(
-                    company=locked_project.company,
+                    company=company,
                     project=locked_project,
+                    location=locked_location,
                     condition=StockItem.Condition.NEW,
                     material_name=material_name,
                     description=description,
@@ -328,7 +347,7 @@ def add_stock(
                 stock_item_created=stock_item_created,
             )
     except IntegrityError:
-        duplicate = _existing_idempotent_result(project.company, idempotency_key)
+        duplicate = _existing_idempotent_result(company, idempotency_key)
         if duplicate:
             return duplicate
         raise

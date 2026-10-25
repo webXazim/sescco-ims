@@ -286,10 +286,14 @@ class StockAdditionForm(IdempotentMovementForm):
         label="I reviewed the similar record and this is intentionally separate",
     )
 
-    def __init__(self, *args, company=None, membership=None, **kwargs):
+    def __init__(self, *args, company=None, membership=None, office_location=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.company = company
         self.membership = membership
+        self.office_location = office_location
+        if office_location is not None:
+            self.fields["project"].required = False
+            self.fields["project"].widget = forms.HiddenInput()
         projects = Project.objects.for_company(company).filter(
             status=Project.Status.ACTIVE, deleted_at__isnull=True
         )
@@ -310,12 +314,15 @@ class StockAdditionForm(IdempotentMovementForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        required = ("project", "material_name", "supplier", "unit")
+        required = ("material_name", "supplier", "unit")
         if not all(cleaned_data.get(field) for field in required):
+            return cleaned_data
+        if self.office_location is None and not cleaned_data.get("project"):
             return cleaned_data
         supplier = cleaned_data["supplier"]
         result = find_stock_matches(
-            project=cleaned_data["project"],
+            project=cleaned_data.get("project") if self.office_location is None else None,
+            location=self.office_location,
             material_name=cleaned_data["material_name"],
             supplier_name=supplier.name,
             supplier_phone=supplier.phone,
@@ -329,7 +336,7 @@ class StockAdditionForm(IdempotentMovementForm):
             )
         if self.similar_matches and not cleaned_data.get("confirm_similar"):
             raise ValidationError(
-                "A similar stock record has the same project, material, and supplier but a "
+                "A similar stock record has the same location, material, and supplier but a "
                 "different phone number. Review it before creating a separate stock record."
             )
         return cleaned_data

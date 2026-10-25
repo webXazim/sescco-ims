@@ -379,6 +379,7 @@
   const additionForm = document.querySelector("[data-stock-addition-form]");
   if (additionForm) {
     const project = additionForm.querySelector("#id_project");
+    const officeId = additionForm.dataset.officeId || "";
     const material = additionForm.querySelector("#id_material_name");
     const supplier = additionForm.querySelector("#id_supplier");
     const quantity = additionForm.querySelector("#id_quantity");
@@ -406,7 +407,7 @@
       if (!matchPanel) return;
       if (data.exact) {
         const item = data.exact;
-        matchPanel.innerHTML = `<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This submission will increase its current balance.</div></div><a class="btn btn-sm" href="${escapeHtml(item.url)}">Open record</a></div><div class="match-data"><div><span>Project</span><strong>${escapeHtml(item.project_code)}</strong></div><div><span>Material</span><strong>${escapeHtml(item.material_name)}</strong></div><div><span>Current balance</span><strong>${escapeHtml(item.current_quantity)} ${escapeHtml(item.unit)}</strong></div><div><span>Supplier</span><strong>${escapeHtml(item.supplier_name)}</strong></div></div></div>`;
+        matchPanel.innerHTML = `<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This submission will increase its current balance.</div></div><a class="btn btn-sm" href="${escapeHtml(item.url)}">Open record</a></div><div class="match-data"><div><span>Location</span><strong>${escapeHtml(item.project_code)}</strong></div><div><span>Material</span><strong>${escapeHtml(item.material_name)}</strong></div><div><span>Current balance</span><strong>${escapeHtml(item.current_quantity)} ${escapeHtml(item.unit)}</strong></div><div><span>Supplier</span><strong>${escapeHtml(item.supplier_name)}</strong></div></div></div>`;
       } else if (data.similar?.length) {
         matchPanel.innerHTML = `<div class="alert alert-warning"><strong>Similar stock record found.</strong> The project, material and supplier match, but the phone differs. Review the warning before creating a separate record.</div>`;
       } else {
@@ -420,14 +421,14 @@
         const supplierOption = supplier?.selectedOptions[0];
         const supplierName = supplierOption?.dataset.name || "";
         const supplierPhone = supplierOption?.dataset.phone || "";
-        if (![project?.value, material?.value.trim(), supplierName, supplierPhone].every(Boolean)) {
+        if (![(officeId || project?.value), material?.value.trim(), supplierName, supplierPhone].every(Boolean)) {
           currentBalance = null;
           if (matchPanel) matchPanel.innerHTML = "";
           updateAdditionBalance();
           return;
         }
         const params = new URLSearchParams({
-          project: project.value,
+          ...(officeId ? { office: officeId } : { project: project.value }),
           material_name: material.value,
           supplier_name: supplierName,
           supplier_phone: supplierPhone,

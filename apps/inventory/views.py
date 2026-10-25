@@ -760,13 +760,35 @@ class StockItemDetailView(InventoryPermissionRequiredMixin, DetailView):
 class StockAdditionView(InventoryPermissionRequiredMixin, View):
     inventory_permission = AccessPermission.INVENTORY_STOCK_RECEIVE
     template_name = "inventory/stock_addition_form.html"
+    office_mode = False
+
+    def get_office(self, request):
+        if not self.office_mode:
+            return None
+        offices = restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(request.company), request.company_membership
+        ).filter(
+            location_type=InventoryLocation.Type.OFFICE,
+            is_active=True,
+            archived_at__isnull=True,
+            deleted_at__isnull=True,
+        )
+        selected_code = request.GET.get("location", "").strip() or request.POST.get("office_code", "").strip()
+        if selected_code:
+            return get_object_or_404(offices, code=selected_code)
+        office = offices.order_by("code").first()
+        if office is None:
+            raise Http404("No accessible active office inventory location.")
+        return office
 
     def get_initial(self):
         initial = {}
         stock_reference = self.request.GET.get("stock", "").strip()
         if stock_reference:
             item = _stock_item_from_reference(self.request.company, stock_reference)
-            if item and location_in_inventory_scope(self.request.company_membership, item.location):
+            if item and location_in_inventory_scope(self.request.company_membership, item.location) and (
+                not self.office_mode or item.location.location_type == InventoryLocation.Type.OFFICE
+            ):
                 supplier = Supplier.objects.for_company(self.request.company).filter(
                     normalized_name=item.normalized_supplier_name,
                     normalized_phone=item.normalized_supplier_phone,
@@ -785,11 +807,13 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
         return initial
 
     def get(self, request):
-        form = StockAdditionForm(initial=self.get_initial(), company=request.company, membership=request.company_membership)
-        return render(request, self.template_name, self._context(form))
+        office = self.get_office(request)
+        form = StockAdditionForm(initial=self.get_initial(), company=request.company, membership=request.company_membership, office_location=office)
+        return render(request, self.template_name, self._context(form, office))
 
     def post(self, request):
-        form = StockAdditionForm(request.POST, request.FILES, company=request.company, membership=request.company_membership)
+        office = self.get_office(request)
+        form = StockAdditionForm(request.POST, request.FILES, company=request.company, membership=request.company_membership, office_location=office)
         if form.is_valid():
             data = form.cleaned_data
             try:
@@ -798,7 +822,8 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                     idempotency_key=data["idempotency_key"],
                     quantity=data["quantity"],
                     movement_date=data["movement_date"],
-                    project=data["project"],
+                    project=data.get("project") if office is None else None,
+                    location=office,
                     material_name=data["material_name"],
                     description=data["description"],
                     supplier_name=data["supplier"].name,
@@ -825,17 +850,23 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                     "inventory:detail",
                     reference=result.movement.stock_item.reference,
                 )
-        return render(request, self.template_name, self._context(form), status=400)
+        return render(request, self.template_name, self._context(form, office), status=400)
 
-    def _context(self, form):
+    def _context(self, form, office=None):
         return {
-            "page_key": "add-stock",
-            "page_title": "Add stock",
-            "page_subtitle": "Update an exact project stock record or create a new one.",
+            "page_key": "office" if office else "add-stock",
+            "page_title": "Add office stock" if office else "Add stock",
+            "page_subtitle": f"Receive materials directly into {office.name} inventory." if office else "Update an exact project stock record or create a new one.",
+            "office": office,
             "form": form,
             "exact_match": getattr(form, "exact_match", None),
             "similar_matches": getattr(form, "similar_matches", []),
         }
+
+
+class OfficeStockAdditionView(StockAdditionView):
+    """Receive office stock without creating a synthetic project."""
+    office_mode = True
 
 
 class StockUsageView(InventoryPermissionRequiredMixin, View):
@@ -1018,6 +1049,17 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             self.office = get_object_or_404(self.office_locations, code=selected_code)
         else:
             self.office = self.office_locations.first()
+        self.archived_office = None
+        if self.office is None and not selected_code:
+            # Only show offices already in the user's Inventory Location scope.
+            # Restoring an intentionally archived location requires a deliberate POST.
+            self.archived_office = restrict_inventory_location_queryset(
+                InventoryLocation.objects.for_company(self.request.company),
+                self.request.company_membership,
+            ).filter(
+                location_type=InventoryLocation.Type.OFFICE,
+                deleted_at__isnull=True,
+            ).filter(Q(archived_at__isnull=False) | Q(is_active=False)).order_by("code").first()
 
         queryset = restrict_inventory_stock(
             stock_items(self.request.company), self.request.company_membership
@@ -1038,6 +1080,7 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             ),
             office=self.office,
             office_locations=self.office_locations,
+            archived_office=self.archived_office,
             search_query=self.request.GET.get("q", ""),
         )
         return context
@@ -2146,6 +2189,8 @@ class InventoryLocationStatusView(InventoryAdminRequiredMixin, View):
                 messages.error(request, "Choose a valid location lifecycle action.")
         except ValidationError as exc:
             messages.error(request, _operation_error_message(exc))
+        if action in {"restore", "reactivate"} and request.POST.get("return_to") == "office" and location.location_type == InventoryLocation.Type.OFFICE:
+            return redirect("inventory:office")
         return redirect("inventory:locations")
 
 
@@ -2242,18 +2287,32 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
         material_name = request.GET.get("material_name", "")
         supplier_name = request.GET.get("supplier_name", "")
         supplier_phone = request.GET.get("supplier_phone", "")
-        if not all((project_identifier, material_name, supplier_name, supplier_phone)):
+        office_identifier = request.GET.get("office", "").strip()
+        if not all((material_name, supplier_name, supplier_phone)) or not (project_identifier or office_identifier):
             return JsonResponse(
-                {"error": "project, material_name, supplier_name and supplier_phone are required"},
+                {"error": "location, material_name, supplier_name and supplier_phone are required"},
                 status=400,
             )
-        project = get_object_or_404(
-            restrict_inventory_projects(active_projects(request.company), request.company_membership),
-            Q(code=project_identifier)
-            | Q(pk=project_identifier if project_identifier.isdigit() else 0),
-        )
+        project = None
+        office = None
+        if office_identifier:
+            office = get_object_or_404(
+                restrict_inventory_location_queryset(
+                    InventoryLocation.objects.for_company(request.company), request.company_membership
+                ),
+                pk=office_identifier if office_identifier.isdigit() else 0,
+                location_type=InventoryLocation.Type.OFFICE,
+                is_active=True, archived_at__isnull=True, deleted_at__isnull=True,
+            )
+        else:
+            project = get_object_or_404(
+                restrict_inventory_projects(active_projects(request.company), request.company_membership),
+                Q(code=project_identifier)
+                | Q(pk=project_identifier if project_identifier.isdigit() else 0),
+            )
         result = find_stock_matches(
             project=project,
+            location=office,
             material_name=material_name,
             supplier_name=supplier_name,
             supplier_phone=supplier_phone,
@@ -2262,7 +2321,7 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
         def serialize(item):
             return {
                 "reference": str(item.reference),
-                "project_code": item.project.code,
+                "project_code": item.location.code,
                 "material_name": item.material_name,
                 "supplier_name": item.supplier_name,
                 "supplier_phone": item.supplier_phone,
