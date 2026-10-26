@@ -15,7 +15,11 @@ from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS
-from apps.inventory.access import restrict_inventory_projects, restrict_inventory_stock
+from apps.inventory.access import (
+    restrict_inventory_location_queryset,
+    restrict_inventory_projects,
+    restrict_inventory_stock,
+)
 from apps.inventory.models import InventoryLocation, StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
