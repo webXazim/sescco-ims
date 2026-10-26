@@ -64,6 +64,62 @@ class ProjectWorkspaceTests(TestCase):
         self.assertEqual(project.created_by, self.user)
         self.assertEqual(project.updated_by, self.user)
 
+    def test_project_detail_shows_stock_and_lifecycle_actions_in_header(self):
+        self.client.force_login(self.admin)
+        from apps.inventory.models import Unit
+        from apps.inventory.services.stock import add_stock
+
+        project = Project.objects.create(company=self.company, code="HEADER-01", name="Header Actions Project")
+        unit = Unit.objects.get(normalized_name="piece")
+        add_stock(
+            user=self.admin,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("5"),
+            movement_date=timezone.localdate(),
+            project=project,
+            material_name="Copper Cable",
+            supplier_name="Supplier",
+            supplier_phone="+966 50 111 2233",
+            unit=unit,
+        )
+        response = self.client.get(reverse("projects:detail", args=[project.code]))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        start = html.index('<div class="page-head">')
+        stop = html.index('<section class="card section-gap">', start)
+        header = html[start:stop]
+
+        for action in ("Edit project", "Export 1 result", "Use stock", "Transfer stock", "Add stock"):
+            self.assertIn(action, header)
+        self.assertIn('aria-label="Project actions"', header)
+        self.assertIn('value="hold"', header)
+        self.assertIn('data-inventory-delete', header)
+        self.assertEqual(html.count('aria-label="Project actions"'), 1)
+        self.assertNotIn('<h2 class="card-title">Project lifecycle</h2>', html)
+        self.assertLess(header.index("Use stock"), header.index("Transfer stock"))
+        self.assertLess(header.index("Transfer stock"), header.index("Add stock"))
+
+    def test_project_detail_keeps_completion_date_action_in_compact_menu(self):
+        self.client.force_login(self.admin)
+        project = Project.objects.create(company=self.company, code="HEADER-02", name="Date Action Project")
+        response = self.client.get(reverse("projects:detail", args=[project.code]))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        header = html[html.index('<div class="page-head">'):html.index('<section class="card section-gap">')]
+        self.assertIn("Set actual end date", header)
+        self.assertIn('aria-label="Project actions"', header)
+        self.assertNotIn('<h2 class="card-title">Project lifecycle</h2>', html)
+
+    def test_storekeeper_does_not_get_project_management_dropdown(self):
+        project = Project.objects.create(company=self.company, code="HEADER-03", name="Scoped Project")
+        response = self.client.get(reverse("projects:detail", args=[project.code]))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        header = html[html.index('<div class="page-head">'):html.index('<section class="card section-gap">')]
+        self.assertNotIn('aria-label="Project actions"', header)
+        self.assertNotIn("Edit project</a>", header)
+        self.assertNotIn('<h2 class="card-title">Project lifecycle</h2>', html)
+
     def test_project_detail_paginates_stock_records(self):
         from apps.inventory.models import StockItem, Unit
 
