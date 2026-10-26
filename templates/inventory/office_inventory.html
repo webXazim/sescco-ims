@@ -4,7 +4,7 @@
   <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
   <div class="head-actions">
     <a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a>
-    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}">Return stock from project</a>{% endif %}
+    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}?destination={{ office.pk }}">Return stock from project</a>{% endif %}
     {% if office and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}
     {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}?source={{ office.pk }}">Transfer from office</a>{% endif %}
   </div>

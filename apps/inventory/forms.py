@@ -546,8 +546,6 @@ class StockTransferForm(StyledForm):
         self,
         *args,
         source_location=None,
-        require_full_transfer=False,
-        lock_source=False,
         company=None,
         membership=None,
         **kwargs,
@@ -557,21 +555,28 @@ class StockTransferForm(StyledForm):
         initial.setdefault("transfer_date", timezone.localdate())
         if source_location:
             initial.setdefault("source_location", source_location)
-        self.require_full_transfer = require_full_transfer
-        self.lock_source = lock_source
         company = company or getattr(source_location, "company", None)
         self.company = company
         super().__init__(*args, **kwargs)
-        locations = InventoryLocation.objects.for_company(company).select_related("project").filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
+        locations = (
+            InventoryLocation.objects.for_company(company)
+            .select_related("project")
+            .filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
+            .filter(
+                models.Q(location_type=InventoryLocation.Type.OFFICE)
+                | models.Q(
+                    location_type=InventoryLocation.Type.PROJECT,
+                    project__status=Project.Status.ACTIVE,
+                    project__deleted_at__isnull=True,
+                )
+            )
+        )
         if membership is not None:
             locations = restrict_inventory_location_queryset(locations, membership)
         self.fields["source_location"].queryset = locations.order_by("location_type", "code")
         self.fields["destination_location"].queryset = locations.order_by(
             "location_type", "code"
         )
-        if lock_source:
-            self.fields["source_location"].disabled = True
-
         if not source_location:
             selected = self.data.get(self.add_prefix("source_location")) if self.is_bound else None
             if selected and str(selected).isdigit():
@@ -645,11 +650,6 @@ class StockTransferForm(StyledForm):
                 self.add_error(
                     f"item_{item.pk}_{self.OUTCOMES[-1]}",
                     f"Allocated {total:f}; only {item.quantity_display} is available.",
-                )
-            if self.require_full_transfer and total != item.current_quantity:
-                self.add_error(
-                    f"item_{item.pk}_{self.OUTCOMES[-1]}",
-                    f"Project closeout requires all {item.quantity_display} to be allocated.",
                 )
         if not self.allocations:
             raise ValidationError("Enter at least one New, Used, No value, or Lost quantity.")

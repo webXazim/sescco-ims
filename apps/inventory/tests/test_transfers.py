@@ -188,52 +188,174 @@ class StockTransferViewTests(StockTransferServiceTests):
         self.assertContains(response, "Safety Barrier")
         self.assertContains(response, "No value")
 
-    def test_closeout_transfer_completes_project_and_shows_receipt(self):
+    def test_project_page_starts_ordinary_transfer_without_closeout(self):
+        response = self.client.get(reverse("projects:detail", args=[self.project.code]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Transfer stock")
+        self.assertContains(
+            response,
+            f'{reverse("inventory:transfer_create")}?source={self.project.inventory_location.pk}',
+        )
+        self.assertNotContains(response, "Transfer remaining stock")
+        transfer_page = self.client.get(
+            reverse("inventory:transfer_create"),
+            {"source": self.project.inventory_location.pk},
+        )
+        self.assertEqual(transfer_page.status_code, 200)
+        self.assertContains(transfer_page, "you do not need to move the full balance")
+        self.assertContains(transfer_page, "Safety Barrier")
+        self.assertNotContains(transfer_page, "Transfer and complete project")
+
+    def test_partial_project_to_office_transfer_keeps_project_active_and_remainder(self):
         response = self.client.post(
             reverse("inventory:transfer_create"),
             {
-                "closeout": self.project.code,
                 "source_location": self.project.inventory_location.pk,
                 "destination_location": self.office.pk,
                 "idempotency_key": uuid.uuid4(),
                 "transfer_date": timezone.localdate().isoformat(),
-                "document_reference": "CLOSE-100",
-                f"item_{self.item.pk}_new": "2",
-                f"item_{self.item.pk}_used": "5",
-                f"item_{self.item.pk}_no_value": "2",
-                f"item_{self.item.pk}_lost": "1",
+                "document_reference": "PARTIAL-100",
+                f"item_{self.item.pk}_new": "3",
             },
         )
         self.assertEqual(response.status_code, 302)
         transfer = StockTransfer.objects.get()
-        self.assertRedirects(
-            response,
-            reverse("inventory:transfer_detail", args=[transfer.reference]),
-        )
+        self.assertRedirects(response, reverse("inventory:transfer_detail", args=[transfer.reference]))
+        self.item.refresh_from_db()
         self.project.refresh_from_db()
-        self.assertEqual(self.project.status, Project.Status.COMPLETED)
-        self.assertEqual(self.project.end_date, timezone.localdate())
-        receipt = self.client.get(response.url)
-        self.assertContains(receipt, "CLOSE-100")
-        self.assertContains(receipt, "Lost")
-        office = self.client.get(reverse("inventory:office"))
-        self.assertContains(office, "Safety Barrier", count=3)
+        self.assertEqual(self.item.current_quantity, Decimal("7"))
+        self.assertEqual(self.project.status, Project.Status.ACTIVE)
+        self.assertIsNone(self.project.end_date)
+        destination_item = transfer.lines.get().destination_stock_item
+        self.assertEqual(destination_item.location, self.office)
+        self.assertEqual(destination_item.current_quantity, Decimal("3"))
+        self.assertEqual(StockMovement.objects.filter(transfer_line__transfer=transfer).count(), 2)
+        self.assertContains(self.client.get(response.url), "PARTIAL-100")
 
-    def test_closeout_rejects_unallocated_balance(self):
+    def test_full_transfer_does_not_auto_complete_project(self):
         response = self.client.post(
             reverse("inventory:transfer_create"),
             {
-                "closeout": self.project.code,
                 "source_location": self.project.inventory_location.pk,
                 "destination_location": self.office.pk,
                 "idempotency_key": uuid.uuid4(),
                 "transfer_date": timezone.localdate().isoformat(),
-                f"item_{self.item.pk}_used": "9",
+                f"item_{self.item.pk}_used": "10",
+                # Even an old link carrying closeout must not complete projects.
+                "closeout": self.project.code,
             },
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "requires all", status_code=400)
+        self.assertEqual(response.status_code, 302)
         self.project.refresh_from_db()
         self.item.refresh_from_db()
         self.assertEqual(self.project.status, Project.Status.ACTIVE)
+        self.assertIsNone(self.project.end_date)
+        self.assertEqual(self.item.current_quantity, Decimal("0"))
+
+    def test_over_allocation_rejected_without_movements(self):
+        response = self.client.post(
+            reverse("inventory:transfer_create"),
+            {
+                "source_location": self.project.inventory_location.pk,
+                "destination_location": self.office.pk,
+                "idempotency_key": uuid.uuid4(),
+                "transfer_date": timezone.localdate().isoformat(),
+                f"item_{self.item.pk}_used": "11",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "only 10", status_code=400)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.current_quantity, Decimal("10"))
+        self.assertEqual(StockTransfer.objects.count(), 0)
+
+    def test_office_return_link_preserves_destination_selection(self):
+        office = self.client.get(reverse("inventory:office"))
+        self.assertContains(
+            office,
+            f'{reverse("inventory:transfer_create")}?destination={self.office.pk}',
+        )
+        source_step = self.client.get(
+            reverse("inventory:transfer_create"), {"destination": self.office.pk}
+        )
+        self.assertEqual(source_step.status_code, 200)
+        self.assertContains(source_step, f'name="destination" value="{self.office.pk}"')
+        form_page = self.client.get(
+            reverse("inventory:transfer_create"),
+            {"source": self.project.inventory_location.pk, "destination": self.office.pk},
+        )
+        self.assertEqual(form_page.status_code, 200)
+        self.assertEqual(
+            form_page.context["form"]["destination_location"].value(),
+            self.office.pk,
+        )
+
+    def test_view_supports_project_project_and_office_project_partial_transfers(self):
+        first = self.client.post(
+            reverse("inventory:transfer_create"),
+            {
+                "source_location": self.project.inventory_location.pk,
+                "destination_location": self.other_project.inventory_location.pk,
+                "idempotency_key": uuid.uuid4(),
+                "transfer_date": timezone.localdate().isoformat(),
+                f"item_{self.item.pk}_new": "4",
+            },
+        )
+        self.assertEqual(first.status_code, 302)
+        first_destination = StockTransfer.objects.latest("pk").lines.get().destination_stock_item
+        self.assertEqual(first_destination.current_quantity, Decimal("4"))
+        second = self.client.post(
+            reverse("inventory:transfer_create"),
+            {
+                "source_location": self.other_project.inventory_location.pk,
+                "destination_location": self.office.pk,
+                "idempotency_key": uuid.uuid4(),
+                "transfer_date": timezone.localdate().isoformat(),
+                f"item_{first_destination.pk}_new": "2",
+            },
+        )
+        self.assertEqual(second.status_code, 302)
+        office_item = StockTransfer.objects.latest("pk").lines.get().destination_stock_item
+        third = self.client.post(
+            reverse("inventory:transfer_create"),
+            {
+                "source_location": self.office.pk,
+                "destination_location": self.project.inventory_location.pk,
+                "idempotency_key": uuid.uuid4(),
+                "transfer_date": timezone.localdate().isoformat(),
+                f"item_{office_item.pk}_new": "1",
+            },
+        )
+        self.assertEqual(third.status_code, 302)
+        self.assertEqual(StockTransfer.objects.count(), 3)
+        self.item.refresh_from_db()
+        self.project.refresh_from_db()
+        self.assertEqual(self.item.current_quantity, Decimal("7"))
+        self.assertEqual(self.project.status, Project.Status.ACTIVE)
+
+    def test_held_project_is_not_a_transfer_source_or_destination(self):
+        self.other_project.status = Project.Status.ON_HOLD
+        self.other_project.save()
+        transfer_page = self.client.get(
+            reverse("inventory:transfer_create"),
+            {"source": self.project.inventory_location.pk},
+        )
+        self.assertEqual(transfer_page.status_code, 200)
+        self.assertNotIn(
+            self.other_project.inventory_location.pk,
+            transfer_page.context["form"].fields["destination_location"].queryset.values_list("pk", flat=True),
+        )
+        response = self.client.post(
+            reverse("inventory:transfer_create"),
+            {
+                "source_location": self.project.inventory_location.pk,
+                "destination_location": self.other_project.inventory_location.pk,
+                "idempotency_key": uuid.uuid4(),
+                "transfer_date": timezone.localdate().isoformat(),
+                f"item_{self.item.pk}_new": "2",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(StockTransfer.objects.count(), 0)
+        self.item.refresh_from_db()
         self.assertEqual(self.item.current_quantity, Decimal("10"))

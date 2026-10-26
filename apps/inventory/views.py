@@ -1117,139 +1117,89 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
     inventory_permission = AccessPermission.INVENTORY_STOCK_TRANSFER
     template_name = "inventory/transfer_form.html"
 
-    def _closeout_project(self, request):
-        code = (request.GET.get("closeout") or request.POST.get("closeout") or "").strip()
-        if not code:
-            return None
-        return get_object_or_404(
-            restrict_inventory_projects(Project.objects.for_company(request.company), request.company_membership),
-            code=code,
-            status=Project.Status.ACTIVE,
+    def _available_locations(self, request):
+        return restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(request.company).select_related("project"),
+            request.company_membership,
+        ).filter(
+            is_active=True,
+            archived_at__isnull=True,
             deleted_at__isnull=True,
+        ).filter(
+            Q(location_type=InventoryLocation.Type.OFFICE)
+            | Q(
+                location_type=InventoryLocation.Type.PROJECT,
+                project__status=Project.Status.ACTIVE,
+                project__deleted_at__isnull=True,
+            )
         )
 
-    def _source_location(self, request, closeout_project=None):
-        if closeout_project:
-            return closeout_project.inventory_location
+    def _source_location(self, request):
         value = (request.GET.get("source") or request.POST.get("source_location") or "").strip()
-        if value and value.isdigit():
-            return restrict_inventory_location_queryset(
-                InventoryLocation.objects.for_company(request.company).select_related("project"), request.company_membership
-            ).filter(pk=int(value), is_active=True, archived_at__isnull=True, deleted_at__isnull=True).first()
+        if value.isdigit():
+            return self._available_locations(request).filter(pk=int(value)).first()
+        return None
+
+    def _preferred_destination(self, request):
+        # Only a GET preference, never an override of the user's submitted destination.
+        value = (request.GET.get("destination") or "").strip()
+        if value.isdigit():
+            return self._available_locations(request).filter(pk=int(value)).first()
         return None
 
     def get(self, request):
-        closeout_project = self._closeout_project(request)
-        source = self._source_location(request, closeout_project)
+        source = self._source_location(request)
+        preferred_destination = self._preferred_destination(request)
         form = StockTransferForm(
             source_location=source,
-            require_full_transfer=bool(closeout_project),
-            lock_source=bool(closeout_project),
+            initial={"destination_location": preferred_destination} if preferred_destination else {},
             company=request.company,
             membership=request.company_membership,
         )
-        return render(request, self.template_name, self._context(form, source, closeout_project))
+        return render(request, self.template_name, self._context(form, source, preferred_destination))
 
     def post(self, request):
-        closeout_project = self._closeout_project(request)
-        source = self._source_location(request, closeout_project)
+        source = self._source_location(request)
         form = StockTransferForm(
             request.POST,
             request.FILES,
             source_location=source,
-            require_full_transfer=bool(closeout_project),
-            lock_source=bool(closeout_project),
             company=request.company,
             membership=request.company_membership,
         )
         if form.is_valid():
             data = form.cleaned_data
             try:
-                with transaction.atomic():
-                    result = transfer_stock(
-                        user=request.user,
-                        idempotency_key=data["idempotency_key"],
-                        source_location=data["source_location"],
-                        destination_location=data["destination_location"],
-                        transfer_date=data["transfer_date"],
-                        allocations=form.allocations,
-                        document_reference=data["document_reference"],
-                        notes=data["notes"],
-                        attachment=data["attachment"],
-                    )
-                    if closeout_project and not result.duplicate_submission:
-                        locked_project = Project.objects.for_company(request.company).select_for_update().get(
-                            pk=closeout_project.pk
-                        )
-                        if locked_project.stock_items.filter(current_quantity__gt=0).exists():
-                            raise InventoryOperationError(
-                                "Every project balance must reach zero before completion."
-                            )
-                        if locked_project.start_date and data["transfer_date"] < locked_project.start_date:
-                            raise InventoryOperationError(
-                                "The project closeout date cannot be before the project start date."
-                            )
-                        before_project = {
-                            "status": locked_project.status,
-                            "end_date": locked_project.end_date.isoformat() if locked_project.end_date else "",
-                        }
-                        locked_project.status = Project.Status.COMPLETED
-                        locked_project.end_date = data["transfer_date"]
-                        locked_project.updated_by = request.user
-                        locked_project.save()
-                        record_audit_event(
-                            company=locked_project.company,
-                            area=AuditArea.PROJECTS,
-                            action="project.completed_from_inventory_closeout",
-                            object_type="projects.Project",
-                            object_id=locked_project.reference,
-                            object_label=str(locked_project),
-                            actor_membership=getattr(request, "company_membership", None),
-                            actor=request.user,
-                            before=before_project,
-                            after={
-                                "status": locked_project.status,
-                                "end_date": locked_project.end_date.isoformat(),
-                            },
-                            metadata={"stock_transfer_reference": str(result.transfer.reference)},
-                            request=request,
-                        )
+                result = transfer_stock(
+                    user=request.user,
+                    idempotency_key=data["idempotency_key"],
+                    source_location=data["source_location"],
+                    destination_location=data["destination_location"],
+                    transfer_date=data["transfer_date"],
+                    allocations=form.allocations,
+                    document_reference=data["document_reference"],
+                    notes=data["notes"],
+                    attachment=data["attachment"],
+                )
             except InventoryOperationError as exc:
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.duplicate_submission:
                     messages.info(request, "This transfer was already recorded.")
-                elif closeout_project:
-                    messages.success(
-                        request,
-                        f"Stock transferred and project {closeout_project.code} completed.",
-                    )
                 else:
                     messages.success(request, "Stock transfer completed safely.")
                 return redirect("inventory:transfer_detail", reference=result.transfer.reference)
-        return render(
-            request,
-            self.template_name,
-            self._context(form, source, closeout_project),
-            status=400,
-        )
+        return render(request, self.template_name, self._context(form, source), status=400)
 
-    def _context(self, form, source, closeout_project):
+    def _context(self, form, source, preferred_destination=None):
         return {
             "page_key": "transfers",
-            "page_title": "Close project stock" if closeout_project else "Transfer stock",
-            "page_subtitle": (
-                "Allocate every remaining quantity before completing the project."
-                if closeout_project
-                else "Move stock between projects and the office with condition outcomes."
-            ),
+            "page_title": "Transfer stock",
+            "page_subtitle": "Transfer a chosen quantity from any active project or office to another project or office.",
             "form": form,
             "source": source,
-            "source_locations": restrict_inventory_location_queryset(
-                InventoryLocation.objects.for_company(self.request.company).select_related("project"), self.request.company_membership
-            ).filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
-            .order_by("location_type", "code"),
-            "closeout_project": closeout_project,
+            "source_locations": self._available_locations(self.request).order_by("location_type", "code"),
+            "preferred_destination": preferred_destination,
         }
 
 

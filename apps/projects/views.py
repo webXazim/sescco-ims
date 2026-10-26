@@ -16,7 +16,7 @@ from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS
 from apps.inventory.access import restrict_inventory_projects, restrict_inventory_stock
-from apps.inventory.models import StockItem
+from apps.inventory.models import InventoryLocation, StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
 from .forms import ProjectForm
@@ -403,9 +403,26 @@ class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
                 and self.object.end_date is None
                 and not all_project_items.filter(current_quantity__gt=0).exists()
             ),
-            has_stock_to_closeout=(
-                self.object.status == Project.Status.ACTIVE
-                and all_project_items.filter(current_quantity__gt=0).exists()
+            transfer_source_location_id=(
+                restrict_inventory_location_queryset(
+                    InventoryLocation.objects.for_company(self.request.company),
+                    self.request.company_membership,
+                )
+                .filter(
+                    project=self.object,
+                    is_active=True,
+                    archived_at__isnull=True,
+                    deleted_at__isnull=True,
+                )
+                .values_list("pk", flat=True)
+                .first()
+                if self.object.accepts_stock_activity
+                and all_project_items.filter(
+                    status=StockItem.Status.ACTIVE,
+                    deleted_at__isnull=True,
+                    current_quantity__gt=0,
+                ).exists()
+                else None
             ),
             project_archive_decision=lifecycle_decision(self.object, LifecycleAction.ARCHIVE),
             project_restore_decision=lifecycle_decision(self.object, LifecycleAction.RESTORE),

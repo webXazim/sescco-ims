@@ -8,8 +8,9 @@
 <section class="card section-gap">
   <div class="card-head">
     <div><h2 class="card-title">Project lifecycle</h2><div class="card-meta">Operational status and archival are separate. Historical Inventory and Rental Manpower records are never deleted.</div></div>
-    {% if "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}<div class="head-actions">
-      {% if has_stock_to_closeout %}<a class="btn btn-primary btn-sm" href="{% url 'inventory:transfer_create' %}?closeout={{ project.code }}">Transfer remaining stock</a>{% endif %}
+    <div class="head-actions">
+      {% if transfer_source_location_id and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary btn-sm" href="{% url 'inventory:transfer_create' %}?source={{ transfer_source_location_id }}">Transfer stock</a>{% endif %}
+      {% if "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}
       {% if needs_completion_date and project.status != 'archived' %}<a class="btn btn-sm" href="{% url 'projects:edit' project.code %}">Set actual end date</a>{% endif %}
       <details class="row-actions lifecycle-actions" data-row-actions>
         <summary class="btn btn-sm row-actions-trigger" aria-label="Project actions"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
@@ -33,9 +34,10 @@
           <a class="row-action-option row-action-danger" data-inventory-delete href="{% url 'projects:delete' project.code %}"><span>Delete</span><small>Move to Trash for 30 days; protected history remains intact</small></a>
         </div>
       </details>
-    </div>{% endif %}
+      {% endif %}
+    </div>
   </div>
-  {% if has_stock_to_closeout %}<div class="card-body"><p class="micro">Allocate every remaining balance as New, Used, No value, or Lost before completion or archive.</p></div>{% endif %}
+  {% if transfer_source_location_id %}<div class="card-body"><p class="micro">Transfer any available quantity to another project or the office. Completing a project is a separate action and requires a zero stock balance.</p></div>{% endif %}
   {% if project.archived_at %}<div class="card-body"><p class="micro"><strong>Archived {{ project.archived_at|date:'d M Y, H:i' }}</strong>{% if project.archived_reason %} · {{ project.archived_reason }}{% endif %}</p></div>{% endif %}
 </section>
 <section class="card section-gap">
