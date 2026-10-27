@@ -129,6 +129,63 @@ class OfficeStockReceiptTests(TestCase):
         self.assertEqual(response.json()["exact"]["reference"], str(item.reference))
         self.assertEqual(response.json()["exact"]["project_code"], self.office.code)
 
+    def test_office_receipts_keep_new_and_used_stock_separate(self):
+        form_response = self.client.get(reverse("inventory:office_add"))
+        self.assertEqual(form_response.status_code, 200)
+        self.assertContains(form_response, 'name="condition"')
+        self.assertContains(form_response, 'value="used"')
+
+        used_payload = self.office_payload()
+        used_payload["condition"] = "used"
+        response = self.client.post(reverse("inventory:office_add"), used_payload)
+        self.assertEqual(response.status_code, 302)
+        used = StockItem.objects.for_company(self.company).get(
+            location=self.office, condition=StockItem.Condition.USED,
+            material_name="Safety Gloves",
+        )
+        self.assertEqual(used.current_quantity, Decimal("20"))
+
+        # Legacy clients without a condition still record a New receipt.
+        new_payload = self.office_payload()
+        new_payload["quantity"] = "7"
+        response = self.client.post(reverse("inventory:office_add"), new_payload)
+        self.assertEqual(response.status_code, 302)
+        new = StockItem.objects.for_company(self.company).get(
+            location=self.office, condition=StockItem.Condition.NEW,
+            material_name="Safety Gloves",
+        )
+        self.assertNotEqual(new.pk, used.pk)
+        self.assertEqual(new.current_quantity, Decimal("7"))
+
+        # Repeated Used receipts merge only with the Used balance.
+        again = self.office_payload()
+        again["condition"] = "used"
+        again["quantity"] = "3"
+        self.assertEqual(self.client.post(reverse("inventory:office_add"), again).status_code, 302)
+        used.refresh_from_db()
+        new.refresh_from_db()
+        self.assertEqual(used.current_quantity, Decimal("23"))
+        self.assertEqual(new.current_quantity, Decimal("7"))
+        self.assertEqual(StockItem.objects.filter(location=self.office, material_name="Safety Gloves").count(), 2)
+
+    def test_live_office_matching_respects_selected_condition(self):
+        used = self.create_office_stock(quantity="4").movement.stock_item
+        params = {
+            "office": self.office.pk,
+            "material_name": used.material_name,
+            "supplier_name": self.supplier.name,
+            "supplier_phone": self.supplier.phone,
+        }
+        self.assertIsNotNone(self.client.get(reverse("inventory:matches"), params).json()["exact"])
+        self.assertIsNone(self.client.get(reverse("inventory:matches"), {**params, "condition": "used"}).json()["exact"])
+        self.assertEqual(self.client.get(reverse("inventory:matches"), {**params, "condition": "wrong"}).status_code, 400)
+
+    def test_receipt_rejects_no_value_condition(self):
+        payload = self.office_payload()
+        payload["condition"] = "no_value"
+        self.assertEqual(self.client.post(reverse("inventory:office_add"), payload).status_code, 400)
+        self.assertEqual(StockMovement.objects.for_company(self.company).count(), 0)
+
     def test_direct_office_stock_transfers_to_project_and_back_then_other_project(self):
         office_item = self.create_office_stock().movement.stock_item
         outgoing = transfer_stock(

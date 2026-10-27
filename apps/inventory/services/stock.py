@@ -178,6 +178,7 @@ def add_stock(
     movement_date: date,
     project: Project | None = None,
     location: InventoryLocation | None = None,
+    condition: str = StockItem.Condition.NEW,
     material_name: str,
     supplier_name: str,
     supplier_phone: str,
@@ -193,6 +194,8 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
+    if condition not in (StockItem.Condition.NEW, StockItem.Condition.USED):
+        raise InventoryOperationError("Received stock condition must be New or Used.")
     if project is None and location is None:
         raise InventoryOperationError("Choose an active project or office inventory location.")
     if project is not None:
@@ -273,7 +276,7 @@ def add_stock(
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                     normalized_supplier_phone=normalized_phone,
-                    condition=StockItem.Condition.NEW,
+                    condition=condition,
                 )
                 .first()
             )
@@ -289,7 +292,7 @@ def add_stock(
             else:
                 similar = StockItem.objects.for_company(company).filter(
                     location=locked_location,
-                    condition=StockItem.Condition.NEW,
+                    condition=condition,
                     normalized_material_name=normalized_material,
                     normalized_supplier_name=normalized_supplier,
                 ).exclude(normalized_supplier_phone=normalized_phone)
@@ -302,7 +305,7 @@ def add_stock(
                     company=company,
                     project=locked_project,
                     location=locked_location,
-                    condition=StockItem.Condition.NEW,
+                    condition=condition,
                     material_name=material_name,
                     description=description,
                     supplier_name=supplier_name,

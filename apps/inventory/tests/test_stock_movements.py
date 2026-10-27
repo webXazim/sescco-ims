@@ -76,6 +76,22 @@ class StockMovementServiceTests(TestCase):
         self.assertEqual(result.movement.new_balance, Decimal("50"))
         self.assertEqual(result.movement.created_by, self.user)
 
+    def test_service_preserves_condition_identity_and_rejects_invalid_receipts(self):
+        original = self.add()
+        used = self.add(condition=StockItem.Condition.USED, idempotency_key=uuid.uuid4(), quantity=Decimal("8"))
+        self.assertTrue(used.stock_item_created)
+        self.assertNotEqual(original.movement.stock_item_id, used.movement.stock_item_id)
+        self.assertEqual(used.movement.stock_item.condition, StockItem.Condition.USED)
+        merged = self.add(condition=StockItem.Condition.USED, idempotency_key=uuid.uuid4(), quantity=Decimal("2"))
+        self.assertFalse(merged.stock_item_created)
+        self.assertEqual(merged.movement.stock_item_id, used.movement.stock_item_id)
+        used.movement.stock_item.refresh_from_db()
+        original.movement.stock_item.refresh_from_db()
+        self.assertEqual(used.movement.stock_item.current_quantity, Decimal("10"))
+        self.assertEqual(original.movement.stock_item.current_quantity, Decimal("50"))
+        with self.assertRaises(InventoryOperationError):
+            self.add(condition=StockItem.Condition.NO_VALUE, idempotency_key=uuid.uuid4())
+
     def test_exact_normalized_identity_updates_existing_record(self):
         first = self.add()
         second = self.add(

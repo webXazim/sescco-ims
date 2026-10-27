@@ -800,6 +800,7 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                     supplier=supplier,
                     unit=item.unit,
                     minimum_quantity=item.minimum_quantity,
+                    condition=item.condition if item.condition in (StockItem.Condition.NEW, StockItem.Condition.USED) else StockItem.Condition.NEW,
                 )
         project_code = self.request.GET.get("project", "").strip()
         if project_code and "project" not in initial:
@@ -822,6 +823,7 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                     idempotency_key=data["idempotency_key"],
                     quantity=data["quantity"],
                     movement_date=data["movement_date"],
+                    condition=data["condition"],
                     project=data.get("project") if office is None else None,
                     location=office,
                     material_name=data["material_name"],
@@ -2264,6 +2266,9 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
         material_name = request.GET.get("material_name", "")
         supplier_name = request.GET.get("supplier_name", "")
         supplier_phone = request.GET.get("supplier_phone", "")
+        condition = request.GET.get("condition", StockItem.Condition.NEW)
+        if condition not in (StockItem.Condition.NEW, StockItem.Condition.USED):
+            return JsonResponse({"error": "Invalid stock condition."}, status=400)
         office_identifier = request.GET.get("office", "").strip()
         if not all((material_name, supplier_name, supplier_phone)) or not (project_identifier or office_identifier):
             return JsonResponse(
@@ -2293,6 +2298,7 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
             material_name=material_name,
             supplier_name=supplier_name,
             supplier_phone=supplier_phone,
+            condition=condition,
         )
 
         def serialize(item):
@@ -2302,6 +2308,7 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
                 "material_name": item.material_name,
                 "supplier_name": item.supplier_name,
                 "supplier_phone": item.supplier_phone,
+                "condition": item.get_condition_display(),
                 "unit": item.unit.symbol,
                 "unit_id": item.unit_id,
                 "current_quantity": str(item.current_quantity),

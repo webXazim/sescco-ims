@@ -382,6 +382,7 @@
     const officeId = additionForm.dataset.officeId || "";
     const material = additionForm.querySelector("#id_material_name");
     const supplier = additionForm.querySelector("#id_supplier");
+    const condition = additionForm.querySelector("#id_condition");
     const quantity = additionForm.querySelector("#id_quantity");
     const matchPanel = document.querySelector("#liveMatchPanel");
     const quantityPreview = document.querySelector("#additionQuantityPreview");
@@ -389,6 +390,7 @@
     const newPreview = document.querySelector("#newBalancePreview");
     let currentBalance = null;
     let debounceTimer = null;
+    let matchRequestVersion = 0;
 
     const updateAdditionBalance = () => {
       const added = numberValue(quantity?.value);
@@ -407,7 +409,7 @@
       if (!matchPanel) return;
       if (data.exact) {
         const item = data.exact;
-        matchPanel.innerHTML = `<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This submission will increase its current balance.</div></div><a class="btn btn-sm" href="${escapeHtml(item.url)}">Open record</a></div><div class="match-data"><div><span>Location</span><strong>${escapeHtml(item.project_code)}</strong></div><div><span>Material</span><strong>${escapeHtml(item.material_name)}</strong></div><div><span>Current balance</span><strong>${escapeHtml(item.current_quantity)} ${escapeHtml(item.unit)}</strong></div><div><span>Supplier</span><strong>${escapeHtml(item.supplier_name)}</strong></div></div></div>`;
+        matchPanel.innerHTML = `<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This submission will increase its current balance.</div></div><a class="btn btn-sm" href="${escapeHtml(item.url)}">Open record</a></div><div class="match-data"><div><span>Location</span><strong>${escapeHtml(item.project_code)}</strong></div><div><span>Material</span><strong>${escapeHtml(item.material_name)}</strong></div><div><span>Current balance</span><strong>${escapeHtml(item.current_quantity)} ${escapeHtml(item.unit)} (${escapeHtml(item.condition)})</strong></div><div><span>Supplier</span><strong>${escapeHtml(item.supplier_name)}</strong></div></div></div>`;
       } else if (data.similar?.length) {
         matchPanel.innerHTML = `<div class="alert alert-warning"><strong>Similar stock record found.</strong> The project, material and supplier match, but the phone differs. Review the warning before creating a separate record.</div>`;
       } else {
@@ -417,6 +419,10 @@
 
     const checkMatch = () => {
       clearTimeout(debounceTimer);
+      const requestVersion = ++matchRequestVersion;
+      currentBalance = null;
+      if (matchPanel) matchPanel.innerHTML = "";
+      updateAdditionBalance();
       debounceTimer = setTimeout(async () => {
         const supplierOption = supplier?.selectedOptions[0];
         const supplierName = supplierOption?.dataset.name || "";
@@ -432,20 +438,22 @@
           material_name: material.value,
           supplier_name: supplierName,
           supplier_phone: supplierPhone,
+          condition: condition?.value || "new",
         });
         try {
           const response = await fetch(`${additionForm.dataset.matchUrl}?${params}`, {
             headers: { "X-Requested-With": "XMLHttpRequest" },
           });
           if (!response.ok) return;
-          renderMatch(await response.json());
+          const matchData = await response.json();
+          if (requestVersion === matchRequestVersion) renderMatch(matchData);
         } catch (_) {
           // The server still performs the authoritative match on submit.
         }
       }, 280);
     };
 
-    [project, material, supplier].forEach((field) => {
+    [project, material, supplier, condition].forEach((field) => {
       field?.addEventListener(field.tagName === "SELECT" ? "change" : "input", checkMatch);
     });
     quantity?.addEventListener("input", updateAdditionBalance);

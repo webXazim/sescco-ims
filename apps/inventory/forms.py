@@ -235,6 +235,18 @@ class IdempotentMovementForm(StyledForm):
 
 
 class StockAdditionForm(IdempotentMovementForm):
+    # Only New and Used are direct-receipt conditions. "No value" is a separate
+    # transfer/stock-disposition outcome, not an initial supplier receipt.
+    condition = forms.ChoiceField(
+        choices=(
+            (StockItem.Condition.NEW, "New"),
+            (StockItem.Condition.USED, "Used"),
+        ),
+        initial=StockItem.Condition.NEW,
+        required=False,
+        label="Item condition",
+        help_text="New and used items are tracked in separate stock balances.",
+    )
     project = forms.ModelChoiceField(queryset=Project.objects.none())
     material_name = forms.CharField(max_length=180)
     description = forms.CharField(
@@ -312,9 +324,13 @@ class StockAdditionForm(IdempotentMovementForm):
     def clean_attachment(self):
         return validate_uploaded_attachment(self.cleaned_data.get("attachment"))
 
+    def clean_condition(self):
+        # Backward-compatible for existing clients that omit the new field.
+        return self.cleaned_data.get("condition") or StockItem.Condition.NEW
+
     def clean(self):
         cleaned_data = super().clean()
-        required = ("material_name", "supplier", "unit")
+        required = ("material_name", "supplier", "unit", "condition")
         if not all(cleaned_data.get(field) for field in required):
             return cleaned_data
         if self.office_location is None and not cleaned_data.get("project"):
@@ -326,6 +342,7 @@ class StockAdditionForm(IdempotentMovementForm):
             material_name=cleaned_data["material_name"],
             supplier_name=supplier.name,
             supplier_phone=supplier.phone,
+            condition=cleaned_data["condition"],
         )
         self.exact_match = result.exact
         self.similar_matches = list(result.similar)

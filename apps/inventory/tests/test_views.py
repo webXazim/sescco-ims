@@ -278,6 +278,31 @@ class InventoryWorkspaceTests(TestCase):
         self.assertContains(add_response, '<textarea name="description"')
         self.assertContains(add_response, 'rows="3"')
 
+    def test_project_receipts_show_condition_in_project_table(self):
+        form_response = self.client.get(reverse("core:add_stock"), {"project": self.project.code})
+        self.assertEqual(form_response.status_code, 200)
+        self.assertContains(form_response, 'name="condition"')
+        payload = {
+            "project": self.project.pk,
+            "idempotency_key": str(uuid.uuid4()),
+            "movement_date": self.today.isoformat(),
+            "material_name": "Portland Cement",
+            "supplier": self.supplier.pk,
+            "unit": self.unit.pk,
+            "quantity": "4",
+            "minimum_quantity": "0",
+            "condition": "used",
+        }
+        self.assertEqual(self.client.post(reverse("core:add_stock"), payload).status_code, 302)
+        item = StockItem.objects.for_company(self.company).get(
+            project=self.project, material_name="Portland Cement"
+        )
+        self.assertEqual(item.condition, StockItem.Condition.USED)
+        project_response = self.client.get(reverse("projects:detail", args=[self.project.code]))
+        self.assertEqual(project_response.status_code, 200)
+        self.assertContains(project_response, "<th>Condition</th>", html=True)
+        self.assertContains(project_response, "Used")
+
     def test_add_stock_duplicate_post_is_idempotent(self):
         token = uuid.uuid4()
         payload = {
