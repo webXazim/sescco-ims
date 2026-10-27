@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import F, Q
@@ -11,7 +12,7 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView
 from apps.accounts.access_catalog import AccessPermission
 from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
-from apps.core.models import AuditArea
+from apps.core.models import AuditArea, Company
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS
@@ -23,6 +24,7 @@ from apps.inventory.access import (
 from apps.inventory.models import InventoryLocation, StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
 
+from .code_generation import generate_project_code
 from .forms import ProjectForm
 from .models import Project
 from .selectors import project_list
@@ -112,12 +114,20 @@ class ProjectCreateView(InventoryPermissionRequiredMixin, CreateView):
         return kwargs
 
     def form_valid(self, form):
-        form.instance.company = self.request.company
-        form.instance.created_by = self.request.user
-        form.instance.updated_by = self.request.user
-        response = super().form_valid(form)
-        _audit_project(request=self.request, project=self.object, action="project.created")
-        messages.success(self.request, f"Project {self.object.code} was created.")
+        # Serialize allocations per company: company/code is a unique database
+        # identity used by both Inventory and Rental Manpower. Never trust a
+        # submitted `code` value: the project name determines the internal code.
+        with transaction.atomic():
+            Company.objects.select_for_update().get(pk=self.request.company.pk)
+            form.instance.company = self.request.company
+            form.instance.code = generate_project_code(
+                company=self.request.company, name=form.cleaned_data["name"]
+            )
+            form.instance.created_by = self.request.user
+            form.instance.updated_by = self.request.user
+            response = super().form_valid(form)
+            _audit_project(request=self.request, project=self.object, action="project.created")
+        messages.success(self.request, f"Project {self.object.name} was created.")
         return response
 
     def get_context_data(self, **kwargs):
@@ -159,7 +169,7 @@ class ProjectUpdateView(InventoryPermissionRequiredMixin, UpdateView):
             action="project.updated",
             before=before,
         )
-        messages.success(self.request, f"Project {self.object.code} was updated.")
+        messages.success(self.request, f"Project {self.object.name} was updated.")
         return response
 
     def get_success_url(self):
@@ -170,7 +180,7 @@ class ProjectUpdateView(InventoryPermissionRequiredMixin, UpdateView):
         context.update(
             page_key="project-detail",
             page_title="Edit project",
-            page_subtitle=f"Update {self.object.code} without changing its Inventory or Payroll identity.",
+            page_subtitle=f"Update {self.object.name} without changing its Inventory or Payroll identity.",
             submit_label="Save changes",
         )
         return context

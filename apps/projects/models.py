@@ -100,7 +100,7 @@ class Project(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.code} · {self.name}"
+        return self.name
 
     def clean(self) -> None:
         super().clean()

@@ -13,7 +13,6 @@ class ProjectForm(StyledModelForm):
     class Meta:
         model = Project
         fields = (
-            "code",
             "name",
             "client_name",
             "location",
@@ -29,16 +28,6 @@ class ProjectForm(StyledModelForm):
             "end_date": forms.DateInput(attrs={"type": "date"}),
             "notes": forms.Textarea(attrs={"rows": 4}),
         }
-
-    def clean_code(self) -> str:
-        code = self.cleaned_data["code"].strip().upper()
-        if self.company is not None:
-            duplicate = Project.objects.for_company(self.company).filter(code=code)
-            if self.instance.pk:
-                duplicate = duplicate.exclude(pk=self.instance.pk)
-            if duplicate.exists():
-                raise forms.ValidationError("A project with this code already exists in this company.")
-        return code
 
     def clean(self):
         cleaned = super().clean()

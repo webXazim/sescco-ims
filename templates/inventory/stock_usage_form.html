@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<form method="post" enctype="multipart/form-data" novalidate data-stock-usage-form data-picker-url="{% url 'inventory:picker' %}">
+<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-stock-usage-form data-picker-url="{% url 'inventory:picker' %}">
   {% csrf_token %}{{ form.idempotency_key }}
   <div class="form-layout">
     <section class="card form-card">

@@ -21,6 +21,7 @@ from .models import (
     InventoryLocation,
     StockItem,
     StockMovement,
+    StockTransfer,
     StockTransferLine,
     Supplier,
     Unit,
@@ -715,6 +716,49 @@ class DateRangeFilterForm(StyledForm):
         if preset == "custom" and not (start or end):
             self.add_error("date_from", "Choose at least one custom date boundary.")
         return cleaned
+
+
+class StockTransferHistoryFilterForm(DateRangeFilterForm):
+    """Validated transfer-history filters. Choices are derived from visible transfers."""
+
+    DIRECTION_CHOICES = (
+        ("", "All directions"),
+        ("office_project", "Office → Project"),
+        ("project_office", "Project → Office"),
+        ("project_project", "Project → Project"),
+        ("office_office", "Office → Office"),
+    )
+    SORT_CHOICES = (
+        ("newest", "Newest transfer date"),
+        ("oldest", "Oldest transfer date"),
+        ("created", "Recently recorded"),
+        ("source", "Source A–Z"),
+        ("destination", "Destination A–Z"),
+    )
+    q = forms.CharField(required=False, max_length=160, label="Search")
+    status = forms.ChoiceField(
+        required=False, choices=(("", "All statuses"), *StockTransfer.Status.choices)
+    )
+    direction = forms.ChoiceField(required=False, choices=DIRECTION_CHOICES)
+    source = forms.ChoiceField(required=False, choices=())
+    destination = forms.ChoiceField(required=False, choices=())
+    sort = forms.ChoiceField(required=False, choices=SORT_CHOICES)
+
+    def __init__(self, *args, visible_transfers=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if visible_transfers is None:
+            raise ValueError("visible_transfers is required for transfer history filters")
+        for field_name, location_field in (("source", "source_location"), ("destination", "destination_location")):
+            locations = (
+                visible_transfers.order_by()
+                .values_list(f"{location_field}_id", f"{location_field}__code", f"{location_field}__name")
+                .distinct()
+                .order_by(f"{location_field}__code")
+            )
+            self.fields[field_name].choices = [
+                ("", "Any source" if field_name == "source" else "Any destination"),
+                *((str(pk), f"{code} · {name}") for pk, code, name in locations),
+            ]
 
 
 class StockItemFilterForm(DateRangeFilterForm):

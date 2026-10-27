@@ -806,3 +806,14 @@ select:disabled, input:disabled, textarea:disabled { background: #f3f4f5; color:
 .sourcing-access-card .status-pill, .sourcing-access-chip { display:inline-flex; align-items:center; min-height:24px; padding:3px 8px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2, #f7f8f6); color:var(--text); font-size:10px; font-weight:680; }
 .sourcing-nav-preview { cursor:default; opacity:.76; }
 .sourcing-nav-preview small { margin-left:auto; color:var(--muted); font-size:9px; font-weight:650; }
+
+/* Transfer history filtering: compact and responsive without a second page. */
+.transfer-filter-toolbar > .search-field { flex: 1 1 420px; }
+.transfer-filter-details { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.transfer-filter-label { min-width: 150px; flex: 1 1 170px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted, #667); }
+.transfer-filter-label .filter-select, .transfer-filter-label input { width: 100%; min-width: 0; height: 38px; border: 1px solid var(--line-strong); background: #fff; border-radius: 8px; padding: 0 10px; color: #33383d; }
+.transfer-filter-details .filter-live-status { align-self: center; }
+@media(max-width: 700px) { .transfer-filter-toolbar > .search-field { flex-basis: 100%; } .transfer-filter-label { flex-basis: calc(50% - 10px); min-width: 135px; } }
+
+.inventory-draft-notice { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 12px; margin: 10px 0; color: var(--muted, #667); background: #f7f9fa; border: 1px solid var(--line); border-radius: 8px; }
+.inventory-draft-notice[hidden] { display: none; }

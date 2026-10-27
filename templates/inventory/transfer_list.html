@@ -1,7 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:office' %}">Office stock</a><a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}">New transfer</a></div></div>
-<section class="card section-gap"><form class="filter-bar" method="get"><div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input name="q" value="{{ search_query }}" placeholder="Search location, reference, or transfer…"></div><button class="btn btn-sm" type="submit">Search</button></form></section>
-<section class="card section-gap"><div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Reference</th><th>From</th><th>To</th><th>Allocations</th><th>Status</th><th>User</th></tr></thead><tbody>{% for transfer in transfers %}<tr><td>{{ transfer.transfer_date|date:"d M Y" }}</td><td><a class="row-link" href="{% url 'inventory:transfer_detail' transfer.reference %}">{{ transfer.short_reference }}</a><div class="cell-sub">{{ transfer.document_reference|default:"No document reference" }}</div></td><td><span class="tag">{{ transfer.source_location.code }}</span></td><td><span class="tag">{{ transfer.destination_location.code }}</span></td><td>{{ transfer.lines.all|length }}</td><td><span class="status {% if transfer.status == 'completed' %}status-good{% else %}status-neutral{% endif %}">{{ transfer.get_status_display }}</span></td><td>{{ transfer.created_by.display_name|default:"System" }}</td></tr>{% empty %}<tr><td colspan="7"><div class="empty-state"><strong>No transfers found</strong><p>Create the first project or office stock transfer.</p></div></td></tr>{% endfor %}</tbody></table></div></section>
-{% include "partials/pagination.html" %}
+<section class="card section-gap">
+  <form class="explorer-toolbar transfer-filter-toolbar" method="get" data-live-filter-form>
+    <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ filter_form.q.value|default:'' }}" maxlength="160" placeholder="Search material, reference, source, destination, or user…" aria-label="Search transfers" autocomplete="off" data-live-filter-search></div>
+    <div class="quick-filters">
+      <select class="filter-select" name="status" aria-label="Transfer status">{% for value, label in filter_form.fields.status.choices %}<option value="{{ value }}" {% if filter_form.status.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <select class="filter-select" name="direction" aria-label="Transfer direction">{% for value, label in filter_form.fields.direction.choices %}<option value="{{ value }}" {% if filter_form.direction.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <select class="filter-select" name="date_preset" aria-label="Transfer period">{% for value, label in filter_form.fields.date_preset.choices %}<option value="{{ value }}" {% if filter_form.date_preset.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <select class="filter-select" name="sort" aria-label="Sort transfers">{% for value, label in filter_form.fields.sort.choices %}<option value="{{ value }}" {% if filter_form.sort.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </div>
+    <div class="transfer-filter-details" data-transfer-filter-secondary>
+      <label class="transfer-filter-label"><span>From location</span><select class="filter-select" name="source">{% for value, label in filter_form.fields.source.choices %}<option value="{{ value }}" {% if filter_form.source.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label class="transfer-filter-label"><span>To location</span><select class="filter-select" name="destination">{% for value, label in filter_form.fields.destination.choices %}<option value="{{ value }}" {% if filter_form.destination.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label class="transfer-filter-label"><span>Date from</span>{{ filter_form.date_from }}</label>
+      <label class="transfer-filter-label"><span>Date to</span>{{ filter_form.date_to }}</label>
+      <button class="btn btn-sm" type="submit">Apply</button>
+      <a class="btn btn-ghost btn-sm" href="{% url 'inventory:transfer_list' %}">Reset</a>
+      <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
+    </div>
+    {% if transfer_filter_errors %}<div class="field-error" role="alert">Correct the transfer filters: {{ filter_form.errors }}</div>{% endif %}
+  </form>
+</section>
+<section class="card section-gap" data-filter-results aria-live="polite">
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Reference</th><th>From</th><th>To</th><th>Allocations</th><th>Status</th><th>User</th></tr></thead>
+    <tbody>{% for transfer in transfers %}<tr>
+      <td>{{ transfer.transfer_date|date:"d M Y" }}</td>
+      <td><a class="row-link" href="{% url 'inventory:transfer_detail' transfer.reference %}">{{ transfer.short_reference }}</a><div class="cell-sub">{{ transfer.document_reference|default:"No document reference" }}</div></td>
+      <td><span class="tag">{{ transfer.source_location.code }}</span></td><td><span class="tag">{{ transfer.destination_location.code }}</span></td>
+      <td>{{ transfer.lines.all|length }}</td><td><span class="status {% if transfer.status == 'completed' %}status-good{% else %}status-neutral{% endif %}">{{ transfer.get_status_display }}</span></td><td>{{ transfer.created_by.display_name|default:"System" }}</td>
+    </tr>{% empty %}<tr><td colspan="7"><div class="empty-state"><strong>No matching transfers</strong><p>Adjust the search, location, direction, status, or date filters.</p><a class="btn btn-sm" href="{% url 'inventory:transfer_list' %}">Clear filters</a></div></td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% include "partials/pagination.html" %}
+</section>
 {% endblock %}

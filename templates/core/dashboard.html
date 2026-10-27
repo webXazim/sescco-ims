@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
-  <form class="project-scope" method="get"><label for="dashboardProject">Viewing</label><select id="dashboardProject" name="project" onchange="this.form.submit()"><option value="">All projects</option>{% for project in projects %}<option value="{{ project.code }}" {% if selected_project == project.code %}selected{% endif %}>{{ project.code }} · {{ project.name }}</option>{% endfor %}</select></form>
+  <form class="project-scope" method="get"><label for="dashboardProject">Viewing</label><select id="dashboardProject" name="project" onchange="this.form.submit()"><option value="">All projects</option>{% for project in projects %}<option value="{{ project.code }}" {% if selected_project == project.code %}selected{% endif %}>{{ project.name }}</option>{% endfor %}</select></form>
 </div>
 <div class="grid grid-4">
   <div class="card stat"><div class="stat-top"><span>Active projects</span><span class="stat-icon">◇</span></div><div><div class="stat-value">{{ active_project_count }}</div><div class="stat-note">Projects accepting inventory activity</div></div></div>
@@ -23,7 +23,7 @@
   {% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'core:add_stock' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon">＋</span><span class="action-copy"><span class="action-name">Add stock</span><span class="action-desc">Receive material{% if selected_project %} into {{ selected_project }}{% else %} into a project{% endif %}</span></span></a>{% endif %}
   {% if "inventory.stock.issue" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'core:remove_stock' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon">−</span><span class="action-copy"><span class="action-name">Use stock</span><span class="action-desc">Record project material usage</span></span></a>{% endif %}
   <a class="card action-card" href="{% url 'inventory:list' %}{% if selected_project %}?project={{ selected_project }}{% endif %}"><span class="action-icon action-search-icon" aria-hidden="true"></span><span class="action-copy"><span class="action-name">Search inventory</span><span class="action-desc">Filter project stock records</span></span></a>
-  {% if selected_project_object and "inventory.projects.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'projects:detail' selected_project_object.code %}"><span class="action-icon">◇</span><span class="action-copy"><span class="action-name">Open project</span><span class="action-desc">View {{ selected_project_object.code }}</span></span></a>{% elif "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'projects:create' %}"><span class="action-icon">◇</span><span class="action-copy"><span class="action-name">Add project</span><span class="action-desc">Create a project tag</span></span></a>{% endif %}
+  {% if selected_project_object and "inventory.projects.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'projects:detail' selected_project_object.code %}"><span class="action-icon">◇</span><span class="action-copy"><span class="action-name">Open project</span><span class="action-desc">View {{ selected_project_object.name }}</span></span></a>{% elif "inventory.projects.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="card action-card" href="{% url 'projects:create' %}"><span class="action-icon">◇</span><span class="action-copy"><span class="action-name">Add project</span><span class="action-desc">Create a project tag</span></span></a>{% endif %}
 </div>
 <div class="split-main section-gap">
   <section class="card">
@@ -32,7 +32,7 @@
   </section>
   <aside class="card">
     <div class="card-head"><div><h2 class="card-title">Projects by stock records</h2><div class="card-meta">Active project coverage</div></div></div>
-    {% if project_summaries %}<div class="project-bars">{% for project in project_summaries %}<div><div class="project-bar-head"><a href="{% url 'projects:detail' project.code %}"><span class="tag">{{ project.code }}</span></a><strong>{{ project.stock_count }}</strong></div><div class="bar"><span style="width:{% if stock_record_count %}{% widthratio project.stock_count stock_record_count 100 %}{% else %}0{% endif %}%"></span></div></div>{% endfor %}</div>{% else %}<div class="empty-state"><p>No active projects.</p></div>{% endif %}
+    {% if project_summaries %}<div class="project-bars">{% for project in project_summaries %}<div><div class="project-bar-head"><a href="{% url 'projects:detail' project.code %}"><span class="tag" title="{{ project.name }}">{{ project.name|truncatechars:35 }}</span></a><strong>{{ project.stock_count }}</strong></div><div class="bar"><span style="width:{% if stock_record_count %}{% widthratio project.stock_count stock_record_count 100 %}{% else %}0{% endif %}%"></span></div></div>{% endfor %}</div>{% else %}<div class="empty-state"><p>No active projects.</p></div>{% endif %}
   </aside>
 </div>
 {% endblock %}

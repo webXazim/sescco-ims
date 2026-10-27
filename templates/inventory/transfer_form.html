@@ -12,7 +12,7 @@
   </form>
 </section>
 {% else %}
-<form method="post" enctype="multipart/form-data" novalidate data-transfer-form>{% csrf_token %}{{ form.idempotency_key }}<input type="hidden" name="source_location" value="{{ source.pk }}">
+<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-transfer-form>{% csrf_token %}{{ form.idempotency_key }}<input type="hidden" name="source_location" value="{{ source.pk }}">
   {% if form.non_field_errors %}<div class="alert alert-danger section-gap">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
   <section class="card section-gap">
     <div class="card-head"><div><h2 class="card-title">{{ source.code }} · {{ source.name }}</h2><div class="card-meta">Enter only the quantities you want to transfer. Leave the other fields blank; you do not need to move the full balance.</div></div><a class="btn btn-sm" href="{% url 'inventory:transfer_create' %}">Change source</a></div>

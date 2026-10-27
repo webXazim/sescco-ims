@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<form method="post" novalidate>{% csrf_token %}{{ form.idempotency_key }}
+<form method="post" novalidate data-inventory-draft>{% csrf_token %}{{ form.idempotency_key }}
 <div class="form-layout"><section class="card form-card">
 {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
 <div class="match-panel"><div class="match-head"><div><div class="match-title">{{ stock_item.material_name }}</div><div class="micro"><span class="tag">{{ stock_item.location.code }}</span> · {{ stock_item.get_condition_display }} · {{ stock_item.supplier_name }}</div></div><strong>{{ stock_item.quantity_display }}</strong></div></div>

@@ -47,6 +47,7 @@ from .forms import (
     StockItemFilterForm,
     StockItemForm,
     StockTransferForm,
+    StockTransferHistoryFilterForm,
     StockTransferReversalForm,
     StockUsageForm,
     SupplierForm,
@@ -58,6 +59,7 @@ from .models import (
     StockItem,
     StockMovement,
     StockTransfer,
+    StockTransferLine,
     Supplier,
     Unit,
 )
@@ -995,29 +997,80 @@ class StockTransferListView(InventoryPermissionRequiredMixin, ListView):
     paginate_by = 40
 
     def get_queryset(self):
-        queryset = StockTransfer.objects.for_company(self.request.company).select_related(
+        # Enforce tenant and location/project access BEFORE filtering and before
+        # presenting source/destination choices. Filters cannot widen access.
+        visible = restrict_inventory_transfers(
+            StockTransfer.objects.for_company(self.request.company),
+            self.request.company_membership,
+        )
+        self.filter_form = StockTransferHistoryFilterForm(
+            self.request.GET, visible_transfers=visible
+        )
+        queryset = visible.select_related(
             "source_location", "destination_location", "created_by", "reversed_by"
         ).prefetch_related("lines")
-        queryset = restrict_inventory_transfers(queryset, self.request.company_membership)
-        query = self.request.GET.get("q", "").strip()
-        if query:
-            queryset = queryset.filter(
-                Q(source_location__code__icontains=query)
-                | Q(source_location__name__icontains=query)
-                | Q(destination_location__code__icontains=query)
-                | Q(destination_location__name__icontains=query)
-                | Q(document_reference__icontains=query)
-                | Q(reference__icontains=query)
+        if self.filter_form.is_valid():
+            data = self.filter_form.cleaned_data
+            query = data.get("q", "").strip()
+            if query:
+                # Keep material searches as a subquery to avoid duplicate rows
+                # for multi-line transfers and to preserve stable pagination.
+                matching_materials = StockTransferLine.objects.filter(
+                    source_stock_item__material_name__icontains=query,
+                    transfer__company=self.request.company,
+                ).values("transfer_id")
+                queryset = queryset.filter(
+                    Q(source_location__code__icontains=query)
+                    | Q(source_location__name__icontains=query)
+                    | Q(destination_location__code__icontains=query)
+                    | Q(destination_location__name__icontains=query)
+                    | Q(document_reference__icontains=query)
+                    | Q(reference__icontains=query)
+                    | Q(notes__icontains=query)
+                    | Q(created_by__username__icontains=query)
+                    | Q(created_by__first_name__icontains=query)
+                    | Q(created_by__last_name__icontains=query)
+                    | Q(pk__in=matching_materials)
+                )
+            if data.get("status"):
+                queryset = queryset.filter(status=data["status"])
+            if data.get("source"):
+                queryset = queryset.filter(source_location_id=data["source"])
+            if data.get("destination"):
+                queryset = queryset.filter(destination_location_id=data["destination"])
+            if data.get("direction"):
+                source_type, destination_type = data["direction"].split("_")
+                queryset = queryset.filter(
+                    source_location__location_type=source_type,
+                    destination_location__location_type=destination_type,
+                )
+            date_range = resolve_date_range(
+                data.get("date_preset", ""),
+                start=data.get("date_from"),
+                end=data.get("date_to"),
             )
-        return queryset
+            if date_range.start:
+                queryset = queryset.filter(transfer_date__gte=date_range.start)
+            if date_range.end:
+                queryset = queryset.filter(transfer_date__lte=date_range.end)
+            sorting = {
+                "newest": ("-transfer_date", "-created_at", "-pk"),
+                "oldest": ("transfer_date", "created_at", "pk"),
+                "created": ("-created_at", "-pk"),
+                "source": ("source_location__code", "-transfer_date", "-pk"),
+                "destination": ("destination_location__code", "-transfer_date", "-pk"),
+            }
+            return queryset.order_by(*sorting.get(data.get("sort"), sorting["newest"]))
+        return queryset.none()
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(
             page_key="transfers",
             page_title="Stock transfers",
-            page_subtitle="Linked project and office stock movements with condition outcomes.",
-            search_query=self.request.GET.get("q", ""),
+            page_subtitle="Search and filter office and project transfers, including reversals.",
+            filter_form=self.filter_form,
+            transfer_filter_errors=bool(self.filter_form.errors),
         )
         return context
 

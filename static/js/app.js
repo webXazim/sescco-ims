@@ -241,6 +241,15 @@
       liveFilterTimer = window.setTimeout(refreshFilterResults, 300);
     });
 
+    // Transfer history also has source/destination and explicit date inputs.
+    // Reuse the same debounced fetch/pagination behavior as Inventory Explorer.
+    liveFilterForm.querySelectorAll("[data-transfer-filter-secondary] select, [data-transfer-filter-secondary] input[type=date]").forEach((field) => {
+      field.addEventListener("change", () => {
+        if (field.type === "date" && datePreset) datePreset.value = "custom";
+        refreshFilterResults();
+      });
+    });
+
     liveFilterForm.querySelectorAll(".quick-filters select").forEach((select) => {
       select.addEventListener("change", () => {
         if (select.name === "date_preset" && select.value === "custom") {
@@ -592,4 +601,147 @@
     });
     updateTransferSummary();
   }
+
+  // Inventory creation draft recovery: tab-only storage, scoped per login,
+  // company, route and transfer source. No server-side changes are required.
+  // File inputs and passwords are intentionally never persisted.
+  (() => {
+    const scope = document.body.dataset.inventoryDraftScope;
+    if (!scope || scope.includes('None') || scope.includes('anonymous')) return;
+    const prefix = `sescco:inventory:draft:v1:${scope}:`;
+    const pendingKey = `${prefix}pending-submission`;
+    const ttl = 2 * 24 * 60 * 60 * 1000;
+    const read = (key) => { try { return JSON.parse(window.sessionStorage.getItem(key) || 'null'); } catch (_) { return null; } };
+    const write = (key, value) => { try { window.sessionStorage.setItem(key, JSON.stringify(value)); return true; } catch (_) { return false; } };
+    const remove = (key) => { try { window.sessionStorage.removeItem(key); } catch (_) {} };
+
+    const pending = read(pendingKey);
+    if (pending && Date.now() - (pending.savedAt || 0) < ttl) {
+      // Django's post/redirect/get success or idempotent-info banner proves the
+      // write succeeded. Errors or a rejected POST must preserve the draft.
+      if (document.querySelector('.message-stack .alert-success, .message-stack .alert-info')) {
+        remove(pending.draftKey);
+      }
+    }
+    remove(pendingKey);
+
+    const forms = [...document.querySelectorAll('form[data-inventory-draft][method="post"]')];
+    forms.forEach((form, index) => {
+      const route = window.location.pathname;
+      // Include GET scope: transfer source changes the form's stock rows.
+      const params = new URLSearchParams(window.location.search);
+      const source = params.get('source') || form.querySelector('[name="source_location"]')?.value || '';
+      const destination = params.get('destination') || '';
+      const office = form.dataset.officeId || '';
+      const draftId = form.dataset.draftId || String(index);
+      const key = `${prefix}${route}:${source}:${destination}:${office}:${draftId}`;
+      const fields = () => Array.from(form.elements).filter((field) =>
+        field.name && !field.disabled && !['csrfmiddlewaretoken'].includes(field.name)
+        && !['file', 'password', 'submit', 'button', 'reset'].includes(field.type)
+        && !field.hasAttribute('data-draft-ignore')
+      );
+      const identity = (field, all) => `${field.name}#${all.filter((f) => f.name === field.name).indexOf(field)}`;
+      const snapshot = () => {
+        const all = fields();
+        const values = {};
+        all.forEach((field) => {
+          values[identity(field, all)] = field.type === 'checkbox' || field.type === 'radio'
+            ? { checked: field.checked }
+            : { value: field.multiple ? Array.from(field.selectedOptions).map((o) => o.value) : field.value };
+        });
+        return { savedAt: Date.now(), values };
+      };
+      const notice = document.createElement('div');
+      notice.className = 'inventory-draft-notice micro';
+      notice.setAttribute('role', 'status');
+      const message = document.createElement('span');
+      const clear = document.createElement('button');
+      clear.type = 'button'; clear.className = 'btn btn-ghost btn-sm'; clear.textContent = 'Discard draft';
+      notice.append(message, clear);
+      (form.querySelector('.form-actions') || form).before(notice);
+      const hasFiles = Boolean(form.querySelector('input[type="file"]'));
+      const showNotice = (restored) => {
+        message.textContent = `${restored ? 'Draft restored' : 'Draft saved'} in this tab.${hasFiles ? ' Reselect any attachment after refresh.' : ''}`;
+        notice.hidden = false;
+      };
+      notice.hidden = true;
+      let suspended = false;
+      let dirty = false;
+      const save = () => {
+        if (suspended || !dirty) return;
+        if (write(key, snapshot())) showNotice(false);
+      };
+      let saved = read(key);
+      if (saved && Date.now() - (saved.savedAt || 0) > ttl) { remove(key); saved = null; }
+      if (saved && saved.values) {
+        const unapplied = new Map(Object.entries(saved.values));
+        const apply = () => {
+          const all = fields();
+          const restoredFields = [];
+          all.forEach((field) => {
+            const id = identity(field, all);
+            const value = unapplied.get(id);
+            if (!value) return;
+            if (field.tagName === 'SELECT' && 'value' in value && !field.multiple
+                && !Array.from(field.options).some((option) => option.value === value.value)) return;
+            if (field.type === 'checkbox' || field.type === 'radio') field.checked = Boolean(value.checked);
+            else if (field.multiple) Array.from(field.options).forEach((option) => { option.selected = (value.value || []).includes(option.value); });
+            else field.value = value.value;
+            unapplied.delete(id);
+            restoredFields.push(field);
+          });
+          return restoredFields;
+        };
+        suspended = true;
+        apply();
+        showNotice(true);
+        dirty = true;
+        // Do not trigger change while initial handlers are being installed.
+        window.requestAnimationFrame(() => {
+          fields().filter((field) => ['SELECT', 'INPUT'].includes(field.tagName))
+            .forEach((field) => field.dispatchEvent(new Event('change', { bubbles: true })));
+          suspended = false;
+        });
+        // Live picker options may be loaded asynchronously after DOM ready.
+        // Restore a saved choice if it becomes available in a later response.
+        if (unapplied.size) {
+          const observer = new MutationObserver(() => {
+            suspended = true;
+            const restoredFields = apply();
+            if (!unapplied.size) observer.disconnect();
+            // Update dependent summaries/pickers after async select options load.
+            window.requestAnimationFrame(() => restoredFields.forEach((field) =>
+              field.dispatchEvent(new Event('change', { bubbles: true }))));
+            suspended = false;
+          });
+          observer.observe(form, { subtree: true, childList: true });
+          window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
+        }
+      }
+      let timer;
+      const schedule = () => {
+        if (suspended) return;
+        dirty = true;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(save, 120);
+      };
+      form.addEventListener('input', schedule);
+      form.addEventListener('change', schedule);
+      form.addEventListener('submit', () => {
+        dirty = true;
+        save();
+        write(pendingKey, { draftKey: key, savedAt: Date.now() });
+      });
+      window.addEventListener('pagehide', () => {
+        window.clearTimeout(timer);
+        save();
+      });
+      clear.addEventListener('click', () => {
+        remove(key);
+        dirty = false;
+        form.reset();
+        notice.hidden = true;
+      });
+    });
+  })();
 })();

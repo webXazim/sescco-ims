@@ -52,7 +52,6 @@ class ProjectWorkspaceTests(TestCase):
         response = self.client.post(
             reverse("projects:create"),
             {
-                "code": "neom-04",
                 "name": "NEOM Site Works",
                 "client_name": "NEOM",
                 "location": "Tabuk",
@@ -60,7 +59,7 @@ class ProjectWorkspaceTests(TestCase):
             },
         )
         self.assertRedirects(response, reverse("projects:list"))
-        project = Project.objects.get(code="NEOM-04")
+        project = Project.objects.get(code="NEOM-SITE-WORKS")
         self.assertEqual(project.created_by, self.user)
         self.assertEqual(project.updated_by, self.user)
 

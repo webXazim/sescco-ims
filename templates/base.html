@@ -16,7 +16,7 @@
   {% block extra_head %}{% endblock %}
   <link rel="stylesheet" href="{% static 'platform/css/typography-readability.css' %}?v=1.0.118">
 </head>
-<body class="inventory-shell-v2" data-page="{{ page_key }}">
+<body class="inventory-shell-v2" data-page="{{ page_key }}" data-inventory-draft-scope="{{ request.user.pk }}:{{ request.company.pk }}">
 <div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
   {% include "partials/sidebar.html" %}
   <main class="main">

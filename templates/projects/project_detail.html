@@ -27,7 +27,7 @@
     <details class="row-actions lifecycle-actions" data-row-actions>
       <summary class="btn row-actions-trigger" aria-label="Project actions"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
       <div class="row-actions-menu">
-        <div class="row-actions-head"><span>Project lifecycle</span><strong>{{ project.code }} · {{ project.name }}</strong></div>
+        <div class="row-actions-head"><span>Project lifecycle</span><strong>{{ project.name }}</strong></div>
         {% if needs_completion_date and project.status != 'archived' %}
         <a class="row-action-option" href="{% url 'projects:edit' project.code %}"><span>Set actual end date</span><small>Required before completing the project</small></a>
         {% endif %}
@@ -53,7 +53,7 @@
 </div>
 {% if not project.accepts_stock_activity %}<div class="alert alert-warning">This project is {{ project.get_status_display|lower }}. Its inventory and history remain visible, but new stock activity is blocked.</div>{% endif %}
 <section class="card section-gap">
-  <div class="detail-hero"><div><span class="tag">{{ project.code }}</span><h2 class="detail-title">{{ project.name }}</h2><div class="detail-desc">{% if project.notes %}{{ project.notes }}{% else %}No project notes have been added.{% endif %}</div></div><div class="hero-balance"><div class="hero-label">Stock records</div><div class="hero-value">{{ project.stock_record_count }}</div><div class="micro">{{ project.low_stock_count }} need attention</div></div></div>
+  <div class="detail-hero"><div><span class="tag" title="{{ project.name }}">{{ project.name|truncatechars:35 }}</span><h2 class="detail-title">{{ project.name }}</h2><div class="detail-desc">{% if project.notes %}{{ project.notes }}{% else %}No project notes have been added.{% endif %}</div></div><div class="hero-balance"><div class="hero-label">Stock records</div><div class="hero-value">{{ project.stock_record_count }}</div><div class="micro">{{ project.low_stock_count }} need attention</div></div></div>
   <div class="detail-meta">
     <div class="meta-cell"><div class="meta-label">Client</div><div class="meta-value">{{ project.client_name|default:"—" }}</div></div>
     <div class="meta-cell"><div class="meta-label">Location</div><div class="meta-value">{{ project.location|default:"—" }}</div></div>
@@ -83,7 +83,7 @@
   {% include "partials/pagination.html" %}
 </section>
 <section class="card section-gap">
-  <div class="card-head"><div><h2 class="card-title">Recent project activity</h2><div class="card-meta">Latest balance changes for {{ project.code }}</div></div><a class="btn btn-sm" href="{% url 'core:activity' %}?project={{ project.code }}">View all activity</a></div>
+  <div class="card-head"><div><h2 class="card-title">Recent project activity</h2><div class="card-meta">Latest balance changes for {{ project.name }}</div></div><a class="btn btn-sm" href="{% url 'core:activity' %}?project={{ project.code }}">View all activity</a></div>
   {% if recent_movements %}
   <div class="activity-list project-activity-list">
     {% for movement in recent_movements %}

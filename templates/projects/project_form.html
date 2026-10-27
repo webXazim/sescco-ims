@@ -1,14 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<form method="post" novalidate>
+<form method="post" novalidate{% if not object %} data-inventory-draft{% endif %}>
   {% csrf_token %}
   <div class="form-layout">
     <section class="card form-card">
       {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}{{ error }}{% endfor %}</div>{% endif %}
-      <div class="form-section"><h2 class="form-section-title">Project identity</h2><div class="form-grid">
-        {% include "partials/form_field.html" with field=form.code %}
-        {% include "partials/form_field.html" with field=form.name %}
+      <div class="form-section"><h2 class="form-section-title">Project identity</h2><p class="micro">Enter the project name; no separate code is required.</p><div class="form-grid">
+        {% include "partials/form_field.html" with field=form.name full_width_fields="name" %}
         {% include "partials/form_field.html" with field=form.client_name %}
         {% include "partials/form_field.html" with field=form.location %}
         {% include "partials/form_field.html" with field=form.manager_name %}
@@ -22,7 +21,7 @@
       </div></div>
       <div class="form-actions"><a class="btn" href="{% if object %}{% url 'projects:detail' object.code %}{% else %}{% url 'projects:list' %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit">{{ submit_label }}</button></div>
     </section>
-    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Project rules</h2></div><div class="card-body"><div class="check-list-status"><div>✓ One project record is shared by Inventory and Rental Manpower.</div><div>✓ The UUID reference is stable even if the project code changes.</div><div>✓ Completed and archived projects keep their history.</div><div>✓ A project can close only after every stock balance reaches zero.</div><div>✓ Stock and new rental assignments are allowed only while active.</div><div>✓ Completed projects require an actual end date.</div></div></div></aside>
+    <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Project rules</h2></div><div class="card-body"><div class="check-list-status"><div>✓ One project record is shared by Inventory and Rental Manpower.</div><div>✓ The project name is its visible tag. Internal references are generated automatically and remain stable if the name changes.</div><div>✓ Completed and archived projects keep their history.</div><div>✓ A project can close only after every stock balance reaches zero.</div><div>✓ Stock and new rental assignments are allowed only while active.</div><div>✓ Completed projects require an actual end date.</div></div></div></aside>
   </div>
 </form>
 {% endblock %}

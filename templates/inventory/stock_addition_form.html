@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<form method="post" enctype="multipart/form-data" novalidate data-stock-addition-form data-match-url="{% url 'inventory:matches' %}"{% if office %} data-office-id="{{ office.pk }}"{% endif %}>
+<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-stock-addition-form data-match-url="{% url 'inventory:matches' %}"{% if office %} data-office-id="{{ office.pk }}"{% endif %}>
   {% csrf_token %}{{ form.idempotency_key }}{% if office %}<input type="hidden" name="office_code" value="{{ office.code }}">{% endif %}
   <div class="form-layout">
     <section class="card form-card">

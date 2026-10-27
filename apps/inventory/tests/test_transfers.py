@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,8 @@ from django.utils import timezone
 
 from apps.projects.models import Project
 from apps.core.tests.tenant import grant_company_access, primary_company
+from apps.accounts.models import MembershipInventoryLocationScope
+from apps.accounts.roles import ScopeMode
 
 from ..models import InventoryLocation, StockItem, StockMovement, StockTransfer
 from ..services.stock import InsufficientStockError, add_stock
@@ -359,3 +362,97 @@ class StockTransferViewTests(StockTransferServiceTests):
         self.assertEqual(StockTransfer.objects.count(), 0)
         self.item.refresh_from_db()
         self.assertEqual(self.item.current_quantity, Decimal("10"))
+
+
+class StockTransferHistoryFilterTests(StockTransferServiceTests):
+    """Transfer history filtering must retain access controls and stable results."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+        self.office_transfer = self._transfer(
+            destination_location=self.office,
+            allocations=[TransferAllocation(self.item, "new", Decimal("2"))],
+            document_reference="OFFICE-RECEIPT",
+        ).transfer
+        self.project_transfer = self._transfer(
+            destination_location=self.other_project.inventory_location,
+            allocations=[TransferAllocation(self.item, "used", Decimal("3"))],
+            document_reference="SECOND-PROJECT",
+            transfer_date=timezone.localdate() - timedelta(days=40),
+        ).transfer
+
+    def _search(self, **params):
+        response = self.client.get(reverse("inventory:transfer_list"), params)
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_unfiltered_history_shows_all_scoped_transfers(self):
+        response = self._search()
+        self.assertEqual(response.context["paginator"].count, 2)
+        self.assertContains(response, "OFFICE-RECEIPT")
+        self.assertContains(response, "SECOND-PROJECT")
+        self.assertContains(response, 'data-live-filter-form')
+
+    def test_status_direction_and_location_filters(self):
+        response = self._search(direction="project_office", status="completed")
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "OFFICE-RECEIPT")
+        response = self._search(
+            source=self.project.inventory_location.pk,
+            destination=self.other_project.inventory_location.pk,
+        )
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "SECOND-PROJECT")
+        response = self._search(source="999999999")
+        self.assertEqual(len(response.context["transfers"]), 0)
+
+    def test_reference_material_and_actor_search(self):
+        for query in ("SECOND-PROJECT", "Safety Barrier", self.user.username):
+            with self.subTest(q=query):
+                response = self._search(q=query)
+                self.assertGreaterEqual(response.context["paginator"].count, 1)
+        response = self._search(q="SECOND-PROJECT")
+        self.assertEqual(response.context["paginator"].count, 1)
+
+    def test_preset_custom_date_and_sort(self):
+        response = self._search(date_preset="last_7_days")
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "OFFICE-RECEIPT")
+        response = self._search(date_from=(timezone.localdate() - timedelta(days=60)).isoformat(),
+                                date_to=(timezone.localdate() - timedelta(days=30)).isoformat())
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "SECOND-PROJECT")
+        response = self._search(sort="oldest")
+        self.assertEqual(response.context["transfers"][0].pk, self.project_transfer.pk)
+
+    def test_invalid_date_range_returns_no_records_without_exception(self):
+        response = self._search(date_preset="custom", date_from="2026-10-28", date_to="2026-10-01")
+        self.assertEqual(len(response.context["transfers"]), 0)
+        self.assertTrue(response.context["transfer_filter_errors"])
+
+    def test_reversed_filter(self):
+        reverse_transfer(
+            transfer=self.office_transfer,
+            user=self.admin,
+            idempotency_key=uuid.uuid4(),
+            reason="Reversed for filter regression",
+        )
+        response = self._search(status="reversed")
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "OFFICE-RECEIPT")
+
+    def test_selected_scope_limits_transfer_results_and_filter_options(self):
+        membership = self.user.company_memberships.get(company=self.company)
+        membership.inventory_location_scope_mode = ScopeMode.SELECTED
+        membership.save(update_fields=["inventory_location_scope_mode"])
+        for location in (self.project.inventory_location, self.office):
+            MembershipInventoryLocationScope.objects.create(
+                membership=membership, inventory_location=location
+            )
+        response = self._search(q="Safety Barrier")
+        self.assertEqual(response.context["paginator"].count, 1)
+        self.assertContains(response, "OFFICE-RECEIPT")
+        self.assertNotContains(response, "SECOND-PROJECT")
+        self.assertNotContains(response, self.other_project.inventory_location.code)
+        self.assertEqual(self._search(destination=self.other_project.inventory_location.pk).context["paginator"].count, 0)
