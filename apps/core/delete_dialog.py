@@ -21,7 +21,6 @@ def delete_dialog_response(context, *, status=200):
             "subtitle": context["page_subtitle"],
             "record_label": context["record_label"],
             "record_type": context["record_type"],
-            "confirmation_token": context["confirmation_phrase"],
             "retention_days": context["retention_days"],
             "delete_allowed": context["delete_allowed"],
             "effects": list(context["effects"]),

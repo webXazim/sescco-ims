@@ -17,7 +17,7 @@ class UnitLifecyclePolicy(LifecyclePolicy):
     object_type = "inventory.Unit"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
-    confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    confirmation_required_actions = frozenset()  # Confirmation is the explicit CSRF-protected POST; no typed token.
 
     def confirmation_token(self, instance: Unit) -> str:
         return instance.symbol
@@ -56,7 +56,7 @@ class SupplierLifecyclePolicy(LifecyclePolicy):
     object_type = "inventory.Supplier"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
-    confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    confirmation_required_actions = frozenset()  # Confirmation is the explicit CSRF-protected POST; no typed token.
 
     def confirmation_token(self, instance: Supplier) -> str:
         return instance.name
@@ -94,7 +94,7 @@ class StockItemLifecyclePolicy(LifecyclePolicy):
     object_type = "inventory.StockItem"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
-    confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    confirmation_required_actions = frozenset()  # Confirmation is the explicit CSRF-protected POST; no typed token.
 
     def confirmation_token(self, instance: StockItem) -> str:
         return instance.material_name
@@ -145,7 +145,7 @@ class InventoryLocationLifecyclePolicy(LifecyclePolicy):
     object_type = "inventory.InventoryLocation"
     supported_actions = frozenset({LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE})
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
-    confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    confirmation_required_actions = frozenset()  # Confirmation is the explicit CSRF-protected POST; no typed token.
 
     def confirmation_token(self, instance: InventoryLocation) -> str:
         return instance.code

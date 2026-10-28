@@ -7,7 +7,7 @@
     {% if form_error %}<div class="alert alert-danger">{{ form_error }}</div>{% endif %}
     {% if delete_allowed %}
       <form method="post" class="form-stack">{% csrf_token %}
-        <label class="field"><span>Type <strong>{{ confirmation_phrase }}</strong> to delete</span><input class="input" name="confirmation" autocomplete="off" required autofocus></label>
+        <p>Move <strong>{{ record_label }}</strong> to Trash? This can be reversed within {{ retention_days }} days.</p>
         <div class="form-actions"><a class="btn btn-ghost" href="{{ cancel_url }}">Cancel</a><button class="btn btn-danger" type="submit">Delete</button></div>
       </form>
     {% else %}

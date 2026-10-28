@@ -742,6 +742,16 @@
         form.reset();
         notice.hidden = true;
       });
+      form.querySelectorAll('[data-crud-cancel]').forEach((link) => {
+        link.addEventListener('click', () => {
+          // Cancel explicitly abandons this form. Never re-save it on pagehide.
+          window.clearTimeout(timer);
+          dirty = false;
+          remove(key);
+          const current = read(pendingKey);
+          if (current?.draftKey === key) remove(pendingKey);
+        });
+      });
     });
   })();
 })();

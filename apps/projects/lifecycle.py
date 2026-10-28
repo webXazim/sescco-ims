@@ -29,7 +29,7 @@ class ProjectLifecyclePolicy(LifecyclePolicy):
         {LifecycleAction.ARCHIVE, LifecycleAction.RESTORE, LifecycleAction.DELETE}
     )
     reason_required_actions = frozenset({LifecycleAction.ARCHIVE})
-    confirmation_required_actions = frozenset({LifecycleAction.DELETE})
+    confirmation_required_actions = frozenset()  # A confirmed POST is sufficient for recoverable deletion.
 
     def confirmation_token(self, instance: Project) -> str:
         return instance.name

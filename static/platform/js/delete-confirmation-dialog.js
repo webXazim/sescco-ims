@@ -6,7 +6,6 @@
   const loading = get('[data-delete-loading]');
   const details = get('[data-delete-details]');
   const form = get('[data-delete-form]');
-  const nameInput = get('[data-delete-name]');
   const submit = get('[data-delete-submit]');
   const error = get('[data-delete-error]');
   const blocked = get('[data-delete-blocked]');
@@ -14,23 +13,17 @@
   const headers = { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' };
   let controller = null;
   let opener = null;
-  let expectedName = '';
   let busy = false;
   let allowed = false;
 
   function showError(message) { error.textContent = message; error.hidden = false; }
-  function matchName() { return nameInput.value.trim().toLocaleLowerCase() === expectedName.trim().toLocaleLowerCase(); }
-  function updateSubmit() { submit.disabled = busy || !allowed || !expectedName || !matchName(); }
-  nameInput.addEventListener('input', updateSubmit);
+  function updateSubmit() { submit.disabled = busy || !allowed; }
 
   function applyPayload(payload) {
     get('[data-delete-title]').textContent = payload.title || 'Delete record';
     get('[data-delete-subtitle]').textContent = payload.subtitle || '';
     get('[data-delete-type]').textContent = payload.record_type || 'Record';
     get('[data-delete-record]').textContent = payload.record_label || '';
-    expectedName = payload.confirmation_token || '';
-    get('[data-delete-token]').textContent = expectedName;
-    nameInput.placeholder = 'Enter the exact name';
     const list = get('[data-delete-blockers]');
     list.replaceChildren();
     (payload.blockers || []).forEach((item) => {
@@ -61,7 +54,6 @@
     opener = link;
     form.reset();
     form.action = link.href;
-    expectedName = '';
     allowed = false;
     busy = false;
     updateSubmit();
@@ -76,7 +68,7 @@
       if (!dialog.open || controller.signal.aborted) return;
       if (!response.ok && response.status !== 409) throw new Error(payload.error || 'Unable to load deletion details.');
       applyPayload(payload);
-      if (allowed) nameInput.focus();
+      if (allowed) submit.focus();
       else get('[data-delete-close]').focus();
     } catch (exc) {
       if (exc.name === 'AbortError' || !dialog.open) return;
@@ -108,7 +100,7 @@
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (busy || !allowed || !matchName() || !form.reportValidity()) return;
+    if (busy || !allowed || !form.reportValidity()) return;
     busy = true;
     error.hidden = true;
     updateSubmit();
@@ -120,7 +112,7 @@
         return;
       }
       if (payload.blockers && !payload.delete_allowed) applyPayload(payload);
-      showError(payload.error || 'Deletion failed. Check the name and try again.');
+      showError(payload.error || 'Deletion failed. Please try again.');
     } catch (exc) {
       showError(exc.message || 'Deletion failed. Please try again.');
     } finally {

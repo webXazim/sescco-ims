@@ -64,21 +64,19 @@ class SupplierDeleteDialogTests(TestCase):
         self.assertEqual(modal.status_code, 200)
         self.assertTrue(modal.json()["delete_allowed"])
         self.assertEqual(modal.json()["blockers"], [])
-        self.assertEqual(modal.json()["confirmation_token"], self.supplier.name)
+        self.assertNotIn("confirmation_token", modal.json())
         self.assertTrue(any("will not be changed" in effect for effect in modal.json()["effects"]))
 
-        wrong = self.client.post(url, {"confirmation": "not this supplier"}, **self.ajax_headers())
-        self.assertEqual(wrong.status_code, 409)
-        self.assertIn(self.supplier.name, wrong.json()["error"])
+        # GET must remain read-only; no name field is required for POST.
         self.supplier.refresh_from_db()
         self.assertIsNone(self.supplier.deleted_at)
 
-        deleted = self.client.post(url, {"confirmation": self.supplier.name}, **self.ajax_headers())
+        deleted = self.client.post(url, {}, **self.ajax_headers())
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(deleted.json()["redirect_url"], reverse("inventory:suppliers"))
         self.supplier.refresh_from_db()
         self.assertIsNotNone(self.supplier.deleted_at)
-        self.assertEqual(self.supplier.deletion_reason, "Confirmed by typing the record name.")
+        self.assertEqual(self.supplier.deletion_reason, "Deleted after confirmation click.")
         self.assertEqual((self.supplier.purge_after - self.supplier.deleted_at).days, 30)
         self.assertFalse(Supplier.objects.for_company(self.company).filter(pk=self.supplier.pk, deleted_at__isnull=True).exists())
         self.assertTrue(StockItem.objects.filter(pk=item_pk).exists())
@@ -102,7 +100,7 @@ class SupplierDeleteDialogTests(TestCase):
         self.client.force_login(self.member)
         url = reverse("inventory:supplier_delete", args=[self.supplier.pk])
         self.assertEqual(self.client.get(url, **self.ajax_headers()).status_code, 403)
-        self.assertEqual(self.client.post(url, {"confirmation": self.supplier.name}, **self.ajax_headers()).status_code, 403)
+        self.assertEqual(self.client.post(url, {}, **self.ajax_headers()).status_code, 403)
 
     def test_locations_link_hidden_from_sidebar_only(self):
         self.client.force_login(self.admin)

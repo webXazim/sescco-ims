@@ -1,0 +1,6 @@
+{# Shared form action row. Submit-once is enforced by the existing app JS. #}
+<div class="form-actions crud-form-actions">
+  <span class="crud-form-action-help">{% if help_text %}{{ help_text }}{% else %}Review the details before saving.{% endif %}</span>
+  <a class="btn" href="{{ cancel_url }}" data-crud-cancel>Cancel</a>
+  <button class="btn {% if danger %}btn-danger{% else %}btn-primary{% endif %}" type="submit" data-submit-once>{% if action_label %}{{ action_label }}{% else %}Save changes{% endif %}</button>
+</div>

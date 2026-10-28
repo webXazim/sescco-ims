@@ -282,10 +282,9 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
         return {
             "page_key": "projects",
             "page_title": "Delete project",
-            "page_subtitle": "Type the project name below to move it to Trash. Recoverable for 30 days.",
+            "page_subtitle": "Confirm to move this project to Trash. Recoverable for 30 days.",
             "record_label": str(project),
             "record_type": "Project",
-            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("projects:detail", kwargs={"code": project.code}),
             "delete_allowed": decision.allowed,
@@ -324,7 +323,7 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
                 actor_membership=request.company_membership,
                 project_id=project.pk,
                 confirmation=request.POST.get("confirmation", ""),
-                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
+                reason=request.POST.get("reason", "").strip() or "Deleted after confirmation click.",
                 request=request,
             )
         except ValidationError as exc:

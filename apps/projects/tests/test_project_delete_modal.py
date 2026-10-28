@@ -30,6 +30,7 @@ class ProjectDeleteDialogTests(TestCase):
         response = self.client.get(reverse("projects:detail", args=[self.project.code]))
         self.assertContains(response, 'data-inventory-delete href="' + reverse("projects:delete", args=[self.project.code]) + '"')
         self.assertContains(response, 'data-inventory-delete-dialog')
+        self.assertNotContains(response, 'data-delete-name')
 
     def test_modal_payload_and_validation_without_page_navigation(self):
         self.client.force_login(self.admin)
@@ -38,25 +39,23 @@ class ProjectDeleteDialogTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/json")
         self.assertTrue(response.json()["delete_allowed"])
-        self.assertEqual(response.json()["confirmation_token"], self.project.name)
+        self.assertNotIn("confirmation_token", response.json())
         self.assertEqual(response.json()["retention_days"], 30)
 
-        invalid = self.client.post(url, {"confirmation": self.project.code}, **self.request_kwargs())
-        self.assertEqual(invalid.status_code, 409)
-        self.assertIn(self.project.name, invalid.json()["error"])
+        # Opening the modal must never delete the project.
         self.project.refresh_from_db()
         self.assertIsNone(self.project.deleted_at)
 
         success = self.client.post(
             url,
-            {"confirmation": self.project.name},
+            {},
             **self.request_kwargs(),
         )
         self.assertEqual(success.status_code, 200)
         self.assertEqual(success.json()["redirect_url"], reverse("projects:list"))
         self.project.refresh_from_db()
         self.assertIsNotNone(self.project.deleted_at)
-        self.assertEqual(self.project.deletion_reason, "Confirmed by typing the record name.")
+        self.assertEqual(self.project.deletion_reason, "Deleted after confirmation click.")
 
     def test_member_cannot_load_or_submit_modal(self):
         self.client.force_login(self.member)

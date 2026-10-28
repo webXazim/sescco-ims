@@ -752,25 +752,18 @@ class InventoryWorkspaceTests(TestCase):
         self.assertEqual(item.supplier_name, "Gulf Cement")
         self.assertEqual(item.supplier_phone, "+966 57 368 6575")
 
-    def test_trash_requires_name_confirmation_and_can_restore_before_expiry(self):
+    def test_trash_uses_confirmation_click_and_can_restore_before_expiry(self):
         item = self.create_item()
         self.client.force_login(self.admin)
         delete_url = reverse("inventory:delete", kwargs={"reference": item.reference})
 
         confirmation = self.client.get(delete_url)
         self.assertContains(confirmation, item.material_name)
-        self.assertContains(confirmation, "Remove this record from active Inventory")
-        self.assertEqual(
-            self.client.post(
-                delete_url, {"confirmation": "wrong name"}
-            ).status_code,
-            409,
-        )
+        self.assertContains(confirmation, "Move")
 
         self.client.post(
             delete_url,
             {
-                "confirmation": item.material_name,
                 "reason": "Duplicate purchase entry",
                 "acknowledge": "yes",
             },

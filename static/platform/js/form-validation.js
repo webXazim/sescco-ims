@@ -146,7 +146,42 @@
     }));
   });
 
+  // Server-side form errors must be visible and accessible on every Inventory
+  // and Projects CRUD form, including edit forms and dynamic transfer rows.
+  const decorateCrudErrors = () => {
+    document.querySelectorAll('form[data-crud-form]').forEach((form) => {
+      const invalidControls = [];
+      form.querySelectorAll('.field-error').forEach((error, index) => {
+        const wrapper = wrapperFor(error) || error.closest('.field, td, .form-field');
+        if (!wrapper) return;
+        const control = wrapper.querySelector('input:not([type="hidden"]), select, textarea');
+        if (!control) return;
+        wrapper.classList.add('is-invalid');
+        control.setAttribute('aria-invalid', 'true');
+        if (!error.id) error.id = `crud-server-error-${index}-${form.id || 'form'}`;
+        const describedBy = (control.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (!describedBy.includes(error.id)) describedBy.push(error.id);
+        control.setAttribute('aria-describedby', describedBy.join(' '));
+        invalidControls.push(control);
+      });
+      if (!invalidControls.length) return;
+      const summary = document.createElement('div');
+      summary.className = 'crud-validation-summary';
+      summary.setAttribute('role', 'alert');
+      summary.append(document.createTextNode('Please correct the highlighted fields before saving. '));
+      const jump = document.createElement('button');
+      jump.type = 'button';
+      jump.textContent = 'Go to first error';
+      jump.addEventListener('click', () => invalidControls[0].focus());
+      summary.append(jump);
+      const intro = form.querySelector('.crud-form-intro');
+      if (intro) intro.after(summary);
+      else form.prepend(summary);
+    });
+  };
+
   document.addEventListener('DOMContentLoaded', () => {
+    decorateCrudErrors();
     syncConditionalRequired(document);
     decorate(document);
     observer.observe(document.body, { childList: true, subtree: true });

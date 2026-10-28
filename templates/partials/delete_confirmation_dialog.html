@@ -1,4 +1,4 @@
-{# Shared name-confirmation dialog for Inventory, Suppliers and Projects. #}
+{# Shared click-confirmation dialog for recoverable Inventory and Projects deletion. #}
 <dialog class="inventory-delete-dialog" data-inventory-delete-dialog aria-labelledby="inventory-delete-dialog-title" aria-describedby="inventory-delete-dialog-description">
   <div class="inventory-delete-dialog__panel">
     <header class="inventory-delete-dialog__header">
@@ -20,10 +20,7 @@
         </div>
         <form method="post" class="inventory-delete-dialog__form" data-delete-form>
           {% csrf_token %}
-          <label class="field" for="inventory-delete-name">
-            <span class="field-label">Type <strong data-delete-token></strong> to delete</span>
-            <input class="input" id="inventory-delete-name" name="confirmation" autocomplete="off" autocapitalize="off" spellcheck="false" required data-delete-name>
-          </label>
+          <p class="micro">Move this record to Trash? This action can be reversed within 30 days.</p>
           <div class="inventory-delete-dialog__actions">
             <button class="btn btn-ghost" type="button" data-delete-close>Cancel</button>
             <button class="btn btn-danger inventory-delete-dialog__submit" type="submit" data-delete-submit disabled>Delete</button>

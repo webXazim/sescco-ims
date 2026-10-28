@@ -1,0 +1,8 @@
+{# Shared create/edit form heading; never changes the underlying record or permissions. #}
+<div class="crud-form-intro">
+  <div class="crud-form-intro-copy">
+    <span class="crud-form-mode">{% if mode %}{{ mode }}{% elif object %}Edit record{% else %}New record{% endif %}</span>
+    <span class="crud-form-guidance">{% if guidance %}{{ guidance }}{% else %}Complete the fields below, then save. Fields marked * are required.{% endif %}</span>
+  </div>
+  <span class="crud-form-required-note" aria-hidden="true">* Required</span>
+</div>

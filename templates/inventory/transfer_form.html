@@ -4,15 +4,17 @@
 
 {% if not source %}
 <section class="card form-card section-gap">
-  <form method="get">
+  <form method="get" data-crud-form>
+    {% include "partials/crud_form_intro.html" with mode="Choose source" %}
     <div class="form-section"><h2 class="form-section-title">Choose the source location</h2><div class="form-grid">
       <div class="field"><label class="field-label" for="sourceLocation">From</label>{% if preferred_destination %}<input type="hidden" name="destination" value="{{ preferred_destination.pk }}">{% endif %}<select class="input" id="sourceLocation" name="source" required><option value="">Select project or office</option>{% for location in source_locations %}<option value="{{ location.pk }}">{{ location.code }} · {{ location.name }} ({{ location.get_location_type_display }})</option>{% endfor %}</select></div>
     </div></div>
-    <div class="form-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Cancel</a><button class="btn btn-primary" type="submit">Load available stock</button></div>
+    {% url 'inventory:transfer_list' as cancel_url %}{% include "partials/crud_form_actions.html" with cancel_url=cancel_url action_label="Load available stock" %}
   </form>
 </section>
 {% else %}
-<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-transfer-form>{% csrf_token %}{{ form.idempotency_key }}<input type="hidden" name="source_location" value="{{ source.pk }}">
+<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-crud-form data-transfer-form>{% csrf_token %}{{ form.idempotency_key }}<input type="hidden" name="source_location" value="{{ source.pk }}">
+  {% include "partials/crud_form_intro.html" with mode="Transfer stock" %}
   {% if form.non_field_errors %}<div class="alert alert-danger section-gap">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
   <section class="card section-gap">
     <div class="card-head"><div><h2 class="card-title">{{ source.code }} · {{ source.name }}</h2><div class="card-meta">Enter only the quantities you want to transfer. Leave the other fields blank; you do not need to move the full balance.</div></div><a class="btn btn-sm" href="{% url 'inventory:transfer_create' %}">Change source</a></div>
@@ -31,7 +33,7 @@
       {% include "partials/form_field.html" with field=form.attachment %}
       <div class="field field-full">{% include "partials/form_field.html" with field=form.notes %}</div>
     </div></div>
-    <div class="form-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>Complete transfer</button></div>
+    {% url 'inventory:transfer_list' as cancel_url %}{% include "partials/crud_form_actions.html" with cancel_url=cancel_url action_label="Complete transfer" %}
   </section><aside class="card summary-card"><div class="card-head"><h2 class="card-title">Reconciliation</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Allocated</span><span class="summary-value" data-transfer-total>0</span></div><div class="summary-row"><span class="summary-key">Received</span><span class="summary-value" data-transfer-received>0</span></div><div class="summary-row"><span class="summary-key">Lost</span><span class="summary-value" data-transfer-lost>0</span></div></div><div class="alert alert-warning section-gap">Lost quantities leave the source but never create destination stock. No-value quantities remain physically visible with zero estimated value.</div><div class="alert alert-info section-gap">Only the entered quantity is transferred. The remaining balance stays at the source, and the project status does not change.</div></div></aside></div>{% endif %}
 </form>
 {% endif %}

@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-stock-addition-form data-match-url="{% url 'inventory:matches' %}"{% if office %} data-office-id="{{ office.pk }}"{% endif %}>
+<form method="post" enctype="multipart/form-data" novalidate data-inventory-draft data-crud-form data-stock-addition-form data-match-url="{% url 'inventory:matches' %}"{% if office %} data-office-id="{{ office.pk }}"{% endif %}>
   {% csrf_token %}{{ form.idempotency_key }}{% if office %}<input type="hidden" name="office_code" value="{{ office.code }}">{% endif %}
   <div class="form-layout">
     <section class="card form-card">
+      {% include "partials/crud_form_intro.html" with mode="Receive stock" %}
       {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
       <div id="liveMatchPanel"></div>
       {% if exact_match %}<div class="match-panel"><div class="match-head"><div><div class="match-title">Existing stock record found</div><div class="micro">This addition will update the existing balance.</div></div><a class="btn btn-sm" href="{% url 'inventory:detail' exact_match.reference %}">Open record</a></div><div class="match-data"><div><span>Location</span><strong>{{ exact_match.location.code }}</strong></div><div><span>Material</span><strong>{{ exact_match.material_name }}</strong></div><div><span>Current balance</span><strong>{{ exact_match.quantity_display }} ({{ exact_match.get_condition_display }})</strong></div><div><span>Supplier</span><strong>{{ exact_match.supplier_name }}</strong></div></div></div>{% endif %}
@@ -26,9 +27,9 @@
         {% include "partials/form_field.html" with field=form.movement_date %}
         {% include "partials/form_field.html" with field=form.invoice_reference %}
         {% include "partials/form_field.html" with field=form.attachment %}
-        <div class="field field-full"><label class="field-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>{{ form.notes }}{% for error in form.notes.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
+        <div class="field field-full">{% include "partials/form_field.html" with field=form.notes %}</div>
       </div></div>
-      <div class="form-actions"><a class="btn" href="{% if office %}{% url 'inventory:office' %}{% else %}{% url 'inventory:list' %}{% endif %}">Cancel</a><button class="btn btn-primary" type="submit" data-submit-once>Add stock</button></div>
+      {% if office %}{% url 'inventory:office' as cancel_url %}{% else %}{% url 'inventory:list' as cancel_url %}{% endif %}{% include "partials/crud_form_actions.html" with cancel_url=cancel_url action_label="Add stock" %}
     </section>
     <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Safe matching</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Identity</span><span class="summary-value">Location + material + supplier + phone + condition</span></div><div class="summary-row"><span class="summary-key">Exact match</span><span class="summary-value">Existing balance increases</span></div><div class="summary-row"><span class="summary-key">No match</span><span class="summary-value">New record is created</span></div><div class="summary-row"><span class="summary-key">History</span><span class="summary-value">Never overwritten</span></div></div><div class="balance-preview"><div class="balance-line"><span>Quantity to add</span><strong id="additionQuantityPreview">0</strong></div><div class="balance-line"><span>Current balance</span><strong id="currentBalancePreview">—</strong></div><div class="balance-line total"><span>Expected balance</span><strong id="newBalancePreview">—</strong></div></div><div class="alert alert-warning section-gap">Phone formatting differences such as spaces and hyphens are normalized before matching.</div></div></aside>
   </div>

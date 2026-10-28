@@ -817,3 +817,41 @@ select:disabled, input:disabled, textarea:disabled { background: #f3f4f5; color:
 
 .inventory-draft-notice { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 12px; margin: 10px 0; color: var(--muted, #667); background: #f7f9fa; border: 1px solid var(--line); border-radius: 8px; }
 .inventory-draft-notice[hidden] { display: none; }
+
+/* Inventory/Projects CRUD: one visual contract for create, edit and ledger forms. */
+[data-crud-form] .crud-form-intro {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+[data-crud-form] .crud-form-intro-copy { display: grid; gap: 5px; min-width: 0; }
+[data-crud-form] .crud-form-mode { color: #1c3343; font-weight: 720; font-size: 13px; }
+[data-crud-form] .crud-form-guidance { color: var(--muted); font-size: 11px; line-height: 1.5; }
+[data-crud-form] .crud-form-required-note {
+  flex: 0 0 auto; font-size: 10px; color: var(--muted); white-space: nowrap;
+}
+[data-crud-form] .crud-form-actions {
+  border-top: 1px solid var(--line); padding-top: 16px;
+  align-items: center; flex-wrap: wrap;
+}
+[data-crud-form] .crud-form-action-help {
+  font-size: 11px; color: var(--muted); line-height: 1.4;
+  margin-right: auto;
+}
+[data-crud-form] .form-section-title { font-size: 13px; }
+[data-crud-form] .field:has(> [aria-invalid="true"]) > .field-label,
+[data-crud-form] .field.is-invalid > .field-label { color: #b42318; }
+[data-crud-form] .crud-validation-summary {
+  padding: 12px 14px; margin-bottom: 16px; border: 1px solid #f3c1bb;
+  border-radius: 8px; color: #982b20; background: #fff6f4; font-size: 12px;
+}
+[data-crud-form] .crud-validation-summary button {
+  display: inline; border: 0; background: none; color: inherit;
+  padding: 0; margin-left: 6px; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer;
+}
+[data-crud-form] .inventory-draft-notice { margin-top: 12px; }
+@media (max-width: 720px) {
+  [data-crud-form] .crud-form-intro { gap: 10px; }
+  [data-crud-form] .crud-form-actions { justify-content: flex-end; }
+  [data-crud-form] .crud-form-action-help { flex-basis: 100%; }
+  [data-crud-form] .crud-form-actions .btn { min-width: 105px; }
+}

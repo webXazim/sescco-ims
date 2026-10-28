@@ -57,20 +57,11 @@ class StockDeleteDialogTests(TestCase):
         url = reverse("inventory:delete", args=[self.item.reference])
         details = self.client.get(url, **self.request_kwargs())
         self.assertTrue(details.json()["delete_allowed"])
-        token = details.json()["confirmation_token"]
-        self.assertEqual(token, self.item.material_name)
-
-        mismatch = self.client.post(url, {
-            "confirmation": "incorrect"
-        }, **self.request_kwargs())
-        self.assertEqual(mismatch.status_code, 409)
-        self.assertIn(token, mismatch.json()["error"])
+        self.assertNotIn("confirmation_token", details.json())
         self.item.refresh_from_db()
         self.assertIsNone(self.item.deleted_at)
 
-        response = self.client.post(url, {
-            "confirmation": token
-        }, **self.request_kwargs())
+        response = self.client.post(url, {}, **self.request_kwargs())
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["redirect_url"], reverse("inventory:list"))
         self.item.refresh_from_db()
@@ -108,7 +99,7 @@ class StockDeleteDialogTests(TestCase):
         protected.refresh_from_db()
         self.assertIsNotNone(protected.deleted_at)
         self.assertEqual(protected.current_quantity, Decimal("12"))
-        self.assertEqual(protected.deletion_reason, "Confirmed by typing the record name.")
+        self.assertEqual(protected.deletion_reason, "Deleted after confirmation click.")
         self.assertFalse(stock_items(self.company).filter(pk=protected.pk).exists())
         self.assertFalse(stock_movements(self.company).filter(pk=movement_id).exists())
         self.assertEqual(StockMovement.objects.get(pk=movement_id).stock_item_id, protected.pk)
@@ -162,20 +153,13 @@ class StockDeleteDialogTests(TestCase):
         self.assertEqual(item.current_quantity, Decimal("1"))
         self.assertTrue(StockMovement.objects.filter(pk=result.movement.pk).exists())
 
-    def test_service_enforces_record_name_but_not_reason(self):
+    def test_service_allows_delete_without_typed_name_or_reason(self):
         from apps.inventory.services.lifecycle import trash_unused_stock_item
         from apps.accounts.models import CompanyMembership
         membership = CompanyMembership.objects.get(user=self.admin, company=self.company)
-        with self.assertRaises(ValidationError):
-            trash_unused_stock_item(
-                actor_membership=membership, stock_item_id=self.item.pk,
-                confirmation="incorrect", reason="",
-            )
-        self.item.refresh_from_db()
-        self.assertIsNone(self.item.deleted_at)
         trash_unused_stock_item(
             actor_membership=membership, stock_item_id=self.item.pk,
-            confirmation=self.item.material_name, reason="",
+            confirmation="", reason="",
         )
         self.item.refresh_from_db()
         self.assertIsNotNone(self.item.deleted_at)

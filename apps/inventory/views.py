@@ -632,10 +632,9 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
         return {
             "page_key": "inventory",
             "page_title": "Delete stock record",
-            "page_subtitle": "Type the stock item name below to move it to Trash. Recoverable for 30 days.",
+            "page_subtitle": "Confirm to move this stock record to Trash. Recoverable for 30 days.",
             "record_label": str(stock_item),
             "record_type": "Stock record",
-            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:detail", kwargs={"reference": stock_item.reference}),
             "delete_allowed": decision.allowed,
@@ -678,7 +677,7 @@ class StockItemDeleteView(InventoryAdminRequiredMixin, View):
                 actor_membership=request.company_membership,
                 stock_item_id=stock_item.pk,
                 confirmation=request.POST.get("confirmation", ""),
-                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
+                reason=request.POST.get("reason", "").strip() or "Deleted after confirmation click.",
                 request=request,
             )
         except ValidationError as exc:
@@ -1957,7 +1956,6 @@ class UnitDeleteView(InventoryAdminRequiredMixin, View):
             "page_key": "units", "page_title": "Delete unused unit",
             "page_subtitle": "Delete is only for a unit created by mistake and never referenced by stock or imports.",
             "record_label": str(unit), "record_type": "Unit",
-            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:unit_edit", kwargs={"pk": unit.pk}),
             "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
@@ -1971,23 +1969,30 @@ class UnitDeleteView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, pk):
         unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
-        return render(request, self.template_name, self._context(unit))
+        context = self._context(unit)
+        if is_delete_dialog_request(request):
+            return delete_dialog_response(context)
+        return render(request, self.template_name, context)
 
     def post(self, request, pk):
         unit = get_object_or_404(Unit.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         context = self._context(unit)
+        is_dialog = is_delete_dialog_request(request)
         if not context["delete_allowed"]:
             context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This unit cannot be deleted."
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
-            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
-            return render(request, self.template_name, context, status=400)
         try:
-            trash_unused_unit(actor_membership=request.company_membership, unit_id=unit.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+            trash_unused_unit(actor_membership=request.company_membership, unit_id=unit.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", "").strip() or "Deleted after confirmation click.", request=request)
         except ValidationError as exc:
             context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         messages.success(request, f"{unit.name} was moved to Trash for 30 days.")
+        if is_dialog:
+            return JsonResponse({"redirect_url": reverse("inventory:units")})
         return redirect("inventory:units")
 
 
@@ -2115,9 +2120,8 @@ class SupplierDeleteView(InventoryAdminRequiredMixin, View):
         ).count()
         return {
             "page_key": "suppliers", "page_title": "Delete supplier",
-            "page_subtitle": "Type the supplier name to move it to Trash. Recoverable for 30 days.",
+            "page_subtitle": "Confirm to move this supplier to Trash. Recoverable for 30 days.",
             "record_label": str(supplier), "record_type": "Supplier",
-            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:supplier_edit", kwargs={"pk": supplier.pk}),
             "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
@@ -2149,7 +2153,7 @@ class SupplierDeleteView(InventoryAdminRequiredMixin, View):
                 actor_membership=request.company_membership,
                 supplier_id=supplier.pk,
                 confirmation=request.POST.get("confirmation", ""),
-                reason=request.POST.get("reason", "").strip() or "Confirmed by typing the record name.",
+                reason=request.POST.get("reason", "").strip() or "Deleted after confirmation click.",
                 request=request,
             )
         except ValidationError as exc:
@@ -2235,7 +2239,6 @@ class InventoryLocationDeleteView(InventoryAdminRequiredMixin, View):
             "page_key": "locations", "page_title": "Delete unused inventory location",
             "page_subtitle": "Only an unused office location created by mistake can be deleted. Project locations follow the Project lifecycle.",
             "record_label": str(location), "record_type": "Inventory location",
-            "confirmation_phrase": decision.confirmation_token,
             "retention_days": TRASH_RETENTION_DAYS,
             "cancel_url": reverse("inventory:locations"),
             "delete_allowed": decision.allowed, "delete_blockers": decision.blockers,
@@ -2250,23 +2253,30 @@ class InventoryLocationDeleteView(InventoryAdminRequiredMixin, View):
 
     def get(self, request, pk):
         location = get_object_or_404(InventoryLocation.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
-        return render(request, self.template_name, self._context(location))
+        context = self._context(location)
+        if is_delete_dialog_request(request):
+            return delete_dialog_response(context)
+        return render(request, self.template_name, context)
 
     def post(self, request, pk):
         location = get_object_or_404(InventoryLocation.objects.for_company(request.company), pk=pk, deleted_at__isnull=True)
         context = self._context(location)
+        is_dialog = is_delete_dialog_request(request)
         if not context["delete_allowed"]:
             context["form_error"] = context["delete_blockers"][0].message if context["delete_blockers"] else "This location cannot be deleted."
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
-        if not request.POST.get("acknowledge") or not request.POST.get("reason", "").strip():
-            context.update(form_error="Enter a reason and confirm the effect.", reason=request.POST.get("reason", ""))
-            return render(request, self.template_name, context, status=400)
         try:
-            trash_unused_location(actor_membership=request.company_membership, location_id=location.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", ""), request=request)
+            trash_unused_location(actor_membership=request.company_membership, location_id=location.pk, confirmation=request.POST.get("confirmation", ""), reason=request.POST.get("reason", "").strip() or "Deleted after confirmation click.", request=request)
         except ValidationError as exc:
             context.update(form_error=_operation_error_message(exc), reason=request.POST.get("reason", ""))
+            if is_dialog:
+                return delete_dialog_response(context, status=409)
             return render(request, self.template_name, context, status=409)
         messages.success(request, f"Location {location.code} was moved to Trash for 30 days.")
+        if is_dialog:
+            return JsonResponse({"redirect_url": reverse("inventory:locations")})
         return redirect("inventory:locations")
 
 
