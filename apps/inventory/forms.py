@@ -66,7 +66,7 @@ class UnitForm(StyledModelForm):
         cleaned = super().clean()
         if self.company is None:
             return cleaned
-        queryset = Unit.objects.for_company(self.company)
+        queryset = Unit.objects.for_company(self.company).filter(deleted_at__isnull=True)
         if self.instance.pk:
             queryset = queryset.exclude(pk=self.instance.pk)
         name = normalize_text(cleaned.get("name"))
@@ -92,7 +92,7 @@ class SupplierForm(StyledModelForm):
         cleaned = super().clean()
         if self.company is None:
             return cleaned
-        queryset = Supplier.objects.for_company(self.company)
+        queryset = Supplier.objects.for_company(self.company).filter(deleted_at__isnull=True)
         if self.instance.pk:
             queryset = queryset.exclude(pk=self.instance.pk)
         name = normalize_text(cleaned.get("name"))

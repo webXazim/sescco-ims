@@ -49,8 +49,14 @@ class Unit(models.Model):
     class Meta:
         ordering = ("name",)
         constraints = [
-            models.UniqueConstraint(fields=("company", "normalized_name"), name="unit_company_name_uniq"),
-            models.UniqueConstraint(fields=("company", "normalized_symbol"), name="unit_company_symbol_uniq"),
+            models.UniqueConstraint(
+                fields=("company", "normalized_name"), condition=Q(deleted_at__isnull=True),
+                name="unit_co_active_name_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("company", "normalized_symbol"), condition=Q(deleted_at__isnull=True),
+                name="unit_co_active_symbol_uniq",
+            ),
         ]
         indexes = [
             models.Index(fields=("company", "is_active", "name"), name="unit_company_active_idx"),
@@ -115,7 +121,8 @@ class Supplier(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=("company", "normalized_name", "normalized_phone"),
-                name="supplier_company_identity_uniq",
+                condition=Q(deleted_at__isnull=True),
+                name="supplier_co_active_ident_uniq",
             )
         ]
         indexes = [

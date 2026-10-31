@@ -3,13 +3,62 @@
 <div class="page-head"><div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
 <section class="card section-gap">
   <div class="trash-toolbar">
-    <form method="get" class="archive-search" data-live-filter-form><div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" placeholder="Search deleted records or reasons…" autocomplete="off" data-live-filter-search></div>{% if search_query %}<a class="btn btn-ghost btn-sm" href="{% url 'inventory:trash' %}">Clear</a>{% endif %}</form>
-    <span class="micro">{{ paginator.count }} recoverable record{{ paginator.count|pluralize }} · automatically expires after {{ retention_days }} days</span>
+    <form method="get" class="archive-search" data-live-filter-form>
+      <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" placeholder="Search deleted records or reasons…" autocomplete="off" data-live-filter-search></div>
+      {% if search_query %}<a class="btn btn-ghost btn-sm" href="{% url 'inventory:trash' %}">Clear</a>{% endif %}
+    </form>
+    <span class="micro">{{ paginator.count }} recoverable record{{ paginator.count|pluralize }} · recoverable for {{ retention_days }} days unless manually removed</span>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Type</th><th>Record</th><th>Reason</th><th>Deleted</th><th>Restore until</th><th></th></tr></thead><tbody>
-  {% for entry in trash_entries %}<tr><td><span class="status status-neutral">{{ entry.kind|title }}</span></td><td><strong>{{ entry.label }}</strong><div class="cell-sub">{{ entry.detail }}</div></td><td>{{ entry.object.deletion_reason|truncatechars:90 }}</td><td>{{ entry.object.deleted_at|date:'d M Y, H:i' }}<div class="cell-sub">{% if entry.object.deleted_by %}{{ entry.object.deleted_by.display_name }}{% else %}System{% endif %}</div></td><td>{{ entry.object.purge_after|date:'d M Y, H:i' }}</td><td><form method="post" action="{% url 'inventory:trash_restore' entry.kind entry.identifier %}" data-confirm="Restore this record to the workspace?">{% csrf_token %}<button class="btn btn-sm" type="submit">Restore</button></form></td></tr>
-  {% empty %}<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">♲</div><h2>Trash is empty</h2><p>Deleted records remain recoverable here for {{ retention_days }} days.</p></div></td></tr>{% endfor %}
-  </tbody></table></div>
+  <div class="head-actions" style="padding:12px 16px; flex-wrap:wrap; gap:10px; justify-content:flex-end;">
+    <span class="micro" style="margin-right:auto">Choose records using the checkboxes, then delete. Protected historical data is retained safely.</span>
+    <form id="trash-selected-form" method="post" action="{% url 'inventory:trash_delete' %}" data-confirm="Delete the selected records from Trash permanently? They cannot be restored. Protected history will be retained.">
+      {% csrf_token %}<input type="hidden" name="action" value="selected">
+      <button class="btn btn-danger btn-sm" type="submit" data-trash-delete-selected>Delete selected</button>
+    </form>
+    <form method="post" action="{% url 'inventory:trash_delete' %}" data-confirm="Empty ALL recoverable records in this company's Trash, including other pages and filtered-out results? This cannot be undone. Protected historical data will be retained.">
+      {% csrf_token %}<input type="hidden" name="action" value="empty">
+      <button class="btn btn-danger btn-sm" type="submit" {% if not paginator.count %}disabled{% endif %}>Empty Trash</button>
+    </form>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th><input type="checkbox" aria-label="Select all records on this page" data-trash-select-all></th><th>Type</th><th>Record</th><th>Reason</th><th>Deleted</th><th>Restore until</th><th></th></tr></thead>
+    <tbody>
+      {% for entry in trash_entries %}
+      <tr>
+        <td><input type="checkbox" name="selected" value="{{ entry.kind }}:{{ entry.identifier }}" form="trash-selected-form" aria-label="Select {{ entry.kind }} {{ entry.label }}" data-trash-select></td>
+        <td><span class="status status-neutral">{{ entry.kind|title }}</span></td>
+        <td><strong>{{ entry.label }}</strong><div class="cell-sub">{{ entry.detail }}</div></td>
+        <td>{{ entry.object.deletion_reason|truncatechars:90 }}</td>
+        <td>{{ entry.object.deleted_at|date:'d M Y, H:i' }}<div class="cell-sub">{% if entry.object.deleted_by %}{{ entry.object.deleted_by.display_name }}{% else %}System{% endif %}</div></td>
+        <td>{{ entry.object.purge_after|date:'d M Y, H:i' }}</td>
+        <td><form method="post" action="{% url 'inventory:trash_restore' entry.kind entry.identifier %}" data-confirm="Restore this record to the workspace?">{% csrf_token %}<button class="btn btn-sm" type="submit">Restore</button></form></td>
+      </tr>
+      {% empty %}<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">♲</div><h2>Trash is empty</h2><p>No recoverable records match this view.</p></div></td></tr>{% endfor %}
+    </tbody>
+  </table></div>
   {% include "partials/pagination.html" %}
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const all = document.querySelector('[data-trash-select-all]');
+  const selected = [...document.querySelectorAll('[data-trash-select]')];
+  const deleteButton = document.querySelector('[data-trash-delete-selected]');
+  if (!all || !deleteButton) return;
+  function update() {
+    const count = selected.filter(input => input.checked).length;
+    deleteButton.disabled = count === 0;
+    deleteButton.textContent = count ? `Delete selected (${count})` : 'Delete selected';
+    all.checked = selected.length > 0 && count === selected.length;
+    all.indeterminate = count > 0 && count < selected.length;
+  }
+  all.addEventListener('change', () => {
+    selected.forEach(input => { input.checked = all.checked; });
+    update();
+  });
+  selected.forEach(input => input.addEventListener('change', update));
+  update();
+})();
+</script>
 {% endblock %}

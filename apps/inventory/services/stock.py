@@ -249,7 +249,9 @@ def add_stock(
 
             # Keep suppliers introduced through imports and integrations available in
             # the managed supplier picker without changing historical stock snapshots.
-            supplier_master, supplier_created = Supplier.objects.for_company(company).get_or_create(
+            supplier_master, supplier_created = Supplier.objects.for_company(company).filter(
+                deleted_at__isnull=True
+            ).get_or_create(
                 company=company,
                 normalized_name=normalized_supplier,
                 normalized_phone=normalized_phone,

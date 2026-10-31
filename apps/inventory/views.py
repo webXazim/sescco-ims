@@ -10,6 +10,7 @@ from django.db.models import Count, F, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import DetailView, ListView, UpdateView
@@ -22,6 +23,7 @@ from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, move_to_trash, restore_from_trash
+from apps.core.trash_purge import dismiss_trash_entry
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
 from apps.explorer.models import SavedView, TablePreference
@@ -1709,72 +1711,77 @@ class ArchiveListView(InventoryPermissionRequiredMixin, View):
         )
 
 
+def _collect_trash_entries(company, query=""):
+    entries = []
+    cascade_stock_ids = active_cascade_child_ids(
+        company=company, child_type="inventory.StockItem"
+    )
+    cascade_location_ids = active_cascade_child_ids(
+        company=company, child_type="inventory.InventoryLocation"
+    )
+    groups = (
+        (
+            "stock",
+            active_trash(
+                StockItem.objects.for_company(company).select_related("location", "project", "deleted_by")
+            ).exclude(pk__in=cascade_stock_ids),
+        ),
+        ("project", active_trash(Project.objects.for_company(company).select_related("deleted_by"))),
+        ("unit", active_trash(Unit.objects.for_company(company).select_related("deleted_by"))),
+        ("supplier", active_trash(Supplier.objects.for_company(company).select_related("deleted_by"))),
+        (
+            "location",
+            active_trash(
+                InventoryLocation.objects.for_company(company).select_related("deleted_by", "project")
+            ).exclude(pk__in=cascade_location_ids),
+        ),
+    )
+    for kind, objects in groups:
+        for item in objects:
+            if kind == "stock":
+                identifier, label, detail = (
+                    str(item.reference),
+                    item.material_name,
+                    item.location.code,
+                )
+            elif kind == "project":
+                identifier, label, detail = item.code, item.code, item.name
+            elif kind == "unit":
+                identifier, label, detail = str(item.pk), item.name, item.symbol
+            elif kind == "supplier":
+                identifier, label, detail = str(item.pk), item.name, item.phone
+            else:
+                identifier, label, detail = str(item.pk), item.code, item.name
+            entries.append(
+                {
+                    "kind": kind,
+                    "identifier": identifier,
+                    "label": label,
+                    "detail": detail,
+                    "object": item,
+                }
+            )
+    query = query.strip().casefold()
+    if query:
+        entries = [
+            entry
+            for entry in entries
+            if query in (
+                f"{entry['label']} {entry['detail']} "
+                f"{entry['object'].deletion_reason}"
+            ).casefold()
+        ]
+    return sorted(entries, key=lambda entry: entry["object"].deleted_at, reverse=True)
+
+
+
 class TrashListView(InventoryAdminRequiredMixin, ListView):
     template_name = "inventory/trash_list.html"
     context_object_name = "trash_entries"
     paginate_by = 25
 
     def get_queryset(self):
-        entries = []
-        cascade_stock_ids = active_cascade_child_ids(
-            company=self.request.company, child_type="inventory.StockItem"
-        )
-        cascade_location_ids = active_cascade_child_ids(
-            company=self.request.company, child_type="inventory.InventoryLocation"
-        )
-        groups = (
-            (
-                "stock",
-                active_trash(
-                    StockItem.objects.for_company(self.request.company).select_related("location", "project", "deleted_by")
-                ).exclude(pk__in=cascade_stock_ids),
-            ),
-            ("project", active_trash(Project.objects.for_company(self.request.company).select_related("deleted_by"))),
-            ("unit", active_trash(Unit.objects.for_company(self.request.company).select_related("deleted_by"))),
-            ("supplier", active_trash(Supplier.objects.for_company(self.request.company).select_related("deleted_by"))),
-            (
-                "location",
-                active_trash(
-                    InventoryLocation.objects.for_company(self.request.company).select_related("deleted_by", "project")
-                ).exclude(pk__in=cascade_location_ids),
-            ),
-        )
-        for kind, objects in groups:
-            for item in objects:
-                if kind == "stock":
-                    identifier, label, detail = (
-                        str(item.reference),
-                        item.material_name,
-                        item.location.code,
-                    )
-                elif kind == "project":
-                    identifier, label, detail = item.code, item.code, item.name
-                elif kind == "unit":
-                    identifier, label, detail = str(item.pk), item.name, item.symbol
-                elif kind == "supplier":
-                    identifier, label, detail = str(item.pk), item.name, item.phone
-                else:
-                    identifier, label, detail = str(item.pk), item.code, item.name
-                entries.append(
-                    {
-                        "kind": kind,
-                        "identifier": identifier,
-                        "label": label,
-                        "detail": detail,
-                        "object": item,
-                    }
-                )
-        query = self.request.GET.get("q", "").strip().casefold()
-        if query:
-            entries = [
-                entry
-                for entry in entries
-                if query in (
-                    f"{entry['label']} {entry['detail']} "
-                    f"{entry['object'].deletion_reason}"
-                ).casefold()
-            ]
-        return sorted(entries, key=lambda entry: entry["object"].deleted_at, reverse=True)
+        return _collect_trash_entries(self.request.company, self.request.GET.get("q", ""))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1786,6 +1793,74 @@ class TrashListView(InventoryAdminRequiredMixin, ListView):
             retention_days=TRASH_RETENTION_DAYS,
         )
         return context
+
+
+class TrashDismissView(InventoryAdminRequiredMixin, View):
+    """Irreversible removal from Trash; protected history is retained invisibly."""
+
+    @transaction.atomic
+    def post(self, request):
+        mode = request.POST.get("action")
+        if mode not in {"selected", "empty"}:
+            return JsonResponse({"error": "Invalid Trash action."}, status=400)
+
+        entries = _collect_trash_entries(request.company)
+        keys = {f"{entry['kind']}:{entry['identifier']}": entry for entry in entries}
+        if mode == "selected":
+            requested = request.POST.getlist("selected")
+            if not requested:
+                messages.error(request, "Select at least one record to delete from Trash.")
+                return redirect("inventory:trash")
+            if len(requested) != len(set(requested)) or any(key not in keys for key in requested):
+                return JsonResponse({"error": "Invalid or unavailable Trash selection."}, status=400)
+            selected = [keys[key] for key in requested]
+        else:
+            # Empty Trash applies to the entire company, including other pages
+            # and entries hidden by the current search text.
+            selected = entries
+
+        # Validate and lock the complete selection before mutating any record,
+        # so a stale selection cannot produce a partial Empty Trash operation.
+        locked_entries = []
+        for entry in selected:
+            item = entry["object"]
+            locked = type(item).objects.select_for_update().for_company(request.company).filter(
+                pk=item.pk, deleted_at__isnull=False, purge_after__gt=timezone.now()
+            ).first()
+            if locked is None:
+                return JsonResponse({"error": "Trash changed. Reload before deleting."}, status=409)
+            locked_entries.append((entry, locked))
+
+        removed = 0
+        retained = 0
+        for entry, locked in locked_entries:
+            item = entry["object"]
+            outcome = dismiss_trash_entry(locked)
+            removed += outcome == "deleted"
+            retained += outcome == "retained"
+            record_audit_event(
+                company=request.company,
+                area=AuditArea.INVENTORY,
+                action="inventory.trash.permanently_dismissed",
+                object_type=f"{item._meta.app_label}.{item._meta.object_name}",
+                object_id=str(item.pk),
+                object_label=f"{entry['kind']}: {entry['label']}",
+                actor_membership=request.company_membership,
+                before={"deleted_at": str(item.deleted_at), "purge_after": str(item.purge_after)},
+                after={"removed_from_trash": True, "history_tombstone_retained": outcome == "retained"},
+                metadata={"mode": mode, "history_safe": True},
+                request=request,
+            )
+        total = len(selected)
+        if total:
+            messages.success(
+                request,
+                f"Removed {total} record{'s' if total != 1 else ''} from Trash. "
+                f"{removed} fully deleted; {retained} kept as protected historical records.",
+            )
+        else:
+            messages.info(request, "Trash is already empty.")
+        return redirect("inventory:trash")
 
 
 class TrashRestoreView(InventoryAdminRequiredMixin, View):
@@ -1817,6 +1892,21 @@ class TrashRestoreView(InventoryAdminRequiredMixin, View):
             )
             return redirect("inventory:trash")
 
+        if kind == "supplier" and Supplier.objects.for_company(request.company).filter(
+            deleted_at__isnull=True,
+            normalized_name=instance.normalized_name,
+            normalized_phone=instance.normalized_phone,
+        ).exclude(pk=instance.pk).exists():
+            messages.error(request, "An active supplier already uses this name and phone. Delete or edit the active supplier before restoring this one.")
+            return redirect("inventory:trash")
+        if kind == "unit" and Unit.objects.for_company(request.company).filter(
+            deleted_at__isnull=True
+        ).exclude(pk=instance.pk).filter(
+            Q(normalized_name=instance.normalized_name) | Q(normalized_symbol=instance.normalized_symbol)
+        ).exists():
+            messages.error(request, "An active unit already uses this name or symbol. Resolve the duplicate before restoring.")
+            return redirect("inventory:trash")
+
         if kind == "project":
             try:
                 restored = restore_project_trash(
@@ -1832,12 +1922,16 @@ class TrashRestoreView(InventoryAdminRequiredMixin, View):
                 messages.error(
                     request, "The retention period has ended, so this record can no longer be restored."
                 )
-        elif restore_from_trash(instance):
-            messages.success(request, f"{instance} was restored.")
         else:
-            messages.error(
-                request, "The retention period has ended, so this record can no longer be restored."
-            )
+            try:
+                restored = restore_from_trash(instance)
+            except (ValidationError, IntegrityError):
+                messages.error(request, "Restore could not complete because of a conflicting record or related dependency.")
+            else:
+                if restored:
+                    messages.success(request, f"{instance} was restored.")
+                else:
+                    messages.error(request, "The retention period has ended, so this record can no longer be restored.")
         return redirect("inventory:trash")
 
 

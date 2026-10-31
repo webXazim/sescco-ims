@@ -32,6 +32,7 @@ from .views import (
     SupplierStatusView,
     SupplierUpdateView,
     TrashListView,
+    TrashDismissView,
     TrashRestoreView,
     UnitDeleteView,
     UnitListCreateView,
@@ -44,6 +45,7 @@ app_name = "inventory"
 urlpatterns = [
     path("archive/", ArchiveListView.as_view(), name="archive"),
     path("trash/", TrashListView.as_view(), name="trash"),
+    path("trash/delete/", TrashDismissView.as_view(), name="trash_delete"),
     path(
         "trash/<str:kind>/<str:identifier>/restore/",
         TrashRestoreView.as_view(),
