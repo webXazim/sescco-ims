@@ -7,7 +7,8 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Q
+from django.db.models import CharField, Count, Exists, F, OuterRef, Q, Sum
+from django.db.models.functions import Cast
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -20,7 +21,7 @@ from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
 from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
-from apps.core.models import AuditArea
+from apps.core.models import AuditArea, TrashCascadeLink
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
 from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, move_to_trash, restore_from_trash
@@ -1019,7 +1020,7 @@ class StockTransferListView(InventoryPermissionRequiredMixin, ListView):
         )
         queryset = visible.select_related(
             "source_location", "destination_location", "created_by", "reversed_by"
-        ).prefetch_related("lines")
+        ).annotate(line_count=Count("lines"))
         if self.filter_form.is_valid():
             data = self.filter_form.cleaned_data
             query = data.get("q", "").strip()
@@ -1305,23 +1306,32 @@ class StockTransferDetailView(InventoryPermissionRequiredMixin, DetailView):
     def get_queryset(self):
         queryset = StockTransfer.objects.for_company(self.request.company).select_related(
             "source_location", "destination_location", "created_by", "reversed_by"
-        ).prefetch_related(
-            "lines__source_stock_item__unit",
-            "lines__destination_stock_item",
-            "lines__movements",
         )
         return restrict_inventory_transfers(queryset, self.request.company_membership)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        lines = list(self.object.lines.all())
+        all_lines = self.object.lines.all()
+        total_quantity = all_lines.aggregate(total=Sum("quantity"))["total"] or 0
+        lost_quantity = (
+            all_lines.filter(outcome=StockTransferLine.Outcome.LOST).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+        paginator = Paginator(
+            all_lines.select_related("source_stock_item__unit", "destination_stock_item").order_by("pk"),
+            50,
+        )
+        page_obj = paginator.get_page(self.request.GET.get("page"))
         context.update(
             page_key="transfers",
             page_title=f"Transfer {self.object.short_reference}",
             page_subtitle="Permanent linked source, destination, condition, and loss history.",
-            lines=lines,
-            total_quantity=sum((line.quantity for line in lines), 0),
-            lost_quantity=sum((line.quantity for line in lines if line.outcome == "lost"), 0),
+            lines=page_obj.object_list,
+            page_obj=page_obj,
+            paginator=paginator,
+            is_paginated=page_obj.has_other_pages(),
+            total_quantity=total_quantity,
+            lost_quantity=lost_quantity,
             can_reverse_transfer=(
                 self.object.status == StockTransfer.Status.COMPLETED
                 and self.object.source_location.accepts_stock_activity
@@ -1809,25 +1819,143 @@ def _collect_trash_entries(company, query=""):
     return sorted(entries, key=lambda entry: entry["object"].deleted_at, reverse=True)
 
 
+def _trash_entry(kind, item):
+    if kind == "stock":
+        identifier, label, detail = str(item.reference), item.material_name, item.location.code
+    elif kind == "project":
+        identifier, label, detail = item.code, item.code, item.name
+    elif kind == "unit":
+        identifier, label, detail = str(item.pk), item.name, item.symbol
+    elif kind == "supplier":
+        identifier, label, detail = str(item.pk), item.name, item.phone
+    else:
+        identifier, label, detail = str(item.pk), item.code, item.name
+    return {"kind": kind, "identifier": identifier, "label": label, "detail": detail, "object": item}
+
+
+def _trash_listing_groups(company, query):
+    stock_cascades = TrashCascadeLink.objects.for_company(company).filter(
+        child_type="inventory.StockItem", restored_at__isnull=True
+    )
+    location_cascades = TrashCascadeLink.objects.for_company(company).filter(
+        child_type="inventory.InventoryLocation", restored_at__isnull=True
+    )
+    stock = active_trash(
+        StockItem.objects.for_company(company).select_related("location", "project", "deleted_by")
+    ).annotate(
+        cascade_owned=Exists(
+            stock_cascades.filter(child_id=Cast(OuterRef("pk"), output_field=CharField()))
+        )
+    ).filter(cascade_owned=False)
+    locations = active_trash(
+        InventoryLocation.objects.for_company(company).select_related("deleted_by", "project")
+    ).annotate(
+        cascade_owned=Exists(
+            location_cascades.filter(child_id=Cast(OuterRef("pk"), output_field=CharField()))
+        )
+    ).filter(cascade_owned=False)
+    projects = active_trash(Project.objects.for_company(company).select_related("deleted_by"))
+    units = active_trash(Unit.objects.for_company(company).select_related("deleted_by"))
+    suppliers = active_trash(Supplier.objects.for_company(company).select_related("deleted_by"))
+
+    if query:
+        stock = stock.filter(
+            Q(material_name__icontains=query)
+            | Q(location__code__icontains=query)
+            | Q(deletion_reason__icontains=query)
+        )
+        projects = projects.filter(
+            Q(code__icontains=query) | Q(name__icontains=query) | Q(deletion_reason__icontains=query)
+        )
+        units = units.filter(
+            Q(name__icontains=query) | Q(symbol__icontains=query) | Q(deletion_reason__icontains=query)
+        )
+        suppliers = suppliers.filter(
+            Q(name__icontains=query) | Q(phone__icontains=query) | Q(deletion_reason__icontains=query)
+        )
+        locations = locations.filter(
+            Q(code__icontains=query) | Q(name__icontains=query) | Q(deletion_reason__icontains=query)
+        )
+    return (
+        ("stock", stock),
+        ("project", projects),
+        ("unit", units),
+        ("supplier", suppliers),
+        ("location", locations),
+    )
+
+
+def _trash_entries_for_keys(company, keys):
+    fields = {
+        "stock": "reference",
+        "project": "code",
+        "unit": "pk",
+        "supplier": "pk",
+        "location": "pk",
+    }
+    requested_by_kind = {}
+    for key in keys:
+        kind, separator, identifier = key.partition(":")
+        if not separator or kind not in fields or not identifier:
+            return []
+        if kind == "stock":
+            try:
+                identifier = str(UUID(identifier))
+            except ValueError:
+                return []
+        elif kind in {"unit", "supplier", "location"} and not identifier.isdigit():
+            return []
+        requested_by_kind.setdefault(kind, set()).add(identifier)
+
+    entries = []
+    for kind, queryset in _trash_listing_groups(company, ""):
+        identifiers = requested_by_kind.get(kind)
+        if not identifiers:
+            continue
+        field = fields[kind]
+        for item in queryset.filter(**{f"{field}__in": identifiers}):
+            entries.append(_trash_entry(kind, item))
+    return entries
+
 
 class TrashListView(InventoryAdminRequiredMixin, ListView):
     template_name = "inventory/trash_list.html"
     context_object_name = "trash_entries"
     paginate_by = 25
 
-    def get_queryset(self):
-        return _collect_trash_entries(self.request.company, self.request.GET.get("q", ""))
+    def get(self, request, *args, **kwargs):
+        query = request.GET.get("q", "").strip()
+        groups = _trash_listing_groups(request.company, query)
+        total_count = sum(objects.count() for _, objects in groups)
+        paginator = Paginator(range(total_count), self.paginate_by)
+        page_obj = paginator.get_page(request.GET.get("page"))
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context.update(
-            page_key="trash",
-            page_title="Trash",
-            page_subtitle="Restore deleted records before their 30-day retention period ends.",
-            search_query=self.request.GET.get("q", ""),
-            retention_days=TRASH_RETENTION_DAYS,
+        # Only fetch the prefix each model can contribute to this page. The
+        # merged list stays bounded by page number × page size, not Trash size.
+        limit = page_obj.end_index()
+        entries = []
+        for kind, objects in groups:
+            for item in objects.order_by("-deleted_at", "-pk")[:limit]:
+                entries.append(_trash_entry(kind, item))
+        entries.sort(key=lambda entry: entry["object"].deleted_at, reverse=True)
+        start = page_obj.start_index() - 1 if total_count else 0
+        page_obj.object_list = entries[start : start + self.paginate_by]
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_key": "trash",
+                "page_title": "Trash",
+                "page_subtitle": "Restore deleted records before their 30-day retention period ends.",
+                "search_query": query,
+                "retention_days": TRASH_RETENTION_DAYS,
+                "trash_entries": page_obj.object_list,
+                "page_obj": page_obj,
+                "paginator": paginator,
+                "is_paginated": paginator.num_pages > 1,
+            },
         )
-        return context
 
 
 class TrashDismissView(InventoryAdminRequiredMixin, View):
@@ -1839,20 +1967,20 @@ class TrashDismissView(InventoryAdminRequiredMixin, View):
         if mode not in {"selected", "empty"}:
             return JsonResponse({"error": "Invalid Trash action."}, status=400)
 
-        entries = _collect_trash_entries(request.company)
-        keys = {f"{entry['kind']}:{entry['identifier']}": entry for entry in entries}
         if mode == "selected":
             requested = request.POST.getlist("selected")
             if not requested:
                 messages.error(request, "Select at least one record to delete from Trash.")
                 return redirect("inventory:trash")
-            if len(requested) != len(set(requested)) or any(key not in keys for key in requested):
+            if len(requested) != len(set(requested)):
                 return JsonResponse({"error": "Invalid or unavailable Trash selection."}, status=400)
-            selected = [keys[key] for key in requested]
+            selected = _trash_entries_for_keys(request.company, requested)
+            if len(selected) != len(requested):
+                return JsonResponse({"error": "Invalid or unavailable Trash selection."}, status=400)
         else:
             # Empty Trash applies to the entire company, including other pages
             # and entries hidden by the current search text.
-            selected = entries
+            selected = _collect_trash_entries(request.company)
 
         # Validate and lock the complete selection before mutating any record,
         # so a stale selection cannot produce a partial Empty Trash operation.
@@ -2314,11 +2442,16 @@ class InventoryLocationListView(InventoryPermissionRequiredMixin, View):
             locations = locations.filter(archived_at__isnull=False)
         if query:
             locations = locations.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(project__name__icontains=query))
+        paginator = Paginator(locations.order_by("location_type", "code"), 50)
+        page_obj = paginator.get_page(request.GET.get("page"))
         return render(request, self.template_name, {
             "page_key": "locations",
             "page_title": "Inventory locations",
             "page_subtitle": "Project locations follow their Project lifecycle; office locations can be archived independently when stock is cleared.",
-            "locations": locations.order_by("location_type", "code"),
+            "locations": page_obj.object_list,
+            "page_obj": page_obj,
+            "paginator": paginator,
+            "is_paginated": page_obj.has_other_pages(),
             "search_query": query,
             "current_status": status,
         })

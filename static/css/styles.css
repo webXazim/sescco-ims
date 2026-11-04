@@ -433,6 +433,9 @@ label.field-label { color: #4d555e; font-size: 10px; font-weight: 680; }
 .transfer-table thead th { position: sticky; top: var(--topbar, 60px); z-index: 2; background: var(--surface-subtle, #f7f8f9); }
 .transfer-row-error { background: #fff1f1; }
 @media(max-width: 900px) { .transfer-table-wrap { overflow-x: auto; } }
+.project-activity-toggle { display: inline-flex; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.project-activity-toggle .card-title, .project-activity-toggle .card-meta { display: block; }
+.project-activity-chevron { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-subtle, #f3f4f5); color: var(--muted, #65717d); font-size: 15px; flex: 0 0 auto; }
 .textarea { min-height: 84px; padding: 10px 11px; resize: vertical; }
 .input:focus, .select:focus, .textarea:focus { border-color: #939da7; box-shadow: 0 0 0 3px rgba(30,79,107,.07); }
 .help { color: var(--muted); font-size: 9px; line-height: 1.4; }

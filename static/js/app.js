@@ -136,6 +136,22 @@
   });
 
   document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-toggle-project-activity]");
+    if (!button) return;
+    const content = document.getElementById(button.getAttribute("aria-controls"));
+    if (!content) return;
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    content.hidden = expanded;
+    button.setAttribute("aria-expanded", String(!expanded));
+    const chevron = button.querySelector(".project-activity-chevron");
+    if (chevron) chevron.textContent = expanded ? "＋" : "−";
+  });
+  document.querySelectorAll("[data-toggle-project-activity]").forEach((button) => {
+    const content = document.getElementById(button.getAttribute("aria-controls"));
+    if (content) content.hidden = button.getAttribute("aria-expanded") !== "true";
+  });
+
+  document.addEventListener("click", (event) => {
     document.querySelectorAll("[data-column-settings][open]").forEach((settings) => {
       if (!settings.contains(event.target)) settings.removeAttribute("open");
     });
@@ -353,6 +369,35 @@
       window.location.assign(cleanFilterUrl());
     });
   }
+
+  // GET search forms without a page-specific live handler submit as the user
+  // types. Existing AJAX filter/finder forms keep their own request lifecycle.
+  document.querySelectorAll("form").forEach((form) => {
+    if (form.method.toLowerCase() !== "get" || form.matches(
+      "[data-live-filter-form], [data-unified-form], [data-sourcing-live-finder]"
+    )) return;
+    const searchFields = form.querySelectorAll('input[type="search"][name], input[name="q"], input[name="search"]');
+    if (!searchFields.length) return;
+    let timer = null;
+    searchFields.forEach((field) => {
+      field.addEventListener("input", () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          const page = form.elements.namedItem("page");
+          if (page) page.value = "1";
+          if (form.isConnected) form.requestSubmit();
+        }, 350);
+      });
+      field.addEventListener("search", () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          const page = form.elements.namedItem("page");
+          if (page) page.value = "1";
+          if (form.isConnected) form.requestSubmit();
+        }, 100);
+      });
+    });
+  });
 
   document.querySelectorAll("form").forEach((form) => {
     form.addEventListener("submit", (event) => {

@@ -28,7 +28,7 @@
       <td>{{ transfer.transfer_date|date:"d M Y" }}</td>
       <td><a class="row-link" href="{% url 'inventory:transfer_detail' transfer.reference %}">{{ transfer.short_reference }}</a><div class="cell-sub">{{ transfer.document_reference|default:"No document reference" }}</div></td>
       <td><span class="tag">{{ transfer.source_location.code }}</span></td><td><span class="tag">{{ transfer.destination_location.code }}</span></td>
-      <td>{{ transfer.lines.all|length }}</td><td><span class="status {% if transfer.status == 'completed' %}status-good{% else %}status-neutral{% endif %}">{{ transfer.get_status_display }}</span></td><td>{{ transfer.created_by.display_name|default:"System" }}</td>
+      <td>{{ transfer.line_count }}</td><td><span class="status {% if transfer.status == 'completed' %}status-good{% else %}status-neutral{% endif %}">{{ transfer.get_status_display }}</span></td><td>{{ transfer.created_by.display_name|default:"System" }}</td>
     </tr>{% empty %}<tr><td colspan="7"><div class="empty-state"><strong>No matching transfers</strong><p>Adjust the search, location, direction, status, or date filters.</p><a class="btn btn-sm" href="{% url 'inventory:transfer_list' %}">Clear filters</a></div></td></tr>{% endfor %}</tbody>
   </table></div>
   {% include "partials/pagination.html" %}

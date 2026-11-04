@@ -3,7 +3,7 @@
 <div class="page-head"><div><h1>{{ page_title }}</h1><p>{{ page_subtitle }}</p></div></div>
 <section class="card section-gap">
   <div class="trash-toolbar">
-    <form method="get" class="archive-search" data-live-filter-form>
+    <form method="get" class="archive-search">
       <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" placeholder="Search deleted records or reasons…" autocomplete="off" data-live-filter-search></div>
       {% if search_query %}<a class="btn btn-ghost btn-sm" href="{% url 'inventory:trash' %}">Clear</a>{% endif %}
     </form>
