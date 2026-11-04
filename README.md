@@ -198,7 +198,7 @@ coverage report
 ```
 
 Static validation commands and the runtime limitation of this build environment
-are recorded in `docs/VALIDATION.md`. The canonical `scripts/deploy-production.sh` entrypoint verifies `merge/production-freeze.sha256` before preflight, backup, release tasks and cutover. The compatibility `scripts/deploy-production-freeze.sh` wrapper remains available, but is no longer required for normal production deployment. Source/configuration drift from the packaged release blocks deployment.
+are recorded in `docs/VALIDATION.md`. The canonical `scripts/deploy-production.sh` entrypoint runs the source/configuration contract verifier before preflight, backup, release tasks and cutover. The compatibility `scripts/deploy-production-freeze.sh` wrapper remains available, but is no longer required for normal production deployment.
 
 ## Inventory integrity rules
 

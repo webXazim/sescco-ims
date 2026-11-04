@@ -27,7 +27,7 @@ The final merge artifact was checked statically before packaging:
 - the unchanged Upgrade 11 production-infrastructure contract and frozen asset hashes pass;
 - Upgrade 12 row-count and legacy-field fingerprint comparators pass positive tests and reject injected drift;
 - `git diff --check` passes;
-- the final Upgrade 12 source/configuration freeze is verified by `scripts/verify-production-freeze.sh` after `merge/production-freeze.sha256` is generated.
+- the final Upgrade 12 source/configuration contracts are checked by `scripts/verify-production-freeze.sh`.
 
 ## Required runtime rehearsal
 

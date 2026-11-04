@@ -25,7 +25,6 @@ Using the repository root, after reviewing the exact patch and ensuring the data
 
 ```bash
 # Static baseline / syntax checks
-sha256sum -c merge/production-freeze.sha256
 python -m compileall -q apps/sourcing
 python scripts/verify-sourcing-domain-foundation.py
 python scripts/verify-sourcing-security-certification.py

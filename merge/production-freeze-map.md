@@ -23,7 +23,7 @@ baseline.
 | Frozen production deploy entrypoint | `scripts/deploy-production-freeze.sh` |
 | Upgrade 11 deployment authority | `scripts/deploy-production.sh` (unchanged) |
 | Isolated rehearsal | `scripts/rehearse-production-freeze.sh` |
-| Source freeze | `merge/production-freeze.sha256` |
+| Production source/configuration checks | `scripts/verify-production-freeze.sh` |
 
 The rehearsal project is intentionally a different persistence boundary. It exists only to prove a
 real backup can survive the complete migration/reconciliation/regression path before the production

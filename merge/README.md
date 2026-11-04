@@ -221,8 +221,8 @@ migration, applies the complete merge migration chain, runs every reconciliation
 deployment/schema checks, `collectstatic`, and the full Django test suite, then refuses the freeze if any
 protected legacy row or pre-existing field value changed.
 
-The final source tree is bound by `merge/production-freeze.sha256`. The final deployment wrapper verifies this manifest before handing off to the unchanged Upgrade 11
-preflight/deployment pipeline and its earlier baseline/frontend/shell/infrastructure contracts. The final merge
+The final deployment wrapper runs the production source/configuration verifier before handing off to the unchanged Upgrade 11
+preflight/deployment pipeline and its baseline/frontend/shell/infrastructure contracts. The final merge
 state records `completed_upgrade: 12`, `merge_complete: true`, and no next merge upgrade.
 
 Before first production cutover, restore a current production backup into the isolated rehearsal and run:

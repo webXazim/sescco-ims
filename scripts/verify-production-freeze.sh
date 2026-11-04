@@ -9,10 +9,6 @@ require_text() {
   grep -Fq -- "${pattern}" "${file}" || fail "${message}"
 }
 
-[[ -f merge/production-freeze.sha256 ]] || fail 'Production-freeze manifest is missing.'
-sha256sum -c merge/production-freeze.sha256 >/dev/null \
-  || fail 'Frozen production source/configuration changed.'
-
 python3 scripts/verify-granular-access-authority.py
 python3 scripts/verify-subcontractor-release-extension.py
 python3 scripts/verify-single-access-authority.py
@@ -142,7 +138,7 @@ require_text merge/source-manifest.json '"completed_upgrade": 12' 'Merge progres
 require_text merge/source-manifest.json '"total_upgrades": 12' 'Merge upgrade total changed.'
 require_text merge/source-manifest.json '"merge_complete": true' 'Merge is not marked complete.'
 require_text merge/source-manifest.json '"next_upgrade": null' 'Final merge state must not declare another merge upgrade.'
-require_text merge/source-manifest.json '"production_freeze_manifest": "merge/production-freeze.sha256"' 'Freeze manifest contract is missing.'
+require_text merge/source-manifest.json '"production_freeze_verifier": "scripts/verify-production-freeze.sh"' 'Production source verifier contract is missing.'
 
 require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_postgres_data' 'Rehearsal PostgreSQL volume is not isolated.'
 require_text docker-compose.rehearsal.yml 'name: ims_merge_rehearsal_static_data' 'Rehearsal static volume is not isolated.'

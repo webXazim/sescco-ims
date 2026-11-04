@@ -74,20 +74,12 @@ Set `IMS_REHEARSAL_KEEP=1` only when an operator intentionally wants to retain t
 containers/volumes after the run for investigation. The default destroys those rehearsal resources on
 success or failure while retaining the host-side evidence directory.
 
-## Production freeze
+## Production verification
 
-`merge/production-freeze.sha256` hashes the deployable source/configuration surface (application code,
-settings, templates, static assets, migration files, deployment scripts/configuration, merge contracts,
-and release documentation). Runtime data, secrets, caches, backups, `.git`, and the freeze manifest
-itself are excluded.
-
-`scripts/deploy-production-freeze.sh` runs `scripts/verify-production-freeze.sh` before handing off to the
-unchanged Upgrade 11 `scripts/deploy-production.sh` pipeline. This preserves the already-frozen Upgrade 11
-infrastructure checksums while still blocking Upgrade 12 source/configuration drift before a container image
-is built or a database is changed.
-
-The Git working tree is also required to be clean. The hash freeze is an artifact-integrity boundary;
-the clean-tree rule is the operator/repository-integrity boundary. Both must pass.
+`scripts/deploy-production.sh` runs `scripts/verify-production-freeze.sh` before preflight. The verifier
+checks source/configuration contracts and the focused Payroll frontend, platform shell, and production
+infrastructure asset manifests. It does not compare the checkout against a whole-tree source checksum,
+so ordinary release changes do not require regenerating a broad freeze file.
 
 ## Final cutover sequence
 

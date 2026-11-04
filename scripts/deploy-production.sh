@@ -57,7 +57,7 @@ if ! grep -Fq 'base_source_model, separator, source_qualifier = source_identity.
 fi
 info "Supplier-timesheet compound-source reconciliation hotfix is active"
 
-info "Verifying the packaged production source freeze"
+info "Running production source/configuration checks"
 bash "${PROJECT_ROOT}/scripts/verify-production-freeze.sh"
 
 bash "${PROJECT_ROOT}/scripts/preflight.sh"
