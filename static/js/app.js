@@ -372,6 +372,41 @@
 
   // GET search forms without a page-specific live handler submit as the user
   // types. Existing AJAX filter/finder forms keep their own request lifecycle.
+  const liveSearchFocusKey = "inventory-live-search-focus";
+  const restoreLiveSearchFocus = () => {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(liveSearchFocusKey) || "null");
+      window.sessionStorage.removeItem(liveSearchFocusKey);
+      if (!saved || saved.pathname !== window.location.pathname) return;
+      const params = new URLSearchParams(window.location.search);
+      if (params.get(saved.name) !== saved.value) return;
+      const field = Array.from(document.forms)
+        .filter((form) => form.method.toLowerCase() === "get")
+        .flatMap((form) => Array.from(form.elements))
+        .find((element) => element.name === saved.name && element.value === saved.value);
+      if (!field) return;
+      field.focus({ preventScroll: true });
+      if (typeof saved.selectionStart === "number" && typeof saved.selectionEnd === "number") {
+        field.setSelectionRange(saved.selectionStart, saved.selectionEnd);
+      }
+    } catch (_) {
+      try { window.sessionStorage.removeItem(liveSearchFocusKey); } catch (_) {}
+    }
+  };
+  restoreLiveSearchFocus();
+
+  const rememberLiveSearchFocus = (form, field) => {
+    try {
+      window.sessionStorage.setItem(liveSearchFocusKey, JSON.stringify({
+        pathname: new URL(form.action || window.location.href, window.location.href).pathname,
+        name: field.name,
+        value: field.value,
+        selectionStart: field.selectionStart,
+        selectionEnd: field.selectionEnd,
+      }));
+    } catch (_) {}
+  };
+
   document.querySelectorAll("form").forEach((form) => {
     if (form.method.toLowerCase() !== "get" || form.matches(
       "[data-live-filter-form], [data-unified-form], [data-sourcing-live-finder]"
@@ -385,7 +420,10 @@
         timer = window.setTimeout(() => {
           const page = form.elements.namedItem("page");
           if (page) page.value = "1";
-          if (form.isConnected) form.requestSubmit();
+          if (form.isConnected) {
+            rememberLiveSearchFocus(form, field);
+            form.requestSubmit();
+          }
         }, 350);
       });
       field.addEventListener("search", () => {
@@ -393,7 +431,10 @@
         timer = window.setTimeout(() => {
           const page = form.elements.namedItem("page");
           if (page) page.value = "1";
-          if (form.isConnected) form.requestSubmit();
+          if (form.isConnected) {
+            rememberLiveSearchFocus(form, field);
+            form.requestSubmit();
+          }
         }, 100);
       });
     });
