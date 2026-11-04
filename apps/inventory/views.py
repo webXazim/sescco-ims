@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import UUID
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -803,7 +804,16 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                     supplier=supplier,
                     unit=item.unit,
                     minimum_quantity=item.minimum_quantity,
-                    condition=item.condition if item.condition in (StockItem.Condition.NEW, StockItem.Condition.USED) else StockItem.Condition.NEW,
+                    condition=(
+                        item.condition
+                        if item.condition
+                        in (
+                            StockItem.Condition.NEW,
+                            StockItem.Condition.USED,
+                            StockItem.Condition.DAMAGED,
+                        )
+                        else StockItem.Condition.NEW
+                    ),
                 )
         project_code = self.request.GET.get("project", "").strip()
         if project_code and "project" not in initial:
@@ -1203,23 +1213,47 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
             return self._available_locations(request).filter(pk=int(value)).first()
         return None
 
+    def _selected_stock_item(self, request, source):
+        value = (request.GET.get("item") or request.POST.get("selected_stock_item") or "").strip()
+        if not value:
+            return None
+        if source is None:
+            raise Http404("A source location is required for this stock item.")
+        try:
+            reference = UUID(value)
+        except ValueError as exc:
+            raise Http404("Stock item not found.") from exc
+        return get_object_or_404(
+            StockItem.objects.for_company(request.company).filter(
+                location=source,
+                status=StockItem.Status.ACTIVE,
+                deleted_at__isnull=True,
+                current_quantity__gt=0,
+            ),
+            reference=reference,
+        )
+
     def get(self, request):
         source = self._source_location(request)
+        stock_item = self._selected_stock_item(request, source)
         preferred_destination = self._preferred_destination(request)
         form = StockTransferForm(
             source_location=source,
+            stock_item=stock_item,
             initial={"destination_location": preferred_destination} if preferred_destination else {},
             company=request.company,
             membership=request.company_membership,
         )
-        return render(request, self.template_name, self._context(form, source, preferred_destination))
+        return render(request, self.template_name, self._context(form, source, preferred_destination, stock_item))
 
     def post(self, request):
         source = self._source_location(request)
+        stock_item = self._selected_stock_item(request, source)
         form = StockTransferForm(
             request.POST,
             request.FILES,
             source_location=source,
+            stock_item=stock_item,
             company=request.company,
             membership=request.company_membership,
         )
@@ -1245,15 +1279,16 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
                 else:
                     messages.success(request, "Stock transfer completed safely.")
                 return redirect("inventory:transfer_detail", reference=result.transfer.reference)
-        return render(request, self.template_name, self._context(form, source), status=400)
+        return render(request, self.template_name, self._context(form, source, stock_item=stock_item), status=400)
 
-    def _context(self, form, source, preferred_destination=None):
+    def _context(self, form, source, preferred_destination=None, stock_item=None):
         return {
             "page_key": "transfers",
             "page_title": "Transfer stock",
             "page_subtitle": "Transfer a chosen quantity from any active project or office to another project or office.",
             "form": form,
             "source": source,
+            "selected_stock_item": stock_item,
             "source_locations": self._available_locations(self.request).order_by("location_type", "code"),
             "preferred_destination": preferred_destination,
         }
@@ -2424,7 +2459,11 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
         supplier_name = request.GET.get("supplier_name", "")
         supplier_phone = request.GET.get("supplier_phone", "")
         condition = request.GET.get("condition", StockItem.Condition.NEW)
-        if condition not in (StockItem.Condition.NEW, StockItem.Condition.USED):
+        if condition not in (
+            StockItem.Condition.NEW,
+            StockItem.Condition.USED,
+            StockItem.Condition.DAMAGED,
+        ):
             return JsonResponse({"error": "Invalid stock condition."}, status=400)
         office_identifier = request.GET.get("office", "").strip()
         if not all((material_name, supplier_name, supplier_phone)) or not (project_identifier or office_identifier):

@@ -194,8 +194,12 @@ def add_stock(
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
-    if condition not in (StockItem.Condition.NEW, StockItem.Condition.USED):
-        raise InventoryOperationError("Received stock condition must be New or Used.")
+    if condition not in (
+        StockItem.Condition.NEW,
+        StockItem.Condition.USED,
+        StockItem.Condition.DAMAGED,
+    ):
+        raise InventoryOperationError("Received stock condition must be New, Used, or Damaged.")
     if project is None and location is None:
         raise InventoryOperationError("Choose an active project or office inventory location.")
     if project is not None:

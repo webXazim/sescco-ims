@@ -131,8 +131,14 @@ def transfer_stock(
 
     normalized: list[tuple[int, str, Decimal]] = []
     totals: dict[int, Decimal] = defaultdict(Decimal)
+    allowed_outcomes = (
+        StockTransferLine.Outcome.NEW,
+        StockTransferLine.Outcome.USED,
+        StockTransferLine.Outcome.DAMAGED,
+        StockTransferLine.Outcome.LOST,
+    )
     for allocation in allocations:
-        if allocation.outcome not in StockTransferLine.Outcome.values:
+        if allocation.outcome not in allowed_outcomes:
             raise InventoryOperationError("Choose a valid condition outcome.")
         quantity = _validate_positive_quantity(allocation.quantity)
         item_id = allocation.source_stock_item.pk
@@ -173,6 +179,12 @@ def transfer_stock(
                 raise InsufficientStockError(
                     f"Only {item.quantity_display} of {item.material_name} is available."
                 )
+        for item_id, outcome, _quantity in normalized:
+            if (
+                source_items[item_id].condition == StockItem.Condition.USED
+                and outcome == StockTransferLine.Outcome.NEW
+            ):
+                raise InventoryOperationError("Used stock cannot be transferred as new.")
 
         transfer = StockTransfer(
             company=company,

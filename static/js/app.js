@@ -576,6 +576,21 @@
 
   const transferForm = document.querySelector("[data-transfer-form]");
   if (transferForm) {
+    const transferSearch = transferForm.querySelector("[data-transfer-search]");
+    const transferSearchCount = transferForm.querySelector("[data-transfer-search-count]");
+    const filterTransferRows = () => {
+      const query = (transferSearch?.value || "").trim().toLocaleLowerCase();
+      let visible = 0;
+      const rows = transferForm.querySelectorAll("[data-transfer-search-row]");
+      rows.forEach((row) => {
+        const matches = !query || (row.dataset.searchText || "").includes(query);
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      if (transferSearchCount) transferSearchCount.textContent = `${visible} of ${rows.length} items`;
+    };
+    transferSearch?.addEventListener("input", filterTransferRows);
+    filterTransferRows();
     const updateTransferSummary = () => {
       let total = 0;
       let lost = 0;
@@ -628,13 +643,14 @@
     const forms = [...document.querySelectorAll('form[data-inventory-draft][method="post"]')];
     forms.forEach((form, index) => {
       const route = window.location.pathname;
-      // Include GET scope: transfer source changes the form's stock rows.
+      // Include GET scope: transfer source and selected item change the stock rows.
       const params = new URLSearchParams(window.location.search);
       const source = params.get('source') || form.querySelector('[name="source_location"]')?.value || '';
+      const item = params.get('item') || form.querySelector('[name="selected_stock_item"]')?.value || '';
       const destination = params.get('destination') || '';
       const office = form.dataset.officeId || '';
       const draftId = form.dataset.draftId || String(index);
-      const key = `${prefix}${route}:${source}:${destination}:${office}:${draftId}`;
+      const key = `${prefix}${route}:${source}:${item}:${destination}:${office}:${draftId}`;
       const fields = () => Array.from(form.elements).filter((field) =>
         field.name && !field.disabled && !['csrfmiddlewaretoken'].includes(field.name)
         && !['file', 'password', 'submit', 'button', 'reset'].includes(field.type)

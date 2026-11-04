@@ -275,6 +275,7 @@ class StockItem(models.Model):
     class Condition(models.TextChoices):
         NEW = "new", "New"
         USED = "used", "Used"
+        DAMAGED = "damaged", "Damaged"
         NO_VALUE = "no_value", "No value"
 
     company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_items")
@@ -1029,7 +1030,9 @@ class StockTransferLine(models.Model):
     class Outcome(models.TextChoices):
         NEW = StockItem.Condition.NEW, "New"
         USED = StockItem.Condition.USED, "Used"
-        NO_VALUE = StockItem.Condition.NO_VALUE, "No value"
+        DAMAGED = StockItem.Condition.DAMAGED, "Damaged"
+        # Kept for displaying transfers recorded before Damaged replaced No value.
+        NO_VALUE = StockItem.Condition.NO_VALUE, "No value (legacy)"
         LOST = "lost", "Lost"
 
     transfer = models.ForeignKey(

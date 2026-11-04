@@ -427,7 +427,12 @@ label.field-label { color: #4d555e; font-size: 10px; font-weight: 680; }
 .input, .select { height: 40px; padding: 0 11px; }
 .transfer-table .transfer-quantity { min-width: 88px; width: 100%; }
 .transfer-table td { vertical-align: top; }
+.transfer-items-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; }
+.transfer-items-toolbar .search-field { flex: 1 1 360px; max-width: 520px; }
+.transfer-table-wrap { overflow: visible; }
+.transfer-table thead th { position: sticky; top: var(--topbar, 60px); z-index: 2; background: var(--surface-subtle, #f7f8f9); }
 .transfer-row-error { background: #fff1f1; }
+@media(max-width: 900px) { .transfer-table-wrap { overflow-x: auto; } }
 .textarea { min-height: 84px; padding: 10px 11px; resize: vertical; }
 .input:focus, .select:focus, .textarea:focus { border-color: #939da7; box-shadow: 0 0 0 3px rgba(30,79,107,.07); }
 .help { color: var(--muted); font-size: 9px; line-height: 1.4; }

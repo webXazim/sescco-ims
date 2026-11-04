@@ -236,17 +236,17 @@ class IdempotentMovementForm(StyledForm):
 
 
 class StockAdditionForm(IdempotentMovementForm):
-    # Only New and Used are direct-receipt conditions. "No value" is a separate
-    # transfer/stock-disposition outcome, not an initial supplier receipt.
+    # Legacy No value records remain readable, while receipts use physical condition.
     condition = forms.ChoiceField(
         choices=(
             (StockItem.Condition.NEW, "New"),
             (StockItem.Condition.USED, "Used"),
+            (StockItem.Condition.DAMAGED, "Damaged"),
         ),
         initial=StockItem.Condition.NEW,
         required=False,
         label="Item condition",
-        help_text="New and used items are tracked in separate stock balances.",
+        help_text="New, used, and damaged items are tracked in separate stock balances.",
     )
     project = forms.ModelChoiceField(queryset=Project.objects.none())
     material_name = forms.CharField(max_length=180)
@@ -556,7 +556,7 @@ class StockTransferForm(StyledForm):
     OUTCOMES = (
         StockTransferLine.Outcome.NEW,
         StockTransferLine.Outcome.USED,
-        StockTransferLine.Outcome.NO_VALUE,
+        StockTransferLine.Outcome.DAMAGED,
         StockTransferLine.Outcome.LOST,
     )
 
@@ -564,6 +564,7 @@ class StockTransferForm(StyledForm):
         self,
         *args,
         source_location=None,
+        stock_item=None,
         company=None,
         membership=None,
         **kwargs,
@@ -602,6 +603,7 @@ class StockTransferForm(StyledForm):
             elif initial.get("source_location"):
                 source_location = initial["source_location"]
         self.source_location = source_location
+        self.stock_item = stock_item
         self.source_items = []
         self.allocation_rows = []
         if source_location:
@@ -615,6 +617,8 @@ class StockTransferForm(StyledForm):
                 )
                 .order_by("material_name", "supplier_name", "condition")
             )
+            if stock_item is not None:
+                self.source_items = [item for item in self.source_items if item.pk == stock_item.pk]
             for item in self.source_items:
                 fields = []
                 for outcome in self.OUTCOMES:
@@ -663,6 +667,12 @@ class StockTransferForm(StyledForm):
                 quantity = cleaned.get(name) or Decimal("0")
                 total += quantity
                 if quantity > 0:
+                    if (
+                        item.condition == StockItem.Condition.USED
+                        and outcome == StockTransferLine.Outcome.NEW
+                    ):
+                        self.add_error(name, "Used stock cannot be transferred as new.")
+                        continue
                     self.allocations.append(TransferAllocation(item, outcome, quantity))
             if total > item.current_quantity:
                 self.add_error(
@@ -670,7 +680,7 @@ class StockTransferForm(StyledForm):
                     f"Allocated {total:f}; only {item.quantity_display} is available.",
                 )
         if not self.allocations:
-            raise ValidationError("Enter at least one New, Used, No value, or Lost quantity.")
+            raise ValidationError("Enter at least one New, Used, Damaged, or Lost quantity.")
         return cleaned
 
 
