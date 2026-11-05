@@ -179,11 +179,16 @@ See:
 
 ```bash
 ./scripts/backup.sh
+# For the configured encrypted off-site rclone remote:
+./scripts/backup-to-google-drive.sh
 ./scripts/restore.sh backups/<UTC-timestamp> --confirm
 ```
 
-A complete backup contains the PostgreSQL custom-format dump, private media, manifest and SHA-256 checksums. The manifest binds the backup to the Payroll field-encryption-key fingerprint; keep the actual encryption key separately in protected disaster-recovery storage. The restore script affects only IMS services and
-volumes.
+A complete recovery backup contains the PostgreSQL custom-format dump, private media,
+source-code bundle, protected production-configuration archive, manifest and SHA-256
+checksums. The manifest binds the backup to the Payroll field-encryption-key fingerprint;
+keep the encrypted off-site rclone recovery details in protected disaster-recovery storage.
+The restore script affects only IMS services and volumes.
 
 ## Quality checks
 

@@ -1,6 +1,7 @@
 .env
 .env.production
 .env.local
+.secrets/
 .venv/
 venv/
 __pycache__/

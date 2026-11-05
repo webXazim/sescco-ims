@@ -1,0 +1,20 @@
+[Unit]
+Description=SESCCO IMS verified encrypted off-site backup
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/opt/sites/ims
+Environment=IMS_ENV_FILE=/opt/sites/ims/.env.production
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+ExecStart=/bin/bash /opt/sites/ims/scripts/backup-to-google-drive.sh
+
+[Install]
+WantedBy=multi-user.target

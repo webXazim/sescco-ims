@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily SESCCO IMS encrypted off-site backup
+
+[Timer]
+OnCalendar=*-*-* 02:20:00
+Persistent=true
+RandomizedDelaySec=20m
+Unit=ims-backup.service
+
+[Install]
+WantedBy=timers.target
