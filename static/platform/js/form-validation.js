@@ -1,6 +1,39 @@
 (() => {
   const CONTROL_SELECTOR = 'input:not([type="hidden"]), select, textarea';
   const REQUIRED_SELECTOR = '[required], [data-required="true"]';
+  const passwordRules = [
+    { key: 'length', label: '8 or more characters', test: (value) => value.length >= 8 },
+    { key: 'upper', label: 'An uppercase letter', test: (value) => /[A-Z]/.test(value) },
+    { key: 'lower', label: 'A lowercase letter', test: (value) => /[a-z]/.test(value) },
+    { key: 'number', label: 'A number', test: (value) => /\d/.test(value) },
+    { key: 'symbol', label: 'A special symbol', test: (value) => /[^A-Za-z0-9]/.test(value) },
+  ];
+
+  const passwordRuleState = (value = '') => Object.fromEntries(
+    passwordRules.map((rule) => [rule.key, rule.test(value)])
+  );
+  const passwordMeetsRequirements = (value = '') => Object.values(passwordRuleState(value)).every(Boolean);
+  const mountPasswordRequirements = (root = document) => {
+    const containers = [];
+    if (root?.matches?.('[data-password-requirements]')) containers.push(root);
+    root?.querySelectorAll?.('[data-password-requirements]').forEach((container) => containers.push(container));
+    containers.forEach((container) => {
+      if (container.dataset.passwordRequirementsReady === 'true') return;
+      const input = document.getElementById(container.dataset.passwordInput || '');
+      if (!input) return;
+      container.dataset.passwordRequirementsReady = 'true';
+      container.innerHTML = `<span class="password-requirements__title">Password requirements</span><ul class="password-requirements__list">${passwordRules.map((rule) => `<li class="password-requirements__item" data-password-rule="${rule.key}">${rule.label}</li>`).join('')}</ul>`;
+      const update = () => {
+        const state = passwordRuleState(input.value);
+        passwordRules.forEach((rule) => {
+          const item = container.querySelector(`[data-password-rule="${rule.key}"]`);
+          item?.classList.toggle('is-met', state[rule.key]);
+        });
+      };
+      input.addEventListener('input', update);
+      update();
+    });
+  };
 
   const wrapperFor = (control) => control?.closest?.('.field, .form-field, .login-field, [data-field]') || control?.closest?.('label') || null;
 
@@ -143,6 +176,7 @@
       syncConditionalRequired(node.parentElement || document);
       if (node.matches?.(REQUIRED_SELECTOR)) decorate(node.parentElement || document);
       else decorate(node);
+      mountPasswordRequirements(node);
     }));
   });
 
@@ -184,8 +218,10 @@
     decorateCrudErrors();
     syncConditionalRequired(document);
     decorate(document);
+    mountPasswordRequirements(document);
     observer.observe(document.body, { childList: true, subtree: true });
   });
 
   window.PlatformFormValidation = { decorate, syncConditionalRequired, validateRequired, markInvalid, clearInvalid, valueMissing };
+  window.PlatformPasswordRequirements = { meets: passwordMeetsRequirements, mount: mountPasswordRequirements };
 })();

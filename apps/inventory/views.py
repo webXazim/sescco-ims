@@ -2576,6 +2576,7 @@ class StockPickerAPIView(InventoryPermissionRequiredMixin, View):
                         "quantity": str(item.current_quantity),
                         "quantity_display": item.quantity_display,
                         "unit": item.unit.symbol,
+                        "allows_fractional_quantities": item.unit.allows_fractional_quantities,
                         "url": reverse("inventory:detail", kwargs={"reference": item.reference}),
                     }
                     for item in queryset

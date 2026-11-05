@@ -54,3 +54,15 @@ input[type="radio"][aria-invalid="true"] {
   outline: 2px solid #d92d20;
   outline-offset: 2px;
 }
+
+.password-requirements { display: grid; gap: 5px; margin-top: 7px; padding: 8px 9px; border: 1px solid #e1e5e8; border-radius: 7px; background: #fafbfc; }
+.password-requirements__title { color: #5c6871; font-size: 9px; font-weight: 700; }
+.password-requirements__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; margin: 0; padding: 0; list-style: none; }
+.password-requirements__item { display: flex; align-items: center; gap: 4px; color: #7d8790; font-size: 9px; line-height: 1.25; }
+.password-requirements__item::before { content: "○"; color: #9aa4ab; font-size: 11px; line-height: 1; }
+.password-requirements__item.is-met { color: #257044; }
+.password-requirements__item.is-met::before { content: "✓"; color: #257044; font-weight: 800; }
+
+@media (max-width: 480px) {
+  .password-requirements__list { grid-template-columns: 1fr; }
+}

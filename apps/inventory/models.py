@@ -28,6 +28,10 @@ class Unit(models.Model):
     normalized_name = models.CharField(max_length=80, editable=False)
     symbol = models.CharField(max_length=20)
     normalized_symbol = models.CharField(max_length=20, editable=False)
+    allows_fractional_quantities = models.BooleanField(
+        default=True,
+        help_text="Clear this for countable units that must always use whole quantities.",
+    )
     is_active = models.BooleanField(default=True)
     archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
     archived_reason = models.TextField(blank=True)

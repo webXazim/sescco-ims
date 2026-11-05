@@ -54,6 +54,13 @@ def _validate_positive_quantity(quantity: Decimal) -> Decimal:
     return value
 
 
+def _validate_unit_quantity(unit: Unit, quantity: Decimal) -> Decimal:
+    value = Decimal(quantity)
+    if not unit.allows_fractional_quantities and value % 1:
+        raise InventoryOperationError(f"{unit.name} ({unit.symbol}) only allows whole quantities.")
+    return value
+
+
 def _require_inventory_permission(user, company, permission: AccessPermission):
     membership = user_membership_for_company(user, company)
     if membership is None or not membership_has_permission(membership, permission):
@@ -230,7 +237,9 @@ def add_stock(
     if duplicate:
         return duplicate
 
-    quantity = _validate_positive_quantity(quantity)
+    quantity = _validate_unit_quantity(unit, _validate_positive_quantity(quantity))
+    if not unit.allows_fractional_quantities and Decimal(minimum_quantity) % 1:
+        raise InventoryOperationError(f"{unit.name} ({unit.symbol}) only allows whole minimum quantities.")
     _validate_operation_date(movement_date)
     if unit_price is not None and Decimal(unit_price) < 0:
         raise InventoryOperationError("Unit price cannot be negative.")
@@ -380,7 +389,7 @@ def add_opening_stock(
     duplicate = _existing_idempotent_result(stock_item.company, idempotency_key)
     if duplicate:
         return duplicate
-    quantity = _validate_positive_quantity(quantity)
+    quantity = _validate_unit_quantity(stock_item.unit, _validate_positive_quantity(quantity))
     _validate_operation_date(movement_date)
     if unit_price is not None and Decimal(unit_price) < 0:
         raise InventoryOperationError("Unit price cannot be negative.")
@@ -460,6 +469,7 @@ def use_stock(
                 .get(pk=stock_item.pk)
             )
             _require_active_stock_item(locked)
+            quantity = _validate_unit_quantity(locked.unit, quantity)
             previous_balance = locked.current_quantity
             if quantity > previous_balance:
                 raise InsufficientStockError(f"Only {locked.quantity_display} is available.")
@@ -522,6 +532,7 @@ def adjust_stock(
                 .get(pk=stock_item.pk)
             )
             _require_active_stock_item(locked)
+            quantity = _validate_unit_quantity(locked.unit, quantity)
             previous_balance = locked.current_quantity
             if direction == "increase":
                 movement_type = StockMovement.Type.ADJUSTMENT_IN

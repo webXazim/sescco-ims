@@ -674,14 +674,35 @@
   }
 
   function generateTemporaryPassword() {
-    const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-    const symbols = "!@#$%*+-_";
-    const values = new Uint32Array(16); crypto.getRandomValues(values);
-    let result = "";
-    for (let index = 0; index < 14; index += 1) result += alpha[values[index] % alpha.length];
-    result += symbols[values[14] % symbols.length];
-    result += String(values[15] % 10);
-    return result;
+    const groups = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%*+-_"];
+    const alpha = groups.join("");
+    const values = new Uint32Array(32); crypto.getRandomValues(values);
+    const characters = groups.map((group, index) => group[values[index] % group.length]);
+    for (let index = 4; index < 16; index += 1) characters.push(alpha[values[index] % alpha.length]);
+    for (let index = characters.length - 1; index > 0; index -= 1) {
+      const swapIndex = values[16 + characters.length - 1 - index] % (index + 1);
+      [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+    }
+    return characters.join("");
+  }
+
+  function wireTemporaryPasswordControls() {
+    const pw = byId("accessTemporaryPassword");
+    if (!pw) return;
+    window.PlatformPasswordRequirements?.mount(els.drawerBody);
+    byId("accessPasswordShow")?.addEventListener("click", (event) => {
+      const show = pw.type === "password";
+      pw.type = show ? "text" : "password";
+      event.currentTarget.textContent = show ? "Hide" : "Show";
+    });
+    byId("accessPasswordGenerate")?.addEventListener("click", () => {
+      pw.value = generateTemporaryPassword();
+      pw.type = "text";
+      byId("accessPasswordShow").textContent = "Hide";
+      pw.dispatchEvent(new Event("input", { bubbles: true }));
+      pw.focus();
+      pw.select();
+    });
   }
 
   function profileOptions(selectedId, disabled) {
@@ -718,7 +739,7 @@
           ${formField({ id: "accessLastName", label: "Last name", value: user?.lastName, disabled: !canEdit })}
           ${formField({ id: "accessUsername", label: "Username", value: user?.username, required: true, disabled: !canEdit })}
           ${formField({ id: "accessEmail", label: "Email", value: user?.email, type: "email", required: true, disabled: !canEdit })}
-          ${creating ? `<label class="access-field is-wide"><span>Temporary password <em class="required">*</em></span><div class="access-password-wrap"><input class="access-input" id="accessTemporaryPassword" type="password" autocomplete="new-password" required><div class="access-password-tools"><button class="access-password-tool" type="button" id="accessPasswordShow">Show</button><button class="access-password-tool" type="button" id="accessPasswordGenerate">Generate</button></div></div><small class="access-field-error" id="fieldError-accessTemporaryPassword"></small></label>` : ""}
+          ${creating ? `<label class="access-field is-wide"><span>Temporary password <em class="required">*</em></span><div class="access-password-wrap"><input class="access-input" id="accessTemporaryPassword" type="password" autocomplete="new-password" minlength="8" required><div class="access-password-tools"><button class="access-password-tool" type="button" id="accessPasswordShow">Show</button><button class="access-password-tool" type="button" id="accessPasswordGenerate">Generate</button></div></div><div class="password-requirements" data-password-requirements data-password-input="accessTemporaryPassword"></div><small class="access-field-error" id="fieldError-accessTemporaryPassword"></small></label>` : ""}
         </div>
         ${creating ? '<div class="access-form-note"><strong>Forced change:</strong> the new user must change this temporary password. The plaintext password is not stored in access audit records.</div>' : ""}
       </section>
@@ -750,9 +771,7 @@
     wireScopes(!canEditAccess && !creating);
 
     if (creating) {
-      const pw = byId("accessTemporaryPassword");
-      byId("accessPasswordShow")?.addEventListener("click", (event) => { const show = pw.type === "password"; pw.type = show ? "text" : "password"; event.currentTarget.textContent = show ? "Hide" : "Show"; });
-      byId("accessPasswordGenerate")?.addEventListener("click", () => { pw.value = generateTemporaryPassword(); pw.type = "text"; byId("accessPasswordShow").textContent = "Hide"; pw.focus(); pw.select(); });
+      wireTemporaryPasswordControls();
     }
 
     els.drawerBody.querySelectorAll("[data-security-action]").forEach((button) => button.addEventListener("click", () => renderSecurityAction(button.dataset.securityAction, user)));
@@ -779,6 +798,12 @@
 
   async function saveUserForm(user, button, { canEditAccess }) {
     clearFormErrors();
+    const password = byId("accessTemporaryPassword");
+    if (!user && window.PlatformPasswordRequirements && !window.PlatformPasswordRequirements.meets(password?.value || "")) {
+      byId("fieldError-accessTemporaryPassword").textContent = "Meet every password requirement before creating the user.";
+      password?.focus();
+      return;
+    }
     button.disabled = true; const previous = button.textContent; button.textContent = user ? "Saving…" : "Creating…";
     const payload = {
       firstName: byId("accessFirstName")?.value.trim() || "",
@@ -898,10 +923,8 @@
     els.drawerSubtitle.textContent = `${user.displayName || user.username} · ${user.username}`;
     const identity = `<div class="access-confirm__identity"><span class="access-avatar">${htmlEscape(initials(user))}</span><span><strong>${htmlEscape(user.displayName || user.username)}</strong><small>${htmlEscape(user.profile?.name || "No profile")} · ${htmlEscape(user.email || user.username)}</small></span></div>`;
     if (action === "password") {
-      els.drawerBody.innerHTML = `<div class="access-confirm">${identity}<div class="access-form-note"><strong>Existing sessions:</strong> changing the Django password hash invalidates authenticated sessions. The user will be required to change this temporary password.</div><label class="access-field"><span>Temporary password <em class="required">*</em></span><div class="access-password-wrap"><input class="access-input" id="accessTemporaryPassword" type="password" autocomplete="new-password"><div class="access-password-tools"><button class="access-password-tool" type="button" id="accessPasswordShow">Show</button><button class="access-password-tool" type="button" id="accessPasswordGenerate">Generate</button></div></div><small class="access-field-error" id="fieldError-accessTemporaryPassword"></small></label></div>`;
-      const pw = byId("accessTemporaryPassword");
-      byId("accessPasswordShow")?.addEventListener("click", (event) => { const show = pw.type === "password"; pw.type = show ? "text" : "password"; event.currentTarget.textContent = show ? "Hide" : "Show"; });
-      byId("accessPasswordGenerate")?.addEventListener("click", () => { pw.value = generateTemporaryPassword(); pw.type = "text"; byId("accessPasswordShow").textContent = "Hide"; pw.focus(); pw.select(); });
+      els.drawerBody.innerHTML = `<div class="access-confirm">${identity}<div class="access-form-note"><strong>Existing sessions:</strong> changing the Django password hash invalidates authenticated sessions. The user will be required to change this temporary password.</div><label class="access-field"><span>Temporary password <em class="required">*</em></span><div class="access-password-wrap"><input class="access-input" id="accessTemporaryPassword" type="password" autocomplete="new-password" minlength="8" required><div class="access-password-tools"><button class="access-password-tool" type="button" id="accessPasswordShow">Show</button><button class="access-password-tool" type="button" id="accessPasswordGenerate">Generate</button></div></div><div class="password-requirements" data-password-requirements data-password-input="accessTemporaryPassword"></div><small class="access-field-error" id="fieldError-accessTemporaryPassword"></small></label></div>`;
+      wireTemporaryPasswordControls();
     } else if (action === "status") {
       els.drawerBody.innerHTML = `<div class="access-confirm">${identity}<div class="access-form-note"><strong>${user.active ? "Deactivate" : "Reactivate"}:</strong> ${user.active ? "this removes company access immediately. If no other active company membership exists, sign-in is disabled too." : "this restores the company membership and enables the identity if its assigned Access Profile is active."}</div></div>`;
     } else if (action === "delete") {
@@ -918,6 +941,12 @@
 
   async function submitSecurityAction(action, user, button) {
     clearFormErrors();
+    const password = byId("accessTemporaryPassword");
+    if (action === "password" && window.PlatformPasswordRequirements && !window.PlatformPasswordRequirements.meets(password?.value || "")) {
+      byId("fieldError-accessTemporaryPassword").textContent = "Meet every password requirement before resetting the password.";
+      password?.focus();
+      return;
+    }
     button.disabled = true; const previous = button.textContent; button.textContent = "Working…";
     try {
       let result;

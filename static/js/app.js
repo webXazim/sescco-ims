@@ -51,6 +51,58 @@
     });
   });
   initResizableDescriptions();
+
+  // Number controls should never change while the user scrolls the page. A
+  // zero supplied as a form default is replaced by the first entered value.
+  const isNumberInput = (target) => target instanceof HTMLInputElement && target.type === "number";
+  const isZeroValue = (value) => /^-?0(?:\.0+)?$/.test(value);
+  const normalizeLeadingZero = (input) => {
+    const normalized = input.value.replace(/^(-?)0+(?=\d)/, "$1");
+    if (normalized !== input.value) input.value = normalized;
+  };
+
+  document.addEventListener("focusin", (event) => {
+    if (isNumberInput(event.target) && isZeroValue(event.target.value)) {
+      event.target.dataset.replaceZeroOnEntry = "true";
+    }
+  });
+  document.addEventListener("beforeinput", (event) => {
+    const input = event.target;
+    if (!isNumberInput(input) || !event.inputType?.startsWith("insert")) return;
+    if (input.dataset.wholeUnit === "true" && /[.,eE]/.test(event.data || "")) {
+      event.preventDefault();
+      return;
+    }
+    if (input.dataset.replaceZeroOnEntry === "true") input.value = "";
+  });
+  document.addEventListener("input", (event) => {
+    if (!isNumberInput(event.target)) return;
+    delete event.target.dataset.replaceZeroOnEntry;
+    normalizeLeadingZero(event.target);
+  });
+  document.addEventListener("wheel", (event) => {
+    if (isNumberInput(event.target) && document.activeElement === event.target) {
+      event.target.blur();
+    }
+  }, { passive: true });
+
+  const setQuantityPrecision = (input, allowsFractional) => {
+    if (!input) return;
+    const wholeUnitsOnly = allowsFractional === false;
+    input.step = wholeUnitsOnly ? "1" : "0.001";
+    input.inputMode = wholeUnitsOnly ? "numeric" : "decimal";
+    input.dataset.wholeUnit = String(wholeUnitsOnly);
+  };
+  document.querySelectorAll("[data-unit-select]").forEach((select) => {
+    const syncUnitQuantityPrecision = () => {
+      const allowsFractional = select.selectedOptions[0]?.dataset.allowsFractional !== "false";
+      select.closest("form")?.querySelectorAll("[data-unit-quantity], [data-unit-minimum]")
+        .forEach((input) => setQuantityPrecision(input, allowsFractional));
+    };
+    select.addEventListener("change", syncUnitQuantityPrecision);
+    syncUnitQuantityPrecision();
+  });
+
   document.querySelectorAll("[data-sidebar-toggle]").forEach((button) => {
     button.addEventListener("click", () => body.classList.toggle("sidebar-open"));
   });
@@ -572,6 +624,7 @@
 
     const updateUsageBalance = () => {
       const option = stockSelect?.selectedOptions?.[0];
+      setQuantityPrecision(quantity, option?.dataset.allowsFractional !== "false");
       const hasRecord = Boolean(option?.value);
       const available = hasRecord && option.dataset.balance
         ? numberValue(option.dataset.balance)
@@ -603,7 +656,7 @@
       const options = ['<option value="">Select stock record</option>'];
       results.forEach((item) => {
         const selected = String(item.id) === String(selectedValue) ? " selected" : "";
-        options.push(`<option value="${escapeHtml(item.id)}" data-balance="${escapeHtml(item.quantity)}" data-unit="${escapeHtml(item.unit)}" data-project="${escapeHtml(item.project_code)}" data-material="${escapeHtml(item.material_name)}" data-supplier="${escapeHtml(item.supplier_name)}" data-condition="${escapeHtml(item.condition)}"${selected}>${escapeHtml(item.material_name)} · ${escapeHtml(item.condition)} · ${escapeHtml(item.supplier_name)} (${escapeHtml(item.quantity_display)})</option>`);
+        options.push(`<option value="${escapeHtml(item.id)}" data-balance="${escapeHtml(item.quantity)}" data-unit="${escapeHtml(item.unit)}" data-project="${escapeHtml(item.project_code)}" data-material="${escapeHtml(item.material_name)}" data-supplier="${escapeHtml(item.supplier_name)}" data-condition="${escapeHtml(item.condition)}" data-allows-fractional="${item.allows_fractional_quantities ? "true" : "false"}"${selected}>${escapeHtml(item.material_name)} · ${escapeHtml(item.condition)} · ${escapeHtml(item.supplier_name)} (${escapeHtml(item.quantity_display)})</option>`);
       });
       stockSelect.innerHTML = options.join("");
       stockSelect.disabled = false;

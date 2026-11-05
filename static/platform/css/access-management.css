@@ -261,7 +261,9 @@
 .access-permission-item > span { min-width: 0; display: grid; gap: 1px; }
 .access-permission-item strong { color: var(--access-secondary); font-size: 9.3px; font-weight: 670; line-height: 1.3; }
 .access-permission-item small { color: var(--access-muted); font-size: 8.1px; }
-.access-permission-item:has(input:disabled) { opacity: .55; cursor: default; }
+.access-permission-item:has(input:disabled) { border-color: #e0e3df; background: #f8f9f8; cursor: default; }
+.access-permission-item:has(input:disabled) strong { color: #454b46; }
+.access-permission-item:has(input:disabled) small { color: #68716a; }
 @media (max-width: 720px) { .access-permission-grid { grid-template-columns: 1fr; } }
 
 /* 1.0.98 immutable Access History + guarded recovery */

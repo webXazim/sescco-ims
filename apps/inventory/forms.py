@@ -30,6 +30,11 @@ from .services.matching import find_stock_matches
 from .services.transfers import TransferAllocation
 
 
+def enforce_whole_unit_quantity(form, *, unit: Unit | None, quantity, field_name: str) -> None:
+    if unit and quantity is not None and not unit.allows_fractional_quantities and quantity % 1:
+        form.add_error(field_name, f"{unit.name} ({unit.symbol}) only allows whole quantities.")
+
+
 def validate_uploaded_attachment(file):
     if not file:
         return file
@@ -60,7 +65,11 @@ class UnitForm(StyledModelForm):
 
     class Meta:
         model = Unit
-        fields = ("name", "symbol")
+        fields = ("name", "symbol", "allows_fractional_quantities")
+        labels = {"allows_fractional_quantities": "Allow fractional quantities"}
+        help_texts = {
+            "allows_fractional_quantities": "Clear this for units such as pieces, bags, or boxes that must use whole numbers."
+        }
 
     def clean(self):
         cleaned = super().clean()
@@ -76,6 +85,16 @@ class UnitForm(StyledModelForm):
         if symbol and queryset.filter(normalized_symbol=symbol).exists():
             self.add_error("symbol", "A unit with this symbol already exists in this company.")
         return cleaned
+
+
+class UnitSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value and getattr(value, "instance", None):
+            option["attrs"]["data-allows-fractional"] = str(
+                value.instance.allows_fractional_quantities
+            ).lower()
+        return option
 
 
 class SupplierForm(StyledModelForm):
@@ -142,6 +161,7 @@ class StockItemForm(StyledModelForm):
             "notes",
         )
         widgets = {
+            "unit": UnitSelect(attrs={"data-unit-select": ""}),
             "description": forms.Textarea(
                 attrs={
                     "rows": 3,
@@ -171,6 +191,7 @@ class StockItemForm(StyledModelForm):
             active_projects = restrict_inventory_projects(active_projects, membership)
         self.fields["project"].queryset = active_projects.order_by("code")
         self.fields["unit"].queryset = active_units.order_by("name")
+        self.fields["minimum_quantity"].widget.attrs["data-unit-minimum"] = ""
         if self.instance.pk and self.instance.movements.exists():
             self.fields["project"].disabled = True
             self.fields["project"].help_text = "Project is locked after the first stock movement."
@@ -188,6 +209,12 @@ class StockItemForm(StyledModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        enforce_whole_unit_quantity(
+            self,
+            unit=cleaned_data.get("unit"),
+            quantity=cleaned_data.get("minimum_quantity"),
+            field_name="minimum_quantity",
+        )
         required = ("project", "material_name", "supplier_name", "supplier_phone")
         if not all(cleaned_data.get(field) for field in required):
             return cleaned_data
@@ -265,7 +292,7 @@ class StockAdditionForm(IdempotentMovementForm):
         widget=SupplierSelect,
         help_text="Choose a managed supplier; its phone and location are used automatically.",
     )
-    unit = forms.ModelChoiceField(queryset=Unit.objects.none())
+    unit = forms.ModelChoiceField(queryset=Unit.objects.none(), widget=UnitSelect)
     minimum_quantity = forms.DecimalField(
         max_digits=16,
         decimal_places=3,
@@ -319,6 +346,9 @@ class StockAdditionForm(IdempotentMovementForm):
         self.fields["supplier"].queryset = Supplier.objects.for_company(company).filter(
             is_active=True, archived_at__isnull=True, deleted_at__isnull=True
         ).order_by("name", "phone")
+        self.fields["unit"].widget.attrs["data-unit-select"] = ""
+        self.fields["quantity"].widget.attrs["data-unit-quantity"] = ""
+        self.fields["minimum_quantity"].widget.attrs["data-unit-minimum"] = ""
         self.exact_match = None
         self.similar_matches = []
 
@@ -331,6 +361,16 @@ class StockAdditionForm(IdempotentMovementForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        unit = cleaned_data.get("unit")
+        enforce_whole_unit_quantity(
+            self, unit=unit, quantity=cleaned_data.get("quantity"), field_name="quantity"
+        )
+        enforce_whole_unit_quantity(
+            self,
+            unit=unit,
+            quantity=cleaned_data.get("minimum_quantity"),
+            field_name="minimum_quantity",
+        )
         required = ("material_name", "supplier", "unit", "condition")
         if not all(cleaned_data.get(field) for field in required):
             return cleaned_data
@@ -373,6 +413,7 @@ class StockItemSelect(forms.Select):
                     "data-material": item.material_name,
                     "data-supplier": item.supplier_name,
                     "data-condition": item.get_condition_display(),
+                    "data-allows-fractional": str(item.unit.allows_fractional_quantities).lower(),
                 }
             )
         return option
@@ -468,6 +509,7 @@ class StockUsageForm(IdempotentMovementForm):
         self.fields["stock_item"].queryset = queryset.order_by("material_name", "supplier_name")
         self.fields["project"].widget.attrs["data-stock-picker-project"] = ""
         self.fields["stock_item"].widget.attrs["data-stock-picker-select"] = ""
+        self.fields["quantity"].widget.attrs["data-stock-quantity"] = ""
 
     def clean_attachment(self):
         return validate_uploaded_attachment(self.cleaned_data.get("attachment"))
@@ -484,6 +526,7 @@ class StockUsageForm(IdempotentMovementForm):
                 "quantity",
                 f"Only {item.quantity_display} is currently available.",
             )
+        enforce_whole_unit_quantity(self, unit=getattr(item, "unit", None), quantity=quantity, field_name="quantity")
         return cleaned_data
 
 
@@ -505,9 +548,22 @@ class StockAdjustmentForm(IdempotentMovementForm):
     def __init__(self, *args, stock_item: StockItem, **kwargs):
         self.stock_item = stock_item
         super().__init__(*args, **kwargs)
+        self.fields["quantity"].widget.attrs.update(
+            {
+                "step": "0.001" if stock_item.unit.allows_fractional_quantities else "1",
+                "inputmode": "decimal" if stock_item.unit.allows_fractional_quantities else "numeric",
+                "data-whole-unit": str(not stock_item.unit.allows_fractional_quantities).lower(),
+            }
+        )
 
     def clean(self):
         cleaned_data = super().clean()
+        enforce_whole_unit_quantity(
+            self,
+            unit=self.stock_item.unit,
+            quantity=cleaned_data.get("quantity"),
+            field_name="quantity",
+        )
         if (
             cleaned_data.get("direction") == "decrease"
             and cleaned_data.get("quantity")
@@ -633,8 +689,9 @@ class StockTransferForm(StyledForm):
                             attrs={
                                 "class": "input transfer-quantity",
                                 "min": "0",
-                                "step": "0.001",
+                                "step": "0.001" if item.unit.allows_fractional_quantities else "1",
                                 "data-transfer-quantity": "",
+                                "data-whole-unit": "true" if not item.unit.allows_fractional_quantities else "false",
                                 "data-item": item.pk,
                                 "data-outcome": outcome,
                             }
@@ -667,6 +724,9 @@ class StockTransferForm(StyledForm):
                 quantity = cleaned.get(name) or Decimal("0")
                 total += quantity
                 if quantity > 0:
+                    enforce_whole_unit_quantity(
+                        self, unit=item.unit, quantity=quantity, field_name=name
+                    )
                     if (
                         item.condition == StockItem.Condition.USED
                         and outcome == StockTransferLine.Outcome.NEW

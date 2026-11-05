@@ -26,6 +26,7 @@ from .stock import (
     _create_movement,
     _require_inventory_permission,
     _save_balance,
+    _validate_unit_quantity,
     _validate_operation_date,
     _validate_positive_quantity,
 )
@@ -180,6 +181,7 @@ def transfer_stock(
                     f"Only {item.quantity_display} of {item.material_name} is available."
                 )
         for item_id, outcome, _quantity in normalized:
+            _validate_unit_quantity(source_items[item_id].unit, _quantity)
             if (
                 source_items[item_id].condition == StockItem.Condition.USED
                 and outcome == StockTransferLine.Outcome.NEW
