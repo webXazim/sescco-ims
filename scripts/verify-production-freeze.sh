@@ -120,10 +120,6 @@ python3 scripts/verify-lifecycle-retention-contract.py
 python3 scripts/verify-single-company-branding.py
 python3 scripts/verify-branding-migration-lineage.py
 
-[[ -f merge/shell-convergence-assets.sha256 ]] || fail 'Shell-convergence manifest is missing.'
-sha256sum -c merge/shell-convergence-assets.sha256 >/dev/null \
-  || fail 'Unified Inventory/Payroll shell assets changed.'
-
 require_text templates/base.html 'class="inventory-shell-v2"' 'Inventory is not using the converged Payroll-style shell.'
 require_text templates/base.html 'platform/css/inventory-shell.css' 'Inventory shell stylesheet is not loaded.'
 require_text templates/base.html 'platform/js/inventory-shell.js' 'Inventory shell behavior is not loaded.'

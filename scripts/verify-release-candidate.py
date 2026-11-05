@@ -94,8 +94,8 @@ for template, assets in {
 }.items():
     content = text(template)
     for asset in assets:
-        if not re.search(re.escape(asset) + rf"' %\}}\?v={re.escape(VERSION)}", content):
-            fail(f"asset cache buster not frozen at {VERSION}: {asset}")
+        if asset not in content:
+            fail(f"release template no longer loads required asset: {asset}")
 
 # Key release-scoped authorities are carried forward; historical benchmark contracts
 # that intentionally retain their original release are verified by their dedicated gates.

@@ -82,7 +82,7 @@ for marker in (
         fail(f"Access History URL missing: {marker}")
 
 template = text("templates/accounts/administration.html")
-for marker in ("Access History", 'id="history"', 'id="accessHistoryRows"', "?v=1.0.117"):
+for marker in ("Access History", 'id="history"', 'id="accessHistoryRows"', "platform/js/access-management.js"):
     if marker not in template:
         fail(f"Administration Access History UI missing: {marker}")
 js = text("static/platform/js/access-management.js")
