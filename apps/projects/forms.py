@@ -19,7 +19,7 @@ class ProjectForm(StyledModelForm):
         from django.contrib.auth import get_user_model
         self.fields["inventory_manager"].queryset = get_user_model().objects.filter(pk__in=user_ids).order_by("username")
         self.fields["inventory_manager"].label = "Project inventory approver"
-        self.fields["inventory_manager"].help_text = "Assign a Project Manager access profile in Administration first. Required before project receipts or transfers can be submitted."
+        self.fields["inventory_manager"].help_text = "Assign a user whose access profile includes Project Inventory · Approve / Reject, then give them access to this project. Required for project receipts and transfers."
 
     class Meta:
         model = Project

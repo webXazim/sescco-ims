@@ -1,0 +1,55 @@
+SESCCO IMS - BUILT-IN PROFILE CUSTOMIZATION
+===========================================
+
+WHAT CHANGED
+- Administration -> Access Profiles: an administrator with access.profiles.manage
+  can open a built-in profile (except protected Company Owner) and click
+  "Customize as New Profile".
+- The new custom profile starts with an exact copy of the built-in permissions.
+- Name defaults to <Built-in Name> (Custom) or (Custom 2), etc., to avoid names
+  already visible in the profile list. Name and description remain editable.
+- Checking "Project Inventory · Approve / Reject" adds inventory.stock.approve
+  before creating the new profile.
+- Save uses the existing POST /api/access/profiles/ endpoint: the original
+  built-in remains immutable and the new profile has its own audit event.
+- No assigned user is reassigned automatically. Historical grants are untouched.
+- Project inventory screens now use role-neutral approval wording, so the
+  approver need not hold the built-in Project Manager profile.
+
+CONFIGURE AN INVENTORY MANAGER AS A PROJECT APPROVER
+1. Administration -> Access Profiles -> Inventory Manager.
+2. Click "Customize as New Profile".
+3. Under Inventory Management, select "Project Inventory · Approve / Reject".
+   Leave "Inventory · Stock · View" selected (it is required).
+4. Save as "Inventory Manager (Custom)" or your preferred name.
+5. Administration -> Users -> open the correct inventory manager user,
+   assign the new custom profile, and restrict Projects scope appropriately.
+6. Inventory -> Projects -> edit the desired project, select this person as
+   the "Project inventory approver", and save. Project receipts/transfers now
+   require the selected approver's decision.
+7. For between-project transfers, each affected project approver must approve.
+
+IMPORTANT SECURITY PROTECTION
+- The user who submits a stock transaction cannot approve that same request,
+  even if that user has the approval permission and is assigned to the project.
+- If the same Inventory Manager user does the submission, use a DIFFERENT
+  authorized user as that project's designated approver.
+- A project has one designated inventory approver in the current schema.
+- No database migrations are needed for this UI and help-text change.
+- Existing users on the original Inventory Manager profile keep their access.
+
+DEPLOY (recommended PATCH ZIP)
+cd /opt/sites/ims
+sudo unzip -o /home/deploy/sescco-ims-custom-profile-hotfix.zip -d /opt/sites/ims
+sudo bash ./scripts/deploy-production.sh
+
+CHECKS PERFORMED
+- node --check static/platform/js/access-management.js
+- verify-user-management-ui.py
+- verify-page-level-view-only.py
+- verify-project-inventory-approval-extension.py
+- verify-sourcing-access-control.py
+- verify-granular-access-authority.py
+- verify-lifecycle-retention-contract.py
+- verify-typography-readability.py
+No live database or browser end-to-end tests were executed in this container.

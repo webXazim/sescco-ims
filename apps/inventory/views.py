@@ -858,7 +858,7 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.approval_request:
-                    messages.info(request, "Receipt submitted for Project Manager approval. Stock balance is unchanged.")
+                    messages.info(request, "Receipt submitted for project inventory approval. Stock balance is unchanged.")
                     return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This stock addition was already recorded.")
@@ -1280,7 +1280,7 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.approval_request:
-                    messages.info(request, "Transfer submitted for the affected Project Managers' approval. Stock balances are unchanged.")
+                    messages.info(request, "Transfer submitted for the affected project inventory approvers' approval. Stock balances are unchanged.")
                     return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This transfer was already recorded.")
@@ -2691,7 +2691,7 @@ class StockApprovalListView(InventoryPermissionRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until every affected Project Manager approves.", current_status=self.request.GET.get("status", "pending"))
+        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until every affected project inventory approver approves.", current_status=self.request.GET.get("status", "pending"))
         return ctx
 
 
@@ -2747,7 +2747,7 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
             messages.error(request, _operation_error_message(exc) if isinstance(exc, ValidationError) else str(exc))
         else:
             if result.status == StockApprovalRequest.Status.APPROVED:
-                messages.success(request, "All Project Managers approved; stock was posted safely.")
+                messages.success(request, "All project inventory approvers approved; stock was posted safely.")
             elif result.status == StockApprovalRequest.Status.REJECTED:
                 messages.info(request, "Request rejected. No stock quantities were changed.")
             else:

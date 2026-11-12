@@ -20,7 +20,7 @@
       <div class="form-section"><h2 class="form-section-title">Supplier</h2><div class="form-grid">
         <div class="field field-full"><label class="field-label required" for="{{ form.supplier.id_for_label }}">{{ form.supplier.label }}</label><div class="field-control-row">{{ form.supplier }}<a class="btn field-add" href="{% url 'inventory:suppliers' %}#add-supplier" title="Add supplier" aria-label="Add supplier">＋</a></div>{% if form.supplier.help_text %}<div class="help">{{ form.supplier.help_text }}</div>{% endif %}{% for error in form.supplier.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
       </div></div>
-      {% if not office %}<p class="micro">Project receipts are submitted for Project Manager approval. No stock is added until approved.</p>{% endif %}
+      {% if not office %}<p class="micro">Project receipts are submitted for project inventory approval. No stock is added until approved.</p>{% endif %}
       <div class="form-section"><h2 class="form-section-title">Stock addition</h2><div class="form-grid form-grid-3">
         {% include "partials/form_field.html" with field=form.condition %}
         {% include "partials/form_field.html" with field=form.quantity %}

@@ -27,10 +27,10 @@ def _verify_managers(company, project_ids):
         raise InventoryOperationError("A project involved in this request no longer exists.")
     for project in projects:
         if not project.inventory_manager_id:
-            raise InventoryOperationError(f"Assign a Project Manager approver to {project.code} before submitting stock requests.")
+            raise InventoryOperationError(f"Assign a project inventory approver to {project.code} before submitting stock requests.")
         membership = user_membership_for_company(project.inventory_manager, company)
         if not membership or not membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE) or not membership_allows_project(membership, project):
-            raise InventoryOperationError(f"{project.code} requires an active Project Manager with approval access to this project.")
+            raise InventoryOperationError(f"{project.code} requires an active assigned user with project inventory approval permission and project scope.")
     return projects
 
 
@@ -88,7 +88,7 @@ def _apply(req):
     _verify_managers(req.company, project_ids)
     for row in req.decisions.select_related("project", "decided_by"):
         if row.status != StockApprovalDecision.Status.APPROVED or row.decided_by_id != row.project.inventory_manager_id or not can_decide(row.decided_by, row.project):
-            raise InventoryOperationError("A project manager assignment or approval access changed. Reject and resubmit this request.")
+            raise InventoryOperationError("The project inventory approver assignment or approval access changed. Reject and resubmit this request.")
     payload = req.payload
     if req.kind == StockApprovalRequest.Kind.RECEIPT:
         project = Project.objects.for_company(req.company).get(pk=payload["project_id"])
@@ -145,7 +145,7 @@ def decide_request(*, request, user, project_id, decision, reason=""):
         request=req, project_id=project_id,
     ).first()
     if row is None or not can_decide(user, row.project):
-        raise InventoryOperationError("Only the currently assigned Project Manager can decide for this project.")
+        raise InventoryOperationError("Only the currently assigned project inventory approver can decide for this project.")
     if req.requested_by_id == user.pk:
         raise InventoryOperationError("The requester cannot approve their own stock movement.")
     if row.status != StockApprovalDecision.Status.PENDING:

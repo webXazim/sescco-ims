@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="micro">Transfers involving a project require its assigned Project Manager's approval. Office-to-office transfers post immediately.</div>
+<div class="micro">Transfers involving a project require its assigned project inventory approver's approval. Office-to-office transfers post immediately.</div>
 <div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a></div></div>
 
 {% if not source %}

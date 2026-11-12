@@ -457,16 +457,35 @@
     if (counter) counter.textContent = `${profileSelectedPermissions().length} selected`;
   }
 
-  function renderProfileForm(profile = null) {
+  // Built-in templates remain immutable. A clone creates a completely separate,
+  // editable custom profile through the existing audited POST /api/access/profiles/.
+  function customCloneName(sourceName) {
+    const base = String(sourceName || "Access Profile").trim();
+    const existing = new Set(state.profiles.map((profile) => String(profile.name || "").toLowerCase()));
+    let name = `${base} (Custom)`;
+    let index = 2;
+    while (existing.has(name.toLowerCase())) {
+      name = `${base} (Custom ${index++})`;
+    }
+    return name;
+  }
+
+  function renderProfileForm(profile = null, sourceProfile = null) {
     const creating = !profile;
+    const copying = Boolean(creating && sourceProfile?.system && canManageProfiles);
+    const draft = copying ? {
+      name: customCloneName(sourceProfile.name),
+      description: sourceProfile.description || "",
+      permissions: [...(sourceProfile.permissions || [])],
+    } : profile;
     const isOwnProfile = Boolean(profile && String(profile.id) === actorProfileId);
     const editable = Boolean(canManageProfiles && (creating || (!profile.system && !isOwnProfile)));
-    const title = creating ? "Create Access Profile" : profile.name;
-    openDrawer({ eyebrow: creating ? "Access profile" : (profile.system ? "Built-in profile" : "Custom profile"), title, subtitle: creating ? "Choose exact pages and actions. Scope is assigned per user." : `${Number(profile.assignedUsers || 0)} active assigned user${Number(profile.assignedUsers || 0) === 1 ? "" : "s"}.` });
-    const viewOnlyDefault = Boolean(profile && profile.permissions?.length && profile.permissions.every((code) => (state.permissionCatalog.find((item) => item.code === code)?.kind || "action") === "view"));
+    const title = copying ? "Customize Access Profile" : (creating ? "Create Access Profile" : profile.name);
+    openDrawer({ eyebrow: copying ? "Custom copy of built-in profile" : (creating ? "Access profile" : (profile.system ? "Built-in profile" : "Custom profile")), title, subtitle: copying ? `Based on ${sourceProfile.name}. Saving creates a new profile and does not change existing user assignments.` : (creating ? "Choose exact pages and actions. Scope is assigned per user." : `${Number(profile.assignedUsers || 0)} active assigned user${Number(profile.assignedUsers || 0) === 1 ? "" : "s"}.`) });
+    const viewOnlyDefault = Boolean(draft && draft.permissions?.length && draft.permissions.every((code) => (state.permissionCatalog.find((item) => item.code === code)?.kind || "action") === "view"));
     els.drawerBody.innerHTML = `<form class="access-form" id="accessProfileForm" novalidate>
-      <section class="access-form-section"><div class="access-section-head"><div><strong>Profile identity</strong><span>Custom profiles are company-scoped. Built-in profiles are immutable.</span></div>${profile ? `<span class="access-status ${profile.active === false ? "is-inactive" : "is-active"}">${profile.system ? "Built-in" : (profile.active === false ? "Inactive" : "Custom")}</span>` : ""}</div><div class="access-form-grid">${formField({ id:"accessProfileName", label:"Profile name", value:profile?.name, required:true, disabled:!editable, wide:true })}${formField({ id:"accessProfileDescription", label:"Description", value:profile?.description, disabled:!editable, wide:true })}</div>${isOwnProfile ? '<div class="access-form-note"><strong>Self-escalation protection:</strong> you cannot modify the profile currently granting your own authority. Another authorized administrator must make that change.</div>' : ""}</section>
-      <section class="access-form-section"><div class="access-section-head"><div><strong>Pages & actions</strong><span>View-only profiles should contain only page/read permissions. Direct routes and APIs enforce the same permissions.</span></div><span class="access-profile-tag" id="accessProfilePermissionCount">${Number(profile?.permissions?.length || 0)} selected</span></div>${editable ? `<label class="access-view-only-switch"><input type="checkbox" id="accessProfileViewOnly" ${viewOnlyDefault ? "checked" : ""}><span><strong>View-only mode</strong><small>Remove and disable every mutation/approval/payment permission.</small></span></label>` : ""}<div class="access-permission-groups">${profilePermissionMarkup(profile, editable)}</div><small class="access-field-error" id="fieldError-permissions"></small></section>
+      <section class="access-form-section"><div class="access-section-head"><div><strong>Profile identity</strong><span>Custom profiles are company-scoped. Built-in profiles are immutable.</span></div>${profile ? `<span class="access-status ${profile.active === false ? "is-inactive" : "is-active"}">${profile.system ? "Built-in" : (profile.active === false ? "Inactive" : "Custom")}</span>` : ""}</div>${copying ? '<div class="access-form-note"><strong>Custom copy:</strong> Changes here will not affect the built-in profile or users assigned to it. After saving, assign the new profile to the required users and configure project approvers separately.</div>' : ""}<div class="access-form-grid">${formField({ id:"accessProfileName", label:"Profile name", value:draft?.name, required:true, disabled:!editable, wide:true })}${formField({ id:"accessProfileDescription", label:"Description", value:draft?.description, disabled:!editable, wide:true })}</div>${isOwnProfile ? '<div class="access-form-note"><strong>Self-escalation protection:</strong> you cannot modify the profile currently granting your own authority. Another authorized administrator must make that change.</div>' : ""}</section>
+      <section class="access-form-section"><div class="access-section-head"><div><strong>Pages & actions</strong><span>View-only profiles should contain only page/read permissions. Direct routes and APIs enforce the same permissions.</span></div><span class="access-profile-tag" id="accessProfilePermissionCount">${Number(draft?.permissions?.length || 0)} selected</span></div>${editable ? `<label class="access-view-only-switch"><input type="checkbox" id="accessProfileViewOnly" ${viewOnlyDefault ? "checked" : ""}><span><strong>View-only mode</strong><small>Remove and disable every mutation/approval/payment permission.</small></span></label>` : ""}<div class="access-permission-groups">${profilePermissionMarkup(draft, editable)}</div><small class="access-field-error" id="fieldError-permissions"></small></section>
       ${profile && !profile.system ? `<section class="access-form-section"><div class="access-section-head"><div><strong>Profile lifecycle</strong><span>Assigned profiles cannot be deleted or deactivated until every user is reassigned.</span></div></div><div class="access-detail-summary"><div class="access-detail-item"><span>Assigned users</span><strong>${Number(profile.assignedUsers || 0)}</strong></div><div class="access-detail-item"><span>Key</span><strong>${htmlEscape(profile.key)}</strong></div></div></section>` : ""}
     </form>`;
     const readonlyInputs = els.drawerBody.querySelectorAll("[data-profile-permission]");
@@ -495,10 +514,17 @@
 
     els.drawerFooter.replaceChildren();
     const close = document.createElement("button"); close.className="btn btn-ghost"; close.type="button"; close.textContent=editable ? "Cancel" : "Close"; close.addEventListener("click", closeDrawer); els.drawerFooter.appendChild(close);
+    if (profile?.system && canManageProfiles && !profile.owner) {
+      const spacer = document.createElement("span"); spacer.className = "access-footer-spacer"; els.drawerFooter.appendChild(spacer);
+      const customize = document.createElement("button"); customize.className = "btn btn-primary"; customize.type = "button";
+      customize.textContent = "Customize as New Profile";
+      customize.addEventListener("click", () => renderProfileForm(null, profile));
+      els.drawerFooter.appendChild(customize);
+    }
     if (editable) {
       const spacer=document.createElement("span"); spacer.className="access-footer-spacer"; els.drawerFooter.appendChild(spacer);
       if (profile && !profile.system && Number(profile.assignedUsers || 0) === 0) { const del=document.createElement("button"); del.className="btn btn-danger"; del.type="button"; del.textContent="Delete Profile"; del.addEventListener("click",()=>renderProfileDelete(profile)); els.drawerFooter.appendChild(del); }
-      const save=document.createElement("button"); save.className="btn btn-primary"; save.type="button"; save.textContent=creating?"Create Profile":"Save Profile"; save.addEventListener("click",()=>saveProfileForm(profile,save)); els.drawerFooter.appendChild(save);
+      const save=document.createElement("button"); save.className="btn btn-primary"; save.type="button"; save.textContent=copying?"Create Custom Profile":(creating?"Create Profile":"Save Profile"); save.addEventListener("click",()=>saveProfileForm(profile,save)); els.drawerFooter.appendChild(save);
     }
   }
 

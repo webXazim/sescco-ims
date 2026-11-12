@@ -421,7 +421,7 @@ def add_opening_stock(
     """
     if stock_item.project_id:
         raise InventoryOperationError(
-            "Project opening-stock imports cannot bypass Project Manager approval. "
+            "Project opening-stock imports cannot bypass project inventory approval. "
             "Use the project Add Stock request for approval instead."
         )
 
