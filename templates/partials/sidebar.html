@@ -30,6 +30,10 @@
       <a class="nav-link {% if page_key == 'add-stock' %}active{% endif %}" href="{% url 'core:add_stock' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add stock</span>
       </a>{% endif %}
+      {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
+      <a class="nav-link {% if page_key == 'approvals' %}active{% endif %}" href="{% url 'inventory:approval_list' %}">
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 10l2 2 5-5M8 16h8"/></svg><span>Project approvals</span>
+      </a>{% endif %}
       {% if "inventory.stock.issue" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}">
         <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg><span>Use stock</span>

@@ -30,6 +30,7 @@ class AccessPermission(StrEnum):
     INVENTORY_STOCK_RECEIVE = "inventory.stock.receive"
     INVENTORY_STOCK_ISSUE = "inventory.stock.issue"
     INVENTORY_STOCK_TRANSFER = "inventory.stock.transfer"
+    INVENTORY_STOCK_APPROVE = "inventory.stock.approve"
     INVENTORY_STOCK_ADJUST = "inventory.stock.adjust"
     INVENTORY_MOVEMENTS_VIEW = "inventory.movements.view"
     INVENTORY_MOVEMENTS_REVERSE = "inventory.movements.reverse"
@@ -119,6 +120,7 @@ _PERMISSION_LABELS: dict[AccessPermission, str] = {
     for permission in AccessPermission
 }
 _PERMISSION_LABELS.update({
+    AccessPermission.INVENTORY_STOCK_APPROVE: "Project Inventory · Approve / Reject",
     AccessPermission.SOURCING_VENDORS_VIEW: "Vendor Sourcing · View",
     AccessPermission.SOURCING_VENDORS_MANAGE: "Vendor Sourcing · Edit",
     AccessPermission.SOURCING_MANPOWER_VIEW: "Manpower Sourcing · View",
@@ -329,6 +331,16 @@ def permissions_for_legacy_role(role: str) -> frozenset[AccessPermission]:
             AccessPermission.ACCESS_AUDIT_VIEW,
             AccessPermission.ACCESS_USERS_VIEW,
             AccessPermission.ACCESS_PROFILES_VIEW,
+        })
+
+    if role == AccessRole.PROJECT_MANAGER:
+        return frozenset({
+            AccessPermission.INVENTORY_DASHBOARD_VIEW,
+            AccessPermission.INVENTORY_STOCK_VIEW,
+            AccessPermission.INVENTORY_MOVEMENTS_VIEW,
+            AccessPermission.INVENTORY_PROJECTS_VIEW,
+            AccessPermission.INVENTORY_LOCATIONS_VIEW,
+            AccessPermission.INVENTORY_STOCK_APPROVE,
         })
 
     # 1.0.93 freezes Storekeeper as a narrow scoped operational profile. Do not

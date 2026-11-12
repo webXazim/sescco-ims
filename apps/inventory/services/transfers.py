@@ -45,8 +45,9 @@ class TransferAllocation:
 
 @dataclass(frozen=True)
 class TransferResult:
-    transfer: StockTransfer
+    transfer: StockTransfer | None
     duplicate_submission: bool = False
+    approval_request: object | None = None
 
 
 def _movement_key(transfer_key: UUID, line_id: int, leg: str) -> UUID:
@@ -114,6 +115,7 @@ def transfer_stock(
     document_reference: str = "",
     notes: str = "",
     attachment=None,
+    approved_request=None,
 ) -> TransferResult:
     if source_location.company_id != destination_location.company_id:
         raise InventoryOperationError("Source and destination must belong to the same company.")
@@ -121,6 +123,18 @@ def transfer_stock(
     membership = _require_inventory_permission(user, company, AccessPermission.INVENTORY_STOCK_TRANSFER)
     if not location_in_inventory_scope(membership, source_location) or not location_in_inventory_scope(membership, destination_location):
         raise InventoryOperationError("Both transfer locations must be inside your assigned Inventory scope.")
+    if approved_request is not None and (
+        approved_request.company_id != company.pk
+        or approved_request.kind != "transfer"
+        or approved_request.idempotency_key != idempotency_key
+        or approved_request.requested_by_id != user.pk
+    ):
+        raise InventoryOperationError("Invalid transfer approval authorization.")
+    if approved_request is None:
+        from ..models import StockApprovalRequest
+        pending = StockApprovalRequest.objects.for_company(company).filter(kind="transfer", idempotency_key=idempotency_key).first()
+        if pending:
+            return TransferResult(transfer=None, duplicate_submission=True, approval_request=pending)
     existing = StockTransfer.objects.for_company(company).filter(idempotency_key=idempotency_key).first()
     if existing:
         return TransferResult(existing, duplicate_submission=True)
@@ -187,6 +201,25 @@ def transfer_stock(
                 and outcome == StockTransferLine.Outcome.NEW
             ):
                 raise InventoryOperationError("Used stock cannot be transferred as new.")
+
+        if (source_location.project_id or destination_location.project_id) and approved_request is None:
+            from .approvals import queue_request, _projects_for_locations
+            approval, duplicated = queue_request(
+                company=company, requested_by=user, kind="transfer",
+                idempotency_key=idempotency_key, attachment=attachment,
+                project_ids=_projects_for_locations(source_location, destination_location),
+                payload={
+                    "source_location_id": source_location.pk,
+                    "destination_location_id": destination_location.pk,
+                    "transfer_date": transfer_date.isoformat(),
+                    "allocations": [
+                        {"stock_item_id": item_id, "outcome": outcome, "quantity": str(quantity)}
+                        for item_id, outcome, quantity in normalized
+                    ],
+                    "document_reference": document_reference, "notes": notes,
+                },
+            )
+            return TransferResult(transfer=None, duplicate_submission=duplicated, approval_request=approval)
 
         transfer = StockTransfer(
             company=company,

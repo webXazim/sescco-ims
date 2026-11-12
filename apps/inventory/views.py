@@ -59,6 +59,7 @@ from .forms import (
 )
 from .models import (
     InventoryLocation,
+    StockApprovalRequest,
     StockDocument,
     StockItem,
     StockMovement,
@@ -856,6 +857,9 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
             except InventoryOperationError as exc:
                 form.add_error(None, _operation_error_message(exc))
             else:
+                if result.approval_request:
+                    messages.info(request, "Receipt submitted for Project Manager approval. Stock balance is unchanged.")
+                    return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This stock addition was already recorded.")
                 elif result.stock_item_created:
@@ -1275,6 +1279,9 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
             except InventoryOperationError as exc:
                 form.add_error(None, _operation_error_message(exc))
             else:
+                if result.approval_request:
+                    messages.info(request, "Transfer submitted for the affected Project Managers' approval. Stock balances are unchanged.")
+                    return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This transfer was already recorded.")
                 else:
@@ -2651,3 +2658,114 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
                 "similar": [serialize(item) for item in result.similar],
             }
         )
+
+
+# Project stock requests: visibility is limited to the requester and currently
+# assigned managers; all decisions are rechecked by the service under row locks.
+def _visible_stock_approvals(request):
+    from apps.accounts.access_policy import restrict_projects
+    manager_projects = Project.objects.for_company(request.company).none()
+    membership = getattr(request, "company_membership", None)
+    if membership and membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
+        manager_projects = restrict_projects(
+            Project.objects.for_company(request.company).filter(inventory_manager=request.user), membership
+        )
+    return StockApprovalRequest.objects.for_company(request.company).filter(
+        Q(requested_by=request.user)
+        | Q(decisions__project__in=manager_projects)
+    ).distinct()
+
+
+class StockApprovalListView(InventoryPermissionRequiredMixin, ListView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+    template_name = "inventory/approval_list.html"
+    context_object_name = "approvals"
+    paginate_by = 30
+
+    def get_queryset(self):
+        queryset = _visible_stock_approvals(self.request).select_related("requested_by")
+        status = self.request.GET.get("status", "pending")
+        if status in StockApprovalRequest.Status.values:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by("-created_at", "-pk")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until every affected Project Manager approves.", current_status=self.request.GET.get("status", "pending"))
+        return ctx
+
+
+class StockApprovalDetailView(InventoryPermissionRequiredMixin, DetailView):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+    template_name = "inventory/approval_detail.html"
+    context_object_name = "approval"
+    slug_field = "reference"
+    slug_url_kwarg = "reference"
+
+    def get_queryset(self):
+        return _visible_stock_approvals(self.request).select_related("requested_by", "applied_movement", "applied_transfer").prefetch_related("decisions__project", "decisions__decided_by")
+
+    def get_context_data(self, **kwargs):
+        from .services.approvals import can_decide
+        ctx = super().get_context_data(**kwargs)
+        ctx.update(page_key="approvals", page_title=f"Approval {str(self.object.reference)[:8].upper()}", page_subtitle="Review the submitted quantities, project decisions and resulting posted stock operation.")
+        ctx["decisions"] = [
+            {"row": row, "can_decide": self.object.status == StockApprovalRequest.Status.PENDING and row.status == "pending" and can_decide(self.request.user, row.project) and self.object.requested_by_id != self.request.user.pk}
+            for row in self.object.decisions.all()
+        ]
+        payload = self.object.payload
+        if self.object.kind == StockApprovalRequest.Kind.RECEIPT:
+            ctx["receipt_project"] = Project.objects.for_company(self.request.company).filter(pk=payload.get("project_id")).first()
+            ctx["receipt_unit"] = Unit.objects.for_company(self.request.company).filter(pk=payload.get("unit_id")).first()
+        else:
+            ctx["transfer_source"] = InventoryLocation.objects.for_company(self.request.company).filter(pk=payload.get("source_location_id")).first()
+            ctx["transfer_destination"] = InventoryLocation.objects.for_company(self.request.company).filter(pk=payload.get("destination_location_id")).first()
+            raw_allocations = payload.get("allocations", [])
+            item_ids = [line["stock_item_id"] for line in raw_allocations]
+            stock_map = {item.pk: item for item in StockItem.objects.for_company(self.request.company).select_related("unit").filter(pk__in=item_ids)}
+            ctx["transfer_allocations"] = [
+                {"stock": stock_map.get(line["stock_item_id"]), "quantity": line["quantity"], "outcome": line["outcome"]}
+                for line in raw_allocations
+            ]
+        return ctx
+
+
+class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_APPROVE
+
+    def post(self, request, reference):
+        from .services.approvals import decide_request
+        approval = get_object_or_404(_visible_stock_approvals(request), reference=reference)
+        project_id = request.POST.get("project_id", "").strip()
+        decision = request.POST.get("decision", "").strip()
+        reason = request.POST.get("reason", "").strip()
+        if not project_id.isdigit():
+            raise Http404("Project approval not found.")
+        try:
+            result = decide_request(request=approval, user=request.user, project_id=int(project_id), decision=decision, reason=reason)
+        except (InventoryOperationError, ValueError) as exc:
+            messages.error(request, _operation_error_message(exc) if isinstance(exc, ValidationError) else str(exc))
+        else:
+            if result.status == StockApprovalRequest.Status.APPROVED:
+                messages.success(request, "All Project Managers approved; stock was posted safely.")
+            elif result.status == StockApprovalRequest.Status.REJECTED:
+                messages.info(request, "Request rejected. No stock quantities were changed.")
+            else:
+                messages.success(request, "Your approval was recorded. The other project manager's approval is still pending.")
+        return redirect("inventory:approval_detail", reference=reference)
+
+
+class StockApprovalAttachmentView(InventoryPermissionRequiredMixin, View):
+    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+
+    def get(self, request, reference):
+        approval = get_object_or_404(_visible_stock_approvals(request), reference=reference)
+        if not approval.attachment:
+            raise Http404("No supporting attachment was submitted.")
+        try:
+            handle = approval.attachment.open("rb")
+        except FileNotFoundError as exc:
+            raise Http404("The attachment file was not found.") from exc
+        response = FileResponse(handle, as_attachment=True, filename=approval.attachment.name.rsplit("/", 1)[-1])
+        response["Cache-Control"] = "private, no-store"
+        return response

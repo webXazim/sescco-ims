@@ -11,6 +11,7 @@ class AccessRole(models.TextChoices):
     OPERATIONS_ADMIN = "operations-admin", "Operations Administrator"
     ACCESS_ADMINISTRATOR = "access-admin", "Access Administrator"
     INVENTORY_MANAGER = "inventory-manager", "Inventory Manager"
+    PROJECT_MANAGER = "project-manager", "Project Manager"
     STOREKEEPER = "storekeeper", "Storekeeper"
     FINANCE_MANAGER = "finance", "Finance Manager"
     INTERNAL_PAYROLL_OFFICER = "internal-officer", "Internal Payroll Officer"
@@ -139,6 +140,13 @@ ROLE_DEFINITIONS: dict[str, RoleDefinition] = {
             Capability.IMPORT_INVENTORY,
         }),
         description="Full Inventory operations, corrective actions, projects and import authority.",
+    ),
+    AccessRole.PROJECT_MANAGER: RoleDefinition(
+        label=AccessRole.PROJECT_MANAGER.label,
+        workspaces=(Workspace.INVENTORY,),
+        edit_workspaces=(),
+        capabilities=frozenset(),
+        description="Assigned project stock visibility and approval/rejection of incoming or outgoing stock requests; no stock mutation rights.",
     ),
     AccessRole.STOREKEEPER: RoleDefinition(
         label=AccessRole.STOREKEEPER.label,

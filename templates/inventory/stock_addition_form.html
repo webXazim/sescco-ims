@@ -20,6 +20,7 @@
       <div class="form-section"><h2 class="form-section-title">Supplier</h2><div class="form-grid">
         <div class="field field-full"><label class="field-label required" for="{{ form.supplier.id_for_label }}">{{ form.supplier.label }}</label><div class="field-control-row">{{ form.supplier }}<a class="btn field-add" href="{% url 'inventory:suppliers' %}#add-supplier" title="Add supplier" aria-label="Add supplier">＋</a></div>{% if form.supplier.help_text %}<div class="help">{{ form.supplier.help_text }}</div>{% endif %}{% for error in form.supplier.errors %}<div class="field-error">{{ error }}</div>{% endfor %}</div>
       </div></div>
+      {% if not office %}<p class="micro">Project receipts are submitted for Project Manager approval. No stock is added until approved.</p>{% endif %}
       <div class="form-section"><h2 class="form-section-title">Stock addition</h2><div class="form-grid form-grid-3">
         {% include "partials/form_field.html" with field=form.condition %}
         {% include "partials/form_field.html" with field=form.quantity %}
@@ -29,7 +30,7 @@
         {% include "partials/form_field.html" with field=form.attachment %}
         <div class="field field-full">{% include "partials/form_field.html" with field=form.notes %}</div>
       </div></div>
-      {% if office %}{% url 'inventory:office' as cancel_url %}{% else %}{% url 'inventory:list' as cancel_url %}{% endif %}{% include "partials/crud_form_actions.html" with cancel_url=cancel_url action_label="Add stock" %}
+      {% if office %}{% url 'inventory:office' as cancel_url %}{% else %}{% url 'inventory:list' as cancel_url %}{% endif %}{% include "partials/crud_form_actions.html" with cancel_url=cancel_url action_label="Submit receipt" %}
     </section>
     <aside class="card summary-card"><div class="card-head"><h2 class="card-title">Safe matching</h2></div><div class="card-body"><div class="summary-list"><div class="summary-row"><span class="summary-key">Identity</span><span class="summary-value">Location + material + supplier + phone + condition</span></div><div class="summary-row"><span class="summary-key">Exact match</span><span class="summary-value">Existing balance increases</span></div><div class="summary-row"><span class="summary-key">No match</span><span class="summary-value">New record is created</span></div><div class="summary-row"><span class="summary-key">History</span><span class="summary-value">Never overwritten</span></div></div><div class="balance-preview"><div class="balance-line"><span>Quantity to add</span><strong id="additionQuantityPreview">0</strong></div><div class="balance-line"><span>Current balance</span><strong id="currentBalancePreview">—</strong></div><div class="balance-line total"><span>Expected balance</span><strong id="newBalancePreview">—</strong></div></div><div class="alert alert-warning section-gap">Phone formatting differences such as spaces and hyphens are normalized before matching.</div></div></aside>
   </div>

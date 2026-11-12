@@ -46,6 +46,11 @@ class Project(models.Model):
         help_text="Actual project end date. Required when a project is newly completed.",
     )
     manager_name = models.CharField(max_length=160, blank=True)
+    inventory_manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL, blank=True, null=True, on_delete=models.PROTECT,
+        related_name="managed_inventory_projects",
+        help_text="Assigned Project Manager who approves incoming and outgoing inventory requests.",
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     archive_previous_status = models.CharField(
         max_length=20, choices=Status.choices, blank=True, editable=False,
@@ -140,6 +145,18 @@ class Project(models.Model):
                     rental_rows = rental_rows.filter(effective_to__isnull=True)
                 if rental_rows.exists():
                     errors["status"] = "Release or transfer open rental manpower assignments before completing the project."
+        if self.inventory_manager_id:
+            from apps.accounts.access_catalog import AccessPermission
+            from apps.accounts.access_policy import membership_has_permission, membership_allows_project
+            from apps.accounts.models import CompanyMembership
+            membership = CompanyMembership.objects.select_related("user", "access_profile").filter(
+                company_id=self.company_id, user_id=self.inventory_manager_id, is_active=True,
+                user__is_active=True,
+            ).first()
+            if membership is None or not membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
+                errors["inventory_manager"] = "Select an active company user with Project Inventory approval permission."
+            elif self.pk and not membership_allows_project(membership, self):
+                errors["inventory_manager"] = "Project is outside this manager's assigned project scope."
         if errors:
             raise ValidationError(errors)
 

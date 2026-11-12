@@ -30,6 +30,8 @@ def create_company_membership(
     if role not in AccessRole.values or role == AccessRole.CUSTOM:
         raise ValidationError({"role": "Choose a built-in company role; custom access uses an explicit Access Profile."})
 
+    if role == AccessRole.PROJECT_MANAGER:
+        raise ValidationError({"role": "Use Administration → Users and assign Selected Projects scope for Project Managers."})
     profile = ensure_system_access_profile(company=actor_membership.company, role=role)
     membership, created = CompanyMembership.objects.get_or_create(
         company=actor_membership.company,
@@ -84,6 +86,8 @@ def change_membership_role(
         .get(id=membership_id, company=actor_membership.company)
     )
     previous_role = target.role
+    if role == AccessRole.PROJECT_MANAGER and target.project_scope_mode != "selected":
+        raise ValidationError({"role": "Set Selected Projects scope before assigning Project Manager."})
     if previous_role == role:
         return target
 

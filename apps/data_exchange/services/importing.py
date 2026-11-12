@@ -738,6 +738,11 @@ def confirm_import(
                         item = _legacy_create(row, locked_job, user)
                     movement = None
                 elif locked_job.import_type == ImportJob.Type.OPENING_STOCK:
+                    if row.cleaned_data.get("project_id"):
+                        raise ImportProcessingError(
+                            "Project opening-stock Excel imports require Project Manager approval. "
+                            "Use individual project Add Stock requests; office import is unaffected."
+                        )
                     item = _opening_item(row, user)
                     data = row.cleaned_data
                     token = uuid.uuid5(

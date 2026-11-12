@@ -37,9 +37,10 @@ class MovementAlreadyReversedError(InventoryOperationError):
 
 @dataclass(frozen=True)
 class MovementResult:
-    movement: StockMovement
+    movement: StockMovement | None
     duplicate_submission: bool = False
     stock_item_created: bool = False
+    approval_request: object | None = None
 
 
 def _validate_operation_date(value: date) -> None:
@@ -198,6 +199,7 @@ def add_stock(
     notes: str = "",
     attachment=None,
     confirm_similar: bool = False,
+    approved_request=None,
 ) -> MovementResult:
     """Add stock to an exact record or create a new stock record atomically."""
 
@@ -233,6 +235,11 @@ def add_stock(
         raise InactiveStockError("Only active, non-archived units can be used for new stock activity.")
     if unit.company_id != company.pk:
         raise InventoryOperationError("Inventory location and unit must belong to the same company.")
+    if approved_request is None and project is not None:
+        from ..models import StockApprovalRequest
+        prior = StockApprovalRequest.objects.for_company(company).filter(kind="receipt", idempotency_key=idempotency_key).first()
+        if prior:
+            return MovementResult(movement=None, duplicate_submission=True, approval_request=prior)
     duplicate = _existing_idempotent_result(company, idempotency_key)
     if duplicate:
         return duplicate
@@ -248,6 +255,32 @@ def add_stock(
     normalized_phone = normalize_phone(supplier_phone)
     if not all((normalized_material, normalized_supplier, normalized_phone)):
         raise InventoryOperationError("Material, supplier, and supplier phone are required.")
+
+    if approved_request is not None and (
+        approved_request.company_id != company.pk
+        or approved_request.kind != "receipt"
+        or approved_request.idempotency_key != idempotency_key
+        or approved_request.requested_by_id != user.pk
+    ):
+        raise InventoryOperationError("Invalid receipt approval authorization.")
+    if project is not None and approved_request is None:
+        from .approvals import queue_request
+        approval, duplicated = queue_request(
+            company=company, requested_by=user, kind="receipt",
+            idempotency_key=idempotency_key, project_ids=[project.pk], attachment=attachment,
+            payload={
+                "project_id": project.pk, "unit_id": unit.pk,
+                "quantity": str(quantity), "movement_date": movement_date.isoformat(),
+                "condition": condition, "material_name": material_name,
+                "supplier_name": supplier_name, "supplier_phone": supplier_phone,
+                "description": description, "supplier_location": supplier_location,
+                "minimum_quantity": str(minimum_quantity),
+                "unit_price": str(unit_price) if unit_price is not None else None,
+                "invoice_reference": invoice_reference, "notes": notes,
+                "confirm_similar": bool(confirm_similar),
+            },
+        )
+        return MovementResult(movement=None, duplicate_submission=duplicated, approval_request=approval)
 
     try:
         with transaction.atomic():
@@ -382,7 +415,15 @@ def add_opening_stock(
     invoice_reference: str = "",
     notes: str = "",
 ) -> MovementResult:
-    """Create an opening movement for imports and administrator setup."""
+    """Create an opening movement for imports and administrator setup.
+
+    Project import opening balances cannot bypass mandatory project approval.
+    """
+    if stock_item.project_id:
+        raise InventoryOperationError(
+            "Project opening-stock imports cannot bypass Project Manager approval. "
+            "Use the project Add Stock request for approval instead."
+        )
 
     membership = _require_inventory_permission(user, stock_item.company, AccessPermission.INVENTORY_IMPORT_EXECUTE)
     _require_stock_scope(membership, stock_item)

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><a class="btn" href="{% url 'inventory:approval_list' %}">Back to approvals</a></div>
+<section class="card"><div class="card-head"><h2 class="card-title">{{ approval.get_kind_display }} — {{ approval.get_status_display }}</h2></div>
+<div class="card-body">
+<p><strong>Submitted:</strong> {{ approval.created_at|date:"d M Y H:i" }} &nbsp; <strong>Requested by:</strong> {{ approval.requested_by.display_name }}</p>
+{% if approval.status == 'pending' %}<p class="micro">No stock balances have changed. All project approvals are needed before posting.</p>{% endif %}
+{% if approval.kind == 'receipt' %}
+<div class="table-wrap"><table class="data-table"><thead><tr><th>Project</th><th>Material</th><th>Condition</th><th>Quantity</th><th>Unit</th><th>Unit price</th></tr></thead><tbody>
+<tr><td>{{ receipt_project.code|default:"Unavailable" }}</td><td><strong>{{ approval.payload.material_name }}</strong><div class="cell-sub">{{ approval.payload.description }}</div></td>
+<td>{{ approval.payload.condition }}</td><td>{{ approval.payload.quantity }}</td><td>{{ receipt_unit.symbol|default:"Unavailable" }}</td><td>{{ approval.payload.unit_price|default_if_none:"Not provided" }}</td></tr>
+</tbody></table></div>
+<p><strong>Supplier:</strong> {{ approval.payload.supplier_name }} · {{ approval.payload.supplier_phone }} &nbsp; <strong>Invoice:</strong> {{ approval.payload.invoice_reference|default:"—" }} &nbsp; <strong>Receipt date:</strong> {{ approval.payload.movement_date }}</p>
+{% else %}
+<p><strong>Source:</strong> {{ transfer_source.code|default:"Unavailable" }} &nbsp; <strong>Destination:</strong> {{ transfer_destination.code|default:"Unavailable" }} &nbsp; <strong>Transfer date:</strong> {{ approval.payload.transfer_date }}</p>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>Item</th><th>Condition outcome</th><th>Quantity</th><th>Unit</th></tr></thead><tbody>
+{% for line in transfer_allocations %}<tr><td>{% if line.stock %}{{ line.stock.material_name }} · {{ line.stock.supplier_name }}{% else %}Stock record unavailable{% endif %}</td><td>{{ line.outcome }}</td><td>{{ line.quantity }}</td><td>{{ line.stock.unit.symbol|default:"—" }}</td></tr>{% endfor %}
+</tbody></table></div><p><strong>Reference:</strong> {{ approval.payload.document_reference|default:"—" }}</p>
+{% endif %}
+{% if approval.payload.notes %}<p><strong>Notes:</strong> {{ approval.payload.notes }}</p>{% endif %}
+{% if approval.attachment %}<p><a href="{% url 'inventory:approval_attachment' approval.reference %}">View supporting attachment</a></p>{% endif %}
+{% if approval.applied_movement %}<p><a href="{% url 'inventory:movement_detail' approval.applied_movement.reference %}">View approved stock movement</a></p>{% endif %}
+{% if approval.applied_transfer %}<p><a href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">View completed stock transfer</a></p>{% endif %}
+</div></section>
+<section class="card section-gap"><div class="card-head"><h2 class="card-title">Project approvals</h2></div><div class="card-body">
+{% for entry in decisions %}<div class="form-section"><strong>{{ entry.row.project.code }} · {{ entry.row.project.name }}</strong> — {{ entry.row.get_status_display }} <span class="micro">Assigned manager: {{ entry.row.project.inventory_manager.display_name|default:"Not assigned" }}</span>
+{% if entry.row.decided_by %}<span class="micro"> by {{ entry.row.decided_by.display_name }} on {{ entry.row.decided_at|date:"d M Y H:i" }}</span>{% endif %}
+{% if entry.row.reason %}<p class="micro">Reason: {{ entry.row.reason }}</p>{% endif %}
+{% if entry.can_decide %}
+<form method="post" action="{% url 'inventory:approval_decide' approval.reference %}">{% csrf_token %}<input type="hidden" name="project_id" value="{{ entry.row.project_id }}">
+<div class="form-grid"><div class="field"><label class="field-label" for="reason-{{ entry.row.pk }}">Rejection reason (required to reject)</label><textarea class="input" rows="2" maxlength="500" id="reason-{{ entry.row.pk }}" name="reason"></textarea></div></div>
+<button class="btn btn-primary" type="submit" name="decision" value="approve">Approve for this project</button>
+<button class="btn" type="submit" name="decision" value="reject">Reject request</button>
+</form>{% endif %}
+</div>{% endfor %}</div></section>
+{% endblock %}

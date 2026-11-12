@@ -29,6 +29,7 @@ _ACTION_VIEW_DEPENDENCIES = {
     AccessPermission.INVENTORY_STOCK_RECEIVE.value: AccessPermission.INVENTORY_STOCK_VIEW.value,
     AccessPermission.INVENTORY_STOCK_ISSUE.value: AccessPermission.INVENTORY_STOCK_VIEW.value,
     AccessPermission.INVENTORY_STOCK_TRANSFER.value: AccessPermission.INVENTORY_STOCK_VIEW.value,
+    AccessPermission.INVENTORY_STOCK_APPROVE.value: AccessPermission.INVENTORY_STOCK_VIEW.value,
     AccessPermission.INVENTORY_STOCK_ADJUST.value: AccessPermission.INVENTORY_STOCK_VIEW.value,
     AccessPermission.INVENTORY_MOVEMENTS_REVERSE.value: AccessPermission.INVENTORY_MOVEMENTS_VIEW.value,
     AccessPermission.INVENTORY_PROJECTS_MANAGE.value: AccessPermission.INVENTORY_PROJECTS_VIEW.value,
@@ -102,6 +103,7 @@ def permission_catalog() -> list[dict[str, str]]:
             "shared": "Shared Records",
         }.get(prefix, "Platform")
         label_overrides = {
+            AccessPermission.INVENTORY_STOCK_APPROVE.value: "Project Inventory · Approve / Reject",
             AccessPermission.SOURCING_VENDORS_VIEW.value: "Vendor Sourcing · View",
             AccessPermission.SOURCING_VENDORS_MANAGE.value: "Vendor Sourcing · Edit",
             AccessPermission.SOURCING_MANPOWER_VIEW.value: "Manpower Sourcing · View",

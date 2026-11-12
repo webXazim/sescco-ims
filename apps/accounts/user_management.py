@@ -249,6 +249,8 @@ def create_managed_user(*, actor_membership: CompanyMembership, payload: dict[st
         company=actor_membership.company, profile_id=payload.get("accessProfileId"), actor=actor_membership
     )
     scope_assignment = parse_scope_assignment(payload.get("scopes") if isinstance(payload.get("scopes"), dict) else None)
+    if profile.is_system and profile.key == "role-project-manager" and scope_assignment.project_mode != ScopeMode.SELECTED:
+        raise ValidationError({"scopes": "Project Managers must be assigned specific projects (Selected Projects scope)."})
 
     candidate = User(**values, is_active=True, must_change_password=True, credentials_updated_at=timezone.now())
     password_validation.validate_password(password, user=candidate)
@@ -323,6 +325,9 @@ def update_managed_user(*, actor_membership: CompanyMembership, membership_id, p
             raise ValidationError({"scopes": "Scopes must be a JSON object."})
         _apply_scope_assignment(membership=target, assignment=parse_scope_assignment(raw_scopes))
 
+    # Never leave a Project Manager with unrestricted company-wide project visibility.
+    if target.access_profile.is_system and target.access_profile.key == "role-project-manager" and target.project_scope_mode != ScopeMode.SELECTED:
+        raise ValidationError({"scopes": "Project Managers must be assigned specific projects (Selected Projects scope)."})
     if "accessProfileId" in payload or "scopes" in payload:
         bump_user_security_version(target.user_id)
 

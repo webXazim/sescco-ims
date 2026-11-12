@@ -39,6 +39,7 @@ def _project_snapshot(project: Project) -> dict[str, object]:
         "client_name": project.client_name,
         "location": project.location,
         "manager_name": project.manager_name,
+        "inventory_manager": project.inventory_manager_id,
         "start_date": project.start_date.isoformat() if project.start_date else "",
         "expected_completion_date": (
             project.expected_completion_date.isoformat() if project.expected_completion_date else ""

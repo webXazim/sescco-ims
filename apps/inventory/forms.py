@@ -68,7 +68,7 @@ class UnitForm(StyledModelForm):
         fields = ("name", "symbol", "allows_fractional_quantities")
         labels = {"allows_fractional_quantities": "Allow fractional quantities"}
         help_texts = {
-            "allows_fractional_quantities": "Clear this for units such as pieces, bags, or boxes that must use whole numbers."
+            "allows_fractional_quantities": "Leave unchecked for pieces, laptops, bags, boxes and sets. Enable for measured quantities such as kg, m, m², m³ or liters."
         }
 
     def clean(self):

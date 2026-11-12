@@ -29,8 +29,8 @@ class Unit(models.Model):
     symbol = models.CharField(max_length=20)
     normalized_symbol = models.CharField(max_length=20, editable=False)
     allows_fractional_quantities = models.BooleanField(
-        default=True,
-        help_text="Clear this for countable units that must always use whole quantities.",
+        default=False,
+        help_text="Use whole numbers by default for pieces, laptops, boxes and sets; enable decimals for measured units.",
     )
     is_active = models.BooleanField(default=True)
     archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
@@ -76,6 +76,12 @@ class Unit(models.Model):
             errors["name"] = "Unit name is required."
         if not normalize_text(self.symbol):
             errors["symbol"] = "Unit symbol is required."
+        if self.pk and not self.allows_fractional_quantities and type(self).objects.filter(pk=self.pk, allows_fractional_quantities=True).exists():
+            # Historical stock/movements must be reconciled, never silently rounded.
+            for item in self.stock_items.only("current_quantity", "minimum_quantity").iterator():
+                if item.current_quantity % 1 or item.minimum_quantity % 1:
+                    errors["allows_fractional_quantities"] = "Reconcile existing fractional stock balances and minimums before requiring whole numbers; historical movements are retained unchanged."
+                    break
         if self.pk and not self.is_active:
             was_active = type(self).objects.filter(pk=self.pk, is_active=True).exists()
             if was_active and self.stock_items.filter(status="active").exists():
@@ -407,6 +413,11 @@ class StockItem(models.Model):
             errors["current_quantity"] = "Current quantity cannot be negative."
         if self.minimum_quantity is not None and self.minimum_quantity < 0:
             errors["minimum_quantity"] = "Minimum quantity cannot be negative."
+        if self.unit_id and not self.unit.allows_fractional_quantities:
+            if self.current_quantity is not None and self.current_quantity % 1:
+                errors["current_quantity"] = "This countable unit requires a whole-number stock balance."
+            if self.minimum_quantity is not None and self.minimum_quantity % 1:
+                errors["minimum_quantity"] = "This countable unit requires a whole-number minimum."
         original_project_id = None
         original_location_id = None
         original_unit_id = None
@@ -566,7 +577,7 @@ class StockItem(models.Model):
 
     @property
     def quantity_display(self) -> str:
-        quantity = f"{self.current_quantity:f}".rstrip("0").rstrip(".") or "0"
+        quantity = str(int(self.current_quantity)) if self.current_quantity % 1 == 0 else f"{self.current_quantity:f}".rstrip("0").rstrip(".")
         return f"{quantity} {self.unit.symbol}"
 
     @property
@@ -901,7 +912,7 @@ class StockMovement(models.Model):
     @property
     def signed_quantity_display(self) -> str:
         sign = "+" if self.is_inbound else "−"
-        quantity = f"{self.quantity:f}".rstrip("0").rstrip(".")
+        quantity = str(int(self.quantity)) if self.quantity % 1 == 0 else f"{self.quantity:f}".rstrip("0").rstrip(".")
         return f"{sign}{quantity} {self.unit_symbol_display}"
 
 
@@ -1133,3 +1144,59 @@ class StockTransferLine(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Stock transfer lines are immutable and cannot be deleted.")
+
+
+class StockApprovalRequest(models.Model):
+    """Immutable submitted receipt/transfer waiting for the affected project managers."""
+
+    class Kind(models.TextChoices):
+        RECEIPT = "receipt", "Stock receipt"
+        TRANSFER = "transfer", "Stock transfer"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved / applied"
+        REJECTED = "rejected", "Rejected"
+
+    company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_approval_requests")
+    reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    idempotency_key = models.UUIDField(editable=False)
+    kind = models.CharField(max_length=12, choices=Kind.choices)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    payload = models.JSONField(default=dict)
+    attachment = models.FileField(upload_to="stock-approvals/%Y/%m/", blank=True)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="requested_stock_approvals")
+    applied_movement = models.OneToOneField("inventory.StockMovement", on_delete=models.PROTECT, blank=True, null=True, related_name="approval_request")
+    applied_transfer = models.OneToOneField("inventory.StockTransfer", on_delete=models.PROTECT, blank=True, null=True, related_name="approval_request")
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(blank=True, null=True)
+
+    objects = CompanyScopedManager()
+
+    class Meta:
+        ordering = ("-created_at", "-pk")
+        constraints = [models.UniqueConstraint(fields=("company", "kind", "idempotency_key"), name="stock_approval_company_idem_uniq")]
+        indexes = [models.Index(fields=("company", "status", "-created_at"), name="stock_approval_queue_idx")]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {str(self.reference)[:8]} · {self.get_status_display()}"
+
+
+class StockApprovalDecision(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    request = models.ForeignKey(StockApprovalRequest, on_delete=models.PROTECT, related_name="decisions")
+    project = models.ForeignKey("projects.Project", on_delete=models.PROTECT, related_name="stock_approval_decisions")
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    reason = models.CharField(max_length=500, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, blank=True, null=True, related_name="inventory_approval_decisions")
+    decided_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("request", "project"), name="stock_approval_project_uniq")]
+
+    def __str__(self):
+        return f"{self.request.reference} / {self.project.code}: {self.status}"

@@ -14,6 +14,11 @@ from apps.accounts.access_policy import (
 from apps.accounts.models import CompanyMembership
 
 
+def _is_project_manager_profile(membership) -> bool:
+    profile = getattr(membership, "access_profile", None)
+    return bool(profile and profile.is_system and profile.key == "role-project-manager")
+
+
 def require_inventory_permission(
     membership: CompanyMembership | None,
     permission: AccessPermission | str,
@@ -81,6 +86,12 @@ def restrict_inventory_location_queryset(
     if membership is None:
         return queryset.none()
     project_mode = membership.project_scope_mode
+    if _is_project_manager_profile(membership):
+        if project_mode != "selected":
+            return queryset.none()
+        # Built-in Project Managers never gain unrelated office inventory access.
+        project_ids = membership.project_scopes.values_list("project_id", flat=True)
+        return queryset.filter(**{f"{project_field}__in": project_ids})
     if project_mode == "all":
         return queryset
     if project_mode == "none":
@@ -97,6 +108,10 @@ def restrict_inventory_stock(queryset: QuerySet, membership: CompanyMembership |
     if membership is None:
         return queryset.none()
     mode = membership.project_scope_mode
+    if _is_project_manager_profile(membership):
+        if mode != "selected":
+            return queryset.none()
+        return queryset.filter(project_id__in=membership.project_scopes.values_list("project_id", flat=True))
     if mode == "all":
         return queryset
     if mode == "none":
@@ -110,6 +125,10 @@ def restrict_inventory_movements(queryset: QuerySet, membership: CompanyMembersh
     if membership is None:
         return queryset.none()
     mode = membership.project_scope_mode
+    if _is_project_manager_profile(membership):
+        if mode != "selected":
+            return queryset.none()
+        return queryset.filter(stock_item__project_id__in=membership.project_scopes.values_list("project_id", flat=True))
     if mode == "all":
         return queryset
     if mode == "none":
@@ -125,6 +144,13 @@ def restrict_inventory_transfers(queryset: QuerySet, membership: CompanyMembersh
 
     if membership is None:
         return queryset.none()
+    if _is_project_manager_profile(membership):
+        if membership.project_scope_mode != "selected":
+            return queryset.none()
+        # Show the audit trail for transfers touching at least one managed
+        # project even when the counterparty is another project or office.
+        project_ids = membership.project_scopes.values_list("project_id", flat=True)
+        return queryset.filter(Q(source_location__project_id__in=project_ids) | Q(destination_location__project_id__in=project_ids))
     source_ids = restrict_inventory_location_queryset(
         queryset.model._meta.get_field("source_location").related_model.objects.for_company(membership.company),
         membership,

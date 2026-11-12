@@ -62,6 +62,7 @@
     <div class="meta-cell"><div class="meta-label">Expected completion</div><div class="meta-value">{{ project.expected_completion_date|date:"d M Y"|default:"—" }}</div></div>
     <div class="meta-cell"><div class="meta-label">Actual end</div><div class="meta-value">{{ project.end_date|date:"d M Y"|default:"—" }}</div></div>
     <div class="meta-cell"><div class="meta-label">Project manager</div><div class="meta-value">{{ project.manager_name|default:"—" }}</div></div>
+    <div class="meta-cell"><div class="meta-label">Inventory approval manager</div><div class="meta-value">{% if project.inventory_manager %}{{ project.inventory_manager.display_name }}{% else %}Not assigned — receipts and transfers will be blocked{% endif %}</div></div>
     <div class="meta-cell"><div class="meta-label">Shared reference</div><div class="meta-value"><span class="mono">{{ project.reference }}</span></div></div>
   </div>
 </section>

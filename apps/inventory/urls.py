@@ -2,6 +2,10 @@ from django.urls import path
 
 from .views import (
     ArchiveListView,
+    StockApprovalListView,
+    StockApprovalDetailView,
+    StockApprovalDecisionView,
+    StockApprovalAttachmentView,
     InventoryColumnPreferenceView,
     InventoryLocationDeleteView,
     InventoryLocationListView,
@@ -43,6 +47,10 @@ from .views import (
 app_name = "inventory"
 
 urlpatterns = [
+    path("approvals/", StockApprovalListView.as_view(), name="approval_list"),
+    path("approvals/<uuid:reference>/", StockApprovalDetailView.as_view(), name="approval_detail"),
+    path("approvals/<uuid:reference>/decide/", StockApprovalDecisionView.as_view(), name="approval_decide"),
+    path("approvals/<uuid:reference>/attachment/", StockApprovalAttachmentView.as_view(), name="approval_attachment"),
     path("archive/", ArchiveListView.as_view(), name="archive"),
     path("trash/", TrashListView.as_view(), name="trash"),
     path("trash/delete/", TrashDismissView.as_view(), name="trash_delete"),
