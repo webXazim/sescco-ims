@@ -57,6 +57,11 @@ expected_contract = {
 if contract != expected_contract:
     fail('project approval addendum is different from approved minimal extension')
 
+retention = json.loads(source('merge/lifecycle-retention-contract.json'))
+for label in ('inventory.StockApprovalRequest', 'inventory.StockApprovalDecision'):
+    if retention.get('models', {}).get(label, {}).get('mode') != 'workflow_record_no_delete':
+        fail(f'{label} must be recorded as workflow history with no ordinary delete')
+
 catalog = source('apps/accounts/access_catalog.py')
 block = catalog.split('class AccessPermission(StrEnum):', 1)[-1].split('_PERMISSION_LABELS', 1)[0]
 keys = re.findall(r'^\s+[A-Z0-9_]+\s*=\s*"([^"]+)"', block, re.M)

@@ -75,6 +75,12 @@
     "inventory.StockTransferLine": {
       "mode": "workflow_record_no_delete"
     },
+    "inventory.StockApprovalRequest": {
+      "mode": "workflow_record_no_delete"
+    },
+    "inventory.StockApprovalDecision": {
+      "mode": "workflow_record_no_delete"
+    },
     "explorer.SavedView": {
       "mode": "user_preference_delete_ok"
     },

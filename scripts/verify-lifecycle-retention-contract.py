@@ -108,6 +108,13 @@ for label, expected in trash_modes.items():
 if models.get("core.TrashCascadeLink", {}).get("mode") != "cascade_recovery_state":
     fail("TrashCascadeLink must be classified as internal cascade recovery state")
 
+# Pending/final project stock approvals are operational workflow evidence,
+# not disposable master records. Keep their decisions and outcomes available
+# to historical audit, including after a project is archived or soft-deleted.
+for label in ("inventory.StockApprovalRequest", "inventory.StockApprovalDecision"):
+    if models.get(label, {}).get("mode") != "workflow_record_no_delete":
+        fail(f"{label} must retain workflow history without ordinary delete")
+
 actual = persisted_models()
 contracted = set(models)
 missing = sorted(actual - contracted)

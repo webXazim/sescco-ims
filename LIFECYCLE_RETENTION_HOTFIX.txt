@@ -1,0 +1,27 @@
+SESCCO IMS lifecycle retention deployment hotfix (2026-11-12)
+
+Problem
+  lifecycle retention verification failed: persisted models without a
+  retention classification: inventory.StockApprovalDecision,
+  inventory.StockApprovalRequest
+
+Change
+  Both approval models are classified as workflow_record_no_delete.
+  Two existing verification scripts now explicitly guard these classifications.
+  No database migrations, database modifications, or stock history changes.
+
+Installation, assuming you uploaded the ZIP to /home/deploy/:
+  cd /opt/sites/ims
+  sudo unzip -o /home/deploy/sescco-ims-lifecycle-retention-hotfix.zip -d /opt/sites/ims
+  python3 scripts/verify-lifecycle-retention-contract.py
+  python3 scripts/verify-project-inventory-approval-extension.py
+  python3 scripts/verify-granular-access-authority.py
+  sudo bash ./scripts/deploy-production.sh
+
+This is an incremental patch; it should be applied after the previous
+SESCCO IMS Project Manager + 97-permission access-catalog upgrade.
+
+Only files changed:
+  merge/lifecycle-retention-contract.json
+  scripts/verify-lifecycle-retention-contract.py
+  scripts/verify-project-inventory-approval-extension.py
