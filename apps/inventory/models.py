@@ -1158,6 +1158,9 @@ class StockApprovalRequest(models.Model):
         APPROVED = "approved", "Approved / applied"
         REJECTED = "rejected", "Rejected"
 
+    # Explicit primary key matches inventory migration 0019; avoid autodetector drift.
+    id = models.BigAutoField(primary_key=True, serialize=False)
+
     company = models.ForeignKey("core.Company", on_delete=models.PROTECT, related_name="stock_approval_requests")
     reference = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     idempotency_key = models.UUIDField(editable=False)
@@ -1187,6 +1190,9 @@ class StockApprovalDecision(models.Model):
         PENDING = "pending", "Pending"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
+
+    # Explicit primary key matches inventory migration 0019; avoid autodetector drift.
+    id = models.BigAutoField(primary_key=True, serialize=False)
 
     request = models.ForeignKey(StockApprovalRequest, on_delete=models.PROTECT, related_name="decisions")
     project = models.ForeignKey("projects.Project", on_delete=models.PROTECT, related_name="stock_approval_decisions")

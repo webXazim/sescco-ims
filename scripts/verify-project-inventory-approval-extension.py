@@ -104,4 +104,31 @@ if 'AccessPermission.INVENTORY_STOCK_APPROVE.value: AccessPermission.INVENTORY_S
     fail('approval grant must require inventory stock view')
 if 'INVENTORY_STOCK_APPROVE = "inventory.stock.approve"' not in catalog:
     fail('runtime permission symbol is missing')
+# 0019 defined explicit BigAutoField primary keys, so the runtime models must
+# retain the same explicit definition. Implicit Django IDs would produce a
+# phantom 0020 AlterField migration on every production deploy.
+model_tree = ast.parse(source('apps/inventory/models.py'))
+migration_tree = ast.parse(source('apps/inventory/migrations/0019_approval_requests_and_unit_defaults.py'))
+for model_name in ('StockApprovalRequest', 'StockApprovalDecision'):
+    cls = next((node for node in model_tree.body if isinstance(node, ast.ClassDef) and node.name == model_name), None)
+    if cls is None:
+        fail(f'missing inventory model {model_name}')
+    id_nodes = [node.value for node in cls.body if isinstance(node, ast.Assign) and
+                any(isinstance(t, ast.Name) and t.id == 'id' for t in node.targets)]
+    if len(id_nodes) != 1 or ast.unparse(id_nodes[0]) != 'models.BigAutoField(primary_key=True, serialize=False)':
+        fail(f'{model_name}.id must explicitly match migration 0019; implicit ID triggers migration drift')
+    # An explicit ID must be found in the historical CreateModel migration.
+    create_models = [n for n in ast.walk(migration_tree) if isinstance(n, ast.Call)
+                     and ast.unparse(n.func) == 'migrations.CreateModel'
+                     and any(k.arg == 'name' and isinstance(k.value, ast.Constant) and k.value.value == model_name
+                             for k in n.keywords)]
+    if len(create_models) != 1:
+        fail(f'migration 0019 missing {model_name} CreateModel')
+    fields_kw = next((k.value for k in create_models[0].keywords if k.arg == 'fields'), None)
+    matching = [field.elts[1] for field in (fields_kw.elts if isinstance(fields_kw, ast.List) else [])
+                if isinstance(field, ast.Tuple) and len(field.elts) == 2
+                and isinstance(field.elts[0], ast.Constant) and field.elts[0].value == 'id']
+    if len(matching) != 1 or ast.unparse(matching[0]) != 'models.BigAutoField(primary_key=True, serialize=False)':
+        fail(f'{model_name} migration 0019 ID declaration changed')
+
 print('Verified project approval permission 97 = frozen 94 + 2 + 1; 0013 and 0016 constraints, owner/manager grants, and view dependency agree.')

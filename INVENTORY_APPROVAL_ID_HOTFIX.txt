@@ -1,0 +1,32 @@
+SESCCO IMS — Inventory approval ID migration-drift hotfix (2026-11-12)
+
+Issue: production `makemigrations --check --dry-run` proposes
+`inventory/migrations/0020_alter_stockapprovaldecision_id_and_more.py`.
+
+Cause: 0019 originally declared explicit `models.BigAutoField(primary_key=True,
+serialize=False)` IDs for StockApprovalRequest and StockApprovalDecision, but
+models.py omitted them and Django injected implicit IDs with `auto_created` and
+`verbose_name` properties. Django flags this as schema-state drift.
+
+Fix: declare the same explicit fields on both runtime models. Existing 0019
+migration, PostgreSQL tables, primary-key values, stock records, and approval
+history remain unchanged. Adds a fail-closed static guard in the existing
+project-inventory approval extension verifier.
+
+INSTALL (on Ubuntu, from /opt/sites/ims):
+  # First back up your deployment and database as usual.
+  sudo unzip -o /home/deploy/sescco-ims-approval-id-hotfix.zip -d /opt/sites/ims
+  python3 scripts/verify-project-inventory-approval-extension.py
+  sudo bash ./scripts/deploy-production.sh
+
+The patch contains:
+  apps/inventory/models.py
+  scripts/verify-project-inventory-approval-extension.py
+  INVENTORY_APPROVAL_ID_HOTFIX.txt
+
+Do NOT generate/apply the proposed inventory 0020 migration. If you previously
+created it manually, inspect its state and migration history before removal.
+
+`security.W021` is a separate HSTS-preload warning. Don't enable preload until
+all related subdomains are HTTPS-ready and long-term HSTS policy is intended.
+The deployment uses `check --deploy --fail-level ERROR`; W021 is nonfatal.
