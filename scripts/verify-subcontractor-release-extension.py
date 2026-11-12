@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {'sourcing.subcontractors.view', 'sourcing.subcontractors.manage'}
 FROZEN_SHA = '5779eb3e368b736267df841db18ba8b3df92073b528acdf9abdb3447fd7a4481'
+PRIOR_96_SHA = 'c8bbdfcd998f849bea9b1cdbc64560f243968e1cfc6fa6668459561742cd60ea'
+PROJECT_DELTA = {'inventory.stock.approve'}
 
 def read(rel):
     return (ROOT / rel).read_text(encoding='utf-8')
@@ -33,9 +35,26 @@ require(json.loads(read('merge/sourcing-browser-e2e-production-freeze.json'))['p
 catalog_src = read('apps/accounts/access_catalog.py')
 block = catalog_src.split('class AccessPermission(StrEnum):', 1)[1].split('_PERMISSION_LABELS', 1)[0]
 keys = re.findall(r'^\s+[A-Z0-9_]+\s*=\s*"([^\"]+)"', block, re.M)
-require(len(keys) == len(set(keys)) == 96, 'catalog must have exactly 96 unique grants')
-require(EXPECTED <= set(keys), 'new grants missing')
-old_keys = set(keys) - EXPECTED
+# This historical verifier certifies the original 94+2 keys against the
+# immutable 0013 migration, while explicitly allowing the later project addendum.
+project_extension = json.loads(read('merge/project-inventory-approval-extension.json'))
+require(project_extension == {
+    'extension_id': 'project-inventory-approval-2026-11-12',
+    'predecessor_contract': 'merge/subcontractor-release-extension.json',
+    'predecessor_permission_count': 96,
+    'predecessor_sorted_permission_keys_sha256': PRIOR_96_SHA,
+    'approved_added_permissions': sorted(PROJECT_DELTA),
+    'expected_effective_permission_count': 97,
+    'accounts_grant_migration': 'apps/accounts/migrations/0016_project_manager_approval.py',
+    'automatic_grant_profile_keys': ['role-owner', 'role-project-manager'],
+    'project_manager_grants': ['inventory.dashboard.view', 'inventory.stock.view', 'inventory.movements.view', 'inventory.projects.view', 'inventory.locations.view', 'inventory.stock.approve'],
+    'historical_contracts_unchanged': True,
+}, 'project inventory extension is unapproved')
+require(len(keys) == len(set(keys)) == 97 and PROJECT_DELTA <= set(keys), 'catalog must have exactly 97 unique grants including one project approval grant')
+prior_keys = set(keys) - PROJECT_DELTA
+require(len(prior_keys) == 96 and hashlib.sha256('\n'.join(sorted(prior_keys)).encode()).hexdigest() == PRIOR_96_SHA, 'historical 96-key extension drifted')
+require(EXPECTED <= prior_keys, 'Subcontractor grants missing')
+old_keys = prior_keys - EXPECTED
 require(len(old_keys) == 94 and hashlib.sha256('\n'.join(sorted(old_keys)).encode()).hexdigest() == FROZEN_SHA, 'original 94 grants drifted')
 
 migration_src = read('apps/accounts/migrations/0013_subcontractor_sourcing_authority.py')
@@ -44,7 +63,7 @@ perms = None
 for node in tree.body:
     if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ALL_PERMISSIONS' for t in node.targets):
         perms = ast.literal_eval(node.value)
-require(perms is not None and len(perms) == 96 and set(perms) == set(keys), 'DB constraint migration does not match the exact catalog')
+require(perms is not None and len(perms) == 96 and set(perms) == prior_keys, 'historical 0013 DB constraint no longer matches the frozen 96-key catalog')
 require('RemoveConstraint' in migration_src and 'AddConstraint' in migration_src, 'permission database constraint must be updated')
 require("key='role-owner', is_system=True" in migration_src, 'automatic owner grant scope changed')
 require('get_or_create(profile_id=profile.pk, permission=permission)' in migration_src, 'owner grants must be idempotent')
@@ -69,4 +88,4 @@ for rel in ('apps/sourcing/tests/test_subcontractor_directory.py',
             'apps/sourcing/tests/test_subcontractor_data_exchange.py'):
     require('def test_' in read(rel), 'missing runtime regressions ' + rel)
 require('sourcing.SourcingSubcontractorDocument' in read('merge/lifecycle-retention-contract.json'), 'qualification retention classification missing')
-print('Verified additive 94+2 permission contract, matching DB constraint, owner-only grants, retention, isolated Sourcing domain, and regression test presence.')
+print('Verified frozen Subcontractor 94+2 permission contract and historical 0013 DB constraint; only the approved one-key Project Inventory addendum is allowed.')

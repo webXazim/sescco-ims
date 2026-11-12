@@ -11,6 +11,7 @@ require_text() {
 
 python3 scripts/verify-granular-access-authority.py
 python3 scripts/verify-subcontractor-release-extension.py
+python3 scripts/verify-project-inventory-approval-extension.py
 python3 scripts/verify-single-access-authority.py
 python3 scripts/verify-user-management-backend.py
 python3 scripts/verify-user-management-ui.py

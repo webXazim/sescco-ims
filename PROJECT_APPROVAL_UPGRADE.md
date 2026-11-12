@@ -37,3 +37,28 @@ This upgrade adds database migrations and a project-manager approval workflow. I
 `python manage.py audit_quantity_units`
 
 **Operational note:** Existing projects do not receive a made-up project manager during the migration. Assign a valid approver to each active project before submitting new requests. Production validation, migrations, and integration tests must be run in a configured Django environment with the production database adapter installed.
+
+## Production preflight hotfix (2026-11-12)
+
+The original `verify-granular-access-authority.py` and the Subcontractor
+release gate were still enforcing a **96-key live catalog** even though the
+new `inventory.stock.approve` permission correctly expanded it to **97**.
+The hotfix keeps the frozen **94 historical keys** and the two approved
+Subcontractor keys unchanged, fingerprints the prior **96-key** catalog, and
+permits **only** the approved Project Inventory permission as the 97th key.
+It also verifies that the existing 0013 database constraint remains the
+original 96-key snapshot and migration 0016 installs exactly the 97-key
+constraint before seeding the restricted manager profile.
+
+Verification from source directory:
+
+```sh
+python3 scripts/verify-granular-access-authority.py
+python3 scripts/verify-subcontractor-release-extension.py
+python3 scripts/verify-project-inventory-approval-extension.py
+bash scripts/verify-production-freeze.sh
+```
+
+Then deploy using the existing `sudo bash ./scripts/deploy-production.sh`.
+Keep the original database and media volumes; replace application source
+only. Do not skip the production preflight or manually insert grants.

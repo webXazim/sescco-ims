@@ -1,0 +1,24 @@
+{
+  "extension_id": "project-inventory-approval-2026-11-12",
+  "predecessor_contract": "merge/subcontractor-release-extension.json",
+  "predecessor_permission_count": 96,
+  "predecessor_sorted_permission_keys_sha256": "c8bbdfcd998f849bea9b1cdbc64560f243968e1cfc6fa6668459561742cd60ea",
+  "approved_added_permissions": [
+    "inventory.stock.approve"
+  ],
+  "expected_effective_permission_count": 97,
+  "accounts_grant_migration": "apps/accounts/migrations/0016_project_manager_approval.py",
+  "automatic_grant_profile_keys": [
+    "role-owner",
+    "role-project-manager"
+  ],
+  "project_manager_grants": [
+    "inventory.dashboard.view",
+    "inventory.stock.view",
+    "inventory.movements.view",
+    "inventory.projects.view",
+    "inventory.locations.view",
+    "inventory.stock.approve"
+  ],
+  "historical_contracts_unchanged": true
+}

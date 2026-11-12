@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "1.0.117"
 EXPECTED_PERMISSION_COUNT = 94  # Frozen historical 1.0.117 foundation.
 APPROVED_EXTENSION = {"sourcing.subcontractors.view", "sourcing.subcontractors.manage"}
+PROJECT_EXTENSION = {"inventory.stock.approve"}
+PRIOR_96_SHA256 = "c8bbdfcd998f849bea9b1cdbc64560f243968e1cfc6fa6668459561742cd60ea"
 LEGACY_CATALOG_SHA256 = "5779eb3e368b736267df841db18ba8b3df92073b528acdf9abdb3447fd7a4481"
 EXPECTED_ROLES = {
     "owner", "operations-admin", "access-admin", "inventory-manager", "storekeeper",
@@ -60,11 +62,27 @@ if (extension.get("legacy_permission_catalog_size") != EXPECTED_PERMISSION_COUNT
         or extension.get("database_and_browser_staging_certification_required") is not True
         or extension.get("historical_browser_contract_unchanged") is not True):
     fail("extension contract changes a protected release requirement")
-if len(permissions) != EXPECTED_PERMISSION_COUNT + len(APPROVED_EXTENSION) or len(set(permissions)) != len(permissions):
-    fail("effective AccessPermission catalog must contain exactly 96 unique keys")
-if not APPROVED_EXTENSION.issubset(permissions):
-    fail("required Subcontractor permissions are missing")
-legacy = set(permissions) - APPROVED_EXTENSION
+# Keep the frozen historical 94+2 catalog intact. The later inventory
+# approval feature is one explicit additive permission, not a relaxed catalog.
+project_extension = json.loads(text("merge/project-inventory-approval-extension.json"))
+if (project_extension.get("extension_id") != "project-inventory-approval-2026-11-12"
+        or project_extension.get("predecessor_contract") != "merge/subcontractor-release-extension.json"
+        or project_extension.get("predecessor_permission_count") != EXPECTED_PERMISSION_COUNT + len(APPROVED_EXTENSION)
+        or project_extension.get("predecessor_sorted_permission_keys_sha256") != PRIOR_96_SHA256
+        or project_extension.get("approved_added_permissions") != sorted(PROJECT_EXTENSION)
+        or project_extension.get("expected_effective_permission_count") != EXPECTED_PERMISSION_COUNT + len(APPROVED_EXTENSION) + len(PROJECT_EXTENSION)
+        or project_extension.get("accounts_grant_migration") != "apps/accounts/migrations/0016_project_manager_approval.py"
+        or project_extension.get("automatic_grant_profile_keys") != ["role-owner", "role-project-manager"]
+        or project_extension.get("historical_contracts_unchanged") is not True):
+    fail("project inventory addendum is not the approved one-permission extension")
+if len(permissions) != 97 or len(set(permissions)) != len(permissions):
+    fail("effective AccessPermission catalog must contain exactly 97 unique keys (96 historical plus inventory.stock.approve)")
+if not (APPROVED_EXTENSION | PROJECT_EXTENSION).issubset(permissions):
+    fail("required subcontractor or project-inventory permissions are missing")
+prior = set(permissions) - PROJECT_EXTENSION
+if len(prior) != 96 or hashlib.sha256("\n".join(sorted(prior)).encode("utf-8")).hexdigest() != PRIOR_96_SHA256:
+    fail("frozen 96-key pre-project catalog was modified")
+legacy = prior - APPROVED_EXTENSION
 legacy_digest = hashlib.sha256("\n".join(sorted(legacy)).encode("utf-8")).hexdigest()
 if len(legacy) != EXPECTED_PERMISSION_COUNT or legacy_digest != LEGACY_CATALOG_SHA256:
     fail("historical 94 permission keys changed or unapproved permissions were added")
@@ -154,4 +172,4 @@ for rel in ("scripts/release-tasks.sh", "scripts/verify-production-freeze.sh"):
 if "merge_access_report --fail-on-errors" not in text("scripts/rehearse-production-freeze.sh"):
     fail("production rehearsal lost company/access reconciliation")
 
-print("Verified frozen 94-key SESCCO MS 1.0.117 permission catalog plus the exact two-key Subcontractor addendum (96 keys); profile-only authority retained.")
+print("Verified frozen 94-key base + exact two-key Subcontractor addendum (96 protected keys) + one approved Project Inventory permission (97 total); profile-only authority retained.")

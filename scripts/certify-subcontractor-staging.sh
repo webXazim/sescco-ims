@@ -14,6 +14,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 python3 scripts/verify-granular-access-authority.py
 python3 scripts/verify-subcontractor-release-extension.py
+python3 scripts/verify-project-inventory-approval-extension.py
 bash scripts/verify-production-freeze.sh
 # This existing production-grade rehearsal validates isolated volumes, restores a
 # backup, runs migration plan, complete Django tests and row/fingerprint checks.
