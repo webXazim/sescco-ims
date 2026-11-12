@@ -9,7 +9,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from .access_catalog import AccessPermission
-from .access_profiles import (create_access_profile, delete_unused_access_profile, permission_catalog, serialize_access_profile, update_access_profile)
+from .access_profiles import (assigned_profile_users, create_access_profile, delete_unused_access_profile, permission_catalog, serialize_access_profile, update_access_profile)
 from .access_history import access_history_page, user_access_history
 from .access_policy import membership_has_permission
 from .api_permissions import api_company_required
@@ -170,12 +170,18 @@ def access_profiles_api(request: HttpRequest) -> JsonResponse:
                 .prefetch_related("permission_grants")
                 .order_by("-is_system", "name", "key")
             )
-            return JsonResponse({
+            response = {
                 "ok": True,
                 "profiles": [serialize_access_profile(profile) for profile in profiles],
                 "permissionCatalog": permission_catalog(),
                 "canManage": membership_has_permission(request.company_membership, AccessPermission.ACCESS_PROFILES_MANAGE),
-            })
+            }
+            if request.GET.get("assigned_to"):
+                response["assignedUsersForClone"] = assigned_profile_users(
+                    actor_membership=request.company_membership,
+                    source_profile_id=request.GET["assigned_to"],
+                )
+            return JsonResponse(response)
         profile = create_access_profile(
             actor_membership=request.company_membership, payload=_json_body(request), request=request
         )

@@ -293,3 +293,21 @@
   .access-history-diff em { display: none; }
   .access-history-card > header { align-items: stretch; flex-direction: column; }
 }
+
+/* Confirm user assignment explicitly after cloning a built-in Access Profile. */
+.access-clone-options { display: grid; gap: 8px; }
+.access-clone-option { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--access-border); border-radius: 9px; padding: 11px; cursor: pointer; background: #fff; }
+.access-clone-option:has(input:checked) { border-color: #9db7a4; background: #f5faf6; }
+.access-clone-option:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.access-clone-option input { margin-top: 2px; flex-shrink: 0; }
+.access-clone-option span, .access-clone-user span { display: grid; gap: 3px; min-width: 0; }
+.access-clone-option strong, .access-clone-user strong { color: var(--access-text); font-size: 11px; }
+.access-clone-option small, .access-clone-user small { color: var(--access-muted); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.access-clone-users { display: grid; gap: 9px; margin-top: 10px; }
+.access-clone-users[hidden] { display: none !important; }
+.access-clone-user-list { border: 1px solid var(--access-border); border-radius: 9px; max-height: 270px; overflow-y: auto; }
+.access-clone-user { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--access-border); }
+.access-clone-user:last-child { border-bottom: 0; }
+.access-clone-user[hidden] { display: none !important; }
+.access-clone-user input { margin-top: 2px; flex-shrink: 0; }
+.access-clone-user:has(input:disabled) { background: #fafafa; opacity: .65; cursor: not-allowed; }

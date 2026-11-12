@@ -470,21 +470,21 @@
     return name;
   }
 
-  function renderProfileForm(profile = null, sourceProfile = null) {
+  function renderProfileForm(profile = null, sourceProfile = null, restoredDraft = null) {
     const creating = !profile;
     const copying = Boolean(creating && sourceProfile?.system && canManageProfiles);
-    const draft = copying ? {
+    const draft = restoredDraft || (copying ? {
       name: customCloneName(sourceProfile.name),
       description: sourceProfile.description || "",
       permissions: [...(sourceProfile.permissions || [])],
-    } : profile;
+    } : profile);
     const isOwnProfile = Boolean(profile && String(profile.id) === actorProfileId);
     const editable = Boolean(canManageProfiles && (creating || (!profile.system && !isOwnProfile)));
     const title = copying ? "Customize Access Profile" : (creating ? "Create Access Profile" : profile.name);
-    openDrawer({ eyebrow: copying ? "Custom copy of built-in profile" : (creating ? "Access profile" : (profile.system ? "Built-in profile" : "Custom profile")), title, subtitle: copying ? `Based on ${sourceProfile.name}. Saving creates a new profile and does not change existing user assignments.` : (creating ? "Choose exact pages and actions. Scope is assigned per user." : `${Number(profile.assignedUsers || 0)} active assigned user${Number(profile.assignedUsers || 0) === 1 ? "" : "s"}.`) });
+    openDrawer({ eyebrow: copying ? "Custom copy of built-in profile" : (creating ? "Access profile" : (profile.system ? "Built-in profile" : "Custom profile")), title, subtitle: copying ? `Based on ${sourceProfile.name}. After setting permissions, choose which assigned users to move.` : (creating ? "Choose exact pages and actions. Scope is assigned per user." : `${Number(profile.assignedUsers || 0)} active assigned user${Number(profile.assignedUsers || 0) === 1 ? "" : "s"}.`) });
     const viewOnlyDefault = Boolean(draft && draft.permissions?.length && draft.permissions.every((code) => (state.permissionCatalog.find((item) => item.code === code)?.kind || "action") === "view"));
     els.drawerBody.innerHTML = `<form class="access-form" id="accessProfileForm" novalidate>
-      <section class="access-form-section"><div class="access-section-head"><div><strong>Profile identity</strong><span>Custom profiles are company-scoped. Built-in profiles are immutable.</span></div>${profile ? `<span class="access-status ${profile.active === false ? "is-inactive" : "is-active"}">${profile.system ? "Built-in" : (profile.active === false ? "Inactive" : "Custom")}</span>` : ""}</div>${copying ? '<div class="access-form-note"><strong>Custom copy:</strong> Changes here will not affect the built-in profile or users assigned to it. After saving, assign the new profile to the required users and configure project approvers separately.</div>' : ""}<div class="access-form-grid">${formField({ id:"accessProfileName", label:"Profile name", value:draft?.name, required:true, disabled:!editable, wide:true })}${formField({ id:"accessProfileDescription", label:"Description", value:draft?.description, disabled:!editable, wide:true })}</div>${isOwnProfile ? '<div class="access-form-note"><strong>Self-escalation protection:</strong> you cannot modify the profile currently granting your own authority. Another authorized administrator must make that change.</div>' : ""}</section>
+      <section class="access-form-section"><div class="access-section-head"><div><strong>Profile identity</strong><span>Custom profiles are company-scoped. Built-in profiles are immutable.</span></div>${profile ? `<span class="access-status ${profile.active === false ? "is-inactive" : "is-active"}">${profile.system ? "Built-in" : (profile.active === false ? "Inactive" : "Custom")}</span>` : ""}</div>${copying ? '<div class="access-form-note"><strong>Custom copy:</strong> The built-in profile stays unchanged. When you continue, choose to keep its users, move selected users, or move all assigned users. Project approvers are configured separately.</div>' : ""}<div class="access-form-grid">${formField({ id:"accessProfileName", label:"Profile name", value:draft?.name, required:true, disabled:!editable, wide:true })}${formField({ id:"accessProfileDescription", label:"Description", value:draft?.description, disabled:!editable, wide:true })}</div>${isOwnProfile ? '<div class="access-form-note"><strong>Self-escalation protection:</strong> you cannot modify the profile currently granting your own authority. Another authorized administrator must make that change.</div>' : ""}</section>
       <section class="access-form-section"><div class="access-section-head"><div><strong>Pages & actions</strong><span>View-only profiles should contain only page/read permissions. Direct routes and APIs enforce the same permissions.</span></div><span class="access-profile-tag" id="accessProfilePermissionCount">${Number(draft?.permissions?.length || 0)} selected</span></div>${editable ? `<label class="access-view-only-switch"><input type="checkbox" id="accessProfileViewOnly" ${viewOnlyDefault ? "checked" : ""}><span><strong>View-only mode</strong><small>Remove and disable every mutation/approval/payment permission.</small></span></label>` : ""}<div class="access-permission-groups">${profilePermissionMarkup(draft, editable)}</div><small class="access-field-error" id="fieldError-permissions"></small></section>
       ${profile && !profile.system ? `<section class="access-form-section"><div class="access-section-head"><div><strong>Profile lifecycle</strong><span>Assigned profiles cannot be deleted or deactivated until every user is reassigned.</span></div></div><div class="access-detail-summary"><div class="access-detail-item"><span>Assigned users</span><strong>${Number(profile.assignedUsers || 0)}</strong></div><div class="access-detail-item"><span>Key</span><strong>${htmlEscape(profile.key)}</strong></div></div></section>` : ""}
     </form>`;
@@ -524,20 +524,94 @@
     if (editable) {
       const spacer=document.createElement("span"); spacer.className="access-footer-spacer"; els.drawerFooter.appendChild(spacer);
       if (profile && !profile.system && Number(profile.assignedUsers || 0) === 0) { const del=document.createElement("button"); del.className="btn btn-danger"; del.type="button"; del.textContent="Delete Profile"; del.addEventListener("click",()=>renderProfileDelete(profile)); els.drawerFooter.appendChild(del); }
-      const save=document.createElement("button"); save.className="btn btn-primary"; save.type="button"; save.textContent=copying?"Create Custom Profile":(creating?"Create Profile":"Save Profile"); save.addEventListener("click",()=>saveProfileForm(profile,save)); els.drawerFooter.appendChild(save);
+      const save=document.createElement("button"); save.className="btn btn-primary"; save.type="button"; save.textContent=copying?"Create Custom Profile":(creating?"Create Profile":"Save Profile"); save.addEventListener("click",()=>saveProfileForm(profile,save,copying ? sourceProfile : null)); els.drawerFooter.appendChild(save);
     }
   }
 
-  async function saveProfileForm(profile, button) {
+  // Second step: make user reassignment an explicit, reviewable choice at save
+  // time. No users are silently migrated when a built-in template is copied.
+  function renderCloneUserReview(payload, sourceProfile, users) {
+    const ownAssignment = users.some((item) => item.isSelf);
+    const count = users.length;
+    els.drawerEyebrow.textContent = "Custom profile · Step 2 of 2";
+    els.drawerTitle.textContent = "Choose users to move";
+    els.drawerSubtitle.textContent = `From ${sourceProfile.name} to ${payload.name}. The original profile will remain available.`;
+    els.drawerBody.innerHTML = `<div class="access-form access-clone-review">
+      <section class="access-form-section">
+        <div class="access-section-head"><div><strong>Assign users to the new profile</strong><span>${count} user${count === 1 ? "" : "s"} currently assigned to ${htmlEscape(sourceProfile.name)}. This includes inactive accounts.</span></div></div>
+        <div class="access-clone-options">
+          <label class="access-clone-option"><input type="radio" name="accessCloneAssignmentMode" value="none" checked><span><strong>Keep existing users on the built-in profile</strong><small>Create the custom profile without changing user assignments.</small></span></label>
+          <label class="access-clone-option"><input type="radio" name="accessCloneAssignmentMode" value="selected" ${count ? "" : "disabled"}><span><strong>Move selected users</strong><small>Choose exactly which users will receive the new permissions.</small></span></label>
+          <label class="access-clone-option"><input type="radio" name="accessCloneAssignmentMode" value="all" ${count && !ownAssignment ? "" : "disabled"}><span><strong>Move all ${count} assigned users</strong><small>${ownAssignment ? "Your own account cannot be reassigned. Select other users instead." : "Everyone currently assigned to the source profile will move."}</small></span></label>
+        </div>
+        <div id="accessCloneSelectedUsers" class="access-clone-users" hidden>
+          <label class="access-field"><span>Find assigned user</span><input class="access-input" type="search" id="accessCloneUserSearch" placeholder="Search by name or username" autocomplete="off"></label>
+          <div class="access-clone-user-list">${users.map((user) => `<label class="access-clone-user" data-clone-search="${htmlEscape([user.displayName, user.username, user.email].join(" ").toLowerCase())}"><input type="checkbox" data-clone-member="${htmlEscape(user.membershipId)}" ${user.isSelf ? "disabled" : ""}><span><strong>${htmlEscape(user.displayName)}</strong><small>${htmlEscape(user.username)}${user.email ? ` · ${htmlEscape(user.email)}` : ""}${user.active ? "" : " · Inactive"}${user.isSelf ? " · Your account (protected)" : ""}</small></span></label>`).join("") || '<div class="access-form-note">There are no users to move.</div>'}</div>
+          <small class="access-field-error" id="fieldError-membershipIds"></small>
+        </div>
+        <small class="access-field-error" id="fieldError-expectedMembershipIds"></small>
+        <div class="access-form-note"><strong>Security:</strong> Changes are audited. Moved users must sign in again; their existing project, branch and location scopes remain unchanged. A user cannot approve their own inventory request.</div>
+      </section>
+    </div>`;
+    const modeControls = [...els.drawerBody.querySelectorAll('[name="accessCloneAssignmentMode"]')];
+    const selection = byId("accessCloneSelectedUsers");
+    const refreshMode = () => { selection.hidden = modeControls.find((control) => control.checked)?.value !== "selected"; };
+    modeControls.forEach((control) => control.addEventListener("change", refreshMode));
+    byId("accessCloneUserSearch")?.addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      els.drawerBody.querySelectorAll("[data-clone-search]").forEach((node) => {
+        node.hidden = !node.dataset.cloneSearch.includes(query);
+      });
+    });
+    els.drawerFooter.replaceChildren();
+    const back = document.createElement("button"); back.type = "button"; back.className = "btn btn-ghost"; back.textContent = "Back to Permissions";
+    back.addEventListener("click", () => renderProfileForm(null, sourceProfile, payload));
+    const spacer = document.createElement("span"); spacer.className = "access-footer-spacer";
+    const confirm = document.createElement("button"); confirm.type = "button"; confirm.className = "btn btn-primary"; confirm.textContent = "Create Custom Profile";
+    confirm.addEventListener("click", async () => {
+      clearFormErrors();
+      const mode = modeControls.find((control) => control.checked)?.value || "none";
+      const selected = [...els.drawerBody.querySelectorAll("[data-clone-member]:checked")].map((input) => input.dataset.cloneMember);
+      if (mode === "selected" && !selected.length) {
+        byId("fieldError-membershipIds").textContent = "Choose at least one user to move, or choose Keep existing users.";
+        return;
+      }
+      const finalPayload = { ...payload, sourceProfileId: sourceProfile.id, assignmentMode: mode };
+      if (mode === "selected") finalPayload.membershipIds = selected;
+      if (mode === "all") finalPayload.expectedMembershipIds = users.map((item) => item.membershipId);
+      confirm.disabled = true; back.disabled = true; confirm.textContent = "Creating…";
+      try {
+        await api("/api/access/profiles/", { method: "POST", body: JSON.stringify(finalPayload) });
+        const movedCount = mode === "all" ? users.length : (mode === "selected" ? selected.length : 0);
+        toast(`Custom Access Profile created. ${movedCount} user${movedCount === 1 ? "" : "s"} reassigned.`);
+        state.profilesLoaded = false;
+        await loadProfiles({ force: true }); await loadUsers(); closeDrawer();
+      } catch (error) {
+        showFormErrors(error);
+      } finally { confirm.disabled = false; back.disabled = false; confirm.textContent = "Create Custom Profile"; }
+    });
+    els.drawerFooter.append(back, spacer, confirm);
+    refreshMode();
+  }
+
+  async function saveProfileForm(profile, button, sourceProfile = null) {
     clearFormErrors();
-    const payload={ name:byId("accessProfileName")?.value.trim()||"", description:byId("accessProfileDescription")?.value.trim()||"", permissions:profileSelectedPermissions() };
-    button.disabled=true; const previous=button.textContent; button.textContent="Saving…";
+    const payload = { name: byId("accessProfileName")?.value.trim() || "", description: byId("accessProfileDescription")?.value.trim() || "", permissions: profileSelectedPermissions() };
+    if (!payload.name) { byId("fieldError-accessProfileName").textContent = "Profile name is required."; return; }
+    if (!payload.permissions.length) { byId("fieldError-permissions").textContent = "Select at least one permission."; return; }
+    button.disabled = true; const previous = button.textContent; button.textContent = "Saving…";
     try {
-      await api(profile ? `/api/access/profiles/${profile.id}/` : "/api/access/profiles/", { method:profile?"PATCH":"POST", body:JSON.stringify(payload) });
+      if (sourceProfile && canManageUsers) {
+        const roster = await api(`/api/access/profiles/?assigned_to=${encodeURIComponent(sourceProfile.id)}`);
+        renderCloneUserReview(payload, sourceProfile, roster.assignedUsersForClone || []);
+        return;
+      }
+      if (sourceProfile) payload.sourceProfileId = sourceProfile.id;
+      await api(profile ? `/api/access/profiles/${profile.id}/` : "/api/access/profiles/", { method: profile ? "PATCH" : "POST", body: JSON.stringify(payload) });
       toast(profile ? "Access Profile updated." : "Custom Access Profile created.");
-      state.profilesLoaded=false; await loadProfiles({force:true}); await loadUsers(); closeDrawer();
-    } catch(error) { showFormErrors(error); }
-    finally { button.disabled=false; button.textContent=previous; }
+      state.profilesLoaded = false; await loadProfiles({ force: true }); await loadUsers(); closeDrawer();
+    } catch (error) { showFormErrors(error); }
+    finally { button.disabled = false; button.textContent = previous; }
   }
 
   function renderProfileDelete(profile) {

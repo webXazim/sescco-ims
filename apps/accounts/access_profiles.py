@@ -12,7 +12,7 @@ from apps.core.services.audit import record_audit_event
 from .access_catalog import AccessPermission
 from .access_policy import membership_has_permission
 from .models import AccessProfile, AccessProfilePermission, CompanyMembership
-from .security import bump_profile_user_security_versions
+from .security import bump_profile_user_security_versions, bump_user_security_version
 
 
 _PERMISSION_VALUES = frozenset(permission.value for permission in AccessPermission)
@@ -195,12 +195,101 @@ def _assert_custom_mutable(*, actor: CompanyMembership, profile: AccessProfile) 
         raise PermissionDenied("You cannot modify the Access Profile currently granting your own authority.")
 
 
+
+def assigned_profile_users(*, actor_membership: CompanyMembership, source_profile_id) -> list[dict[str, object]]:
+    """Return the complete company-scoped assignment roster for the clone review."""
+    _require_manage_profiles(actor_membership)
+    if not membership_has_permission(actor_membership, AccessPermission.ACCESS_USERS_MANAGE):
+        raise PermissionDenied("You cannot reassign users without User Management permission.")
+    source = AccessProfile.objects.get(
+        pk=source_profile_id, company=actor_membership.company, is_system=True, is_active=True
+    )
+    if source.key == "role-owner":
+        raise PermissionDenied("Company Owner profiles cannot be bulk-cloned or reassigned.")
+    members = CompanyMembership.objects.filter(
+        company=actor_membership.company, access_profile=source
+    ).select_related("user").order_by("user__username", "pk")
+    return [
+        {
+            "membershipId": str(member.pk),
+            "displayName": member.user.display_name,
+            "username": member.user.username,
+            "email": member.user.email,
+            "active": bool(member.is_active and member.user.is_active),
+            "isSelf": member.pk == actor_membership.pk,
+        }
+        for member in members
+    ]
+
+
+def _requested_profile_reassignments(*, actor: CompanyMembership, payload: dict[str, object]):
+    """Validate the intended membership moves before creating a new profile.
+
+    The source membership set is locked and rechecked at commit time so a stale
+    browser selection never moves a different person's authority.
+    """
+    source_id = payload.get("sourceProfileId")
+    mode = payload.get("assignmentMode", "none")
+    if mode not in ("none", "selected", "all"):
+        raise ValidationError({"assignmentMode": "Choose keep, selected users or all users."})
+    if not source_id:
+        if mode != "none" or "membershipIds" in payload or "expectedMembershipIds" in payload:
+            raise ValidationError({"sourceProfileId": "Select a built-in source profile to move users."})
+        return None, [], "none"
+    try:
+        source = AccessProfile.objects.select_for_update().get(
+            pk=source_id, company=actor.company, is_system=True, is_active=True
+        )
+    except (AccessProfile.DoesNotExist, ValueError, ValidationError) as exc:
+        raise ValidationError({"sourceProfileId": "Source profile is no longer available."}) from exc
+    if source.key == "role-owner":
+        raise PermissionDenied("Company Owner profiles cannot be cloned for reassignment.")
+    if mode == "none":
+        if payload.get("membershipIds") or payload.get("expectedMembershipIds"):
+            raise ValidationError({"membershipIds": "Keep mode does not accept selected users."})
+        return source, [], mode
+    if not membership_has_permission(actor, AccessPermission.ACCESS_USERS_MANAGE):
+        raise PermissionDenied("You cannot reassign users without User Management permission.")
+    requested = payload.get("membershipIds", [])
+    expected = payload.get("expectedMembershipIds", [])
+    if not isinstance(requested, list) or not isinstance(expected, list):
+        raise ValidationError({"membershipIds": "User selections must be lists."})
+    if mode == "selected" and (not requested or expected):
+        raise ValidationError({"membershipIds": "Select one or more source-profile users."})
+    if mode == "all" and (requested or not expected):
+        raise ValidationError({"expectedMembershipIds": "Review all assigned users before confirming."})
+    identifiers = requested if mode == "selected" else expected
+    if len(identifiers) != len(set(map(str, identifiers))) or not all(isinstance(v, str) for v in identifiers):
+        raise ValidationError({"membershipIds": "Duplicate or invalid user selection."})
+    try:
+        ids = {uuid.UUID(v) for v in identifiers}
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValidationError({"membershipIds": "One or more user IDs are invalid."}) from exc
+    if len(ids) != len(identifiers):
+        raise ValidationError({"membershipIds": "Duplicate user selection."})
+    source_members = list(CompanyMembership.objects.select_for_update().filter(
+        company=actor.company, access_profile=source
+    ).select_related("access_profile", "user").order_by("pk"))
+    if mode == "all":
+        if {member.pk for member in source_members} != ids:
+            raise ValidationError({"expectedMembershipIds": "Source-profile assignments changed. Review the users and try again."})
+        chosen = source_members
+    else:
+        chosen = [member for member in source_members if member.pk in ids]
+        if len(chosen) != len(ids):
+            raise ValidationError({"membershipIds": "Selected users have changed profiles. Review and try again."})
+    if any(member.pk == actor.pk for member in chosen):
+        raise PermissionDenied("You cannot change your own Access Profile.")
+    return source, chosen, mode
+
+
 @transaction.atomic
 def create_access_profile(*, actor_membership: CompanyMembership, payload: dict[str, object], request=None) -> AccessProfile:
     _require_manage_profiles(actor_membership)
     name = _clean_name(payload.get("name"))
     description = _clean_description(payload.get("description"))
     permissions = _clean_permissions(payload.get("permissions"))
+    source, moved_members, assignment_mode = _requested_profile_reassignments(actor=actor_membership, payload=payload)
     base = slugify(name)[:48] or "custom"
     key = f"custom-{base}-{uuid.uuid4().hex[:8]}"
     profile = AccessProfile.objects.create(
@@ -215,6 +304,31 @@ def create_access_profile(*, actor_membership: CompanyMembership, payload: dict[
         AccessProfilePermission(profile=profile, permission=permission) for permission in permissions
     ])
     profile = AccessProfile.objects.prefetch_related("permission_grants").get(pk=profile.pk)
+    # Keep full before/after access snapshots so Access History recovery can
+    # restore these bulk assignments just like individual User Management edits.
+    from .user_management import _identity_snapshot
+
+    # User assignment and profile creation are one atomic operation. A failed
+    # membership update or audit event rolls back the entire new profile.
+    for member in moved_members:
+        before = _identity_snapshot(member)
+        member.access_profile = profile
+        member.role = "custom"  # Compatibility classification, never an authority grant.
+        member.save(update_fields=("access_profile", "role", "updated_at"))
+        bump_user_security_version(member.user_id)
+        record_audit_event(
+            company=profile.company,
+            area=AuditArea.ACCESS,
+            action="access.user.updated",
+            object_type="accounts.CompanyMembership",
+            object_id=member.pk,
+            object_label=member.user.display_name,
+            actor_membership=actor_membership,
+            before=before,
+            after=_identity_snapshot(member),
+            metadata={"profile_clone_user_reassignment": True, "source_profile_id": str(source.pk)},
+            request=request,
+        )
     record_audit_event(
         company=profile.company,
         area=AuditArea.ACCESS,
@@ -224,6 +338,7 @@ def create_access_profile(*, actor_membership: CompanyMembership, payload: dict[
         object_label=profile.name,
         actor_membership=actor_membership,
         after=_snapshot(profile),
+        metadata={"source_profile_id": str(source.pk) if source else None, "assignment_mode": assignment_mode, "reassigned_users": len(moved_members)},
         request=request,
     )
     return profile
