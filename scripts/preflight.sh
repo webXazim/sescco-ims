@@ -11,7 +11,7 @@ require_command python3
 package_version="$(tr -d '\r\n' < "${PROJECT_ROOT}/VERSION")"
 env_version="$(read_env_value APP_VERSION)"
 if [[ -n "${env_version}" && "${env_version}" != "${package_version}" ]]; then
-  fatal "APP_VERSION=${env_version} in ${ENV_FILE} does not match packaged VERSION=${package_version}. Update APP_VERSION in the production environment before deploying."
+  fatal "APP_VERSION=${env_version} in ${ENV_FILE} does not match packaged VERSION=${package_version}. Run: sudo python3 scripts/sync-production-app-version.py --apply (only updates APP_VERSION; backs up secrets)."
 fi
 
 info "Verifying deployment repository state"

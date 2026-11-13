@@ -60,6 +60,11 @@ info "Supplier-timesheet compound-source reconciliation hotfix is active"
 info "Running production source/configuration checks"
 bash "${PROJECT_ROOT}/scripts/verify-production-freeze.sh"
 
+# Only APP_VERSION is synchronized, with a protected backup. Never replace
+# .env.production with the template: it holds live secrets and database keys.
+info "Aligning the production APP_VERSION with the packaged release"
+python3 "${PROJECT_ROOT}/scripts/sync-production-app-version.py" --apply
+
 bash "${PROJECT_ROOT}/scripts/preflight.sh"
 
 info "Building the merged IMS + Payroll release image"

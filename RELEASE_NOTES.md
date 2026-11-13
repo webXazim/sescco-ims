@@ -1,18 +1,18 @@
 # Project Pulse U10 — SESCCO IMS 1.0.127 (staging candidate)
 
-Project-list confidentiality, unbudgeted cost/budget-balance correctness, archived unbudgeted cost recognition, regression tests, export smoke checks and staged verification instructions. **Django/PostgreSQL runtime acceptance is still required.** See `PROJECT_PULSE_U10_RELEASE_NOTES.md`.
+Project-list confidentiality, unbudgeted cost/budget-balance correctness, archived unbudgeted cost recognition, regression tests, export smoke checks and staged verification instructions. **Django/PostgreSQL runtime acceptance is still required.** See `docs/releases/project-pulse/PROJECT_PULSE_U10_RELEASE_NOTES.md`.
 
 ---
 
 # Project Pulse U05 — SESCCO IMS 1.0.122
 
-See `PROJECT_PULSE_U05_RELEASE_NOTES.md` for the standalone task expense ledger, permissions, database migrations and deployment tests.
+See `docs/releases/project-pulse/PROJECT_PULSE_U05_RELEASE_NOTES.md` for the standalone task expense ledger, permissions, database migrations and deployment tests.
 
 ---
 
 # Project Pulse U04 — v1.0.121
 
-Project Pulse physical progress tracking: weighted category/task completion, permissioned progress updates, immutable application-level progress history, project dashboard metrics, two new permissions and database migration with Completed-task backfill. This release does not implement expenses, budgets or financial reporting. See `PROJECT_PULSE_U04_RELEASE_NOTES.md` for full notes.
+Project Pulse physical progress tracking: weighted category/task completion, permissioned progress updates, immutable application-level progress history, project dashboard metrics, two new permissions and database migration with Completed-task backfill. This release does not implement expenses, budgets or financial reporting. See `docs/releases/project-pulse/PROJECT_PULSE_U04_RELEASE_NOTES.md` for full notes.
 
 ---
 

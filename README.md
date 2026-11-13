@@ -8,13 +8,15 @@ Private Django operations platform combining Inventory Management, Payroll Manag
 custom responsive workspace is the main product for storekeepers; Django admin
 is reserved for Django superusers and protected corrections.
 
-## Project Pulse extension (U10 candidate)
+## Project Pulse extension (U10 code release)
 
-Packaged Project Pulse release: **1.0.127**. The ten planned development milestones are implemented at source level; this final hardening package requires Django/PostgreSQL staging verification before production rollout. See `PROJECT_PULSE_U10_RELEASE_NOTES.md` and `PROJECT_PULSE_U10_STAGING_ACCEPTANCE.md`. Existing Inventory/Payroll production history is maintained below.
+Packaged Project Pulse release: **1.0.127**. The ten planned development milestones are implemented at source level; this final hardening package requires Django/PostgreSQL staging verification before production rollout. See `docs/releases/project-pulse/PROJECT_PULSE_U10_RELEASE_NOTES.md` and `docs/releases/project-pulse/PROJECT_PULSE_U10_STAGING_ACCEPTANCE.md`. Existing Inventory/Payroll production history is maintained below.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & Acceptance (Upgrade 14/14)**.
+Current packaged release: **SESCCO MS 1.0.127 — Project Pulse U10** (staging verification required).
+
+Historical immutable baseline: **SESCCO MS 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & Acceptance (Upgrade 14/14)**.
 
 Previous deployment baseline retained for verification: **SESCCO MS 1.0.117 — Sourcing Static Manifest Deployment Hotfix**.
 
@@ -87,6 +89,8 @@ Sourcing Worker Trade & Workforce Catalog contract: `docs/SOURCING_TRADE_WORKFOR
 Sourcing scale hardening contract: `docs/SOURCING_SCALE_HARDENING.md`.
 Sourcing security certification contract: `docs/SOURCING_SECURITY_CERTIFICATION.md`.
 Final Sourcing browser E2E + production freeze contract: `docs/SOURCING_BROWSER_E2E.md`.
+
+For APP_VERSION synchronization and archive of obsolete root-level release notes, see `docs/releases/DEPLOY_VERSION_AND_ROOT_CLEANUP.md`.
 
 ## Production deployment for ms.sescco.com
 
