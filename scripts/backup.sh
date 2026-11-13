@@ -36,6 +36,11 @@ compose run --rm --no-deps -T ims_tools sh -c \
   "tar -C /data/media -czf - ." > "${backup_dir}/media.tar.gz"
 [[ -s "${backup_dir}/media.tar.gz" ]] || fatal "Private media backup is empty."
 
+info "Creating private Project Pulse expense-evidence backup"
+compose run --rm --no-deps -T ims_tools sh -c \
+  "tar -C /data/pulse_private -czf - ." > "${backup_dir}/pulse-private.tar.gz"
+[[ -s "${backup_dir}/pulse-private.tar.gz" ]] || fatal "Project Pulse evidence backup is empty."
+
 source_revision="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 source_worktree_state="clean"
 if ! git -C "${PROJECT_ROOT}" diff --quiet HEAD --; then
@@ -66,6 +71,7 @@ source_worktree_state=${source_worktree_state}
 app_version=${app_version}
 database_format=postgres_custom
 media_format=tar_gzip
+pulse_private_format=tar_gzip
 source_format=git_bundle
 production_config_format=tar_gzip
 compose_project=ims
@@ -74,7 +80,7 @@ MANIFEST
 
 (
   cd "${backup_dir}"
-  sha256sum database.dump media.tar.gz source.bundle production-config.tar.gz manifest.txt > SHA256SUMS
+  sha256sum database.dump media.tar.gz pulse-private.tar.gz source.bundle production-config.tar.gz manifest.txt > SHA256SUMS
   if [[ -f source-working-tree.patch ]]; then
     sha256sum source-working-tree.patch >> SHA256SUMS
   fi

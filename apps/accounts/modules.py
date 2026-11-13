@@ -14,6 +14,7 @@ class PlatformModule(StrEnum):
     PAYROLL = "payroll"
     ADMINISTRATION = "administration"
     SOURCING = "sourcing"
+    PROJECT_PULSE = "project_pulse"
 
 
 def membership_can_module(membership, module: PlatformModule | str) -> bool:
@@ -28,6 +29,8 @@ def membership_can_module(membership, module: PlatformModule | str) -> bool:
             membership_can_workspace(membership, workspace)
             for workspace in (Workspace.INTERNAL, Workspace.RENTAL, Workspace.MANAGEMENT)
         )
+    if value is PlatformModule.PROJECT_PULSE:
+        return membership_has_permission(membership, AccessPermission.PULSE_OVERVIEW_VIEW)
     if value is PlatformModule.SOURCING:
         # Sourcing is an independently permissioned reference-only module. Inventory,
         # Payroll and other operational roles do not imply any Sourcing access.
@@ -45,6 +48,8 @@ def module_from_path(path: str) -> PlatformModule | None:
         return PlatformModule.PAYROLL
     if normalized.startswith("/app/sourcing/"):
         return PlatformModule.SOURCING
+    if normalized.startswith("/app/project-pulse/"):
+        return PlatformModule.PROJECT_PULSE
     if normalized.startswith("/app/"):
         return PlatformModule.INVENTORY
     return None
@@ -58,4 +63,6 @@ def module_home_name(module: PlatformModule | str) -> str:
         return "core:payroll"
     if value is PlatformModule.SOURCING:
         return "sourcing:home"
+    if value is PlatformModule.PROJECT_PULSE:
+        return "project_pulse:home"
     return "accounts:administration"

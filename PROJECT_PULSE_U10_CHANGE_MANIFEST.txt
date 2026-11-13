@@ -1,0 +1,27 @@
+Project Pulse U10 — v1.0.127 file-level change manifest
+Base: SESCCO_IMS_Project_Pulse_U09_v1.0.126_Full.zip
+Original files retained: 1159
+Modified: 11
+Added: 5
+
+Modified files:
+sescco-ims/.env.production.example
+sescco-ims/README.md
+sescco-ims/RELEASE_NOTES.md
+sescco-ims/VERSION
+sescco-ims/apps/project_pulse/budget_services.py
+sescco-ims/apps/project_pulse/report_services.py
+sescco-ims/apps/project_pulse/tests/test_foundation.py
+sescco-ims/apps/project_pulse/views.py
+sescco-ims/templates/project_pulse/budgets.html
+sescco-ims/templates/project_pulse/home.html
+sescco-ims/templates/project_pulse/project_detail.html
+
+New files:
+sescco-ims/PROJECT_PULSE_U10_RELEASE_NOTES.md
+sescco-ims/PROJECT_PULSE_U10_STAGING_ACCEPTANCE.md
+sescco-ims/apps/project_pulse/tests/test_release_hardening.py
+sescco-ims/scripts/project_pulse_u10_offline_checks.py
+sescco-ims/scripts/verify-project-pulse-u10.sh
+
+All unchanged U09 files are retained byte-for-byte.

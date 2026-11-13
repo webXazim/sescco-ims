@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "apps.rental_manpower.apps.RentalManpowerConfig",
     "apps.documents.apps.DocumentsConfig",
     "apps.sourcing.apps.SourcingConfig",
+    "apps.project_pulse.apps.ProjectPulseConfig",
 ]
 
 MIDDLEWARE = [
@@ -89,6 +90,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Never expose Project Pulse finance evidence via MEDIA_URL, static or nginx.
+# In production, mount this directory as a persistent *private* volume.
+PULSE_PRIVATE_STORAGE_ROOT = Path(env("PULSE_PRIVATE_STORAGE_ROOT", str(BASE_DIR / "private_uploads")))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "accounts:login"

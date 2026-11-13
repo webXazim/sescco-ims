@@ -7,7 +7,7 @@ usage() {
 Usage: scripts/verify-backup.sh BACKUP_DIRECTORY [--require-recovery-bundle]
 
 Checks backup checksums, PostgreSQL archive readability, private-media archive
-readability and, when present, the source/configuration recovery bundle. This
+readability, Project Pulse evidence archive and, when present, the source/configuration recovery bundle. This
 does not alter production data.
 USAGE
 }
@@ -28,6 +28,9 @@ for file in database.dump media.tar.gz manifest.txt SHA256SUMS; do
   [[ -f "${backup_dir}/${file}" ]] || fatal "Backup is missing ${file}."
 done
 [[ -s "${backup_dir}/database.dump" ]] || fatal "database.dump is empty."
+if grep -qx 'pulse_private_format=tar_gzip' "${backup_dir}/manifest.txt"; then
+  [[ -s "${backup_dir}/pulse-private.tar.gz" ]] || fatal "Project Pulse evidence archive missing."
+fi
 
 require_environment
 require_command sha256sum
@@ -46,6 +49,12 @@ compose exec -T ims_db pg_restore --list < "${backup_dir}/database.dump" >/dev/n
 info "Verifying private media archive readability"
 tar -tzf "${backup_dir}/media.tar.gz" >/dev/null \
   || fatal "media.tar.gz is not a readable gzip/tar archive."
+
+if [[ -f "${backup_dir}/pulse-private.tar.gz" ]]; then
+  info "Verifying Project Pulse private evidence archive readability"
+  tar -tzf "${backup_dir}/pulse-private.tar.gz" >/dev/null \
+    || fatal "pulse-private.tar.gz is not a readable gzip/tar archive."
+fi
 
 if [[ -f "${backup_dir}/source.bundle" || -f "${backup_dir}/production-config.tar.gz" ]]; then
   [[ -s "${backup_dir}/source.bundle" ]] || fatal "source.bundle is missing or empty."

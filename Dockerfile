@@ -34,8 +34,8 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=django:django . /app
 
 RUN chmod 0755 /app/scripts/entrypoint.sh /app/scripts/*.sh \
-    && mkdir -p /app/staticfiles /app/media \
-    && chown -R django:django /app/staticfiles /app/media
+    && mkdir -p /app/staticfiles /app/media /app/private_uploads \
+    && chown -R django:django /app/staticfiles /app/media /app/private_uploads
 
 USER django
 

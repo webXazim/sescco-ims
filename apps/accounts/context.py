@@ -72,6 +72,16 @@ def platform_context_for_request(request) -> dict[str, object]:
             "active": current_module is PlatformModule.SOURCING,
             "code": "SD",
         })
+    if membership_can_module(membership, PlatformModule.PROJECT_PULSE):
+        modules.append({
+            "key": PlatformModule.PROJECT_PULSE.value,
+            "label": "Project Pulse",
+            "description": "Project status and execution tracking",
+            "url": reverse("project_pulse:home"),
+            "available": True,
+            "active": current_module is PlatformModule.PROJECT_PULSE,
+            "code": "PP",
+        })
     if membership_can_module(membership, PlatformModule.ADMINISTRATION):
         modules.append({
             "key": PlatformModule.ADMINISTRATION.value,

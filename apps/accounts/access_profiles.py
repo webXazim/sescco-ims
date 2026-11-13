@@ -19,6 +19,32 @@ _PERMISSION_VALUES = frozenset(permission.value for permission in AccessPermissi
 
 
 _ACTION_VIEW_DEPENDENCIES = {
+    AccessPermission.PULSE_PROJECTS_VIEW.value: AccessPermission.PULSE_OVERVIEW_VIEW.value,
+    AccessPermission.PULSE_TEAM_VIEW.value: AccessPermission.PULSE_PROJECTS_VIEW.value,
+    AccessPermission.PULSE_TEAM_MANAGE.value: AccessPermission.PULSE_TEAM_VIEW.value,
+    AccessPermission.PULSE_CATEGORIES_VIEW.value: AccessPermission.PULSE_PROJECTS_VIEW.value,
+    AccessPermission.PULSE_CATEGORIES_MANAGE.value: AccessPermission.PULSE_CATEGORIES_VIEW.value,
+    AccessPermission.PULSE_TASKS_VIEW.value: AccessPermission.PULSE_PROJECTS_VIEW.value,
+    AccessPermission.PULSE_TASKS_MANAGE.value: AccessPermission.PULSE_TASKS_VIEW.value,
+    AccessPermission.PULSE_PROGRESS_VIEW.value: AccessPermission.PULSE_TASKS_VIEW.value,
+    AccessPermission.PULSE_PROGRESS_UPDATE.value: AccessPermission.PULSE_PROGRESS_VIEW.value,
+    AccessPermission.PULSE_EXPENSE_CATEGORIES_VIEW.value: AccessPermission.PULSE_PROJECTS_VIEW.value,
+    AccessPermission.PULSE_EXPENSE_CATEGORIES_MANAGE.value: AccessPermission.PULSE_EXPENSE_CATEGORIES_VIEW.value,
+    AccessPermission.PULSE_EXPENSES_VIEW.value: AccessPermission.PULSE_TASKS_VIEW.value,
+    AccessPermission.PULSE_EXPENSES_MANAGE.value: AccessPermission.PULSE_EXPENSES_VIEW.value,
+    AccessPermission.PULSE_EXPENSES_APPROVE.value: AccessPermission.PULSE_EXPENSES_VIEW.value,
+    AccessPermission.PULSE_EXPENSE_PAYMENTS_MANAGE.value: AccessPermission.PULSE_EXPENSES_VIEW.value,
+    AccessPermission.PULSE_EXPENSE_ATTACHMENTS_MANAGE.value: AccessPermission.PULSE_EXPENSES_MANAGE.value,
+    AccessPermission.PULSE_BUDGETS_VIEW.value: AccessPermission.PULSE_EXPENSES_VIEW.value,
+    AccessPermission.PULSE_BUDGETS_MANAGE.value: AccessPermission.PULSE_BUDGETS_VIEW.value,
+    AccessPermission.PULSE_BUDGETS_APPROVE.value: AccessPermission.PULSE_BUDGETS_VIEW.value,
+    AccessPermission.PULSE_FINANCIALS_VIEW.value: AccessPermission.PULSE_BUDGETS_VIEW.value,
+    AccessPermission.PULSE_CONTRACTS_MANAGE.value: AccessPermission.PULSE_FINANCIALS_VIEW.value,
+    AccessPermission.PULSE_CONTRACTS_APPROVE.value: AccessPermission.PULSE_FINANCIALS_VIEW.value,
+    AccessPermission.PULSE_FORECASTS_MANAGE.value: AccessPermission.PULSE_FINANCIALS_VIEW.value,
+    AccessPermission.PULSE_FORECASTS_APPROVE.value: AccessPermission.PULSE_FINANCIALS_VIEW.value,
+    AccessPermission.PULSE_REPORTS_VIEW.value: AccessPermission.PULSE_PROJECTS_VIEW.value,
+    AccessPermission.PULSE_REPORTS_EXPORT.value: AccessPermission.PULSE_REPORTS_VIEW.value,
     AccessPermission.ACCESS_USERS_MANAGE.value: AccessPermission.ACCESS_USERS_VIEW.value,
     AccessPermission.ACCESS_PROFILES_MANAGE.value: AccessPermission.ACCESS_PROFILES_VIEW.value,
     AccessPermission.SETTINGS_MANAGE.value: AccessPermission.SETTINGS_VIEW.value,
@@ -83,7 +109,7 @@ def _require_manage_profiles(actor: CompanyMembership) -> None:
 def _permission_kind(value: str) -> str:
     if value.endswith(".view") or value == AccessPermission.SHARED_SEARCH_USE.value:
         return "view"
-    if value.endswith(".manage") or value.endswith(".edit") or value.endswith(".prepare") or value.endswith(".execute") or value.endswith(".finalize") or value.endswith(".export") or value.endswith(".submit") or value.endswith(".review") or value.endswith(".approve") or value.endswith(".receive") or value.endswith(".issue") or value.endswith(".transfer") or value.endswith(".adjust") or value.endswith(".reverse"):
+    if value.endswith(".manage") or value.endswith(".update") or value.endswith(".edit") or value.endswith(".prepare") or value.endswith(".execute") or value.endswith(".finalize") or value.endswith(".export") or value.endswith(".submit") or value.endswith(".review") or value.endswith(".approve") or value.endswith(".receive") or value.endswith(".issue") or value.endswith(".transfer") or value.endswith(".adjust") or value.endswith(".reverse"):
         return "action"
     return "platform"
 
@@ -100,10 +126,38 @@ def permission_catalog() -> list[dict[str, str]]:
             "internal": "Internal Payroll",
             "rental": "Rental Manpower",
             "sourcing": "Sourcing Directory",
+            "pulse": "Project Pulse",
             "shared": "Shared Records",
         }.get(prefix, "Platform")
         label_overrides = {
             AccessPermission.INVENTORY_STOCK_APPROVE.value: "Project Inventory · Approve / Reject",
+            AccessPermission.PULSE_OVERVIEW_VIEW.value: "Project Pulse · Overview / View",
+            AccessPermission.PULSE_PROJECTS_VIEW.value: "Project Pulse · Projects / View",
+            AccessPermission.PULSE_TEAM_VIEW.value: "Project Pulse · Team / View",
+            AccessPermission.PULSE_TEAM_MANAGE.value: "Project Pulse · Team / Manage",
+            AccessPermission.PULSE_CATEGORIES_VIEW.value: "Project Pulse · Work Categories / View",
+            AccessPermission.PULSE_CATEGORIES_MANAGE.value: "Project Pulse · Work Categories / Manage",
+            AccessPermission.PULSE_TASKS_VIEW.value: "Project Pulse · Tasks / View",
+            AccessPermission.PULSE_TASKS_MANAGE.value: "Project Pulse · Tasks / Manage",
+            AccessPermission.PULSE_PROGRESS_VIEW.value: "Project Pulse · Progress / View",
+            AccessPermission.PULSE_PROGRESS_UPDATE.value: "Project Pulse · Progress / Update",
+            AccessPermission.PULSE_EXPENSE_CATEGORIES_VIEW.value: "Project Pulse · Expense Categories / View",
+            AccessPermission.PULSE_EXPENSE_CATEGORIES_MANAGE.value: "Project Pulse · Expense Categories / Manage",
+            AccessPermission.PULSE_EXPENSES_VIEW.value: "Project Pulse · Expense Amounts / View",
+            AccessPermission.PULSE_EXPENSES_MANAGE.value: "Project Pulse · Expense Records / Manage",
+            AccessPermission.PULSE_EXPENSES_APPROVE.value: "Project Pulse · Expenses / Approve or Reject",
+            AccessPermission.PULSE_EXPENSE_PAYMENTS_MANAGE.value: "Project Pulse · Expense Payments / Manage",
+            AccessPermission.PULSE_EXPENSE_ATTACHMENTS_MANAGE.value: "Project Pulse · Expense Attachments / Upload",
+            AccessPermission.PULSE_BUDGETS_VIEW.value: "Project Pulse · Category Budgets / View",
+            AccessPermission.PULSE_BUDGETS_MANAGE.value: "Project Pulse · Category Budgets / Propose",
+            AccessPermission.PULSE_BUDGETS_APPROVE.value: "Project Pulse · Category Budgets / Approve",
+            AccessPermission.PULSE_FINANCIALS_VIEW.value: "Project Pulse · Profit & Contract / View",
+            AccessPermission.PULSE_REPORTS_VIEW.value: "Project Pulse · Reports / View",
+            AccessPermission.PULSE_REPORTS_EXPORT.value: "Project Pulse · Reports / Export",
+            AccessPermission.PULSE_CONTRACTS_MANAGE.value: "Project Pulse · Contract & Variations / Propose",
+            AccessPermission.PULSE_CONTRACTS_APPROVE.value: "Project Pulse · Contract & Variations / Approve",
+            AccessPermission.PULSE_FORECASTS_MANAGE.value: "Project Pulse · Forecasts / Propose",
+            AccessPermission.PULSE_FORECASTS_APPROVE.value: "Project Pulse · Forecasts / Approve",
             AccessPermission.SOURCING_VENDORS_VIEW.value: "Vendor Sourcing · View",
             AccessPermission.SOURCING_VENDORS_MANAGE.value: "Vendor Sourcing · Edit",
             AccessPermission.SOURCING_MANPOWER_VIEW.value: "Manpower Sourcing · View",

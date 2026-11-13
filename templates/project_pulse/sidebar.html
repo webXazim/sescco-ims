@@ -1,0 +1,33 @@
+{% load static %}
+<aside class="sidebar inventory-sidebar pulse-sidebar" id="inventorySidebar" aria-label="Project Pulse navigation">
+  <div class="brand inventory-sidebar__brand">
+    <a class="brand-mark inventory-brand-mark" href="{% url 'project_pulse:home' %}" aria-label="SESCCO Project Pulse"><img src="{% static 'platform/brand-sescco-mark.webp' %}" alt="" aria-hidden="true"></a>
+    <a class="brand-copy inventory-brand-copy" href="{% url 'project_pulse:home' %}"><div class="brand-name">{{ APP_NAME }}</div><div class="brand-sub">Project Pulse</div></a>
+    <button class="inventory-sidebar__collapse" type="button" data-inventory-sidebar-collapse aria-label="Collapse navigation" title="Collapse navigation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+  </div>
+  <div class="inventory-sidebar__switchers">{% include 'partials/platform_switchers.html' %}</div>
+  <nav class="nav inventory-sidebar__nav" aria-label="Project Pulse sections">
+    <div class="nav-group inventory-nav-group">
+      <div class="nav-label">Project workspace</div>
+      <a class="nav-link {% if page_key == 'pulse-home' %}active{% endif %}" href="{% url 'project_pulse:home' %}"{% if page_key == 'pulse-home' %} aria-current="page"{% endif %}><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span>Overview</span></a>
+      {% if pulse_can_view_projects %}<a class="nav-link {% if page_key == 'pulse-projects' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}"{% if page_key == 'pulse-projects' %} aria-current="page"{% endif %}><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM3 8V5h7l2 3"/></svg><span>Projects</span></a>{% endif %}
+    </div>
+    <div class="nav-group inventory-nav-group">
+      <div class="nav-label">Task management</div>
+      {% if pulse_can_view_tasks %}<a class="nav-link {% if page_key == 'pulse-my-tasks' %}active{% endif %}" href="{% url 'project_pulse:my_tasks' %}"><span>My Tasks</span></a>{% endif %}
+      <span class="pulse-nav-planned">Project work categories <small>Open a project</small></span>
+      {% if pulse_can_view_reports %}<a class="nav-link {% if page_key == 'pulse-reports' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}">Project reports <small>Select a project</small></a>{% endif %}
+      <div class="nav-label">Financial controls</div>
+      {% if pulse_can_view_expenses %}<a class="nav-link {% if page_key == 'pulse-expenses' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}">Task expenses <small>Select a project</small></a>{% endif %}
+      {% if pulse_can_view_expense_categories %}<span class="pulse-nav-planned">Expense categories <small>Open a project</small></span>{% endif %}
+      {% if pulse_can_view_budgets %}<a class="nav-link {% if page_key == 'pulse-budgets' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}">Category budgets <small>Select a project</small></a>{% endif %}{% if pulse_can_view_financials %}<a class="nav-link {% if page_key == 'pulse-financials' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}">Project profitability <small>Select a project</small></a>{% endif %}
+    </div>
+  </nav>
+  <div class="sidebar-foot inventory-sidebar__footer">
+    <details class="platform-account" data-platform-switcher>
+      <summary class="platform-account__trigger" aria-label="Open account menu" title="Account"><span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span><span class="platform-account__copy"><strong>{{ request.user.display_name }}</strong><small>{{ ACCESS_CONTEXT.role_label }}</small></span><svg class="platform-account__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5-5 5 5"/></svg></summary>
+      <div class="platform-account__menu" role="menu" aria-label="Account menu"><div class="platform-account__identity"><span class="avatar">{{ request.user.display_name|slice:':2'|upper }}</span><span><strong>{{ request.user.display_name }}</strong><small>{{ ACCESS_CONTEXT.role_label }}</small></span></div><div class="platform-account__separator" aria-hidden="true"></div><form method="post" action="{% url 'accounts:logout' %}" class="platform-account__form">{% csrf_token %}<button class="platform-account__item" type="submit" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9"/></svg><span><strong>Sign out</strong><small>End this authenticated session</small></span></button></form></div>
+    </details>
+  </div>
+  <button class="inventory-sidebar-resize-handle" type="button" data-inventory-sidebar-resize aria-label="Resize navigation sidebar" aria-valuemin="210" aria-valuemax="360" aria-valuenow="236" title="Drag to resize navigation sidebar"></button>
+</aside>

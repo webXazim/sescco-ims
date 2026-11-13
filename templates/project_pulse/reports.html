@@ -1,0 +1,25 @@
+{% extends 'project_pulse/base.html' %}
+{% block content %}
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:project_detail' project.code %}">{{ project.code }}</a><span>/</span><strong>Reports</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">Project Pulse · Reports</span><h1>Reports &amp; analysis</h1><p>{{ project.name }} · {{ project.code }}. Available report types reflect your access profile.</p></div><a class="btn" href="{% url 'project_pulse:project_detail' project.code %}">Project overview</a></section>
+<section class="pulse-panel"><div class="pulse-panel-head"><div><h2>Report filters</h2><p>Choose a report. Date filters apply to task due dates or expense dates only. Budgets and profitability are current approved snapshots.</p></div></div>
+<form class="pulse-editor-form pulse-editor-grid" method="get" action="{% url 'project_pulse:reports' project.code %}">
+  {% if form.non_field_errors %}<div class="pulse-footnote">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}<label class="pulse-form-field"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="pulse-form-errors">{{ field.errors|striptags }}</small>{% endif %}</label>{% endfor %}
+  <div class="pulse-form-actions pulse-span-all"><button class="btn btn-primary" type="submit">Run report</button><a class="btn" href="{% url 'project_pulse:reports' project.code %}">Clear filters</a></div>
+</form>
+</section>
+{% if report_data %}
+<section class="pulse-panel"><div class="pulse-panel-head"><div><h2>{{ report_data.title }}</h2><p>Showing {{ page.paginator.count }} filtered records. Currency amounts in SAR unless otherwise labeled.</p></div>
+{% if pulse_can_export_reports %}<div class="pulse-page-actions"><a class="btn" href="{% url 'project_pulse:report_export' project.code 'xlsx' %}?{{ query_string }}">Export Excel</a><a class="btn" href="{% url 'project_pulse:report_export' project.code 'pdf' %}?{{ query_string }}">Export PDF</a></div>{% endif %}
+</div>
+<div class="pulse-finance-group">{% for name, value in report_data.stats %}<div><h3>{{ name }}</h3><div class="pulse-finance-heading">{{ value }}</div></div>{% endfor %}</div>
+<div class="pulse-table-wrap"><table class="pulse-table"><thead><tr>{% for title in report_data.headers %}<th>{{ title }}</th>{% endfor %}</tr></thead><tbody>{% for row in page.object_list %}<tr>{% for cell in row %}<td>{{ cell|default_if_none:'—' }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="10" class="pulse-empty">No records match the selected filters.</td></tr>{% endfor %}</tbody></table></div>
+{% if page.paginator.num_pages > 1 %}<div class="pulse-pagination"><span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span><div>
+{% if page.has_previous %}<a class="pulse-text-link" href="?{{ query_string }}&amp;page={{ page.previous_page_number }}">Previous</a>{% endif %}
+{% if page.has_next %}<a class="pulse-text-link" href="?{{ query_string }}&amp;page={{ page.next_page_number }}">Next</a>{% endif %}
+</div></div>{% endif %}
+{% for note in report_data.notes %}<p class="pulse-muted">{{ note }}</p>{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

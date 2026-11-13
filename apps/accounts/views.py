@@ -86,6 +86,8 @@ def home_redirect(request: HttpRequest) -> HttpResponse:
         return redirect(module_home_name(PlatformModule.SOURCING))
     if membership_can_module(membership, PlatformModule.ADMINISTRATION):
         return redirect(module_home_name(PlatformModule.ADMINISTRATION))
+    if membership_can_module(membership, PlatformModule.PROJECT_PULSE):
+        return redirect(module_home_name(PlatformModule.PROJECT_PULSE))
     if request.user.is_superuser:
         return redirect("admin:index")
     return redirect("accounts:login")

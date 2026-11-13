@@ -1,0 +1,27 @@
+{% extends 'project_pulse/base.html' %}
+{% block content %}
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:project_detail' project.code %}">{{ project.code }}</a><span>/</span><strong>Team</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">Project team</span><h1>{{ project.name }}</h1><p>Assign a Project Pulse manager and project team members independently from Inventory approval. User access profiles and project scope always apply.</p></div><a class="btn" href="{% url 'project_pulse:project_detail' project.code %}">Back to project</a></section>
+<section class="pulse-panel">
+  <div class="pulse-panel-head"><div><h2>Assigned team</h2><p>One active project manager; any number of team members. Replacing the manager keeps the former manager as a team member.</p></div></div>
+  <div class="pulse-table-wrap"><table class="pulse-table"><thead><tr><th>User</th><th>Role</th><th>Profile</th><th>Assigned</th>{% if pulse_can_manage_team and team_can_edit_project %}<th>Action</th>{% endif %}</tr></thead><tbody>
+    {% for row in team %}
+    <tr><td><strong>{{ row.membership.user.display_name }}</strong><span>{{ row.membership.user.username }}</span></td><td>{% if row.role == 'manager' %}<span class="pulse-status pulse-status--active">Project manager</span>{% else %}Team member{% endif %}</td><td>{{ row.membership.access_profile.name }}{% if not row.has_project_access %}<span class="pulse-team-warning">Access revoked or out of scope</span>{% endif %}</td><td>{{ row.assigned_at|date:'d M Y' }}</td>
+    {% if pulse_can_manage_team and team_can_edit_project %}<td><form method="post" action="{% url 'project_pulse:team_remove' project.code row.pk %}" data-pulse-confirm-remove>{% csrf_token %}<button class="btn pulse-btn-danger" type="submit">Remove</button></form></td>{% endif %}</tr>
+    {% empty %}<tr><td colspan="{% if pulse_can_manage_team and team_can_edit_project %}5{% else %}4{% endif %}" class="pulse-empty">No Project Pulse team members have been assigned yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% if pulse_can_manage_team and team_can_edit_project %}
+<section class="pulse-panel"><div class="pulse-panel-head"><div><h2>Assign or update a team member</h2><p>Only active users whose Access Profiles allow Project Pulse project viewing and whose project scopes include this project are selectable.</p></div></div>
+  <form class="pulse-team-form" method="post" action="{% url 'project_pulse:team_assign' project.code %}">{% csrf_token %}
+    <label>User<select name="membership_id" required><option value="">Select a company user</option>{% for member in allowed_users %}<option value="{{ member.pk }}">{{ member.user.display_name }} ({{ member.user.username }}) · {{ member.access_profile.name }}</option>{% endfor %}</select></label>
+    <label>Role<select name="role" required><option value="member">Team member</option><option value="manager">Project manager</option></select></label>
+    <button class="btn btn-primary" type="submit" {% if not allowed_users %}disabled{% endif %}>Save assignment</button>
+  </form>
+  {% if not allowed_users %}<p class="pulse-team-help">No eligible users found. Grant appropriate Project Pulse permissions using Administration → Access Profiles, then verify each user’s project scope.</p>{% endif %}
+  <p class="pulse-team-help">Changing a team role does not grant permissions automatically. A team manager also needs the "Project Pulse · Team / Manage" permission to manage assignments.</p>
+</section>
+{% elif not team_can_edit_project %}
+<p class="pulse-footnote">This project is {{ project.get_status_display|lower }}. Team assignment changes are disabled to protect closed project history.</p>
+{% endif %}
+{% endblock %}

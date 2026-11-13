@@ -1,3 +1,21 @@
+# Project Pulse U10 — SESCCO IMS 1.0.127 (staging candidate)
+
+Project-list confidentiality, unbudgeted cost/budget-balance correctness, archived unbudgeted cost recognition, regression tests, export smoke checks and staged verification instructions. **Django/PostgreSQL runtime acceptance is still required.** See `PROJECT_PULSE_U10_RELEASE_NOTES.md`.
+
+---
+
+# Project Pulse U05 — SESCCO IMS 1.0.122
+
+See `PROJECT_PULSE_U05_RELEASE_NOTES.md` for the standalone task expense ledger, permissions, database migrations and deployment tests.
+
+---
+
+# Project Pulse U04 — v1.0.121
+
+Project Pulse physical progress tracking: weighted category/task completion, permissioned progress updates, immutable application-level progress history, project dashboard metrics, two new permissions and database migration with Completed-task backfill. This release does not implement expenses, budgets or financial reporting. See `PROJECT_PULSE_U04_RELEASE_NOTES.md` for full notes.
+
+---
+
 # 1.0.117 — Rental Timesheet Projected Payment & Weekly-Off Highlight
 
 - The permission-controlled **Show calculated result on the timesheet** toggle now adds only the Calculated Result column. **Adjustment +** and **Adjustment −** are normal independent board-column choices, so operators can show or hide them without changing the calculation.

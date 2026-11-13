@@ -1,0 +1,28 @@
+{% extends 'project_pulse/base.html' %}
+{% block content %}
+<section class="pulse-page-head">
+  <div><span class="pulse-eyebrow">Execution workspace</span><h1>Project Pulse</h1><p>Track project execution, tasks, approved costs and budgets. Financial reporting is restricted by access profile.</p></div>
+  {% if pulse_can_view_projects %}<a class="btn btn-primary" href="{% url 'project_pulse:project_list' %}">View project directory</a>{% endif %}
+</section>
+<section class="pulse-metrics" aria-label="Project summary">
+  <div class="pulse-metric"><span>Accessible projects</span><strong>{{ counts.total }}</strong><small>Includes archived projects</small></div>
+  <div class="pulse-metric"><span>Active</span><strong>{{ counts.active }}</strong><small>Currently active</small></div>
+  <div class="pulse-metric"><span>On hold</span><strong>{{ counts.on_hold }}</strong><small>Paused projects</small></div>
+  <div class="pulse-metric"><span>Completed</span><strong>{{ counts.completed }}</strong><small>Closed projects</small></div>
+</section>
+{% if visible_task_summary %}<section class="pulse-metrics" aria-label="Progress among the twelve listed projects">
+  <div class="pulse-metric"><span>Tasks (listed projects)</span><strong>{{ visible_task_summary.tasks }}</strong><small>Eligible active tasks</small></div>
+  <div class="pulse-metric"><span>Completed (listed projects)</span><strong>{{ visible_task_summary.completed }}</strong><small>Completed eligible tasks</small></div>
+  <div class="pulse-metric"><span>Overdue (listed projects)</span><strong>{{ visible_task_summary.overdue }}</strong><small>Not completed by due date</small></div>
+</section>{% endif %}
+{% if pulse_can_view_projects %}<section class="pulse-panel">
+  <div class="pulse-panel-head"><div><h2>Current projects</h2><p>Projects shown below follow your assigned project scope.</p></div>{% if pulse_can_view_projects %}<a class="pulse-text-link" href="{% url 'project_pulse:project_list' %}">See all</a>{% endif %}</div>
+  <div class="pulse-table-wrap"><table class="pulse-table"><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Expected completion</th>{% if pulse_can_view_progress %}<th>Progress</th>{% endif %}<th></th></tr></thead><tbody>
+  {% for project in projects %}<tr><td><strong>{{ project.code }}</strong><span>{{ project.name }}</span></td><td>{{ project.client_name|default:'—' }}</td><td><span class="pulse-status pulse-status--{{ project.status }}">{{ project.get_status_display }}</span></td><td>{{ project.expected_completion_date|date:'d M Y'|default:'—' }}</td>{% if pulse_can_view_progress %}<td>{% if project.pulse_metrics.has_work %}<div class="pulse-progress-inline"><span>{{ project.pulse_metrics.percent }}%</span><div class="pulse-progress-track"><div class="pulse-progress-fill" style="width:{{ project.pulse_metrics.percent }}%"></div></div></div>{% else %}<span class="pulse-muted">No tracked tasks</span>{% endif %}</td>{% endif %}<td>{% if pulse_can_view_projects %}<a class="pulse-text-link" href="{% url 'project_pulse:project_detail' project.code %}">Open</a>{% else %}—{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="{% if pulse_can_view_progress %}6{% else %}5{% endif %}" class="pulse-empty">No accessible, non-archived projects found.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>{% else %}
+<p class="pulse-footnote">Project names, clients and task details require the separate Projects / View permission. Contact your administrator if you need access.</p>
+{% endif %}
+<div class="pulse-footnote">Project summaries follow your company and project scope. Progress excludes archived or cancelled work. Contract values and profit/loss appear only in authorized project financial reports.</div>
+{% endblock %}

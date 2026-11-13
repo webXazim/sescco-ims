@@ -6,7 +6,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/restore.sh /absolute/or/project-relative/backup-directory --confirm
 
-This replaces the IMS PostgreSQL database and private media volume. It never
+This replaces the IMS PostgreSQL database, private media and Project Pulse evidence. It never
 operates on another Compose project, but it is destructive to current IMS data.
 USAGE
 }
@@ -26,6 +26,9 @@ fi
 [[ -f "${backup_dir}/media.tar.gz" ]] || fatal "media.tar.gz is missing."
 [[ -f "${backup_dir}/manifest.txt" ]] || fatal "manifest.txt is missing."
 [[ -f "${backup_dir}/SHA256SUMS" ]] || fatal "SHA256SUMS is missing."
+if grep -qx 'pulse_private_format=tar_gzip' "${backup_dir}/manifest.txt"; then
+  [[ -s "${backup_dir}/pulse-private.tar.gz" ]] || fatal "Project Pulse evidence archive missing."
+fi
 
 info "Verifying backup checksums"
 (cd "${backup_dir}" && sha256sum --check SHA256SUMS)
@@ -74,6 +77,17 @@ if compose run --rm --no-deps -T -e BACKUP_SUBDIR="${relative_backup}" ims_tools
   'tar -tzf "/backups/${BACKUP_SUBDIR}/media.tar.gz" | grep -Eq "(^/|(^|/)\.\.(/|$))"'; then
   fatal "media.tar.gz contains an unsafe path."
 fi
+# U06 backups contain the separate private receipt volume. Older backups may
+# lack it and can be restored without inventing a receipt archive.
+if [[ -f "${backup_dir}/pulse-private.tar.gz" ]]; then
+  compose run --rm --no-deps -T -e BACKUP_SUBDIR="${relative_backup}" ims_tools sh -c \
+    'tar -tzf "/backups/${BACKUP_SUBDIR}/pulse-private.tar.gz" >/dev/null' \
+    || fatal "pulse-private.tar.gz is unreadable."
+  if compose run --rm --no-deps -T -e BACKUP_SUBDIR="${relative_backup}" ims_tools sh -c \
+    'tar -tzf "/backups/${BACKUP_SUBDIR}/pulse-private.tar.gz" | grep -Eq "(^/|(^|/)\.\.(/|$))"'; then
+    fatal "pulse-private.tar.gz contains an unsafe path."
+  fi
+fi
 
 if [[ "${IMS_SKIP_SAFETY_BACKUP:-0}" != "1" ]]; then
   info "Creating safety backup of the current IMS data"
@@ -106,6 +120,16 @@ compose exec -T ims_db sh -c '
 info "Replacing the IMS private media volume"
 compose run --rm --no-deps -T -e BACKUP_SUBDIR="${relative_backup}" ims_tools sh -c \
   'rm -rf /data/media/* /data/media/.[!.]* /data/media/..?* 2>/dev/null || true; tar -C /data/media -xzf "/backups/${BACKUP_SUBDIR}/media.tar.gz"'
+
+if [[ -f "${backup_dir}/pulse-private.tar.gz" ]]; then
+  info "Restoring private Project Pulse expense-evidence volume"
+  compose run --rm --no-deps -T -e BACKUP_SUBDIR="${relative_backup}" ims_tools sh -c \
+    'rm -rf /data/pulse_private/* /data/pulse_private/.[!.]* /data/pulse_private/..?* 2>/dev/null || true; tar -C /data/pulse_private -xzf "/backups/${BACKUP_SUBDIR}/pulse-private.tar.gz"'
+else
+  info "Legacy backup has no Project Pulse evidence: clearing private evidence volume to match restored database"
+  compose run --rm --no-deps -T ims_tools sh -c \
+    'rm -rf /data/pulse_private/* /data/pulse_private/.[!.]* /data/pulse_private/..?* 2>/dev/null || true'
+fi
 
 info "Applying current release migrations, integrity checks and static assets"
 bash "${PROJECT_ROOT}/scripts/release-tasks.sh"

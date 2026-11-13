@@ -1,0 +1,17 @@
+{% extends 'project_pulse/base.html' %}
+{% block content %}
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">Shared project register</span><h1>Projects</h1><p>Browse existing projects available to your company access profile. No duplicate project records are created.</p></div></section>
+<section class="pulse-panel pulse-filters">
+  <form method="get" class="pulse-filter-row">
+    <label class="pulse-search-label">Search<input type="search" name="q" value="{{ search_query }}" placeholder="Project code, name, client, location, manager…" maxlength="120"></label>
+    <label class="pulse-select-label">Status<select name="status"><option value="">All statuses</option>{% for value,label in status_choices %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary" type="submit">Apply</button><a class="btn" href="{% url 'project_pulse:project_list' %}">Reset</a>
+  </form>
+</section>
+<section class="pulse-panel pulse-list-panel"><div class="pulse-panel-head"><div><h2>Project directory</h2><p>{{ projects.paginator.count }} matching projects</p></div></div>
+<div class="pulse-table-wrap"><table class="pulse-table"><thead><tr><th>Project</th><th>Client</th><th>Manager (register)</th><th>Status</th><th>Location</th>{% if pulse_can_view_progress %}<th>Progress</th>{% endif %}<th></th></tr></thead><tbody>
+{% for project in projects %}<tr><td><strong>{{ project.code }}</strong><span>{{ project.name }}</span></td><td>{{ project.client_name|default:'—' }}</td><td>{{ project.manager_name|default:'—' }}</td><td><span class="pulse-status pulse-status--{{ project.status }}">{{ project.get_status_display }}</span></td><td>{{ project.location|default:'—' }}</td>{% if pulse_can_view_progress %}<td>{% if project.pulse_metrics.has_work %}<strong>{{ project.pulse_metrics.percent }}%</strong><span>{{ project.pulse_metrics.completed_count }}/{{ project.pulse_metrics.task_count }} completed</span>{% else %}<span class="pulse-muted">No tracked tasks</span>{% endif %}</td>{% endif %}<td><a class="pulse-text-link" href="{% url 'project_pulse:project_detail' project.code %}">Open</a></td></tr>{% empty %}<tr><td colspan="{% if pulse_can_view_progress %}7{% else %}6{% endif %}" class="pulse-empty">No projects match your filters and access scope.</td></tr>{% endfor %}
+</tbody></table></div>
+{% if projects.paginator.num_pages > 1 %}<nav class="pulse-pagination" aria-label="Projects pages"><span>Page {{ projects.number }} of {{ projects.paginator.num_pages }}</span><div>{% if projects.has_previous %}<a class="btn" href="?q={{ search_query|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;page={{ projects.previous_page_number }}">Previous</a>{% endif %}{% if projects.has_next %}<a class="btn" href="?q={{ search_query|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;page={{ projects.next_page_number }}">Next</a>{% endif %}</div></nav>{% endif %}
+</section>
+{% endblock %}

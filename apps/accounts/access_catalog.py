@@ -102,6 +102,36 @@ class AccessPermission(StrEnum):
     RENTAL_REPORTS_VIEW = "rental.reports.view"
     RENTAL_REPORTS_EXPORT = "rental.reports.export"
 
+    # Project Pulse is independent of inventory and payroll access.
+    # U02 adds separately granted project-team viewing and management.
+    PULSE_OVERVIEW_VIEW = "pulse.overview.view"
+    PULSE_PROJECTS_VIEW = "pulse.projects.view"
+    PULSE_TEAM_VIEW = "pulse.team.view"
+    PULSE_TEAM_MANAGE = "pulse.team.manage"
+    PULSE_CATEGORIES_VIEW = "pulse.categories.view"
+    PULSE_CATEGORIES_MANAGE = "pulse.categories.manage"
+    PULSE_TASKS_VIEW = "pulse.tasks.view"
+    PULSE_TASKS_MANAGE = "pulse.tasks.manage"
+    PULSE_PROGRESS_VIEW = "pulse.progress.view"
+    PULSE_PROGRESS_UPDATE = "pulse.progress.update"
+    PULSE_EXPENSE_CATEGORIES_VIEW = "pulse.expense_categories.view"
+    PULSE_EXPENSE_CATEGORIES_MANAGE = "pulse.expense_categories.manage"
+    PULSE_EXPENSES_VIEW = "pulse.expenses.view"
+    PULSE_EXPENSES_MANAGE = "pulse.expenses.manage"
+    PULSE_EXPENSES_APPROVE = "pulse.expenses.approve"
+    PULSE_EXPENSE_PAYMENTS_MANAGE = "pulse.expense_payments.manage"
+    PULSE_EXPENSE_ATTACHMENTS_MANAGE = "pulse.expense_attachments.manage"
+    PULSE_BUDGETS_VIEW = "pulse.budgets.view"
+    PULSE_BUDGETS_MANAGE = "pulse.budgets.manage"
+    PULSE_BUDGETS_APPROVE = "pulse.budgets.approve"
+    PULSE_FINANCIALS_VIEW = "pulse.financials.view"
+    PULSE_CONTRACTS_MANAGE = "pulse.contracts.manage"
+    PULSE_CONTRACTS_APPROVE = "pulse.contracts.approve"
+    PULSE_FORECASTS_MANAGE = "pulse.forecasts.manage"
+    PULSE_FORECASTS_APPROVE = "pulse.forecasts.approve"
+    PULSE_REPORTS_VIEW = "pulse.reports.view"
+    PULSE_REPORTS_EXPORT = "pulse.reports.export"
+
     # Reference-only Sourcing Directory. These permissions never imply Inventory,
     # Payroll, Projects, Documents or Accounting authority.
     SOURCING_VENDORS_VIEW = "sourcing.vendors.view"
@@ -121,6 +151,33 @@ _PERMISSION_LABELS: dict[AccessPermission, str] = {
 }
 _PERMISSION_LABELS.update({
     AccessPermission.INVENTORY_STOCK_APPROVE: "Project Inventory · Approve / Reject",
+    AccessPermission.PULSE_OVERVIEW_VIEW: "Project Pulse · Overview / View",
+    AccessPermission.PULSE_PROJECTS_VIEW: "Project Pulse · Projects / View",
+    AccessPermission.PULSE_TEAM_VIEW: "Project Pulse · Team / View",
+    AccessPermission.PULSE_TEAM_MANAGE: "Project Pulse · Team / Manage",
+    AccessPermission.PULSE_CATEGORIES_VIEW: "Project Pulse · Work Categories / View",
+    AccessPermission.PULSE_CATEGORIES_MANAGE: "Project Pulse · Work Categories / Manage",
+    AccessPermission.PULSE_TASKS_VIEW: "Project Pulse · Tasks / View",
+    AccessPermission.PULSE_TASKS_MANAGE: "Project Pulse · Tasks / Manage",
+    AccessPermission.PULSE_PROGRESS_VIEW: "Project Pulse · Progress / View",
+    AccessPermission.PULSE_PROGRESS_UPDATE: "Project Pulse · Progress / Update",
+    AccessPermission.PULSE_EXPENSE_CATEGORIES_VIEW: "Project Pulse · Expense Categories / View",
+    AccessPermission.PULSE_EXPENSE_CATEGORIES_MANAGE: "Project Pulse · Expense Categories / Manage",
+    AccessPermission.PULSE_EXPENSES_VIEW: "Project Pulse · Expense Amounts / View",
+    AccessPermission.PULSE_EXPENSES_MANAGE: "Project Pulse · Expense Records / Manage",
+    AccessPermission.PULSE_EXPENSES_APPROVE: "Project Pulse · Expenses / Approve or Reject",
+    AccessPermission.PULSE_EXPENSE_PAYMENTS_MANAGE: "Project Pulse · Expense Payments / Manage",
+    AccessPermission.PULSE_EXPENSE_ATTACHMENTS_MANAGE: "Project Pulse · Expense Attachments / Upload",
+    AccessPermission.PULSE_BUDGETS_VIEW: "Project Pulse · Category Budgets / View",
+    AccessPermission.PULSE_BUDGETS_MANAGE: "Project Pulse · Category Budgets / Propose",
+    AccessPermission.PULSE_BUDGETS_APPROVE: "Project Pulse · Category Budgets / Approve",
+    AccessPermission.PULSE_FINANCIALS_VIEW: "Project Pulse · Profit & Contract / View",
+    AccessPermission.PULSE_CONTRACTS_MANAGE: "Project Pulse · Contract & Variations / Propose",
+    AccessPermission.PULSE_CONTRACTS_APPROVE: "Project Pulse · Contract & Variations / Approve",
+    AccessPermission.PULSE_FORECASTS_MANAGE: "Project Pulse · Forecasts / Propose",
+    AccessPermission.PULSE_FORECASTS_APPROVE: "Project Pulse · Forecasts / Approve",
+    AccessPermission.PULSE_REPORTS_VIEW: "Project Pulse · Reports / View",
+    AccessPermission.PULSE_REPORTS_EXPORT: "Project Pulse · Reports / Export",
     AccessPermission.SOURCING_VENDORS_VIEW: "Vendor Sourcing · View",
     AccessPermission.SOURCING_VENDORS_MANAGE: "Vendor Sourcing · Edit",
     AccessPermission.SOURCING_MANPOWER_VIEW: "Manpower Sourcing · View",

@@ -67,6 +67,7 @@ services:
     volumes:
       - ims_static_data:/app/staticfiles
       - ims_media_data:/app/media
+      - ims_pulse_private_data:/app/private_uploads
     networks:
       - ims_edge
       - ims_database
@@ -122,6 +123,7 @@ services:
     profiles: ["tools"]
     volumes:
       - ims_media_data:/data/media
+      - ims_pulse_private_data:/data/pulse_private
       - ${IMS_BACKUP_DIR:-./backups}:/backups
     networks:
       - ims_database
@@ -142,3 +144,5 @@ volumes:
     name: ims_static_data
   ims_media_data:
     name: ims_media_data
+  ims_pulse_private_data:
+    name: ims_pulse_private_data

@@ -1,0 +1,10 @@
+{% extends 'project_pulse/base.html' %}
+{% block content %}
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:project_detail' project.code %}">{{ project.code }}</a><span>/</span><a href="{% url 'project_pulse:financials' project.code %}">Financial forecast</a><span>/</span><strong>New proposal</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">Restricted financial workspace</span><h1>{{ heading }}</h1><p>{{ project.name }} · Amounts in SAR excluding recoverable VAT. This submission will not change approved totals until an authorized review.</p></div><a class="btn" href="{% url 'project_pulse:financials' project.code %}">Back to financials</a></section>
+<section class="pulse-panel"><form method="post" class="pulse-form">{% csrf_token %}
+{% if form.non_field_errors %}<div class="pulse-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+{% for field in form %}<label class="pulse-form-field"><span>{{ field.label }}</span>{{ field }}{% if field.help_text %}<small class="pulse-muted">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="pulse-form-errors">{{ field.errors }}</small>{% endif %}</label>{% endfor %}
+<div class="pulse-page-actions"><button class="btn btn-primary" type="submit">Submit for approval</button><a class="btn" href="{% url 'project_pulse:financials' project.code %}">Cancel</a></div>
+</form></section>
+{% endblock %}
