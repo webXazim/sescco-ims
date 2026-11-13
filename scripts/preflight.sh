@@ -7,6 +7,13 @@ require_command sha256sum
 require_command git
 require_command python3
 
+# Prevent a stale production APP_VERSION from masking a newer release on-screen.
+package_version="$(tr -d '\r\n' < "${PROJECT_ROOT}/VERSION")"
+env_version="$(read_env_value APP_VERSION)"
+if [[ -n "${env_version}" && "${env_version}" != "${package_version}" ]]; then
+  fatal "APP_VERSION=${env_version} in ${ENV_FILE} does not match packaged VERSION=${package_version}. Update APP_VERSION in the production environment before deploying."
+fi
+
 info "Verifying deployment repository state"
 git -C "${PROJECT_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
   || fatal "Production deployment must run from the packaged Git working tree."

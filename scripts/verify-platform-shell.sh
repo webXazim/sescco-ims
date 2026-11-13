@@ -57,8 +57,14 @@ grep -Fq "brand-sescco-mark.webp" templates/payroll/app.html \
 grep -Fq "SESCCO MS" templates/registration/login.html \
   || fail "Authentication surface is not branded as SESCCO MS."
 
-sha256sum -c merge/platform-shell-assets.sha256 >/dev/null \
-  || fail "A frozen Upgrade 10 platform-shell asset changed."
+# Two original shell files were intentionally upgraded for Project Pulse.
+# Keep the immutable pre-Pulse fingerprints for unchanged files, and validate
+# the two upgraded files against the current-release fingerprint manifest.
+grep -vE '  (apps/accounts/modules\.py|templates/partials/platform_switchers\.html)$' merge/platform-shell-assets.sha256 \
+  | sha256sum -c - >/dev/null \
+  || fail "An unchanged frozen platform-shell asset has changed."
+sha256sum -c merge/project-pulse-shell-assets.sha256 >/dev/null \
+  || fail "The Project Pulse platform-shell changes do not match their release manifest."
 
 if command -v node >/dev/null 2>&1; then
   node --check static/platform/js/shell-switchers.js

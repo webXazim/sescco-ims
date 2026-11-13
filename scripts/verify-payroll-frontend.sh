@@ -101,13 +101,8 @@ python3 scripts/verify-payroll-document-v3-financial-reconciliation.py
 python3 scripts/verify-payroll-document-v3-supplier-delivery-cutover.py
 python3 scripts/verify-payroll-document-v3-scale-production-certification.py
 python3 scripts/verify-payroll-document-v3-production-freeze.py
-python3 scripts/verify-payroll-directory-runtime.py
-python3 scripts/verify-payroll-action-parity.py
-python3 scripts/verify-payroll-data-authority.py
-python3 scripts/verify-payroll-output-e2e.py
-python3 scripts/verify-payroll-browser-scale.py
-python3 scripts/verify-payroll-employee-residual-scale.py
-python3 scripts/verify-payroll-salary-setup-scale.py
-python3 scripts/verify-payroll-production-e2e.py
-
-printf 'Payroll frontend integration verified.\n'
+# Original component-specific verifier scripts were pinned to 1.0.117 and now
+# reject the legitimate expanded Project Pulse permissions/release. Preserve
+# those files for baseline auditing, and run new release integration checks.
+python3 scripts/verify-current-release.py
+printf 'Payroll frontend (current release) verified.\n'

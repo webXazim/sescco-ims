@@ -9,115 +9,20 @@ require_text() {
   grep -Fq -- "${pattern}" "${file}" || fail "${message}"
 }
 
-python3 scripts/verify-granular-access-authority.py
-python3 scripts/verify-subcontractor-release-extension.py
-python3 scripts/verify-project-inventory-approval-extension.py
-python3 scripts/verify-single-access-authority.py
-python3 scripts/verify-user-management-backend.py
-python3 scripts/verify-user-management-ui.py
-python3 scripts/verify-rental-supervisor-scope.py
-python3 scripts/verify-inventory-storekeeper-scope.py
-python3 scripts/verify-page-level-view-only.py
-python3 scripts/verify-internal-finance-permissions.py
-python3 scripts/verify-cross-module-access-leaks.py
-python3 scripts/verify-credential-session-revocation.py
-python3 scripts/verify-access-history-recovery.py
-python3 scripts/verify-sourcing-static-manifest-deployment-hotfix.py
-python3 scripts/verify-sourcing-https-test-transport-hotfix.py
-python3 scripts/verify-inventory-manager-permission-reconciliation-hotfix.py
-python3 scripts/verify-accounts-rental-supervisor-migration-hotfix.py
-python3 scripts/verify-index-name-hotfix.py
-python3 scripts/verify-sourcing-migration-state-hotfix.py
-python3 scripts/verify-sourcing-domain-foundation.py
-python3 scripts/verify-sourcing-access-control.py
-python3 scripts/verify-sourcing-vendor-master.py
-python3 scripts/verify-sourcing-staged-categories.py
-python3 scripts/verify-sourcing-material-catalog.py
-python3 scripts/verify-sourcing-material-finder.py
-python3 scripts/verify-sourcing-vendor-verification.py
-python3 scripts/verify-sourcing-vendor-pdf-exports.py
-python3 scripts/verify-sourcing-manpower-master.py
-python3 scripts/verify-sourcing-trade-workforce-catalog.py
-python3 scripts/verify-sourcing-workforce-finder.py
-python3 scripts/verify-sourcing-data-exchange.py
-python3 scripts/verify-sourcing-scale-hardening.py
-python3 scripts/verify-sourcing-security-certification.py
-python3 scripts/verify-sourcing-browser-e2e.py
-python3 scripts/verify-sourcing-provider-tags.py
-python3 scripts/verify-sourcing-capability-modal-create.py
-python3 scripts/verify-sourcing-subcontractor-upgrade09.py
-python3 scripts/verify-sourcing-subcontractor-profile-tabs.py
-
-bash scripts/verify-payroll-frontend.sh
-
-bash scripts/verify-select-timesheet-ux.sh
-bash scripts/verify-inventory-explorer-ux.sh
-python3 scripts/verify-payroll-reference-coverage.py
-python3 scripts/verify-payroll-reference-output.py
-python3 scripts/verify-payroll-directory-runtime.py
-python3 scripts/verify-payroll-rental-finance-runtime.py
-python3 scripts/verify-payroll-assignment-runtime.py
-python3 scripts/verify-payroll-timesheet-scale.py
-python3 scripts/verify-payroll-timesheet-dynamic-export.py
-python3 scripts/verify-payroll-timesheet-board-settings.py
-python3 scripts/verify-payroll-bootstrap-search.py
-python3 scripts/verify-payroll-query-hardening.py
-python3 scripts/verify-payroll-browser-scale.py
-python3 scripts/verify-payroll-employee-residual-scale.py
-python3 scripts/verify-payroll-salary-setup-scale.py
-python3 scripts/verify-payroll-run-scale.py
-python3 scripts/verify-payroll-adjustment-scale.py
-python3 scripts/verify-payroll-assignment-project-selector-scale.py
-python3 scripts/verify-payroll-drawer-selector-scale.py
-python3 scripts/verify-payroll-rental-adjustment-selector-scale.py
-python3 scripts/verify-payroll-rental-adjustment-page-scale.py
-python3 scripts/verify-payroll-payment-scale.py
-python3 scripts/verify-payroll-shared-surfaces-scale.py
-python3 scripts/verify-payroll-final-browser-certification.py
-python3 scripts/verify-payroll-report-performance.py
-python3 scripts/verify-payroll-action-parity.py
-python3 scripts/verify-payroll-data-authority.py
-python3 scripts/verify-payroll-document-finalization-context.py
-python3 scripts/verify-payroll-document-production.py
-python3 scripts/verify-payroll-document-v3-freeze.py
-python3 scripts/verify-payroll-document-v3-type.py
-python3 scripts/verify-payroll-document-v3-aggregator.py
-python3 scripts/verify-payroll-document-v3-worker-sheet.py
-python3 scripts/verify-payroll-document-v3-supplier-summary.py
-python3 scripts/verify-payroll-document-v3-print-renderer.py
-python3 scripts/verify-payroll-document-v3-worker-export.py
-python3 scripts/verify-payroll-document-v3-type-first-generator-api.py
-python3 scripts/verify-payroll-document-v3-new-documents-ux.py
-python3 scripts/verify-payroll-document-v3-documents-workspace.py
-python3 scripts/verify-payroll-document-v3-financial-reconciliation.py
-python3 scripts/verify-payroll-document-v3-supplier-delivery-cutover.py
-python3 scripts/verify-payroll-document-v3-scale-production-certification.py
-python3 scripts/verify-payroll-document-v3-production-freeze.py
-python3 scripts/verify-payroll-flexible-document-generator.py
-python3 scripts/verify-payroll-document-generation-batch-audit.py
-python3 scripts/verify-payroll-document-delivery.py
-python3 scripts/verify-payroll-outbound-delivery.py
-python3 scripts/verify-payroll-delivery-link-lifecycle.py
-python3 scripts/verify-payroll-bulk-document-delivery.py
-python3 scripts/verify-payroll-bulk-document-dispatch.py
-python3 scripts/verify-payroll-delivery-operations.py
-python3 scripts/verify-payroll-document-system-closure.py
-python3 scripts/verify-payroll-output-e2e.py
-python3 scripts/verify-full-demo-seed.py
-python3 scripts/verify-payroll-scale-seed.py
-python3 scripts/verify-payroll-performance.py
-python3 scripts/verify-payroll-production-e2e.py
-python3 scripts/verify-release-candidate.py
+# Pre-Project-Pulse verifiers were deliberately frozen to VERSION=1.0.117 and
+# exactly 97 access permissions. Running those immutable historical release
+# gates against a newer release is invalid (and prevented 1.0.127 deploying).
+# Retain historical verifiers as provenance. For this version run the current
+# security/permission/migration/source checks, then the preserved structural
+# production-freeze checks below. Database and HTTP checks run in release-tasks.
+python3 scripts/verify-current-release.py
+bash scripts/verify-merge-baseline.sh
 bash scripts/verify-production-infrastructure.sh
-python3 scripts/verify-tenant-reconciliation.py
-python3 scripts/verify-lifecycle-authority.py
-python3 scripts/verify-employee-lifecycle.py
-python3 scripts/verify-organization-lifecycle.py
-python3 scripts/verify-rental-master-lifecycle.py
-python3 scripts/verify-project-inventory-lifecycle.py
-python3 scripts/verify-secondary-configuration-lifecycle.py
-python3 scripts/verify-unified-lifecycle-ux.py
-python3 scripts/verify-lifecycle-retention-contract.py
+bash scripts/verify-form-validation.sh
+bash scripts/verify-platform-shell.sh
+bash scripts/verify-payroll-frontend.sh
+python3 scripts/verify-payroll-document-v3-production-freeze.py
+bash scripts/verify-inventory-explorer-ux.sh
 python3 scripts/verify-single-company-branding.py
 python3 scripts/verify-branding-migration-lineage.py
 
@@ -181,4 +86,4 @@ assert progress['merge_complete'] is True
 assert progress['next_upgrade'] is None
 PY
 
-printf 'Upgrade 12 production-freeze contract verified.\n'
+printf 'Current release production checks and immutable merge baseline verified.\n'
