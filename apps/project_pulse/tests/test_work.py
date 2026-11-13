@@ -149,9 +149,18 @@ class WorkCategoryTaskTests(TestCase):
         self.client.force_login(task_user)
         self.assertEqual(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])).status_code, 200)
         self.assertEqual(self.client.post(reverse("project_pulse:category_new", args=[self.project.code])).status_code, 403)
-        self.assertEqual(self.client.post(reverse("project_pulse:task_new", args=[self.project.code]), {
-            "category": category.pk, "title": "Allowed", "priority": "normal", "status": "not_started"
-        }).status_code, 302)
+        task_response = self.client.post(reverse("project_pulse:task_new", args=[self.project.code]), {
+            "category": category.pk, "title": "Allowed", "priority": "normal", "status": "not_started",
+            "description": "", "assigned_to": "", "planned_start": "", "due_date": "",
+            "sort_order": 0, "progress_weight": "1.00",
+        })
+        if task_response.status_code != 302:
+            # Include real form errors in the next staging run instead of a
+            # mysterious '200 != 302' assertion with no validation context.
+            errors = (task_response.context["form"].errors.as_json()
+                      if task_response.context and "form" in task_response.context else
+                      task_response.content.decode(errors="replace")[:500])
+            self.fail(f"Task form returned {task_response.status_code}: {errors}")
 
     def test_validation_duplicate_category_due_date_and_wrong_member(self):
         category = self.category()
@@ -210,7 +219,15 @@ class WorkCategoryTaskTests(TestCase):
         self.assertFalse(PulseTask.objects.exists())
 
     def test_task_management_does_not_grant_budget_or_inventory_access(self):
-        self.assertNotIn("pulse.financials.view", [row["code"] for row in permission_catalog()])
+        # The financial permission must exist in the global catalog, but an
+        # operational task-only profile must never inherit it or stock access.
+        _, member = self.member("u03-tasks-not-finance", perms=(
+            "pulse.overview.view", "pulse.projects.view",
+            "pulse.tasks.view", "pulse.tasks.manage",
+        ))
+        self.assertFalse(membership_has_permission(member, AccessPermission.PULSE_FINANCIALS_VIEW))
+        self.assertFalse(membership_has_permission(member, AccessPermission.PULSE_BUDGETS_VIEW))
+        self.assertFalse(membership_has_permission(member, AccessPermission.INVENTORY_STOCK_VIEW))
         self.assertFalse(hasattr(PulseTask, "expense"))
         self.assertFalse(hasattr(PulseWorkCategory, "approved_budget"))
 

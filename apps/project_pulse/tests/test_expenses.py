@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import Http404
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -113,13 +114,15 @@ class TaskExpenseTests(TestCase):
             self.record(category=second_category)
         with self.assertRaises(ValidationError):
             self.record(amount="-1.50")
-        with self.assertRaises(PermissionDenied):
+        with self.assertRaises(Http404):
             save_expense(actor=other_owner, project_id=self.project.pk, task_id=self.task.pk,
                 data={"expense_category": outside_category, "amount": Decimal('10'), "description": "Foreign"})
 
     def test_archived_category_block_new_entries_preserve_old(self):
         self.record()
         archive_expense_category(actor=self.owner, project_id=self.project.pk, category_id=self.category.pk)
+        # The caller still holds the pre-archive category instance. It must be
+        # re-checked against the database and rejected, not trusted as active.
         with self.assertRaises(ValidationError):
             self.record(description="New record")
         self.assertEqual(expense_rollups(self.project)["total"], Decimal("125.45"))

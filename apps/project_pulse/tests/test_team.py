@@ -58,10 +58,15 @@ class ProjectTeamTests(TestCase):
     def test_owner_grant_and_profile_permission_dependencies(self):
         self.assertTrue(membership_has_permission(self.owner, AccessPermission.PULSE_TEAM_VIEW))
         self.assertTrue(membership_has_permission(self.owner, AccessPermission.PULSE_TEAM_MANAGE))
-        self.assertEqual({entry["code"] for entry in permission_catalog() if entry["category"] == "Project Pulse"}, {
+        pulse_codes = {entry["code"] for entry in permission_catalog()
+                       if entry["category"] == "Project Pulse"}
+        # U02's basic grants remain available after later upgrades added more
+        # independent progress, expense, budget and financial permissions.
+        self.assertTrue({
             "pulse.overview.view", "pulse.projects.view", "pulse.team.view", "pulse.team.manage",
             "pulse.categories.view", "pulse.categories.manage", "pulse.tasks.view", "pulse.tasks.manage",
-        })
+        }.issubset(pulse_codes))
+        self.assertIn(AccessPermission.PULSE_FINANCIALS_VIEW.value, pulse_codes)
         for values in (["pulse.team.view"], ["pulse.overview.view", "pulse.team.manage"]):
             with self.assertRaises(ValidationError):
                 _clean_permissions(values)

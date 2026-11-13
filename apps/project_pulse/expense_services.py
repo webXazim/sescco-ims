@@ -129,8 +129,15 @@ def save_expense(*, actor, project_id, task_id, data, expense_id=None, request=N
             raise ValidationError("Only draft or rejected expenses can be edited.")
         row.updated_by = actor
     previous = _snapshot(row) if row.pk else {}
-    category = data.get("expense_category")
-    if category is None or category.project_id != project.pk:
+    # Never trust a possibly stale ModelForm/model instance supplied by the caller.
+    # Lock and re-read the category from the database before checking its archive
+    # state. Otherwise a category archived earlier in this request/session could
+    # still be used for a new expense by passing an older in-memory instance.
+    selected_category = data.get("expense_category")
+    category_pk = getattr(selected_category, "pk", selected_category)
+    category = (PulseExpenseCategory.objects.select_for_update()
+                .filter(pk=category_pk, project=project).first()) if category_pk else None
+    if category is None:
         raise ValidationError({"expense_category": "Choose an expense category belonging to this project."})
     if category.archived_at and (not row.pk or category.pk != row.expense_category_id):
         raise ValidationError({"expense_category": "Choose an active expense category."})

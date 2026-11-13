@@ -168,7 +168,10 @@ class ExpenseWorkflowTests(TestCase):
             response = self.client.get(url)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Cache-Control"], "private, no-store")
-            response.close()
+            # FileResponse.close() emits request_finished, which may close the
+            # PostgreSQL connection hosting TestCase's outer atomic transaction.
+            # Close only the downloaded file descriptor inside this TestCase.
+            response.file_to_stream.close()
             scoped_url = reverse("project_pulse:expense_attachment_download", args=[self.second.code, self.task.pk, self.expense.pk, attachment.pk])
             self.assertEqual(self.client.get(scoped_url).status_code, 404)
         finally:
