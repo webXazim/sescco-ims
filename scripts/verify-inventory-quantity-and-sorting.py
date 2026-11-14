@@ -35,6 +35,12 @@ for f in ('templates/base.html', 'templates/project_pulse/base.html', 'templates
           'templates/registration/login.html', 'templates/registration/change_password.html'):
     assert_contains(f, 'prevent-wheel-value-changes.js')
 assert_contains('static/platform/js/prevent-wheel-value-changes.js', 'event.preventDefault()')
+assert_contains('apps/project_pulse/tests/test_execution_schedule.py', 'STORAGES=TEST_STORAGES')
+assert_contains('scripts/release-tasks.sh', 'run_manage verify_platform_static_manifest')
+assert_contains('scripts/deploy-production.sh', '/static/platform/js/prevent-wheel-value-changes.js')
+assert_contains('apps/core/management/commands/verify_platform_static_manifest.py', 'ManifestStaticFilesStorage')
+release = (root / 'scripts/release-tasks.sh').read_text(encoding='utf-8')
+assert release.index('run_manage collectstatic --noinput') < release.index('run_manage verify_platform_static_manifest') < release.index('run_manage test apps.project_pulse --noinput'), 'Static manifest must be built and verified before template tests.'
 assert_contains('apps/inventory/migrations/0020_enforce_countable_units.py', 'def enforce_countable')
 assert_contains('apps/inventory/management/commands/reconcile_countable_balance.py', '--apply')
 for file in root.rglob('*.py'):

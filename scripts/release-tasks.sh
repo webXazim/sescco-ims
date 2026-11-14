@@ -102,6 +102,18 @@ run_manage merge_rental_manpower_report --fail-on-errors >/dev/null
 run_manage merge_documents_management_report --fail-on-errors >/dev/null
 run_manage migrate --check
 
+# Production uses ManifestStaticFilesStorage. Any newly referenced asset must be
+# collected into the persistent static volume BEFORE Django tests render templates.
+# Preserve previous-release assets during cutover (never use --clear here).
+info "Collecting release static assets before template-rendering regression tests"
+run_manage collectstatic --noinput
+
+info "Verifying newly collected shared platform static assets"
+run_manage verify_platform_static_manifest
+
+info "Verifying collected Sourcing static manifest"
+run_manage verify_sourcing_static_manifest
+
 info "Running Project Pulse database/security/financial regression suite"
 run_manage test apps.project_pulse --noinput
 
@@ -120,12 +132,6 @@ run_manage test apps.sourcing.tests.test_data_exchange --noinput
 run_manage test apps.sourcing.tests.test_scale_hardening --noinput
 run_manage test apps.sourcing.tests.test_security_certification --noinput
 run_manage test apps.sourcing.tests.test_browser_e2e_freeze --noinput
-
-info "Collecting static assets without deleting the previous release assets"
-run_manage collectstatic --noinput
-
-info "Verifying collected Sourcing static manifest"
-run_manage verify_sourcing_static_manifest
 
 info "Rendering the production Inventory dashboard before live cutover"
 run_manage inventory_bootstrap_report --fail-on-errors

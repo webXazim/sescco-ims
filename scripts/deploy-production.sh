@@ -129,6 +129,7 @@ for asset in \
   /static/platform/css/select-controls.css \
   /static/platform/js/inventory-shell.js \
   /static/platform/js/form-validation.js \
+  /static/platform/js/prevent-wheel-value-changes.js \
   /static/payroll/css/v2/index.css \
   /static/payroll/js/app.js \
   /static/sourcing/js/finder-scale.js; do

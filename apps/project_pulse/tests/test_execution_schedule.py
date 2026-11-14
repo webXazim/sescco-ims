@@ -12,7 +12,13 @@ from apps.project_pulse.progress_services import calculate_progress, record_prog
 from apps.project_pulse.work_services import save_category, save_task
 
 
-@override_settings(SECURE_SSL_REDIRECT=False)
+TEST_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=TEST_STORAGES)
 class ExecutionScheduleTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name="Schedule test", slug="pulse-schedule-test")

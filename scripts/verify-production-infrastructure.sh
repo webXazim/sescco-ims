@@ -43,6 +43,8 @@ require_text scripts/release-tasks.sh 'payroll_bootstrap_report --fail-on-errors
 [[ -f apps/core/management/commands/payroll_bootstrap_report.py ]] || fail 'Payroll bootstrap deployment verifier is missing.'
 require_text scripts/release-tasks.sh 'migrate --check' 'Release verification must finish with zero pending migrations.'
 require_text scripts/release-tasks.sh 'collectstatic --noinput' 'Release tasks must collect static assets.'
+require_text scripts/release-tasks.sh 'run_manage verify_platform_static_manifest' 'Release tasks must validate the shared wheel guard in the collected production manifest.'
+[[ -f apps/core/management/commands/verify_platform_static_manifest.py ]] || fail 'Shared platform static manifest verification command is missing.'
 if grep -Fq -- 'collectstatic --noinput --clear' scripts/release-tasks.sh scripts/deploy-production.sh scripts/entrypoint.sh; then
   fail 'Production rollout must not clear previous static assets during cutover.'
 fi
@@ -50,7 +52,11 @@ fi
 collect_line="$(grep -nF 'run_manage collectstatic --noinput' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
 inventory_bootstrap_line="$(grep -nF 'run_manage inventory_bootstrap_report --fail-on-errors' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
 bootstrap_line="$(grep -nF 'run_manage payroll_bootstrap_report --fail-on-errors' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
+pulse_test_line="$(grep -nF 'run_manage test apps.project_pulse --noinput' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
+platform_manifest_line="$(grep -nF 'run_manage verify_platform_static_manifest' scripts/release-tasks.sh | head -1 | cut -d: -f1)"
 [[ -n "${collect_line}" && -n "${inventory_bootstrap_line}" && -n "${bootstrap_line}" ]] || fail 'Static/bootstrap release ordering cannot be verified.'
+[[ -n "${pulse_test_line}" && -n "${platform_manifest_line}" ]] || fail 'Static manifest/Pulse regression ordering cannot be verified.'
+(( collect_line < platform_manifest_line && platform_manifest_line < pulse_test_line )) || fail 'collectstatic and shared asset manifest validation must run before Project Pulse template tests.'
 (( collect_line < inventory_bootstrap_line )) || fail 'collectstatic must run before Inventory template bootstrap under ManifestStaticFilesStorage.'
 (( inventory_bootstrap_line < bootstrap_line )) || fail 'Inventory dashboard bootstrap must run before the Payroll bootstrap.'
 
