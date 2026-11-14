@@ -138,3 +138,42 @@ class ProjectApprovalsTests(TestCase):
         req.save(update_fields=("requested_by",))
         with self.assertRaises(InventoryOperationError):
             self._approve(req, self.manager1, self.p1)
+
+    # Regression: legacy migration 0019 could leave countable units decimal-enabled.
+
+    def test_legacy_piece_flag_cannot_reenable_decimal_receipts(self):
+        Unit.objects.filter(pk=self.piece.pk).update(allows_fractional_quantities=True)
+        self.piece.refresh_from_db()
+        self.assertFalse(self.piece.permits_fractional_quantity)
+        with self.assertRaises(InventoryOperationError):
+            self._add(quantity="0.999")
+        with self.assertRaises(InventoryOperationError):
+            self._add(quantity="1.5")
+        self.assertEqual(StockApprovalRequest.objects.for_company(self.company).count(), 0)
+
+    def test_legacy_piece_flag_blocks_fractional_minimums_and_transfers(self):
+        Unit.objects.filter(pk=self.piece.pk).update(allows_fractional_quantities=True)
+        self.piece.refresh_from_db()
+        with self.assertRaises(InventoryOperationError):
+            add_stock(
+                user=self.requester, idempotency_key=uuid.uuid4(), project=self.p1,
+                movement_date=timezone.localdate(), quantity=Decimal("2"), minimum_quantity=Decimal("0.5"),
+                material_name="Counted Device", supplier_name="Supply", supplier_phone="0509000100", unit=self.piece,
+            )
+        receipt = self._add(quantity="2")
+        self._approve(receipt.approval_request, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        with self.assertRaises(InventoryOperationError):
+            transfer_stock(
+                user=self.requester, idempotency_key=uuid.uuid4(),
+                source_location=self.p1.inventory_location, destination_location=self.p2.inventory_location,
+                transfer_date=timezone.localdate(),
+                allocations=[TransferAllocation(item, "new", Decimal("0.5"))],
+            )
+        item.refresh_from_db()
+        self.assertEqual(item.current_quantity, Decimal("2"))
+
+    def test_measured_kg_still_allows_decimal_stock(self):
+        self.assertTrue(self.kg.permits_fractional_quantity)
+        result = self._add(quantity="0.999", unit=self.kg, material_name="Paint powder")
+        self.assertIsNotNone(result.approval_request)

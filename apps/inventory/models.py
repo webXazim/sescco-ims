@@ -13,6 +13,7 @@ from apps.core.models import CompanyScopedManager
 from apps.projects.models import Project
 
 from .normalization import clean_display_text, normalize_phone, normalize_text
+from .quantity_policy import allows_fractional, is_named_countable, is_whole
 
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
 
@@ -66,6 +67,10 @@ class Unit(models.Model):
             models.Index(fields=("company", "is_active", "name"), name="unit_company_active_idx"),
         ]
 
+    @property
+    def permits_fractional_quantity(self) -> bool:
+        return allows_fractional(self)
+
     def __str__(self) -> str:
         return f"{self.name} ({self.symbol})"
 
@@ -76,12 +81,11 @@ class Unit(models.Model):
             errors["name"] = "Unit name is required."
         if not normalize_text(self.symbol):
             errors["symbol"] = "Unit symbol is required."
-        if self.pk and not self.allows_fractional_quantities and type(self).objects.filter(pk=self.pk, allows_fractional_quantities=True).exists():
-            # Historical stock/movements must be reconciled, never silently rounded.
-            for item in self.stock_items.only("current_quantity", "minimum_quantity").iterator():
-                if item.current_quantity % 1 or item.minimum_quantity % 1:
-                    errors["allows_fractional_quantities"] = "Reconcile existing fractional stock balances and minimums before requiring whole numbers; historical movements are retained unchanged."
-                    break
+        if self.allows_fractional_quantities and is_named_countable(self.name, self.symbol):
+            errors["allows_fractional_quantities"] = (
+                "Pieces, counts, boxes, sets and other discrete units must use whole numbers. "
+                "Choose a measured unit such as kg or m for fractional stock."
+            )
         if self.pk and not self.is_active:
             was_active = type(self).objects.filter(pk=self.pk, is_active=True).exists()
             if was_active and self.stock_items.filter(status="active").exists():
@@ -413,11 +417,21 @@ class StockItem(models.Model):
             errors["current_quantity"] = "Current quantity cannot be negative."
         if self.minimum_quantity is not None and self.minimum_quantity < 0:
             errors["minimum_quantity"] = "Minimum quantity cannot be negative."
-        if self.unit_id and not self.unit.allows_fractional_quantities:
-            if self.current_quantity is not None and self.current_quantity % 1:
-                errors["current_quantity"] = "This countable unit requires a whole-number stock balance."
-            if self.minimum_quantity is not None and self.minimum_quantity % 1:
-                errors["minimum_quantity"] = "This countable unit requires a whole-number minimum."
+        if self.unit_id and not self.unit.permits_fractional_quantity:
+            # Preserve old fractional balances and minimums on metadata-only edits.
+            # New records or changed balances/minimums must always be whole.
+            old_values = (type(self).objects.filter(pk=self.pk).values(
+                "current_quantity", "minimum_quantity", "unit_id"
+            ).first() if self.pk else None)
+            for field in ("current_quantity", "minimum_quantity"):
+                value = getattr(self, field)
+                unchanged_legacy = (old_values and old_values["unit_id"] == self.unit_id
+                                    and old_values[field] == value)
+                if value is not None and not is_whole(value) and not unchanged_legacy:
+                    errors[field] = (
+                        "This countable unit requires a whole-number quantity. "
+                        "Review and reconcile any old fractional stock without editing history."
+                    )
         original_project_id = None
         original_location_id = None
         original_unit_id = None

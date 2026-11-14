@@ -877,3 +877,10 @@ select:disabled, input:disabled, textarea:disabled { background: #f3f4f5; color:
   [data-crud-form] .crud-form-action-help { flex-basis: 100%; }
   [data-crud-form] .crud-form-actions .btn { min-width: 105px; }
 }
+
+
+/* Compact, explicit Inventory Explorer/Office ordering control. */
+.inventory-sort-control { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.inventory-sort-control > label { color: var(--text-muted, #64748b); font-size: 12px; font-weight: 650; }
+.inventory-sort-control > select { min-width: 180px; max-width: 240px; }
+@media (max-width: 760px) { .inventory-sort-control { width: 100%; } .inventory-sort-control > select { flex: 1; min-width: 0; max-width: none; } }

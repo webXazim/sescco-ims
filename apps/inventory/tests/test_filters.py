@@ -197,6 +197,26 @@ class AdvancedExplorerTests(TestCase):
         self.assertContains(response, "Material")
         self.assertNotContains(response, "<th>Supplier location</th>")
 
+    def test_inventory_defaults_to_recently_added_and_supports_oldest_first(self):
+        url = reverse("inventory:list")
+        # Explicit creation timestamps make ordering independent of test runner speed.
+        older = timezone.now() - timedelta(days=3)
+        StockItem = self.cement.__class__
+        StockItem.objects.filter(pk=self.cement.pk).update(created_at=older)
+        newest = StockItem.objects.get(material_name="Steel Bar", company=self.company)
+        default = self.client.get(url)
+        self.assertEqual(default.status_code, 200)
+        self.assertEqual(default.context["stock_items"][0].pk, newest.pk)
+        self.assertEqual(default.context["filter_form"]["sort"].value(), "created")
+        self.assertContains(default, "Recently added first")
+        oldest = self.client.get(url, {"sort": "oldest-created", "q": "cement"})
+        self.assertEqual(oldest.status_code, 200)
+        self.assertEqual(list(oldest.context["stock_items"]), [self.cement])
+        # Filtering does not override or lose the selected sort.
+        self.assertEqual(oldest.context["filter_form"]["sort"].value(), "oldest-created")
+        all_oldest = self.client.get(url, {"sort": "oldest-created"})
+        self.assertEqual(all_oldest.context["stock_items"][0].pk, self.cement.pk)
+
     def test_inventory_shows_and_sorts_calculated_stock_value(self):
         self.assertEqual(self.cement.stock_value, Decimal("1225.00000"))
         response = self.client.get(reverse("inventory:list"), {"sort": "-value"})

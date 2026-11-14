@@ -1,13 +1,9 @@
 """Read-only audit of countable units and legacy fractional stock balances."""
 from django.core.management.base import BaseCommand
 from apps.inventory.models import Unit
+from apps.inventory.quantity_policy import is_named_countable
 
-COUNTABLE = {
-    "piece", "pieces", "pc", "pcs", "no", "nos", "number", "numbers",
-    "each", "ea", "unit", "units", "set", "sets", "box", "boxes",
-    "bag", "bags", "pair", "pairs", "roll", "rolls", "pack", "packs",
-    "kit", "kits", "laptop", "laptops",
-}
+
 
 
 class Command(BaseCommand):
@@ -22,7 +18,7 @@ class Command(BaseCommand):
             units = units.filter(company_id=options["company_id"])
         problem_count = 0
         for unit in units.iterator():
-            looks_countable = bool({unit.name.strip().casefold(), unit.symbol.strip().casefold()} & COUNTABLE)
+            looks_countable = is_named_countable(unit.name, unit.symbol)
             anomalies = [
                 item for item in unit.stock_items.only("id", "material_name", "current_quantity", "minimum_quantity").iterator()
                 if item.current_quantity % 1 or item.minimum_quantity % 1

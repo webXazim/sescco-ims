@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current-release source and authorization checks for SESCCO IMS v1.0.128.
+"""Current-release source and authorization checks for SESCCO IMS v1.0.129.
 
 Historical merge/release verifier scripts and manifests are immutable baseline
 artifacts for 1.0.117. This verifier checks the actual upgrade in its current
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.128"
+VERSION = "1.0.129"
 HISTORIC = "1.0.117"
 
 
@@ -58,7 +58,7 @@ def check() -> None:
     codes = [n.value.value for n in enum.body if isinstance(n, ast.Assign)
              and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)]
     if len(codes) != len(set(codes)) or len(codes) != 124:
-        fail(f"Access catalog must contain 124 unique v1.0.128 permissions, found {len(codes)}")
+        fail(f"Access catalog must contain 124 unique v1.0.129 permissions, found {len(codes)}")
     pulse = {x for x in codes if x.startswith("pulse.")}
     if len(pulse) != 27:
         fail(f"Project Pulse requires 27 explicit permissions, found {len(pulse)}")
@@ -104,6 +104,30 @@ def check() -> None:
         ast.parse(file.read_text(encoding="utf-8-sig"), filename=str(file))
     for file in (ROOT / "apps/accounts").rglob("*.py"):
         ast.parse(file.read_text(encoding="utf-8-sig"), filename=str(file))
+    # The global number-wheel safety guard must load in every interactive module.
+    # Enforce a single server policy in stock forms, services, import previews,
+    # models and migrations, not just an HTML number-input step attribute.
+    for file, markers in {
+        "apps/inventory/quantity_policy.py": ["COUNTABLE_UNIT_ALIASES", "def allows_fractional", "def is_whole"],
+        "apps/inventory/models.py": ["def permits_fractional_quantity", "is_named_countable", "unchanged_legacy"],
+        "apps/inventory/services/stock.py": ["not allows_fractional(unit)", "not is_whole(new_balance)"],
+        "apps/inventory/forms.py": ["enforce_whole_unit_quantity", "permits_fractional_quantity"],
+        "apps/data_exchange/services/importing.py": ["not allows_fractional(unit)", "is_whole(cleaned"],
+        "apps/inventory/migrations/0020_enforce_countable_units.py": ["RunPython(enforce_countable", "StockItem quantities"],
+    }.items():
+        content = read(file)
+        for marker in markers:
+            if marker not in content:
+                fail(f"Countable quantity policy missing: {file}: {marker}")
+    wheel_guard = read("static/platform/js/prevent-wheel-value-changes.js")
+    if 'event.preventDefault()' not in wheel_guard or 'passive: false' not in wheel_guard:
+        fail("Numeric mouse-wheel input guard is not active")
+    for template in ("templates/base.html", "templates/payroll/app.html",
+                     "templates/project_pulse/base.html", "templates/sourcing/base.html",
+                     "templates/accounts/administration.html",
+                     "templates/registration/login.html", "templates/registration/change_password.html"):
+        if "platform/js/prevent-wheel-value-changes.js" not in read(template):
+            fail(f"{template} missing numeric wheel guard")
     # Fail closed if the canonical UI reintroduces old cache tags.
     payroll = read("templates/payroll/app.html")
     for asset in ("payroll-controls.css", "payroll/js/app.js"):

@@ -80,16 +80,15 @@
     delete event.target.dataset.replaceZeroOnEntry;
     normalizeLeadingZero(event.target);
   });
-  document.addEventListener("wheel", (event) => {
-    if (isNumberInput(event.target) && document.activeElement === event.target) {
-      event.target.blur();
-    }
-  }, { passive: true });
+  // The shared platform wheel guard handles numeric inputs on every module.
 
   const setQuantityPrecision = (input, allowsFractional) => {
     if (!input) return;
     const wholeUnitsOnly = allowsFractional === false;
     input.step = wholeUnitsOnly ? "1" : "0.001";
+    // For positive stock quantities the min must align with the step base.
+    // HTML min=0.001 plus step=1 would reject even 1 or 2 as step mismatches.
+    if (!input.hasAttribute("data-unit-minimum")) input.min = wholeUnitsOnly ? "1" : "0.001";
     input.inputMode = wholeUnitsOnly ? "numeric" : "decimal";
     input.dataset.wholeUnit = String(wholeUnitsOnly);
   };

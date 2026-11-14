@@ -8,13 +8,13 @@
 {% if approval.kind == 'receipt' %}
 <div class="table-wrap"><table class="data-table"><thead><tr><th>Project</th><th>Material</th><th>Condition</th><th>Quantity</th><th>Unit</th><th>Unit price</th></tr></thead><tbody>
 <tr><td>{{ receipt_project.code|default:"Unavailable" }}</td><td><strong>{{ approval.payload.material_name }}</strong><div class="cell-sub">{{ approval.payload.description }}</div></td>
-<td>{{ approval.payload.condition }}</td><td>{{ approval.payload.quantity }}</td><td>{{ receipt_unit.symbol|default:"Unavailable" }}</td><td>{{ approval.payload.unit_price|default_if_none:"Not provided" }}</td></tr>
+<td>{{ approval.payload.condition }}</td><td>{{ approval.payload.quantity|floatformat:"-3" }}</td><td>{{ receipt_unit.symbol|default:"Unavailable" }}</td><td>{{ approval.payload.unit_price|default_if_none:"Not provided" }}</td></tr>
 </tbody></table></div>
 <p><strong>Supplier:</strong> {{ approval.payload.supplier_name }} · {{ approval.payload.supplier_phone }} &nbsp; <strong>Invoice:</strong> {{ approval.payload.invoice_reference|default:"—" }} &nbsp; <strong>Receipt date:</strong> {{ approval.payload.movement_date }}</p>
 {% else %}
 <p><strong>Source:</strong> {{ transfer_source.code|default:"Unavailable" }} &nbsp; <strong>Destination:</strong> {{ transfer_destination.code|default:"Unavailable" }} &nbsp; <strong>Transfer date:</strong> {{ approval.payload.transfer_date }}</p>
 <div class="table-wrap"><table class="data-table"><thead><tr><th>Item</th><th>Condition outcome</th><th>Quantity</th><th>Unit</th></tr></thead><tbody>
-{% for line in transfer_allocations %}<tr><td>{% if line.stock %}{{ line.stock.material_name }} · {{ line.stock.supplier_name }}{% else %}Stock record unavailable{% endif %}</td><td>{{ line.outcome }}</td><td>{{ line.quantity }}</td><td>{{ line.stock.unit.symbol|default:"—" }}</td></tr>{% endfor %}
+{% for line in transfer_allocations %}<tr><td>{% if line.stock %}{{ line.stock.material_name }} · {{ line.stock.supplier_name }}{% else %}Stock record unavailable{% endif %}</td><td>{{ line.outcome }}</td><td>{{ line.quantity|floatformat:"-3" }}</td><td>{{ line.stock.unit.symbol|default:"—" }}</td></tr>{% endfor %}
 </tbody></table></div><p><strong>Reference:</strong> {{ approval.payload.document_reference|default:"—" }}</p>
 {% endif %}
 {% if approval.payload.notes %}<p><strong>Notes:</strong> {{ approval.payload.notes }}</p>{% endif %}

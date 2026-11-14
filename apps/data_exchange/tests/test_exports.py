@@ -1,6 +1,7 @@
 import csv
 import io
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -91,6 +92,21 @@ class FilteredExportTests(TestCase):
         rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
         self.assertTrue(rows[1][0].lstrip("'").lstrip().startswith("="))
         self.assertTrue(rows[1][0].startswith("'"))
+
+    def test_inventory_export_defaults_newest_first_and_honors_selected_sort(self):
+        older_item = self.add(index=1)
+        newer_item = self.add(index=2)
+        older_timestamp = timezone.now() - timedelta(days=10)
+        older_item.__class__.objects.filter(pk=older_item.pk).update(created_at=older_timestamp)
+        export_url = reverse("data_exchange:inventory_export", args=["csv"])
+        def exported_material_names(params):
+            response = self.client.get(export_url, params)
+            self.assertEqual(response.status_code, 200)
+            return [row[0] for row in list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))[1:]]
+        columns = {"columns": ["material"]}
+        self.assertEqual(exported_material_names(columns), ["Cement 2", "Cement 1"])
+        self.assertEqual(exported_material_names({**columns, "sort": "oldest-created"}), ["Cement 1", "Cement 2"])
+        self.assertEqual(exported_material_names({**columns, "sort": "material"}), ["Cement 1", "Cement 2"])
 
     def test_activity_export_uses_current_filters(self):
         item = self.add(index=1)

@@ -178,8 +178,10 @@ STOCK_SORTS = {
     "-quantity": ("-current_quantity", "material_name"),
     "minimum": ("minimum_quantity", "material_name"),
     "-minimum": ("-minimum_quantity", "material_name"),
-    "updated": ("-updated_at", "material_name"),
-    "created": ("-created_at", "material_name"),
+    "updated": ("-updated_at", "-pk"),
+    "oldest-updated": ("updated_at", "pk"),
+    "created": ("-created_at", "-pk"),
+    "oldest-created": ("created_at", "pk"),
     "latest-addition": (F("latest_addition_date").desc(nulls_last=True), "material_name"),
     "oldest-addition": (F("latest_addition_date").asc(nulls_last=True), "material_name"),
     "price": (F("latest_unit_price").asc(nulls_last=True), "material_name"),
@@ -447,7 +449,7 @@ class StockItemListView(InventoryPermissionRequiredMixin, ListView):
             {
                 "status": StockItem.Status.ACTIVE,
                 "date_field": "latest_addition_date",
-                "sort": "updated",
+                "sort": "created",
                 "columns": DEFAULT_STOCK_COLUMNS,
             },
         )
@@ -459,8 +461,8 @@ class StockItemListView(InventoryPermissionRequiredMixin, ListView):
         if self.filter_form.is_valid():
             self.filter_data = self.filter_form.cleaned_data
             queryset = filter_stock_items(queryset, self.filter_data)
-            sort = self.filter_data.get("sort") or "updated"
-            return queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["updated"]))
+            sort = self.filter_data.get("sort") or "created"
+            return queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["created"]))
         self.filter_data = {}
         return queryset.none()
 
@@ -479,7 +481,7 @@ class StockItemListView(InventoryPermissionRequiredMixin, ListView):
             filter_form=self.filter_form,
             filter_chips=_stock_filter_chips(self.request, data) if data else [],
             visible_columns=self.get_visible_columns(),
-            current_sort=data.get("sort") or "project",
+            current_sort=data.get("sort") or "created",
             advanced_open=not self.filter_form.is_valid(),
             custom_date_open=data.get("date_preset") == "custom",
             clear_url=reverse("inventory:list"),
@@ -1136,7 +1138,7 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
         # Do not expose project or archived-stock scope on this office-only page.
         data = _bound_filter_data(
             self.request,
-            {"status": StockItem.Status.ACTIVE, "date_field": "latest_addition_date", "sort": "updated"},
+            {"status": StockItem.Status.ACTIVE, "date_field": "latest_addition_date", "sort": "created"},
         )
         self.filter_form = StockItemFilterForm(
             data, company=self.request.company, membership=self.request.company_membership
@@ -1155,9 +1157,10 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             return queryset.none()
         self.filter_data = self.filter_form.cleaned_data
         filtered = filter_stock_items(queryset, self.filter_data)
-        sort = self.filter_data.get("sort") or "updated"
-        # Tie-break by PK for stable pagination when timestamps are identical.
-        return filtered.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["updated"]), "pk")
+        sort = self.filter_data.get("sort") or "created"
+        # All inventory sorts include a deterministic PK tie-breaker for pagination.
+        order = STOCK_SORTS.get(sort, STOCK_SORTS["created"])
+        return filtered.order_by(*order, "pk")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -2583,7 +2586,7 @@ class StockPickerAPIView(InventoryPermissionRequiredMixin, View):
                         "quantity": str(item.current_quantity),
                         "quantity_display": item.quantity_display,
                         "unit": item.unit.symbol,
-                        "allows_fractional_quantities": item.unit.allows_fractional_quantities,
+                        "allows_fractional_quantities": item.unit.permits_fractional_quantity,
                         "url": reverse("inventory:detail", kwargs={"reference": item.reference}),
                     }
                     for item in queryset

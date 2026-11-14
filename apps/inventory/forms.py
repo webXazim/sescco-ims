@@ -16,6 +16,7 @@ from apps.projects.models import Project
 from .access import restrict_inventory_location_queryset, restrict_inventory_projects, restrict_inventory_stock
 
 from .normalization import normalize_phone, normalize_text
+from .quantity_policy import allows_fractional, is_named_countable, is_whole
 
 from .models import (
     InventoryLocation,
@@ -31,7 +32,7 @@ from .services.transfers import TransferAllocation
 
 
 def enforce_whole_unit_quantity(form, *, unit: Unit | None, quantity, field_name: str) -> None:
-    if unit and quantity is not None and not unit.allows_fractional_quantities and quantity % 1:
+    if unit and quantity is not None and not allows_fractional(unit) and not is_whole(quantity):
         form.add_error(field_name, f"{unit.name} ({unit.symbol}) only allows whole quantities.")
 
 
@@ -84,6 +85,8 @@ class UnitForm(StyledModelForm):
             self.add_error("name", "A unit with this name already exists in this company.")
         if symbol and queryset.filter(normalized_symbol=symbol).exists():
             self.add_error("symbol", "A unit with this symbol already exists in this company.")
+        if cleaned.get("allows_fractional_quantities") and is_named_countable(cleaned.get("name"), cleaned.get("symbol")):
+            self.add_error("allows_fractional_quantities", "Countable units such as pieces, sets, bags and boxes must use whole numbers.")
         return cleaned
 
 
@@ -92,7 +95,7 @@ class UnitSelect(forms.Select):
         option = super().create_option(name, value, label, selected, index, subindex, attrs)
         if value and getattr(value, "instance", None):
             option["attrs"]["data-allows-fractional"] = str(
-                value.instance.allows_fractional_quantities
+                value.instance.permits_fractional_quantity
             ).lower()
         return option
 
@@ -413,7 +416,7 @@ class StockItemSelect(forms.Select):
                     "data-material": item.material_name,
                     "data-supplier": item.supplier_name,
                     "data-condition": item.get_condition_display(),
-                    "data-allows-fractional": str(item.unit.allows_fractional_quantities).lower(),
+                    "data-allows-fractional": str(item.unit.permits_fractional_quantity).lower(),
                 }
             )
         return option
@@ -550,9 +553,10 @@ class StockAdjustmentForm(IdempotentMovementForm):
         super().__init__(*args, **kwargs)
         self.fields["quantity"].widget.attrs.update(
             {
-                "step": "0.001" if stock_item.unit.allows_fractional_quantities else "1",
-                "inputmode": "decimal" if stock_item.unit.allows_fractional_quantities else "numeric",
-                "data-whole-unit": str(not stock_item.unit.allows_fractional_quantities).lower(),
+                "step": "0.001" if stock_item.unit.permits_fractional_quantity else "1",
+                "min": "0.001" if stock_item.unit.permits_fractional_quantity else "1",
+                "inputmode": "decimal" if stock_item.unit.permits_fractional_quantity else "numeric",
+                "data-whole-unit": str(not stock_item.unit.permits_fractional_quantity).lower(),
             }
         )
 
@@ -689,9 +693,9 @@ class StockTransferForm(StyledForm):
                             attrs={
                                 "class": "input transfer-quantity",
                                 "min": "0",
-                                "step": "0.001" if item.unit.allows_fractional_quantities else "1",
+                                "step": "0.001" if item.unit.permits_fractional_quantity else "1",
                                 "data-transfer-quantity": "",
-                                "data-whole-unit": "true" if not item.unit.allows_fractional_quantities else "false",
+                                "data-whole-unit": "true" if not item.unit.permits_fractional_quantity else "false",
                                 "data-item": item.pk,
                                 "data-outcome": outcome,
                             }
@@ -853,8 +857,10 @@ class StockItemFilterForm(DateRangeFilterForm):
         ("updated_at", "Last updated date"),
     )
     SORT_CHOICES = (
-        ("updated", "Recently updated"),
-        ("created", "Newest records"),
+        ("created", "Recently added first"),
+        ("oldest-created", "Oldest added first"),
+        ("updated", "Recently updated first"),
+        ("oldest-updated", "Least recently updated"),
         ("project", "Sort by project"),
         ("material", "Sort by material A–Z"),
         ("-material", "Sort by material Z–A"),
@@ -990,7 +996,11 @@ class StockItemFilterForm(DateRangeFilterForm):
         self.fields["updated_by"].queryset = users
         self.fields["status"].initial = StockItem.Status.ACTIVE
         self.fields["date_field"].initial = "latest_addition_date"
-        self.fields["sort"].initial = "project"
+        self.fields["sort"].initial = "created"
+        self.fields["sort"].widget.attrs.update({
+            "aria-label": "Sort inventory records",
+            "title": "Choose how stock records are ordered",
+        })
 
     def clean(self):
         cleaned = super().clean()

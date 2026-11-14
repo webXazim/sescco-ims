@@ -72,8 +72,10 @@ STOCK_SORTS = {
     "-quantity": ("-current_quantity", "material_name"),
     "minimum": ("minimum_quantity", "material_name"),
     "-minimum": ("-minimum_quantity", "material_name"),
-    "updated": ("-updated_at", "material_name"),
-    "created": ("-created_at", "material_name"),
+    "updated": ("-updated_at", "-pk"),
+    "oldest-updated": ("updated_at", "pk"),
+    "created": ("-created_at", "-pk"),
+    "oldest-created": ("created_at", "pk"),
     "latest-addition": (F("latest_addition_date").desc(nulls_last=True), "material_name"),
     "oldest-addition": (F("latest_addition_date").asc(nulls_last=True), "material_name"),
     "price": (F("latest_unit_price").asc(nulls_last=True), "material_name"),
@@ -334,7 +336,7 @@ def inventory_dataset(query: QueryDict, *, company, membership=None, low_stock: 
         {
             "status": StockItem.Status.ACTIVE,
             "date_field": "latest_addition_date",
-            "sort": "quantity" if low_stock else "project",
+            "sort": "quantity" if low_stock else "created",
             "columns": DEFAULT_STOCK_COLUMNS,
         },
     )
@@ -354,8 +356,8 @@ def inventory_dataset(query: QueryDict, *, company, membership=None, low_stock: 
         cleaned = scoped
     else:
         queryset = filter_stock_items(queryset, cleaned)
-    sort = cleaned.get("sort") or ("quantity" if low_stock else "project")
-    queryset = queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["project"]))
+    sort = cleaned.get("sort") or ("quantity" if low_stock else "created")
+    queryset = queryset.order_by(*STOCK_SORTS.get(sort, STOCK_SORTS["created"]), "pk")
     columns = _visible_columns(
         data,
         choices=StockItemFilterForm.COLUMN_CHOICES,

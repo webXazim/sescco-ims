@@ -19,6 +19,7 @@ from apps.accounts.permissions import user_membership_for_company
 from apps.inventory.access import project_in_inventory_scope
 from apps.inventory.models import StockItem, Unit
 from apps.inventory.normalization import clean_display_text, normalize_phone, normalize_text
+from apps.inventory.quantity_policy import allows_fractional, is_whole
 from apps.inventory.services.matching import find_stock_matches
 from apps.inventory.services.stock import InventoryOperationError, add_opening_stock
 from apps.projects.models import Project
@@ -442,6 +443,10 @@ def _preview_opening(job: ImportJob, workbook) -> None:
                 raise ValueError("Opening quantity must be greater than zero.")
             if cleaned["minimum_quantity"] < 0:
                 raise ValueError("Minimum quantity cannot be negative.")
+            if not allows_fractional(unit) and (
+                not is_whole(cleaned["opening_quantity"]) or not is_whole(cleaned["minimum_quantity"])
+            ):
+                raise ValueError(f"{unit.name} ({unit.symbol}) requires whole opening and minimum quantities.")
             if cleaned["unit_price"] is not None and cleaned["unit_price"] < 0:
                 raise ValueError("Unit price cannot be negative.")
             if cleaned["opening_date"] > timezone.localdate():

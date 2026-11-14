@@ -5,7 +5,7 @@
   <div class="head-actions">{% include "partials/save_view_control.html" %}{% if "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}{% url 'data_exchange:inventory_export' 'xlsx' as xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=source_query xlsx_url=xlsx_url csv_url=csv_url %}{% endif %}{% if "inventory.locations.manage" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:units' %}">Manage units</a>{% endif %}{% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'core:add_stock' %}">＋ Add stock</a>{% endif %}</div>
 </div>
 <section class="card explorer">
-  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="created" data-default-date-field="latest_addition_date" data-default-columns="{{ default_columns|join:',' }}">
     <div class="explorer-toolbar inventory-explorer-toolbar">
       <div class="search-field inventory-explorer-search"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
       <div class="quick-filters inventory-explorer-filters">
@@ -34,7 +34,7 @@
             <div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div>
           </div>
         </div>
-        {{ filter_form.sort }}
+        <div class="inventory-sort-control"><label for="id_sort">Sort</label>{{ filter_form.sort }}</div>
         <div class="filter-panel-control"><button class="btn btn-ghost btn-sm premium-control inventory-explorer-icon-control" type="button" data-toggle-filter-panel aria-label="More filters" title="More filters" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span class="sr-only" data-filter-toggle-label>More filters</span></button>
         <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
           <div class="popover-section-head"><div><strong>More filters</strong><span>Narrow the inventory without changing your saved columns.</span></div></div>
@@ -84,8 +84,8 @@
     {% if "supplier" in visible_columns %}<td>{{ item.supplier_name }}</td>{% endif %}
     {% if "phone" in visible_columns %}<td>{{ item.supplier_phone }}</td>{% endif %}
     {% if "location" in visible_columns %}<td>{{ item.supplier_location|default:"—" }}</td>{% endif %}
-    {% if "quantity" in visible_columns %}<td class="qty">{{ item.current_quantity }}</td>{% endif %}
-    {% if "minimum" in visible_columns %}<td>{{ item.minimum_quantity }}</td>{% endif %}
+    {% if "quantity" in visible_columns %}<td class="qty">{{ item.current_quantity|floatformat:"-3" }}</td>{% endif %}
+    {% if "minimum" in visible_columns %}<td>{{ item.minimum_quantity|floatformat:"-3" }}</td>{% endif %}
     {% if "unit" in visible_columns %}<td>{{ item.unit.symbol }}</td>{% endif %}
     {% if "price" in visible_columns %}<td>{% if item.latest_unit_price is not None %}{{ item.latest_unit_price }}{% else %}—{% endif %}</td>{% endif %}
     {% if "value" in visible_columns %}<td class="price">{% if item.stock_value is not None %}{{ item.stock_value|floatformat:"2g" }}{% else %}—{% endif %}</td>{% endif %}

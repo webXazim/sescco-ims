@@ -143,3 +143,21 @@ class StockItemModelTests(TestCase):
         )
         self.assertIsNone(similar_result.exact)
         self.assertEqual(list(similar_result.similar), [exact])
+
+    def test_legacy_fractional_balance_is_preserved_for_metadata_edit(self):
+        item = self.create_item()
+        StockItem.objects.filter(pk=item.pk).update(current_quantity=Decimal("0.999"))
+        item.refresh_from_db()
+        item.description = "Physical stock count required"
+        item.save()  # keep old stock/history unchanged, even if integer mode applies
+        item.refresh_from_db()
+        self.assertEqual(item.current_quantity, Decimal("0.999"))
+        item.current_quantity = Decimal("1.999")
+        with self.assertRaises(ValidationError):
+            item.save(_inventory_service=True)
+
+    def test_countable_unit_cannot_be_saved_with_decimal_mode(self):
+        unit = Unit(company=self.company, name="Pieces", symbol="pcs", allows_fractional_quantities=True)
+        with self.assertRaises(ValidationError):
+            unit.save()
+

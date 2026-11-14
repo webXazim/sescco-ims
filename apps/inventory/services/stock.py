@@ -17,6 +17,7 @@ from apps.projects.models import Project
 from ..access import location_in_inventory_scope, project_in_inventory_scope
 from ..models import InventoryLocation, StockItem, StockMovement, StockTransferLine, Supplier, Unit
 from ..normalization import clean_display_text, normalize_phone, normalize_text
+from ..quantity_policy import allows_fractional, is_whole
 
 
 class InventoryOperationError(ValidationError):
@@ -57,7 +58,7 @@ def _validate_positive_quantity(quantity: Decimal) -> Decimal:
 
 def _validate_unit_quantity(unit: Unit, quantity: Decimal) -> Decimal:
     value = Decimal(quantity)
-    if not unit.allows_fractional_quantities and value % 1:
+    if not allows_fractional(unit) and not is_whole(value):
         raise InventoryOperationError(f"{unit.name} ({unit.symbol}) only allows whole quantities.")
     return value
 
@@ -104,6 +105,11 @@ def _save_balance(
     latest_unit_price: Decimal | None | object = ...,  # Ellipsis means unchanged.
     latest_addition_date: date | None | object = ...,
 ) -> None:
+    if not allows_fractional(stock_item.unit) and not is_whole(new_balance):
+        raise InventoryOperationError(
+            f"{stock_item.material_name} has a legacy fractional balance. "
+            "Reconcile the balance before making new stock movements; historical movements are preserved."
+        )
     stock_item.current_quantity = new_balance
     stock_item.updated_by = user
     update_fields = ["current_quantity", "updated_by", "updated_at"]
@@ -245,7 +251,7 @@ def add_stock(
         return duplicate
 
     quantity = _validate_unit_quantity(unit, _validate_positive_quantity(quantity))
-    if not unit.allows_fractional_quantities and Decimal(minimum_quantity) % 1:
+    if not allows_fractional(unit) and not is_whole(minimum_quantity):
         raise InventoryOperationError(f"{unit.name} ({unit.symbol}) only allows whole minimum quantities.")
     _validate_operation_date(movement_date)
     if unit_price is not None and Decimal(unit_price) < 0:

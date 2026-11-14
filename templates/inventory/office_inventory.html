@@ -13,7 +13,7 @@
 <section class="card section-gap"><div class="empty-state"><strong>No accessible active office location</strong><p>There is no active office inventory location available to your access profile. Ask your inventory administrator to check the office location and your assigned location access.</p>{% if archived_office and "inventory.locations.manage" in ACCESS_CONTEXT.effective_access.permissions %}<form method="post" action="{% url 'inventory:location_status' archived_office.pk %}" class="section-gap">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="return_to" value="office"><button class="btn btn-primary" type="submit">Reactivate {{ archived_office.name }}</button></form>{% endif %}{% if "inventory.locations.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:locations' %}?status=all">Manage office locations</a>{% endif %}</div></section>
 {% else %}
 <section class="card explorer">
-  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="updated" data-default-date-field="latest_addition_date">
+  <form method="get" data-filter-form data-live-filter-form data-default-status="active" data-default-sort="created" data-default-date-field="latest_addition_date">
     <div class="explorer-toolbar inventory-explorer-toolbar">
       <div class="search-field inventory-explorer-search"><span class="search-glyph" aria-hidden="true"></span>{{ filter_form.q }}</div>
       <div class="quick-filters inventory-explorer-filters">
@@ -44,7 +44,7 @@
             <div class="date-range-actions"><button type="button" class="btn btn-ghost btn-sm" data-clear-date-range>Clear</button><button type="button" class="btn btn-primary btn-sm" data-close-date-range>Done</button></div>
           </div>
         </div>
-        {{ filter_form.sort }}
+        <div class="inventory-sort-control"><label for="id_sort">Sort</label>{{ filter_form.sort }}</div>
         <div class="filter-panel-control">
           <button class="btn btn-ghost btn-sm premium-control inventory-explorer-icon-control" type="button" data-toggle-filter-panel aria-label="More filters" title="More filters" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}"><span class="filter-control-icon" aria-hidden="true"></span><span class="sr-only" data-filter-toggle-label>More filters</span></button>
           <div class="advanced-panel filter-popover{% if not advanced_open %} is-hidden{% endif %}" data-filter-panel>
