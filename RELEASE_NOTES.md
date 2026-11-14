@@ -1,3 +1,9 @@
+# SESCCO IMS v1.0.128 — Project Pulse Execution Schedule
+
+Category-based work-execution tracking, 0%-by-default execution categories, one-click complete/reopen, project-scoped navigation, terminology cleanup, and status-based progress reports. Existing expenses, budget/contract approval histories and separate Inventory/Payroll remain intact. No new database migrations. See `docs/releases/project-pulse/PROJECT_PULSE_EXECUTION_SCHEDULE_V1_0_128.md`. Runtime Django/PostgreSQL testing is pending.
+
+---
+
 # Project Pulse U10 — SESCCO IMS 1.0.127 (staging candidate)
 
 Project-list confidentiality, unbudgeted cost/budget-balance correctness, archived unbudgeted cost recognition, regression tests, export smoke checks and staged verification instructions. **Django/PostgreSQL runtime acceptance is still required.** See `docs/releases/project-pulse/PROJECT_PULSE_U10_RELEASE_NOTES.md`.

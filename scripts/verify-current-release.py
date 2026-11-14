@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current-release source and authorization checks for SESCCO IMS v1.0.127.
+"""Current-release source and authorization checks for SESCCO IMS v1.0.128.
 
 Historical merge/release verifier scripts and manifests are immutable baseline
 artifacts for 1.0.117. This verifier checks the actual upgrade in its current
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.0.127"
+VERSION = "1.0.128"
 HISTORIC = "1.0.117"
 
 
@@ -58,7 +58,7 @@ def check() -> None:
     codes = [n.value.value for n in enum.body if isinstance(n, ast.Assign)
              and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)]
     if len(codes) != len(set(codes)) or len(codes) != 124:
-        fail(f"Access catalog must contain 124 unique v1.0.127 permissions, found {len(codes)}")
+        fail(f"Access catalog must contain 124 unique v1.0.128 permissions, found {len(codes)}")
     pulse = {x for x in codes if x.startswith("pulse.")}
     if len(pulse) != 27:
         fail(f"Project Pulse requires 27 explicit permissions, found {len(pulse)}")

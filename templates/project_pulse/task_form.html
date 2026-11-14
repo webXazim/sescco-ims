@@ -1,9 +1,8 @@
 {% extends 'project_pulse/base.html' %}
 {% block content %}
-<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:tasks' project.code %}">Tasks</a><span>/</span><strong>{% if task %}Edit{% else %}Add{% endif %}</strong></nav>
-<section class="pulse-page-head"><div><span class="pulse-eyebrow">{{ project.code }}</span><h1>{% if task %}Edit task{% else %}Add task{% endif %}</h1><p>Choose a work category, team assignee and relative progress weight. Changing status updates progress history automatically.</p></div><a class="btn" href="{% url 'project_pulse:tasks' project.code %}">Cancel</a></section>
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:execution_schedule' project.code %}">Execution schedule</a><span>/</span><a href="{% url 'project_pulse:scheduled_works' project.code %}">Scheduled works</a><span>/</span><strong>{% if task %}Edit{% else %}Add{% endif %}</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">{{ project.code }}</span><h1>{% if task %}Edit scheduled work{% else %}Add scheduled work{% endif %}</h1><p>List an activity that must be completed within an execution category. Completion is tracked by status, not by manually entered percentage.</p></div><a class="btn" href="{% url 'project_pulse:scheduled_works' project.code %}">Cancel</a></section>
 <section class="pulse-panel pulse-form-panel"><form method="post" class="pulse-editor-form pulse-editor-grid">{% csrf_token %}{% if form.non_field_errors %}<div class="pulse-form-errors pulse-span-all">{{ form.non_field_errors }}</div>{% endif %}
 {% for field in form %}<label class="pulse-form-field {% if field.name == 'description' or field.name == 'title' %}pulse-span-all{% endif %}"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="pulse-form-errors">{{ field.errors|striptags }}</small>{% endif %}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</label>{% endfor %}
-<div class="pulse-form-actions pulse-span-all"><button type="submit" class="btn btn-primary">Save task</button><a class="btn" href="{% url 'project_pulse:tasks' project.code %}">Cancel</a></div></form></section>
-
+<div class="pulse-form-actions pulse-span-all"><button type="submit" class="btn btn-primary">Save scheduled work</button><a class="btn" href="{% url 'project_pulse:scheduled_works' project.code %}">Cancel</a></div></form></section>
 {% endblock %}

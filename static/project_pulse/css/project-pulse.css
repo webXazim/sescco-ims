@@ -76,3 +76,16 @@
 .pulse-expense-breakdown{border-top:1px solid #edf0f5;padding:14px 22px;display:flex;flex-wrap:wrap;gap:18px 30px}
 .pulse-expense-breakdown>div{display:flex;gap:9px;flex-direction:column;min-width:145px;font-size:12px;color:#64748b}
 .pulse-expense-breakdown strong{font-size:14px;color:#253348;font-variant-numeric:tabular-nums}
+
+/* Execution schedule: clean contextual navigation and binary completion states. */
+.pulse-project-nav{padding-top:4px;border-top:1px solid #e9eef4;margin-top:9px}
+.pulse-selected-project{display:flex;flex-direction:column;gap:4px;padding:8px 13px 13px;text-decoration:none;min-width:0;color:#26364b}
+.pulse-selected-project strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.pulse-selected-project small{font-size:11px;color:#7b8797;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pulse-project-nav .nav-link{min-height:37px;font-size:13px}
+.pulse-completion{display:inline-flex;border-radius:5px;padding:4px 9px;font-size:12px;font-weight:600;background:#f1f4f8;color:#536272;white-space:nowrap}
+.pulse-completion--done{background:#e8f6ee;color:#126e48}
+.pulse-finance-metrics{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:18px}
+.pulse-finance-metrics .pulse-metric strong{font-size:22px}
+.pulse-row-actions{min-width:160px}
+@media(max-width:650px){.pulse-finance-metrics{grid-template-columns:1fr}}

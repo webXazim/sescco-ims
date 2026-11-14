@@ -10,96 +10,56 @@ from .models import PulseTask, PulseWorkCategory, PulseProjectTeamMember
 class PulseCategoryForm(forms.ModelForm):
     class Meta:
         model = PulseWorkCategory
-        fields = ("name", "description", "sort_order", "progress_weight")
-        widgets = {"description": forms.Textarea(attrs={"rows": 2}),
-                   "sort_order": forms.NumberInput(attrs={"min": 0}),
-                   "progress_weight": forms.NumberInput(attrs={"min": 0.01, "step": 0.01})}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["progress_weight"].required = False
-
-    def clean_progress_weight(self):
-        value = self.cleaned_data.get("progress_weight")
-        return value if value is not None else (self.instance.progress_weight or Decimal("1.00"))
+        fields = ("name", "description", "sort_order")
+        labels = {"name": "Execution category", "sort_order": "Display order"}
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 2}),
+            "sort_order": forms.NumberInput(attrs={"min": 0}),
+        }
 
 
 class PulseTaskForm(forms.ModelForm):
+    """Scheduled works are project milestones, not personal assignments."""
     class Meta:
         model = PulseTask
-        fields = ("category", "title", "description", "assigned_to", "priority",
-                  "status", "planned_start", "due_date", "sort_order", "progress_weight")
+        fields = ("category", "title", "description", "status", "planned_start", "due_date", "sort_order")
+        labels = {
+            "category": "Execution category", "title": "Scheduled work",
+            "planned_start": "Planned start", "due_date": "Target completion",
+            "sort_order": "Display order",
+        }
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),
             "planned_start": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "due_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "sort_order": forms.NumberInput(attrs={"min": 0}),
-            "progress_weight": forms.NumberInput(attrs={"min": 0.01, "step": 0.01}),
         }
 
     def __init__(self, *args, project, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["progress_weight"].required = False
         self.fields["category"].queryset = PulseWorkCategory.objects.filter(
             project=project, archived_at__isnull=True
         )
-        # U02 assignments do not grant access themselves; recheck on save.
-        eligible = (PulseProjectTeamMember.objects.filter(project=project, is_active=True)
-                    .select_related("membership__user", "membership__access_profile", "project"))
-        from apps.accounts.access_policy import membership_has_permission
-        from apps.accounts.access_catalog import AccessPermission
-        eligible_membership_ids = [assignment.membership_id for assignment in eligible
-            if assignment.has_project_access and membership_has_permission(
-                assignment.membership, AccessPermission.PULSE_TASKS_VIEW)]
-        from apps.accounts.models import CompanyMembership
-        self.fields["assigned_to"].queryset = (CompanyMembership.objects.filter(
-            pk__in=eligible_membership_ids, company=project.company,
-            is_active=True, user__is_active=True,
-        ).select_related("user").order_by("user__username"))
-        self.fields["assigned_to"].required = False
-        self.fields["assigned_to"].label_from_instance = lambda member: member.user.display_name
-        self.fields["assigned_to"].empty_label = "Unassigned"
-        self.fields["category"].empty_label = "Choose work category"
-
-    def clean_progress_weight(self):
-        value = self.cleaned_data.get("progress_weight")
-        return value if value is not None else (self.instance.progress_weight or Decimal("1.00"))
+        self.fields["category"].empty_label = "Choose execution category"
 
     def clean(self):
         data = super().clean()
-        # ModelForm validates the model before our save_task service runs. Keep
-        # its validation consistent with the status-driven percentage rule.
         status = data.get("status")
         if status == PulseTask.Status.COMPLETED:
             self.instance.progress_percent = 100
-        elif status == PulseTask.Status.NOT_STARTED or (
-            status and self.instance.progress_percent == 100
-        ):
+        elif status is not None:
+            # Scheduled-work progress is binary. Historical partial updates stay
+            # in the audit trail, not in new execution progress calculations.
             self.instance.progress_percent = 0
         return data
 
 
 class PulseProgressForm(forms.Form):
-    progress_percent = forms.IntegerField(
-        label="Completion (%)", min_value=0, max_value=100,
-        widget=forms.NumberInput(attrs={"min": 0, "max": 100, "step": 1}),
-    )
-    status = forms.ChoiceField(choices=PulseTask.Status.choices)
+    status = forms.ChoiceField(label="Execution status", choices=PulseTask.Status.choices)
     note = forms.CharField(
         required=False, max_length=2000,
-        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Describe the work completed or reason for delay"}),
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Work completed, evidence or reason for delay"}),
     )
-
-    def clean(self):
-        data = super().clean()
-        value, status = data.get("progress_percent"), data.get("status")
-        if value is None or status is None:
-            return data
-        if (status == PulseTask.Status.COMPLETED and value != 100) or (value == 100 and status != PulseTask.Status.COMPLETED):
-            self.add_error("progress_percent", "100% progress must use Completed status; Completed requires 100%.")
-        if status == PulseTask.Status.NOT_STARTED and value != 0:
-            self.add_error("status", "Not Started requires 0% completion.")
-        return data
 
 
 

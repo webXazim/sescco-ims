@@ -1,6 +1,6 @@
 {% extends 'project_pulse/base.html' %}
 {% block content %}
-<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:project_detail' project.code %}">{{ project.code }}</a><span>/</span><a href="{% url 'project_pulse:task_expenses' project.code task.pk %}">Task expenses</a><span>/</span><strong>History</strong></nav>
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:project_detail' project.code %}">{{ project.code }}</a><span>/</span><a href="{% url 'project_pulse:task_expenses' project.code task.pk %}">Scheduled-work expenses</a><span>/</span><strong>History</strong></nav>
 <section class="pulse-page-head"><div><span class="pulse-eyebrow">Restricted financial history</span><h1>Expense #{{ expense.pk }} — Revision history</h1><p>{{ task.title }} · Recorded, edited and voided versions retained for authorized finance users.</p></div><a class="btn" href="{% url 'project_pulse:task_expenses' project.code task.pk %}">Back to expenses</a></section>
 <section class="pulse-panel"><div class="pulse-panel-head"><div><h2>Change records</h2><p>Historical values are visible only to profiles with expense amount access. The general platform audit contains no private expense values.</p></div></div>
 <div class="pulse-table-wrap"><table class="pulse-table"><thead><tr><th>Changed</th><th>Action</th><th>User</th><th>Previous details</th><th>New details</th></tr></thead><tbody>

@@ -121,10 +121,7 @@ def save_task(*, actor, project_id, data, task_id=None, request=None):
             setattr(row, field, data[field])
     # U03's status editor remains usable. Any status-driven percentage adjustment
     # creates an explicit, immutable progress-history row.
-    if row.status == PulseTask.Status.COMPLETED:
-        row.progress_percent = 100
-    elif row.status == PulseTask.Status.NOT_STARTED or (old_percent == 100 and row.status != PulseTask.Status.COMPLETED):
-        row.progress_percent = 0
+    row.progress_percent = 100 if row.status == PulseTask.Status.COMPLETED else 0
     if row.category.project_id != project.pk or row.category.archived_at is not None:
         raise ValidationError({"category": "Choose an active category within this project."})
     row.save()

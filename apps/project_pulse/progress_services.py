@@ -1,8 +1,4 @@
-"""Audited operational progress updates and deterministic weighted rollups.
-
-No financial sources are used. Only active categories, active non-cancelled
-work, and their strictly positive weights contribute to progress denominators.
-"""
+"""Audited operational progress updates and completed-work count rollups."""
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -24,10 +20,10 @@ _TENTH = Decimal("0.1")
 
 
 def can_update_task_progress(actor, task):
-    """Authorized task managers or a current team manager/assignee only.
+    """Scheduled work belongs to the project, not to an individual assignee.
 
-    Assignment alone must not grant permissions, and revoked assignments must
-    not enable progress changes. This is rechecked under a transaction on POST.
+    The Project Pulse progress-update permission plus project scope grants
+    update authority; a personal task assignment must not be required.
     """
     if actor is None or not all(membership_has_permission(actor, p) for p in (
         AccessPermission.PULSE_OVERVIEW_VIEW, AccessPermission.PULSE_PROJECTS_VIEW,
@@ -35,18 +31,8 @@ def can_update_task_progress(actor, task):
         AccessPermission.PULSE_PROGRESS_UPDATE,
     )):
         return False
-    if actor.company_id != task.category.project.company_id or not membership_allows_project(actor, task.category.project):
-        return False
-    if membership_has_permission(actor, AccessPermission.PULSE_TASKS_MANAGE):
-        return True
-    if not PulseProjectTeamMember.objects.filter(
-        project_id=task.category.project_id, membership_id=actor.pk, is_active=True
-    ).exists():
-        return False
-    return bool(task.assigned_to_id == actor.pk or PulseProjectTeamMember.objects.filter(
-        project_id=task.category.project_id, membership_id=actor.pk,
-        is_active=True, role=PulseProjectTeamMember.Role.MANAGER,
-    ).exists())
+    return bool(actor.company_id == task.category.project.company_id
+                and membership_allows_project(actor, task.category.project))
 
 
 def _percent(numerator, denominator):
@@ -56,62 +42,69 @@ def _percent(numerator, denominator):
 
 
 def calculate_progress(project_ids, *, today=None):
-    """Return (project_metrics, category_metrics) keyed by IDs.
+    """Count-based project execution progress, never financial or manually weighted.
 
-    An empty project/category reports 0.0% and has_work=False. Archived and
-    cancelled work is excluded from both numerator and denominator. No cache is
-    persisted, so archive/restore, reweighting, and edits instantly recalculate.
+    For each active execution category: completed non-cancelled, non-archived
+    scheduled works / eligible scheduled works. Empty categories display 0%.
+    Every active category, including an empty one, contributes equally to the
+    project average. Archived categories and cancelled/archived works are
+    excluded. Historical partial task percentages are ignored.
     """
     ids = list(dict.fromkeys(project_ids))
     if not ids:
         return {}, {}
     today = today or timezone.localdate()
-    categories = list(PulseWorkCategory.objects.filter(
+    rows = list(PulseWorkCategory.objects.filter(
         project_id__in=ids, archived_at__isnull=True,
-    ).values("id", "project_id", "progress_weight"))
+    ).values("id", "project_id"))
+    projects = {pk: {
+        "percent": Decimal("0.0"), "has_work": False,
+        "task_count": 0, "completed_count": 0, "overdue_count": 0,
+        "category_count": 0, "measured_categories": 0,
+        "_category_percent_sum": _ZERO,
+    } for pk in ids}
     cats = {}
-    projects = {pk: {"percent": Decimal("0.0"), "has_work": False, "task_count": 0,
-                     "completed_count": 0, "overdue_count": 0, "category_count": 0,
-                     "measured_categories": 0, "_weighted_sum": _ZERO, "_weight_sum": _ZERO}
-                for pk in ids}
-    for cat in categories:
-        cats[cat["id"]] = {"id": cat["id"], "project_id": cat["project_id"],
-                           "percent": Decimal("0.0"), "has_work": False,
-                           "task_count": 0, "completed_count": 0, "overdue_count": 0,
-                           "_weighted_sum": _ZERO, "_weight_sum": _ZERO,
-                           "weight": cat["progress_weight"]}
+    for cat in rows:
+        cats[cat["id"]] = {
+            "id": cat["id"], "project_id": cat["project_id"],
+            "percent": Decimal("0.0"), "has_work": False,
+            "task_count": 0, "completed_count": 0, "overdue_count": 0,
+        }
         projects[cat["project_id"]]["category_count"] += 1
     if cats:
         for task in PulseTask.objects.filter(
             category_id__in=cats, archived_at__isnull=True,
         ).exclude(status=PulseTask.Status.CANCELLED).values(
-            "category_id", "status", "progress_percent", "progress_weight", "due_date"
+            "category_id", "status", "due_date"
         ):
-            summary = cats[task["category_id"]]
-            summary["task_count"] += 1
-            summary["completed_count"] += task["status"] == PulseTask.Status.COMPLETED
-            summary["overdue_count"] += bool(
-                task["due_date"] and task["due_date"] < today and task["status"] != PulseTask.Status.COMPLETED
-            )
-            summary["_weighted_sum"] += task["progress_weight"] * Decimal(task["progress_percent"])
-            summary["_weight_sum"] += task["progress_weight"]
-    for cat in cats.values():
-        project = projects[cat["project_id"]]
-        cat["has_work"] = cat["task_count"] > 0
-        cat["percent"] = _percent(cat["_weighted_sum"], cat["_weight_sum"])
-        project["task_count"] += cat["task_count"]
-        project["completed_count"] += cat["completed_count"]
-        project["overdue_count"] += cat["overdue_count"]
-        if cat["has_work"]:
+            category = cats[task["category_id"]]
+            completed = task["status"] == PulseTask.Status.COMPLETED
+            category["task_count"] += 1
+            if completed:
+                category["completed_count"] += 1
+            if task["due_date"] and task["due_date"] < today and not completed:
+                category["overdue_count"] += 1
+    for category in cats.values():
+        project = projects[category["project_id"]]
+        category["has_work"] = category["task_count"] > 0
+        if category["has_work"]:
             project["measured_categories"] += 1
-            # Full-precision category average: avoid double-rounding project progress.
-            project["_weighted_sum"] += cat["weight"] * (cat["_weighted_sum"] / cat["_weight_sum"])
-            project["_weight_sum"] += cat["weight"]
-        for key in ("_weighted_sum", "_weight_sum"):
-            cat.pop(key)
+        category["percent"] = _percent(
+            Decimal(category["completed_count"] * 100), Decimal(category["task_count"])
+        )
+        project["task_count"] += category["task_count"]
+        project["completed_count"] += category["completed_count"]
+        project["overdue_count"] += category["overdue_count"]
+        # Full precision before project-level rounding; include empty categories.
+        if category["task_count"]:
+            project["_category_percent_sum"] += (
+                Decimal(category["completed_count"] * 100) / Decimal(category["task_count"])
+            )
     for project in projects.values():
         project["has_work"] = project["task_count"] > 0
-        project["percent"] = _percent(project.pop("_weighted_sum"), project.pop("_weight_sum"))
+        project["percent"] = _percent(
+            project.pop("_category_percent_sum"), Decimal(project["category_count"])
+        )
     return projects, cats
 
 
@@ -136,7 +129,7 @@ def record_progress(*, actor, project_id, task_id, progress_percent, status, not
     if task.archived_at is not None or task.category.archived_at is not None:
         raise ValidationError("Archived tasks cannot be updated.")
     if not can_update_task_progress(actor, task):
-        raise PermissionDenied("You may update only your assigned tasks unless you are an authorized project/task manager.")
+        raise PermissionDenied("You are not authorized to update scheduled works in this project.")
     try:
         percentage = int(progress_percent)
     except (TypeError, ValueError, OverflowError) as exc:

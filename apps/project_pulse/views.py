@@ -213,7 +213,7 @@ def project_detail(request, code):
 def project_team(request, code):
     require_team_view(request)
     project = _project_for_request(request, code)
-    context = _context(request, page_key="pulse-projects", title=f"{project.name} · Team")
+    context = _context(request, page_key="pulse-team", title=f"{project.name} · Team")
     allowed_users = []
     if context["pulse_can_manage_team"] and project.status not in (Project.Status.ARCHIVED, Project.Status.COMPLETED):
         members = (CompanyMembership.objects.filter(
@@ -285,7 +285,7 @@ def work_categories(request, code):
     rows = list(PulseWorkCategory.objects.filter(project=project)
         .annotate(task_count=Count("tasks", filter=Q(tasks__archived_at__isnull=True)))
         .order_by("sort_order", "name", "pk"))
-    context = _context(request, page_key="pulse-categories", title=f"{project.name} · Work categories")
+    context = _context(request, page_key="pulse-categories", title=f"{project.name} · Execution schedule")
     if context["pulse_can_view_progress"]:
         _, category_summaries = calculate_progress([project.pk])
         for category in rows:
@@ -314,12 +314,12 @@ def category_form(request, code, category_id=None):
             except ValidationError as error:
                 form.add_error(None, _error_text(error))
             else:
-                messages.success(request, f"Work category {result.name} saved.")
+                messages.success(request, f"Execution category {result.name} saved.")
                 return redirect("project_pulse:categories", code=project.code)
     else:
         form = PulseCategoryForm(instance=row)
     return render(request, "project_pulse/category_form.html", {
-        **_context(request, page_key="pulse-categories", title="Edit work category" if row else "Add work category"),
+        **_context(request, page_key="pulse-categories", title="Edit execution category" if row else "Add execution category"),
         "project": project, "category": row, "form": form,
     })
 
@@ -369,7 +369,7 @@ def task_list(request, code):
     if search:
         rows = rows.filter(Q(title__icontains=search) | Q(description__icontains=search))
     page = Paginator(rows.order_by("sort_order", "due_date", "pk"), 35).get_page(request.GET.get("page"))
-    context = _context(request, page_key="pulse-tasks", title=f"{project.name} · Tasks")
+    context = _context(request, page_key="pulse-tasks", title=f"{project.name} · Scheduled works")
     if context["pulse_can_view_progress"]:
         for task in page.object_list:
             task.pulse_can_update = (context["pulse_can_update_progress"] and
@@ -425,7 +425,7 @@ def task_form(request, code, task_id=None):
             except ValidationError as error:
                 form.add_error(None, _error_text(error))
             else:
-                messages.success(request, f"Task {result.title} saved.")
+                messages.success(request, f"Scheduled work {result.title} saved.")
                 return redirect("project_pulse:tasks", code=project.code)
     else:
         form = PulseTaskForm(instance=row, project=project)
@@ -433,7 +433,7 @@ def task_form(request, code, task_id=None):
         if not row and selected_category.isdecimal() and form.fields["category"].queryset.filter(pk=int(selected_category)).exists():
             form.initial["category"] = int(selected_category)
     return render(request, "project_pulse/task_form.html", {
-        **_context(request, page_key="pulse-tasks", title="Edit task" if row else "New task"),
+        **_context(request, page_key="pulse-tasks", title="Edit scheduled work" if row else "New scheduled work"),
         "project": project, "task": row, "form": form,
     })
 
@@ -468,9 +468,9 @@ def task_progress(request, code, task_id):
     history = (PulseProgressUpdate.objects.filter(task=task)
         .select_related("updated_by__user").order_by("-created_at", "-pk")[:100])
     return render(request, "project_pulse/task_progress.html", {
-        **_context(request, page_key="pulse-tasks", title=f"{task.title} · Progress"),
+        **_context(request, page_key="pulse-tasks", title=f"{task.title} · Execution history"),
         "project": project, "task": task, "history": history, "can_update_task": can_update,
-        "progress_form": PulseProgressForm(initial={"progress_percent": task.progress_percent, "status": task.status}),
+        "progress_form": PulseProgressForm(initial={"status": task.status}),
     })
 
 
@@ -488,15 +488,87 @@ def task_progress_update(request, code, task_id):
     try:
         record_progress(
             actor=request.company_membership, project_id=project.pk, task_id=task_id,
-            progress_percent=form.cleaned_data["progress_percent"],
+            progress_percent=100 if form.cleaned_data["status"] == PulseTask.Status.COMPLETED else 0,
             status=form.cleaned_data["status"], note=form.cleaned_data["note"], request=request,
         )
     except ValidationError as error:
         messages.error(request, _error_text(error))
     else:
-        messages.success(request, "Task progress updated and recorded in history.")
+        messages.success(request, "Scheduled work status saved in the execution history.")
     return redirect("project_pulse:task_progress", code=project.code, task_id=task_id)
 
+
+
+@login_required
+@require_POST
+def task_completion(request, code, task_id):
+    """Quick complete/reopen from the execution schedule, with an audit trail."""
+    require_progress_update(request)
+    project = _project_for_request(request, code)
+    action = request.POST.get("action", "")
+    if action not in ("complete", "reopen"):
+        return HttpResponseBadRequest("Invalid scheduled work completion action.")
+    status = (PulseTask.Status.COMPLETED if action == "complete"
+              else PulseTask.Status.NOT_STARTED)
+    existing = _task_for_request(project, task_id)
+    if existing.status == PulseTask.Status.CANCELLED:
+        messages.error(request, "Cancelled scheduled works cannot be completed from this shortcut.")
+        return redirect("project_pulse:scheduled_works", code=project.code)
+    try:
+        record_progress(
+            actor=request.company_membership, project_id=project.pk,
+            task_id=task_id, status=status,
+            progress_percent=100 if action == "complete" else 0,
+            note="Completed from execution schedule." if action == "complete" else "Reopened from execution schedule.",
+            request=request,
+        )
+    except ValidationError as error:
+        messages.error(request, _error_text(error))
+    else:
+        messages.success(request, "Scheduled work completed." if action == "complete" else "Scheduled work reopened.")
+    # Always go to the category schedule; never trust a user-supplied redirect.
+    task = _task_for_request(project, task_id)
+    if membership_has_permission(request.company_membership, AccessPermission.PULSE_CATEGORIES_VIEW):
+        return redirect("project_pulse:category_detail", code=project.code, category_id=task.category_id)
+    return redirect("project_pulse:scheduled_works", code=project.code)
+
+
+@login_required
+@require_GET
+def category_detail(request, code, category_id):
+    """The category's schedule, status and permitted financial summaries."""
+    require_categories_view(request)
+    project = _project_for_request(request, code)
+    category = _category_for_request(project, category_id)
+    context = _context(request, page_key="pulse-categories", title=f"{category.name} · Execution schedule")
+    scheduled = []
+    page = None
+    if context["pulse_can_view_tasks"]:
+        qs = (PulseTask.objects.filter(category=category, archived_at__isnull=True)
+              .exclude(status=PulseTask.Status.CANCELLED)
+              .order_by("sort_order", "due_date", "pk"))
+        page = Paginator(qs, 50).get_page(request.GET.get("page"))
+        scheduled = list(page.object_list)
+        editable = _pulse_work_editable(project) and category.archived_at is None
+        for item in scheduled:
+            item.pulse_can_update = (editable and context["pulse_can_update_progress"]
+                                     and context["pulse_can_view_progress"]
+                                     and can_update_task_progress(request.company_membership, item))
+    _, category_metrics = calculate_progress([project.pk])
+    metric = category_metrics.get(category.pk)
+    expenses = None
+    if context["pulse_can_view_expenses"]:
+        expenses = expense_rollups(project)["approved_by_work_category"].get(category.pk, 0)
+    budget = None
+    if context["pulse_can_view_budgets"]:
+        budget = next((row for row in budget_rollups(project)["rows"]
+                       if row["category"].pk == category.pk), None)
+    return render(request, "project_pulse/category_detail.html", {
+        **context, "project": project, "category": category, "scheduled": scheduled,
+        "page": page, "metrics": metric, "approved_expenses": expenses,
+        "budget_row": budget,
+        "work_editable": _pulse_work_editable(project) and category.archived_at is None,
+    })
 
 
 @login_required
@@ -506,7 +578,7 @@ def expense_categories(request, code):
     project = _project_for_request(request, code)
     rows = PulseExpenseCategory.objects.filter(project=project).order_by("sort_order", "name")
     return render(request, "project_pulse/expense_categories.html", {
-        **_context(request, page_key="pulse-expenses", title="Expense categories"),
+        **_context(request, page_key="pulse-expense-categories", title="Expense categories"),
         "project": project, "categories": rows,
         "work_editable": _pulse_work_editable(project),
     })
@@ -533,7 +605,7 @@ def expense_category_form(request, code, category_id=None):
     else:
         form = PulseExpenseCategoryForm(instance=row)
     return render(request, "project_pulse/expense_category_form.html", {
-        **_context(request, page_key="pulse-expenses", title="Edit expense category" if row else "New expense category"),
+        **_context(request, page_key="pulse-expense-categories", title="Edit expense category" if row else "New expense category"),
         "project": project, "category": row, "form": form,
     })
 

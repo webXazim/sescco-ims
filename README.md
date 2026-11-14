@@ -8,13 +8,13 @@ Private Django operations platform combining Inventory Management, Payroll Manag
 custom responsive workspace is the main product for storekeepers; Django admin
 is reserved for Django superusers and protected corrections.
 
-## Project Pulse extension (U10 code release)
+## Project Pulse extension (execution schedule upgrade)
 
-Packaged Project Pulse release: **1.0.127**. The ten planned development milestones are implemented at source level; this final hardening package requires Django/PostgreSQL staging verification before production rollout. See `docs/releases/project-pulse/PROJECT_PULSE_U10_RELEASE_NOTES.md` and `docs/releases/project-pulse/PROJECT_PULSE_U10_STAGING_ACCEPTANCE.md`. Existing Inventory/Payroll production history is maintained below.
+Packaged Project Pulse release: **1.0.128**. Project execution is tracked through execution categories and completion-based scheduled works, with project-scoped expense classification and restricted financials. The code build requires Django/PostgreSQL staging verification before production rollout. See `docs/releases/project-pulse/PROJECT_PULSE_EXECUTION_SCHEDULE_V1_0_128.md` for the current behavior and migration guidance. The previous U10 verification remains relevant. See `docs/releases/project-pulse/PROJECT_PULSE_U10_RELEASE_NOTES.md` and `docs/releases/project-pulse/PROJECT_PULSE_U10_STAGING_ACCEPTANCE.md`. Existing Inventory/Payroll production history is maintained below.
 
 ## Production release
 
-Current packaged release: **SESCCO MS 1.0.127 — Project Pulse U10** (staging verification required).
+Current packaged release: **SESCCO MS 1.0.128 — Project Pulse Execution Schedule** (staging verification required).
 
 Historical immutable baseline: **SESCCO MS 1.0.117 — Supplier Timesheet Pack v3 Production Freeze & Acceptance (Upgrade 14/14)**.
 

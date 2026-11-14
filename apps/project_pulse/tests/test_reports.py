@@ -161,4 +161,4 @@ class PulseReportingTests(TestCase):
         res = self.client.get(self.url(), {'report':'progress', 'from_date':'2026-11-22'})
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.context['report_data'].rows, [])
-        self.assertEqual(dict(res.context['report_data'].stats)['Filtered tasks'], 0)
+        self.assertEqual(dict(res.context['report_data'].stats)['Filtered scheduled works'], 0)

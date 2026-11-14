@@ -25,8 +25,8 @@ from .progress_services import calculate_progress
 MAX_REPORT_ROWS = 5000
 ZERO = Decimal('0.00')
 REPORT_TYPES = (
-    ('progress', 'Task progress'),
-    ('expenses', 'Task expenses'),
+    ('progress', 'Execution progress'),
+    ('expenses', 'Scheduled-work expenses'),
     ('budgets', 'Category budgets'),
     ('financials', 'Profitability forecast'),
 )
@@ -133,18 +133,18 @@ def build_report(*, project, actor, filters, export=False):
         tasks = _limit(qs)
         overall, _ = calculate_progress([project.pk])
         overall_data = overall[project.pk]
-        rows = [(t.category.name, t.title,
-                 t.assigned_to.user.display_name if t.assigned_to_id else 'Unassigned',
-                 t.get_status_display(), t.get_priority_display(),
-                 t.progress_percent, t.progress_weight, t.due_date or '') for t in tasks]
-        return PulseReport(kind, 'Task progress',
-            ('Work category', 'Task', 'Assigned to', 'Status', 'Priority', 'Progress %', 'Task weight', 'Due date'), rows,
-            [('Filtered tasks', len(tasks)), ('Filtered completed', sum(t.status == t.Status.COMPLETED for t in tasks)),
-             ('Overall project progress', f"{overall_data['percent']}%" if overall_data['has_work'] else 'No tracked tasks'),
-             ('Overall overdue tasks', overall_data['overdue_count'])],
-            ['Dates filter task due dates, not progress update dates.',
-             'Overall weighted project progress always covers all eligible active work, independently of report filters.',
-             'Archived tasks/categories and (unless selected) cancelled tasks are excluded.'])
+        rows = [(t.category.name, t.title, t.get_status_display(),
+                 'Complete' if t.status == t.Status.COMPLETED else 'Not complete',
+                 t.due_date or '') for t in tasks]
+        return PulseReport(kind, 'Execution progress',
+            ('Execution category', 'Scheduled work', 'Status', 'Completion', 'Target date'), rows,
+            [('Filtered scheduled works', len(tasks)),
+             ('Filtered completed', sum(t.status == t.Status.COMPLETED for t in tasks)),
+             ('Overall project progress', f"{overall_data['percent']}%"),
+             ('Overall overdue works', overall_data['overdue_count'])],
+            ['Dates filter work target dates, not status update dates.',
+             'Overall progress is the equal-category average of completed / eligible scheduled works.',
+             'Archived work/categories and (unless selected) cancelled work are excluded.'])
 
     if kind == 'expenses':
         qs = (PulseExpenseEntry.objects.filter(task__category__project=project, voided_at__isnull=True)
@@ -180,8 +180,8 @@ def build_report(*, project, actor, filters, export=False):
                 paid_total += paid
             elif entry.approval_status == entry.ApprovalStatus.PENDING:
                 pending_total += entry.amount
-        return PulseReport(kind, 'Task expenses',
-            ('Date', 'Work category', 'Task', 'Expense type', 'Description', 'Supplier',
+        return PulseReport(kind, 'Scheduled-work expenses',
+            ('Date', 'Execution category', 'Scheduled work', 'Expense type', 'Description', 'Supplier',
              'Approval status', 'Amount SAR', 'Paid SAR', 'Due SAR'), rows,
             [('Entries', len(entries)), ('Recorded SAR', recorded_total), ('Approved SAR', approved_total),
              ('Pending SAR', pending_total), ('Paid SAR', paid_total),

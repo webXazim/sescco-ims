@@ -9,8 +9,8 @@
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}">
-  <link rel="stylesheet" href="{% static 'project_pulse/css/project-pulse.css' %}?v=1.0.125">
-  <link rel="stylesheet" href="{% static 'platform/css/typography-readability.css' %}?v=1.0.125">
+  <link rel="stylesheet" href="{% static 'project_pulse/css/project-pulse.css' %}?v=1.0.128">
+  <link rel="stylesheet" href="{% static 'platform/css/typography-readability.css' %}?v=1.0.128">
 </head>
 <body class="inventory-shell-v2 pulse-shell" data-page="{{ page_key }}">
 <div class="app-shell" id="inventoryAppShell" data-sidebar-collapsed="false" style="--inventory-sidebar-runtime:236px;">
@@ -19,7 +19,7 @@
     <header class="topbar inventory-topbar">
       <button class="menu-button" data-sidebar-toggle aria-label="Open navigation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <div class="topbar-context"><strong>Project Pulse</strong><span>Project execution workspace</span></div>
-      <div class="top-actions"><span class="pulse-header-tag">Financial Forecasting · U08</span></div>
+      <div class="top-actions"><span class="pulse-header-tag">Execution schedule</span></div>
     </header>
     <div class="content pulse-content" id="pulse-main">
       {% if messages %}<div class="message-stack">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'success' }}">{{ message }}</div>{% endfor %}</div>{% endif %}

@@ -86,7 +86,7 @@ class WorkCategoryTaskTests(TestCase):
         self.assertEqual(task_response.status_code, 302, task_response.content.decode()[:300])
         task = PulseTask.objects.get(category=category)
         self.assertEqual(task.status, PulseTask.Status.IN_PROGRESS)
-        self.assertEqual(task.priority, PulseTask.Priority.CRITICAL)
+        self.assertEqual(task.priority, PulseTask.Priority.NORMAL)  # Priority is a legacy optional detail, not part of the execution form.
         self.assertIsNone(task.assigned_to)
         self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "Excavation")
         self.assertContains(self.client.get(reverse("project_pulse:categories", args=[self.project.code])), "Civil Works")

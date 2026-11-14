@@ -75,7 +75,7 @@ class PulseProgressTests(TestCase):
                    "pulse.progress.view", "pulse.progress.update"]
         self.assertEqual(len(_clean_permissions(allowed)), 5)
 
-    def test_weighted_categories_and_projects_use_unrounded_intermediate_values(self):
+    def test_completed_work_counts_ignore_legacy_partial_and_weights(self):
         civil = self.category(weight="2.00")
         elec = self.category("Electrical", weight="1.00")
         t1 = self.task(civil, weight="2.00")
@@ -86,9 +86,9 @@ class PulseProgressTests(TestCase):
         record_progress(actor=self.owner, project_id=self.project.pk, task_id=t2.pk,
                         progress_percent=100, status="completed", note="Finished")
         projects, categories = calculate_progress([self.project.pk, self.other_project.pk])
-        self.assertEqual(categories[civil.pk]["percent"], Decimal("66.7"))
+        self.assertEqual(categories[civil.pk]["percent"], Decimal("50.0"))
         self.assertEqual(categories[elec.pk]["percent"], Decimal("0.0"))
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("44.4"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("25.0"))
         self.assertEqual(projects[self.project.pk]["completed_count"], 1)
         self.assertEqual(projects[self.project.pk]["task_count"], 3)
         self.assertFalse(projects[self.other_project.pk]["has_work"])
@@ -104,11 +104,11 @@ class PulseProgressTests(TestCase):
                         progress_percent=20, status="cancelled")
         set_task_archive(actor=self.owner, project_id=self.project.pk, task_id=archived.pk, archive=True)
         projects, categories = calculate_progress([self.project.pk])
-        self.assertEqual(categories[category.pk]["percent"], Decimal("70.0"))
+        self.assertEqual(categories[category.pk]["percent"], Decimal("0.0"))
         self.assertEqual(projects[self.project.pk]["task_count"], 1)
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("70.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("0.0"))
 
-    def test_empty_category_has_no_influence_and_invalid_weight_rejected(self):
+    def test_empty_category_starts_at_zero_and_invalid_weight_rejected(self):
         empty = self.category(name="Empty", weight="99.00")
         active = self.category(name="Working", weight="1.00")
         task = self.task(active)
@@ -116,7 +116,7 @@ class PulseProgressTests(TestCase):
                         progress_percent=100, status="completed")
         projects, categories = calculate_progress([self.project.pk])
         self.assertFalse(categories[empty.pk]["has_work"])
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("100.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("50.0"))
         with self.assertRaises(ValidationError):
             self.category("Invalid", weight="0")
         with self.assertRaises(ValidationError):
@@ -158,7 +158,7 @@ class PulseProgressTests(TestCase):
         self.assertEqual(task.progress_percent, 0)
         self.assertEqual(list(task.progress_updates.values_list("new_percent", flat=True)), [0, 100])
 
-    def test_assignee_can_update_own_tasks_not_other_tasks_or_scopes(self):
+    def test_project_scoped_user_can_complete_unassigned_works_but_not_other_projects(self):
         category = self.category()
         permissions = ("pulse.overview.view", "pulse.projects.view", "pulse.tasks.view",
                        "pulse.progress.view", "pulse.progress.update")
@@ -168,15 +168,15 @@ class PulseProgressTests(TestCase):
         own = self.task(category, assignee=member)
         other = self.task(category, name="Another task")
         self.assertTrue(can_update_task_progress(member, own))
-        self.assertFalse(can_update_task_progress(member, other))
+        self.assertTrue(can_update_task_progress(member, other))
         self.client.force_login(user)
         self.assertEqual(self.client.get(reverse("project_pulse:task_progress", args=[self.project.code, own.pk])).status_code, 200)
         self.assertEqual(self.client.post(reverse("project_pulse:task_progress_update", args=[self.project.code, own.pk]),
                 {"progress_percent": "40", "status": "in_progress", "note": "Excavated"}).status_code, 302)
         own.refresh_from_db()
-        self.assertEqual(own.progress_percent, 40)
+        self.assertEqual(own.progress_percent, 0)
         self.assertEqual(self.client.post(reverse("project_pulse:task_progress_update", args=[self.project.code, other.pk]),
-                {"progress_percent": 20, "status": "in_progress"}).status_code, 403)
+                {"status": "in_progress"}).status_code, 302)
         self.assertEqual(self.client.get(reverse("project_pulse:task_progress", args=[self.other_project.code, own.pk])).status_code, 404)
         self.assertEqual(self.client.get(reverse("project_pulse:task_progress", args=[self.foreign_project.code, own.pk])).status_code, 404)
         self.assertEqual(self.client.get(reverse("project_pulse:project_detail", args=[self.other_project.code])).status_code, 404)
@@ -219,7 +219,7 @@ class PulseProgressTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.get(reverse("project_pulse:task_progress", args=[self.project.code, task.pk]))
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Save progress update")
+        self.assertNotContains(response, "Save status")
         with self.assertRaises(ValidationError):
             record_progress(actor=self.owner, project_id=self.project.pk, task_id=task.pk,
                             progress_percent=50, status="in_progress")
@@ -261,6 +261,6 @@ class PulseProgressTests(TestCase):
         task = self.task(category)
         self.client.force_login(self.user)
         self.assertContains(self.client.get(reverse("project_pulse:project_detail", args=[self.project.code])), "Physical work progress")
-        self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "0%")
+        self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "Not complete")
         self.assertFalse(hasattr(task, "expense"))
         self.assertFalse(hasattr(category, "approved_budget"))

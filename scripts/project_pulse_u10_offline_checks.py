@@ -54,7 +54,7 @@ def verify_permissions():
     migrated = set(ast.literal_eval(vals))
     assert codes == migrated, f'Catalog/migration mismatch: {sorted(codes ^ migrated)}'
     assert len([x for x in codes if x.startswith('pulse.')]) == 27
-    assert (ROOT/'VERSION').read_text().strip() == '1.0.127'
+    assert (ROOT/'VERSION').read_text().strip() == '1.0.128'
     return len(codes)
 
 
