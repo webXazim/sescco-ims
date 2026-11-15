@@ -60,6 +60,7 @@ from .forms import (
 from .models import (
     InventoryLocation,
     StockApprovalRequest,
+    StockApprovalDecision,
     StockDocument,
     StockItem,
     StockMovement,
@@ -2667,15 +2668,23 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
 # assigned managers; all decisions are rechecked by the service under row locks.
 def _visible_stock_approvals(request):
     from apps.accounts.access_policy import restrict_projects
-    manager_projects = Project.objects.for_company(request.company).none()
+    from .services.approvals import can_decide
     membership = getattr(request, "company_membership", None)
+    eligible_ids = []
     if membership and membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
-        manager_projects = restrict_projects(
-            Project.objects.for_company(request.company).filter(inventory_manager=request.user), membership
+        # Only evaluate projects that have approval decisions. Do not expose all
+        # project names or cross-company requests to a broadly scoped manager.
+        candidate_ids = StockApprovalDecision.objects.filter(
+            request__company=request.company,
+        ).values_list("project_id", flat=True).distinct()
+        candidates = restrict_projects(
+            Project.objects.for_company(request.company).select_related("company", "inventory_manager")
+            .filter(pk__in=candidate_ids), membership,
         )
+        eligible_ids = [project.pk for project in candidates if can_decide(request.user, project)]
     return StockApprovalRequest.objects.for_company(request.company).filter(
         Q(requested_by=request.user)
-        | Q(decisions__project__in=manager_projects)
+        | Q(decisions__project_id__in=eligible_ids)
     ).distinct()
 
 
@@ -2694,7 +2703,7 @@ class StockApprovalListView(InventoryPermissionRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until every affected project inventory approver approves.", current_status=self.request.GET.get("status", "pending"))
+        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until an eligible manager approves each affected project.", current_status=self.request.GET.get("status", "pending"))
         return ctx
 
 
@@ -2750,11 +2759,11 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
             messages.error(request, _operation_error_message(exc) if isinstance(exc, ValidationError) else str(exc))
         else:
             if result.status == StockApprovalRequest.Status.APPROVED:
-                messages.success(request, "All project inventory approvers approved; stock was posted safely.")
+                messages.success(request, "All required project approvals were recorded; stock was posted safely.")
             elif result.status == StockApprovalRequest.Status.REJECTED:
                 messages.info(request, "Request rejected. No stock quantities were changed.")
             else:
-                messages.success(request, "Your approval was recorded. The other project manager's approval is still pending.")
+                messages.success(request, "Your approval was recorded. Another affected project still needs approval.")
         return redirect("inventory:approval_detail", reference=reference)
 
 

@@ -23,7 +23,7 @@
 {% if approval.applied_transfer %}<p><a href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">View completed stock transfer</a></p>{% endif %}
 </div></section>
 <section class="card section-gap"><div class="card-head"><h2 class="card-title">Project approvals</h2></div><div class="card-body">
-{% for entry in decisions %}<div class="form-section"><strong>{{ entry.row.project.code }} · {{ entry.row.project.name }}</strong> — {{ entry.row.get_status_display }} <span class="micro">Assigned manager: {{ entry.row.project.inventory_manager.display_name|default:"Not assigned" }}</span>
+{% for entry in decisions %}<div class="form-section"><strong>{{ entry.row.project.code }} · {{ entry.row.project.name }}</strong> — {{ entry.row.get_status_display }} <span class="micro">{% if entry.row.project.inventory_manager %}Designated approver: {{ entry.row.project.inventory_manager.display_name }}{% else %}Eligible Project Manager approval{% endif %}</span>
 {% if entry.row.decided_by %}<span class="micro"> by {{ entry.row.decided_by.display_name }} on {{ entry.row.decided_at|date:"d M Y H:i" }}</span>{% endif %}
 {% if entry.row.reason %}<p class="micro">Reason: {{ entry.row.reason }}</p>{% endif %}
 {% if entry.can_decide %}

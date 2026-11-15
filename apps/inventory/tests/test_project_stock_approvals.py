@@ -82,13 +82,13 @@ class ProjectApprovalsTests(TestCase):
             StockTransfer.objects.for_company(self.company), member
         ).filter(source_location__project__isnull=True, destination_location__project__isnull=True).exists())
 
-    def test_all_project_scope_does_not_automatically_assign_stock_approval_rights(self):
+    def test_all_project_scope_can_approve_when_no_dedicated_inventory_approver(self):
         member = CompanyMembership.objects.get(company=self.company, user=self.manager1)
         member.project_scope_mode = ScopeMode.ALL
         member.save(update_fields=("project_scope_mode", "updated_at"))
         member.project_scopes.all().delete()
-        self.assertFalse(can_decide(self.manager1, self.p2))
-        self.p2.inventory_manager = self.manager1
+        self.assertFalse(can_decide(self.manager1, self.p2))  # dedicated approver still wins
+        self.p2.inventory_manager = None
         self.p2.save()
         self.assertTrue(can_decide(self.manager1, self.p1))
         self.assertTrue(can_decide(self.manager1, self.p2))
@@ -162,12 +162,93 @@ class ProjectApprovalsTests(TestCase):
         self.assertEqual(done.applied_transfer.lines.count(), 1)
         self.assertEqual(done.applied_transfer.lines.get().destination_stock_item.current_quantity, Decimal("1"))
 
-    def test_missing_manager_blocks_project_receipt(self):
+    def test_fallback_to_scoped_project_manager_with_no_inventory_assignee(self):
         self.p1.inventory_manager = None
         self.p1.save()
+        self.assertTrue(can_decide(self.manager1, self.p1))
+        self.assertFalse(can_decide(self.manager2, self.p1))
+        queued = self._add()
+        self.assertIsNotNone(queued.approval_request)
+        self.assertFalse(StockMovement.objects.for_company(self.company).exists())
+        with self.assertRaises(InventoryOperationError):
+            self._approve(queued.approval_request, self.manager2, self.p1)
+        result = self._approve(queued.approval_request, self.manager1, self.p1)
+        self.assertEqual(result.status, "approved")
+
+    def test_no_eligible_project_manager_blocks_before_stock_posting(self):
+        outside = Project.objects.create(company=self.company, code="NO-PM", name="No Manager")
+        self.assertFalse(can_decide(self.manager1, outside))
+        self.assertFalse(can_decide(self.manager2, outside))
+        with self.assertRaises(InventoryOperationError):
+            self._add(project=outside)
+        self.assertEqual(StockApprovalRequest.objects.for_company(self.company).count(), 0)
+
+    def test_dedicated_inventory_approver_overrides_all_scoped_project_manager(self):
+        member = CompanyMembership.objects.get(company=self.company, user=self.manager2)
+        member.project_scope_mode = ScopeMode.ALL
+        member.save(update_fields=("project_scope_mode", "updated_at"))
+        self.assertFalse(can_decide(self.manager2, self.p1))
+        self.assertTrue(can_decide(self.manager1, self.p1))
+        request = self._add().approval_request
+        with self.assertRaises(InventoryOperationError):
+            self._approve(request, self.manager2, self.p1)
+        self.assertEqual(self._approve(request, self.manager1, self.p1).status, "approved")
+
+    def test_pulse_project_manager_can_approve_when_explicit_inventory_assignee_empty(self):
+        from apps.project_pulse.models import PulseProjectTeamMember
+        User = get_user_model()
+        pulse_user = User.objects.create_user(username="pulse-approval-manager", password="TestPass!2026")
+        membership = CompanyMembership.objects.create(company=self.company, user=pulse_user, role=AccessRole.OWNER)
+        PulseProjectTeamMember.objects.create(
+            project=self.p1, membership=membership,
+            role=PulseProjectTeamMember.Role.MANAGER,
+        )
+        self.p1.inventory_manager = None
+        self.p1.save()
+        self.assertTrue(can_decide(pulse_user, self.p1))
+        self.assertFalse(can_decide(self.manager1, self.p1))  # Pulse manager has precedence
+        queued = self._add().approval_request
+        self.assertEqual(self._approve(queued, pulse_user, self.p1).status, "approved")
+
+    def test_revoking_pulse_manager_approval_fails_closed(self):
+        from apps.project_pulse.models import PulseProjectTeamMember
+        User = get_user_model()
+        pulse_user = User.objects.create_user(username="pulse-no-inventory-grant", password="TestPass!2026")
+        membership = CompanyMembership.objects.create(company=self.company, user=pulse_user, role=AccessRole.OWNER)
+        PulseProjectTeamMember.objects.create(project=self.p1, membership=membership,
+                                               role=PulseProjectTeamMember.Role.MANAGER)
+        self.p1.inventory_manager = None
+        self.p1.save()
+        # This project's appointed manager loses access. An otherwise eligible
+        # built-in manager must not override the explicit Pulse assignment.
+        CompanyMembership.objects.filter(pk=membership.pk).update(is_active=False)
+        self.assertFalse(can_decide(pulse_user, self.p1))
+        self.assertFalse(can_decide(self.manager1, self.p1))
         with self.assertRaises(InventoryOperationError):
             self._add()
-        self.assertEqual(StockApprovalRequest.objects.for_company(self.company).count(), 0)
+
+    def test_fallback_project_manager_approvals_visible_in_inbox(self):
+        from django.urls import reverse
+        self.p1.inventory_manager = None
+        self.p1.save()
+        result = self._add()
+        self.client.force_login(self.manager1)
+        inbox = self.client.get(reverse("inventory:approval_list"))
+        self.assertEqual(inbox.status_code, 200)
+        self.assertContains(inbox, str(result.approval_request.reference)[:8].upper())
+        self.client.force_login(self.manager2)
+        inbox = self.client.get(reverse("inventory:approval_list"))
+        self.assertEqual(inbox.status_code, 200)
+        self.assertNotContains(inbox, str(result.approval_request.reference)[:8].upper())
+
+    def test_all_scoped_project_manager_can_approve_new_company_project(self):
+        member = CompanyMembership.objects.get(company=self.company, user=self.manager1)
+        member.project_scope_mode = ScopeMode.ALL
+        member.save(update_fields=("project_scope_mode", "updated_at"))
+        new_project = Project.objects.create(company=self.company, code="PM-FUTURE", name="Future project")
+        self.assertTrue(can_decide(self.manager1, new_project))
+        pending = self._add(project=new_project).approval_request
+        self.assertEqual(self._approve(pending, self.manager1, new_project).status, "approved")
 
     def test_counted_laptops_cannot_have_fractional_quantities(self):
         self.assertFalse(self.piece.allows_fractional_quantities)

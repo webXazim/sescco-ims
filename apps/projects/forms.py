@@ -18,8 +18,9 @@ class ProjectForm(StyledModelForm):
         user_ids = [m.user_id for m in memberships if membership_has_permission(m, AccessPermission.INVENTORY_STOCK_APPROVE)]
         from django.contrib.auth import get_user_model
         self.fields["inventory_manager"].queryset = get_user_model().objects.filter(pk__in=user_ids).order_by("username")
-        self.fields["inventory_manager"].label = "Project inventory approver"
-        self.fields["inventory_manager"].help_text = "Assign a user whose access profile includes Project Inventory · Approve / Reject, then give them access to this project. Required for project receipts and transfers."
+        self.fields["manager_name"].help_text = "Display name only; approval rights come from a user's access profile and project scope."
+        self.fields["inventory_manager"].label = "Dedicated inventory approver (optional)"
+        self.fields["inventory_manager"].help_text = "Optional dedicated approver. If blank, an eligible Project Pulse manager or a built-in Project Manager with All/Selected project scope and Inventory approval permission can approve. A dedicated approver takes priority."
 
     class Meta:
         model = Project

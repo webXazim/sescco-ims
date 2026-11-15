@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_allows_project, membership_has_permission
+from apps.accounts.models import CompanyMembership
 from apps.accounts.permissions import user_membership_for_company
 from apps.projects.models import Project
 from ..models import InventoryLocation, StockApprovalDecision, StockApprovalRequest, StockItem, Unit
@@ -21,16 +22,66 @@ def _projects_for_locations(*locations):
     return sorted({loc.project_id for loc in locations if loc and loc.project_id})
 
 
+def _eligible_project_approvers(project):
+    """Resolve who may approve inventory for one company project.
+
+    Priority: an explicit Inventory approver; an active Project Pulse manager with
+    Inventory approval permission; otherwise all scoped built-in Project Managers.
+    A manager's project scope grants eligibility, never extra permissions. It is
+    intentionally possible for two built-in managers to cover the same project:
+    exactly one of them may decide its row (under a DB lock).
+    """
+    if project.inventory_manager_id is not None:
+        membership = user_membership_for_company(project.inventory_manager, project.company)
+        if _valid_approver_membership(membership, project):
+            return {project.inventory_manager_id}
+        # An explicit but invalid assignee is a configuration error, not an
+        # invitation for another manager to silently override that designation.
+        return set()
+
+    from apps.project_pulse.models import PulseProjectTeamMember
+    pulse_manager = (
+        PulseProjectTeamMember.objects.select_related("membership__user", "membership__access_profile")
+        .filter(project_id=project.pk, role=PulseProjectTeamMember.Role.MANAGER, is_active=True)
+        .first()
+    )
+    if pulse_manager is not None:
+        # An explicitly appointed Pulse manager is authoritative. If their
+        # Inventory approval grant was revoked, fail closed instead of granting
+        # an unrelated all-scoped Project Manager implicit authority.
+        if _valid_approver_membership(pulse_manager.membership, project):
+            return {pulse_manager.membership.user_id}
+        return set()
+
+    members = CompanyMembership.objects.select_related("user", "access_profile", "company").filter(
+        company_id=project.company_id, is_active=True, user__is_active=True,
+        access_profile__key="role-project-manager", access_profile__is_system=True,
+        access_profile__is_active=True,
+    )
+    return {member.user_id for member in members if _valid_approver_membership(member, project)}
+
+
+def _valid_approver_membership(membership, project):
+    return bool(
+        membership and membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE)
+        and membership_allows_project(membership, project)
+    )
+
+
 def _verify_managers(company, project_ids):
-    projects = list(Project.objects.for_company(company).select_related("inventory_manager").filter(pk__in=project_ids))
-    if len(projects) != len(project_ids):
+    projects = list(Project.objects.for_company(company).select_related("inventory_manager", "company").filter(pk__in=project_ids))
+    if len(projects) != len(set(project_ids)):
         raise InventoryOperationError("A project involved in this request no longer exists.")
     for project in projects:
-        if not project.inventory_manager_id:
-            raise InventoryOperationError(f"Assign a project inventory approver to {project.code} before submitting stock requests.")
-        membership = user_membership_for_company(project.inventory_manager, company)
-        if not membership or not membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE) or not membership_allows_project(membership, project):
-            raise InventoryOperationError(f"{project.code} requires an active assigned user with project inventory approval permission and project scope.")
+        if not _eligible_project_approvers(project):
+            if project.inventory_manager_id:
+                raise InventoryOperationError(
+                    f"{project.code} needs an active designated Inventory approver with approval permission and project access."
+                )
+            raise InventoryOperationError(
+                f"Assign a Project Manager with access to {project.code} and Inventory approval permission, "
+                "or select a dedicated project inventory approver before submitting stock requests."
+            )
     return projects
 
 
@@ -67,11 +118,10 @@ def queue_request(*, company, requested_by, kind, idempotency_key, project_ids, 
 
 
 def can_decide(user, project):
-    member = user_membership_for_company(user, project.company)
+    membership = user_membership_for_company(user, project.company)
     return bool(
-        user.is_active and project.inventory_manager_id == user.pk and member
-        and membership_has_permission(member, AccessPermission.INVENTORY_STOCK_APPROVE)
-        and membership_allows_project(member, project)
+        user.is_active and _valid_approver_membership(membership, project)
+        and user.pk in _eligible_project_approvers(project)
     )
 
 
@@ -87,7 +137,7 @@ def _apply(req):
         raise InventoryOperationError("The approval request no longer contains any project decisions.")
     _verify_managers(req.company, project_ids)
     for row in req.decisions.select_related("project", "decided_by"):
-        if row.status != StockApprovalDecision.Status.APPROVED or row.decided_by_id != row.project.inventory_manager_id or not can_decide(row.decided_by, row.project):
+        if row.status != StockApprovalDecision.Status.APPROVED or not row.decided_by_id or not can_decide(row.decided_by, row.project):
             raise InventoryOperationError("The project inventory approver assignment or approval access changed. Reject and resubmit this request.")
     payload = req.payload
     if req.kind == StockApprovalRequest.Kind.RECEIPT:
@@ -145,7 +195,7 @@ def decide_request(*, request, user, project_id, decision, reason=""):
         request=req, project_id=project_id,
     ).first()
     if row is None or not can_decide(user, row.project):
-        raise InventoryOperationError("Only the currently assigned project inventory approver can decide for this project.")
+        raise InventoryOperationError("Only an eligible Project Manager or the designated project inventory approver can decide for this project.")
     if req.requested_by_id == user.pk:
         raise InventoryOperationError("The requester cannot approve their own stock movement.")
     if row.status != StockApprovalDecision.Status.PENDING:
