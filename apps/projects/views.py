@@ -29,6 +29,7 @@ from .forms import ProjectForm
 from .models import Project
 from .selectors import project_list
 from .services import archive_project, restore_project_archive, trash_unused_project
+from .stock_sort import PROJECT_STOCK_SORTS, PROJECT_STOCK_SORT_CHOICES
 
 
 def _project_snapshot(project: Project) -> dict[str, object]:
@@ -354,7 +355,6 @@ class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
         stock_items = (
             self.object.stock_items.filter(deleted_at__isnull=True)
             .select_related("unit")
-            .order_by("material_name", "supplier_name")
         )
         query = self.request.GET.get("q", "").strip()
         stock_status = self.request.GET.get("stock_status", "").strip()
@@ -380,6 +380,9 @@ class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
             )
         elif stock_status == "out":
             stock_items = stock_items.filter(current_quantity=0)
+        requested_sort = self.request.GET.get("sort", "created").strip()
+        current_sort = requested_sort if requested_sort in PROJECT_STOCK_SORTS else "created"
+        stock_items = stock_items.order_by(*PROJECT_STOCK_SORTS[current_sort])
         paginator = Paginator(stock_items, 50)
         stock_page = paginator.get_page(self.request.GET.get("page"))
         all_project_items = self.object.stock_items.all()
@@ -395,6 +398,8 @@ class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
             search_query=query,
             current_stock_status=stock_status,
             current_record_status=record_status,
+            current_sort=current_sort,
+            sort_choices=PROJECT_STOCK_SORT_CHOICES,
             active_stock_count=all_project_items.filter(status=StockItem.Status.ACTIVE).count(),
             out_of_stock_count=all_project_items.filter(
                 status=StockItem.Status.ACTIVE, current_quantity=0

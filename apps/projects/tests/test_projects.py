@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -142,6 +142,73 @@ class ProjectWorkspaceTests(TestCase):
         response = self.client.get(reverse("projects:detail", args=[project.code]))
         self.assertEqual(len(response.context["stock_items"]), 50)
         self.assertTrue(response.context["is_paginated"])
+        sorted_response = self.client.get(
+            reverse("projects:detail", args=[project.code]),
+            {"sort": "oldest-created"},
+        )
+        self.assertContains(sorted_response, "sort=oldest-created")
+        page_two = self.client.get(
+            reverse("projects:detail", args=[project.code]),
+            {"sort": "oldest-created", "page": 2},
+        )
+        self.assertEqual(page_two.context["current_sort"], "oldest-created")
+        self.assertEqual(len(page_two.context["stock_items"]), 5)
+
+    def test_project_inventory_newest_first_and_user_selected_sort(self):
+        from apps.inventory.models import StockItem, Unit
+
+        project = Project.objects.create(
+            company=self.company, code="SORT-01", name="Project Stock Sorting"
+        )
+        unit = Unit.objects.get(normalized_name="piece")
+        older = StockItem.objects.create(
+            project=project, material_name="A Older Material", supplier_name="Supplier",
+            supplier_phone="+966 50 100 1000", unit=unit,
+        )
+        newer = StockItem.objects.create(
+            project=project, material_name="Z Newer Material", supplier_name="Supplier",
+            supplier_phone="+966 50 100 2000", unit=unit,
+        )
+        now = timezone.now()
+        StockItem.objects.filter(pk=older.pk).update(
+            created_at=now - timedelta(days=4), updated_at=now,
+            latest_addition_date=date(2026, 11, 1),
+        )
+        StockItem.objects.filter(pk=newer.pk).update(
+            created_at=now, updated_at=now - timedelta(days=3),
+            latest_addition_date=date(2026, 11, 12),
+        )
+        url = reverse("projects:detail", args=[project.code])
+        default = self.client.get(url)
+        self.assertEqual(default.status_code, 200)
+        self.assertEqual(default.context["current_sort"], "created")
+        self.assertEqual(default.context["stock_items"][0].pk, newer.pk)
+        self.assertContains(default, 'name="sort"')
+        self.assertContains(default, "Recently added first")
+
+        oldest = self.client.get(url, {"sort": "oldest-created"})
+        self.assertEqual(oldest.context["current_sort"], "oldest-created")
+        self.assertEqual(oldest.context["stock_items"][0].pk, older.pk)
+        updated = self.client.get(url, {"sort": "updated"})
+        self.assertEqual(updated.context["stock_items"][0].pk, older.pk)
+        by_receipt = self.client.get(url, {"sort": "latest-addition"})
+        self.assertEqual(by_receipt.context["stock_items"][0].pk, newer.pk)
+        filtered = self.client.get(url, {"q": "Older", "sort": "oldest-created"})
+        self.assertEqual(list(filtered.context["stock_items"]), [older])
+        self.assertEqual(filtered.context["current_sort"], "oldest-created")
+        unsafe = self.client.get(url, {"sort": "-company__id"})
+        self.assertEqual(unsafe.context["current_sort"], "created")
+        self.assertEqual(unsafe.context["stock_items"][0].pk, newer.pk)
+
+        # Excel/CSV exports must match the project inventory ordering.
+        self.client.force_login(self.admin)
+        exported = self.client.get(
+            reverse("data_exchange:project_inventory_export", args=[project.code, "csv"]),
+            {"sort": "oldest-created"},
+        )
+        self.assertEqual(exported.status_code, 200)
+        export_text = exported.content.decode("utf-8-sig")
+        self.assertLess(export_text.index("A Older Material"), export_text.index("Z Newer Material"))
 
     def test_project_list_supports_search_and_status_filter(self):
         Project.objects.create(company=self.company, code="ACTIVE-01", name="Active Project")

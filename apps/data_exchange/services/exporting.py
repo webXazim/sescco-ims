@@ -33,6 +33,7 @@ from apps.inventory.selectors import (
     stock_movements,
 )
 from apps.projects.models import Project
+from apps.projects.stock_sort import PROJECT_STOCK_SORTS
 
 from ..models import ExportAudit
 from ..opening_schema import OPENING_IMPORT_COLUMNS, OPENING_IMPORT_RULES
@@ -452,7 +453,10 @@ def project_inventory_dataset(project: Project, query: QueryDict) -> ExportDatas
         queryset = queryset.filter(status=StockItem.Status.ACTIVE)
     queryset = apply_stock_search(queryset, search)
     queryset = apply_stock_status(queryset, stock_status)
-    queryset = queryset.order_by("material_name", "supplier_name")
+    # One ordering contract for the project page and its CSV/XLSX exports.
+    requested_sort = query.get("sort", "created").strip()
+    sort = requested_sort if requested_sort in PROJECT_STOCK_SORTS else "created"
+    queryset = queryset.order_by(*PROJECT_STOCK_SORTS[sort])
     columns = tuple(
         STOCK_COLUMNS[key]
         for key in (
@@ -472,6 +476,7 @@ def project_inventory_dataset(project: Project, query: QueryDict) -> ExportDatas
         "q": search,
         "stock_status": stock_status,
         "record_status": record_status,
+        "sort": sort,
     }
     return ExportDataset(
         audit_dataset=ExportAudit.Dataset.PROJECT_INVENTORY,
@@ -479,7 +484,7 @@ def project_inventory_dataset(project: Project, query: QueryDict) -> ExportDatas
         queryset=queryset,
         columns=columns,
         filters={key: value for key, value in filters.items() if value},
-        sort="material",
+        sort=sort,
         scope_reference=project.code,
         scope_label=project.name,
     )
