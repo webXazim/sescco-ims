@@ -621,7 +621,7 @@
   }
 
   const scopeConfig = {
-    projects: { api: "projects", modeField: "projectMode", idsField: "projectIds", title: "Projects", help: "Rental Manpower and project-scoped Inventory authority." },
+    projects: { api: "projects", modeField: "projectMode", idsField: "projectIds", title: "Projects", help: "All includes current and future company projects. Selected limits access to chosen projects." },
     branches: { api: "branches", modeField: "branchMode", idsField: "branchIds", title: "Branches / Offices", help: "Internal Company records and branch-scoped operations." },
     inventoryLocations: { api: "inventory_locations", modeField: "inventoryLocationMode", idsField: "inventoryLocationIds", title: "Inventory Locations", help: "Stores, offices and controlled stock locations." },
   };
@@ -644,7 +644,7 @@
     const mode = scopeMode(user, key);
     return `<div class="access-scope-card" data-scope-card="${key}">
       <div class="access-scope-card__head"><div class="access-scope-card__copy"><strong>${cfg.title}</strong><span>${cfg.help}</span></div>
-      <select class="access-select" data-scope-mode="${key}" ${disabled ? "disabled" : ""}><option value="all" ${mode === "all" ? "selected" : ""}>All</option><option value="selected" ${mode === "selected" ? "selected" : ""}>Selected only</option><option value="none" ${mode === "none" ? "selected" : ""}>None</option></select></div>
+      <select class="access-select" data-scope-mode="${key}" ${disabled ? "disabled" : ""}><option value="all" ${mode === "all" ? "selected" : ""}>${key === "projects" ? "All company projects" : "All"}</option><option value="selected" ${mode === "selected" ? "selected" : ""}>Selected only</option><option value="none" ${mode === "none" ? "selected" : ""}>None</option></select></div>
       <div data-scope-selected="${key}"></div>
       <div class="access-scope-picker" data-scope-picker="${key}" ${mode === "selected" ? "" : "hidden"}><input type="search" data-scope-search="${key}" placeholder="Search ${cfg.title.toLowerCase()}…" autocomplete="off" ${disabled ? "disabled" : ""}><div class="access-scope-results" data-scope-results="${key}" hidden></div></div>
       <small class="access-field-error" id="fieldError-${cfg.idsField}"></small>
@@ -854,6 +854,7 @@
 
       <section class="access-form-section">
         <div class="access-section-head"><div><strong>Operational scopes</strong><span>Use Selected only to limit otherwise-permitted operations to explicit company records.</span></div></div>
+        <div class="access-form-note">For Project Managers, <strong>All company projects</strong> includes new projects automatically. Stock approval still requires a separate approver assignment on each project; this scope does not grant other Inventory or financial permissions.</div>
         <div class="access-scope-grid">
           ${scopeCardMarkup(user, "projects", !canEditAccess && !creating)}
           ${scopeCardMarkup(user, "branches", !canEditAccess && !creating)}

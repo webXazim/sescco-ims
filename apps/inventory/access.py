@@ -87,9 +87,13 @@ def restrict_inventory_location_queryset(
         return queryset.none()
     project_mode = membership.project_scope_mode
     if _is_project_manager_profile(membership):
-        if project_mode != "selected":
+        # All means *all company projects*, not office/warehouse inventory.
+        # Location scope is still intersected by restrict_inventory_locations.
+        queryset = queryset.filter(company_id=membership.company_id)
+        if project_mode == "all":
+            return queryset.filter(**{f"{project_field}__isnull": False})
+        if project_mode == "none":
             return queryset.none()
-        # Built-in Project Managers never gain unrelated office inventory access.
         project_ids = membership.project_scopes.values_list("project_id", flat=True)
         return queryset.filter(**{f"{project_field}__in": project_ids})
     if project_mode == "all":
@@ -109,7 +113,10 @@ def restrict_inventory_stock(queryset: QuerySet, membership: CompanyMembership |
         return queryset.none()
     mode = membership.project_scope_mode
     if _is_project_manager_profile(membership):
-        if mode != "selected":
+        queryset = queryset.filter(company_id=membership.company_id)
+        if mode == "all":
+            return queryset.filter(project_id__isnull=False)
+        if mode == "none":
             return queryset.none()
         return queryset.filter(project_id__in=membership.project_scopes.values_list("project_id", flat=True))
     if mode == "all":
@@ -126,7 +133,10 @@ def restrict_inventory_movements(queryset: QuerySet, membership: CompanyMembersh
         return queryset.none()
     mode = membership.project_scope_mode
     if _is_project_manager_profile(membership):
-        if mode != "selected":
+        queryset = queryset.filter(company_id=membership.company_id)
+        if mode == "all":
+            return queryset.filter(stock_item__project_id__isnull=False)
+        if mode == "none":
             return queryset.none()
         return queryset.filter(stock_item__project_id__in=membership.project_scopes.values_list("project_id", flat=True))
     if mode == "all":
@@ -145,10 +155,14 @@ def restrict_inventory_transfers(queryset: QuerySet, membership: CompanyMembersh
     if membership is None:
         return queryset.none()
     if _is_project_manager_profile(membership):
-        if membership.project_scope_mode != "selected":
+        queryset = queryset.filter(company_id=membership.company_id)
+        mode = membership.project_scope_mode
+        if mode == "none":
             return queryset.none()
-        # Show the audit trail for transfers touching at least one managed
-        # project even when the counterparty is another project or office.
+        # Show transfers touching an authorized project, never office-to-office
+        # transfers. A counterparty's existence is part of that project's history.
+        if mode == "all":
+            return queryset.filter(Q(source_location__project_id__isnull=False) | Q(destination_location__project_id__isnull=False))
         project_ids = membership.project_scopes.values_list("project_id", flat=True)
         return queryset.filter(Q(source_location__project_id__in=project_ids) | Q(destination_location__project_id__in=project_ids))
     source_ids = restrict_inventory_location_queryset(

@@ -13,6 +13,7 @@ from apps.inventory.models import InventoryLocation
 from apps.projects.models import Project
 
 from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.access_policy import membership_allows_project, membership_has_permission, restrict_projects
 from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership, ScopeMode
 from apps.accounts.roles import AccessRole
 from apps.accounts.user_management import (
@@ -77,6 +78,86 @@ class UserManagementBackendTests(TestCase):
             ),
         )
         self.assertEqual(membership.access_profile_id, self.owner_profile.pk)
+
+    def test_project_manager_all_scope_is_company_limited_and_includes_future_projects(self):
+        manager_profile = AccessProfile.objects.get(company=self.company, key="role-project-manager")
+        first = Project.objects.create(company=self.company, code="PM-ALL-1", name="First")
+        membership = create_managed_user(
+            actor_membership=self.owner,
+            payload=self._payload(
+                accessProfileId=str(manager_profile.pk),
+                scopes={"projectMode": "all", "projectIds": [],
+                        "branchMode": "all", "branchIds": [],
+                        "inventoryLocationMode": "all", "inventoryLocationIds": []},
+            ),
+        )
+        self.assertEqual(membership.role, AccessRole.PROJECT_MANAGER)
+        self.assertEqual(membership.project_scope_mode, ScopeMode.ALL)
+        self.assertEqual(membership.project_scopes.count(), 0)
+        second = Project.objects.create(company=self.company, code="PM-ALL-2", name="Later")
+        foreign_company = Company.objects.create(name="Unrelated Company", slug="pm-all-other")
+        foreign = Project.objects.create(company=foreign_company, code="PM-OTHER", name="Foreign")
+        self.assertTrue(membership_allows_project(membership, first))
+        self.assertTrue(membership_allows_project(membership, second))
+        self.assertFalse(membership_allows_project(membership, foreign))
+        self.assertSetEqual(
+            set(restrict_projects(Project.objects.for_company(self.company), membership).values_list("pk", flat=True)),
+            {first.pk, second.pk},
+        )
+        self.assertTrue(membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE))
+        self.assertFalse(membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_RECEIVE))
+        self.assertFalse(membership_has_permission(membership, AccessPermission.PULSE_FINANCIALS_VIEW))
+
+    def test_project_manager_can_switch_selected_all_and_back_without_losing_company_boundary(self):
+        manager_profile = AccessProfile.objects.get(company=self.company, key="role-project-manager")
+        first = Project.objects.create(company=self.company, code="PM-SELECT-1", name="First")
+        second = Project.objects.create(company=self.company, code="PM-SELECT-2", name="Second")
+        membership = create_managed_user(
+            actor_membership=self.owner,
+            payload=self._payload(
+                accessProfileId=str(manager_profile.pk),
+                scopes={"projectMode": "selected", "projectIds": [str(first.pk)],
+                        "branchMode": "all", "branchIds": [],
+                        "inventoryLocationMode": "all", "inventoryLocationIds": []},
+            ),
+        )
+        self.assertFalse(membership_allows_project(membership, second))
+        update_managed_user(
+            actor_membership=self.owner, membership_id=membership.pk,
+            payload={"scopes": {"projectMode": "all", "projectIds": [],
+                                 "branchMode": "all", "branchIds": [],
+                                 "inventoryLocationMode": "all", "inventoryLocationIds": []}},
+        )
+        membership.refresh_from_db()
+        self.assertEqual(membership.project_scope_mode, ScopeMode.ALL)
+        self.assertFalse(membership.project_scopes.exists())
+        self.assertTrue(membership_allows_project(membership, second))
+        update_managed_user(
+            actor_membership=self.owner, membership_id=membership.pk,
+            payload={"scopes": {"projectMode": "selected", "projectIds": [str(second.pk)],
+                                 "branchMode": "all", "branchIds": [],
+                                 "inventoryLocationMode": "all", "inventoryLocationIds": []}},
+        )
+        membership.refresh_from_db()
+        self.assertEqual(membership.project_scope_mode, ScopeMode.SELECTED)
+        self.assertFalse(membership_allows_project(membership, first))
+        self.assertTrue(membership_allows_project(membership, second))
+
+    def test_project_manager_none_scope_still_rejected_on_creation_and_edit(self):
+        manager_profile = AccessProfile.objects.get(company=self.company, key="role-project-manager")
+        no_scope = {"projectMode": "none", "projectIds": [],
+                    "branchMode": "all", "branchIds": [],
+                    "inventoryLocationMode": "all", "inventoryLocationIds": []}
+        with self.assertRaises(ValidationError):
+            create_managed_user(actor_membership=self.owner, payload=self._payload(
+                accessProfileId=str(manager_profile.pk), scopes=no_scope))
+        membership = create_managed_user(actor_membership=self.owner, payload=self._payload(
+            accessProfileId=str(manager_profile.pk)))
+        with self.assertRaises(ValidationError):
+            update_managed_user(actor_membership=self.owner, membership_id=membership.pk,
+                                payload={"scopes": no_scope})
+        membership.refresh_from_db()
+        self.assertEqual(membership.project_scope_mode, ScopeMode.ALL)
 
     def test_selected_scopes_are_company_validated_and_persisted(self):
         project = Project.objects.create(company=self.company, code="SCOPE-1", name="Scope Project")

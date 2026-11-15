@@ -8,6 +8,9 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.models import CompanyMembership, MembershipProjectScope, ScopeMode
+from ..access import (restrict_inventory_location_queryset, restrict_inventory_stock,
+                      restrict_inventory_movements, restrict_inventory_transfers)
+from ..services.approvals import can_decide
 from apps.accounts.roles import AccessRole
 from apps.core.tests.tenant import primary_company
 from apps.projects.models import Project
@@ -54,6 +57,51 @@ class ProjectApprovalsTests(TestCase):
 
     def _approve(self, req, user, project):
         return decide_request(request=req, user=user, project_id=project.pk, decision="approve")
+
+    def test_all_project_scope_grants_project_inventory_visibility_but_not_office_inventory(self):
+        member = CompanyMembership.objects.get(company=self.company, user=self.manager1)
+        member.project_scope_mode = ScopeMode.ALL
+        member.save(update_fields=("project_scope_mode", "updated_at"))
+        member.project_scopes.all().delete()
+        self.assertTrue(restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(self.company), member
+        ).filter(project=self.p1).exists())
+        self.assertTrue(restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(self.company), member
+        ).filter(project=self.p2).exists())
+        self.assertFalse(restrict_inventory_location_queryset(
+            InventoryLocation.objects.for_company(self.company), member
+        ).filter(pk=self.office.pk).exists())
+        self.assertFalse(restrict_inventory_stock(
+            StockItem.objects.for_company(self.company), member
+        ).filter(project__isnull=True).exists())
+        self.assertFalse(restrict_inventory_movements(
+            StockMovement.objects.for_company(self.company), member
+        ).filter(stock_item__project__isnull=True).exists())
+        self.assertFalse(restrict_inventory_transfers(
+            StockTransfer.objects.for_company(self.company), member
+        ).filter(source_location__project__isnull=True, destination_location__project__isnull=True).exists())
+
+    def test_all_project_scope_does_not_automatically_assign_stock_approval_rights(self):
+        member = CompanyMembership.objects.get(company=self.company, user=self.manager1)
+        member.project_scope_mode = ScopeMode.ALL
+        member.save(update_fields=("project_scope_mode", "updated_at"))
+        member.project_scopes.all().delete()
+        self.assertFalse(can_decide(self.manager1, self.p2))
+        self.p2.inventory_manager = self.manager1
+        self.p2.save()
+        self.assertTrue(can_decide(self.manager1, self.p1))
+        self.assertTrue(can_decide(self.manager1, self.p2))
+        receipt = self._add(project=self.p2)
+        self.assertIsNotNone(receipt.approval_request)
+        approved = self._approve(receipt.approval_request, self.manager1, self.p2)
+        self.assertEqual(approved.status, "approved")
+        self.assertTrue(restrict_inventory_stock(
+            StockItem.objects.for_company(self.company), member
+        ).filter(project=self.p2).exists())
+        self.assertTrue(restrict_inventory_movements(
+            StockMovement.objects.for_company(self.company), member
+        ).filter(stock_item__project=self.p2).exists())
 
     def test_receipt_waits_without_stock_until_assigned_manager_approves(self):
         result = self._add()
