@@ -54,7 +54,9 @@ def verify_permissions():
     migrated = set(ast.literal_eval(vals))
     assert codes == migrated, f'Catalog/migration mismatch: {sorted(codes ^ migrated)}'
     assert len([x for x in codes if x.startswith('pulse.')]) == 27
-    assert (ROOT/'VERSION').read_text().strip() == '1.0.128'
+    version_parts = (ROOT/'VERSION').read_text().strip().split('.')
+    assert len(version_parts) == 3 and all(part.isdecimal() for part in version_parts), 'Invalid release version'
+    assert tuple(map(int, version_parts)) >= (1, 0, 128), 'Execution schedule release is missing'
     return len(codes)
 
 
@@ -75,6 +77,28 @@ def verify_privacy_and_finance_guards():
     storage = (ROOT/'apps/project_pulse/private_storage.py').read_text()
     assert 'base_url=None' in storage and 'def url(self, name)' in storage
     assert (ROOT/'apps/project_pulse/tests/test_release_hardening.py').exists()
+
+
+def verify_ui_organization():
+    # The project overview is deliberately schedule-first and financial data
+    # never render outside their existing access checks.
+    sidebar = (ROOT/'templates/project_pulse/sidebar.html').read_text()
+    detail = (ROOT/'templates/project_pulse/project_detail.html').read_text()
+    css = (ROOT/'static/project_pulse/css/project-pulse.css').read_text()
+    assert 'class="pulse-dashboard-grid"' in detail
+    assert 'class="pulse-dashboard-progress"' in detail
+    assert '<h2>Execution schedule</h2>' in detail
+    assert '<h2>Financial snapshot</h2>' in detail
+    assert "{% if pulse_can_view_expenses or pulse_can_view_budgets or pulse_can_view_financials %}" in detail
+    assert '{% if pulse_can_view_expenses %}' in detail
+    assert '{% if pulse_can_view_budgets %}' in detail
+    assert '{% if pulse_can_view_financials %}' in detail
+    assert 'class="pulse-nav-disclosure"' in sidebar
+    assert '{% if pulse_can_view_financials %}' in sidebar
+    assert 'More tools' in sidebar and 'Financial controls' in sidebar
+    assert '.pulse-dashboard-grid' in css and '@media(max-width:760px)' in css
+    assert 'pulse-content' in css
+    return 'schedule-first overview + scoped finance/navigation'
 
 
 def verify_exports():
@@ -141,6 +165,7 @@ def main():
         ('Python AST', verify_python), ('Routes/templates', verify_routes),
         ('Access catalog / migration', verify_permissions),
         ('Security & finance guards', verify_privacy_and_finance_guards),
+        ('Project Pulse dashboard UX', verify_ui_organization),
         ('Real XLSX/PDF generation', verify_exports),
     ]
     for label, fn in checks:

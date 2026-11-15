@@ -10,11 +10,7 @@
   <div class="pulse-metric"><span>On hold</span><strong>{{ counts.on_hold }}</strong><small>Paused projects</small></div>
   <div class="pulse-metric"><span>Completed</span><strong>{{ counts.completed }}</strong><small>Closed projects</small></div>
 </section>
-{% if visible_task_summary %}<section class="pulse-metrics" aria-label="Progress among the twelve listed projects">
-  <div class="pulse-metric"><span>Scheduled works (listed projects)</span><strong>{{ visible_task_summary.tasks }}</strong><small>Eligible scheduled works</small></div>
-  <div class="pulse-metric"><span>Completed works (listed projects)</span><strong>{{ visible_task_summary.completed }}</strong><small>Completed eligible tasks</small></div>
-  <div class="pulse-metric"><span>Overdue (listed projects)</span><strong>{{ visible_task_summary.overdue }}</strong><small>Not completed by due date</small></div>
-</section>{% endif %}
+{% if visible_task_summary %}<section class="pulse-overview-counts" aria-label="Execution progress among listed projects"><strong>Execution at a glance</strong><span><b>{{ visible_task_summary.tasks }}</b> scheduled works</span><span><b>{{ visible_task_summary.completed }}</b> completed</span><span><b>{{ visible_task_summary.overdue }}</b> overdue</span><small>Figures cover the projects listed below.</small></section>{% endif %}
 {% if pulse_can_view_projects %}<section class="pulse-panel">
   <div class="pulse-panel-head"><div><h2>Current projects</h2><p>Projects shown below follow your assigned project scope.</p></div>{% if pulse_can_view_projects %}<a class="pulse-text-link" href="{% url 'project_pulse:project_list' %}">See all</a>{% endif %}</div>
   <div class="pulse-table-wrap"><table class="pulse-table"><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Expected completion</th>{% if pulse_can_view_progress %}<th>Progress</th>{% endif %}<th></th></tr></thead><tbody>

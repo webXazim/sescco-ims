@@ -89,3 +89,101 @@
 .pulse-finance-metrics .pulse-metric strong{font-size:22px}
 .pulse-row-actions{min-width:160px}
 @media(max-width:650px){.pulse-finance-metrics{grid-template-columns:1fr}}
+
+/* Project Pulse UI refinement: execution-first dashboard, grouped sidebar and
+   permission-aware financial summaries. No change to business calculations. */
+.pulse-content{max-width:1540px;padding-bottom:40px}
+.pulse-page-head{margin:2px 0 18px;align-items:center}
+.pulse-page-head h1{font-size:clamp(23px,2vw,29px);line-height:1.22;margin:4px 0 5px}
+.pulse-page-head p{line-height:1.5}
+.pulse-breadcrumb{margin-bottom:14px}
+.pulse-panel{border-radius:8px;margin-bottom:14px;box-shadow:none}
+.pulse-panel-head{padding:17px 20px 14px}
+.pulse-panel-head h2{font-size:15px;font-weight:700;margin-bottom:4px}
+.pulse-panel-head p{line-height:1.5}
+.pulse-table th{padding:11px 18px;font-size:10.5px}
+.pulse-table td{padding:13px 18px}
+.pulse-table tbody tr:hover{background:#fbfcfe}
+.pulse-topbar-link{display:inline-flex;align-items:center;text-decoration:none;color:#475569;font-size:12px;font-weight:650;border:1px solid #e3e8f0;border-radius:6px;padding:7px 12px;background:#fff}
+.pulse-topbar-link:hover{border-color:#b9c8d9;color:#175b93}
+.pulse-sidebar .inventory-sidebar__nav{padding-top:8px}
+.pulse-project-nav{padding-top:12px;margin-top:8px;border-top:1px solid #e6eaf0}
+.pulse-selected-project{margin:3px 5px 8px;padding:10px 11px;border:1px solid #e7ebf1;border-radius:7px;background:#f8fafc;gap:3px}
+.pulse-selected-project strong{font-size:12px;line-height:1.4}
+.pulse-selected-project small{font-size:10.5px}
+.pulse-sidebar .pulse-project-nav .nav-link{min-height:38px;gap:10px}
+.pulse-nav-disclosure{margin:3px 0}
+.pulse-nav-disclosure summary{list-style:none;display:flex;align-items:center;gap:10px;cursor:pointer;border-radius:7px;color:#4b5b70;min-height:38px;padding:8px 12px;font-size:13px;font-weight:600;user-select:none}
+.pulse-nav-disclosure summary::-webkit-details-marker{display:none}
+.pulse-nav-disclosure summary:hover,.pulse-nav-disclosure[open]>summary{background:#f1f4f8;color:#223449}
+.pulse-nav-disclosure .nav-glyph{height:17px;width:17px;flex:0 0 17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.pulse-nav-chevron{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;fill:none;margin-left:auto;transition:transform .15s}
+.pulse-nav-disclosure[open] .pulse-nav-chevron{transform:rotate(180deg)}
+.pulse-nav-subitems{margin:2px 0 7px 20px;padding-left:12px;border-left:1px solid #e3e8f0;display:grid;gap:1px}
+.pulse-nav-subitems a{color:#536478;text-decoration:none;font-size:12px;font-weight:560;line-height:1.3;padding:9px 11px;border-radius:6px}
+.pulse-nav-subitems a:hover{background:#f3f6fa;color:#223449}
+.pulse-nav-subitems a.active{background:#e9eef5;color:#1d334f;font-weight:700}
+.pulse-nav-disclosure summary:focus-visible,.pulse-selected-project:focus-visible,.pulse-nav-subitems a:focus-visible{outline:2px solid #366eab;outline-offset:2px}
+
+/* Single prominent progress panel instead of multiple repetitive KPI cards. */
+.pulse-overview-heading{margin-bottom:18px}
+.pulse-overview-heading .pulse-page-actions{gap:12px}
+.pulse-dashboard-progress{display:flex;align-items:center;gap:30px;background:#fff;border:1px solid #dfe6ee;border-radius:8px;padding:22px 26px;margin-bottom:16px}
+.pulse-dashboard-progress-value{display:flex;flex-direction:column;gap:3px;min-width:140px}
+.pulse-dashboard-progress-value strong{font-size:42px;line-height:1.08;letter-spacing:-.05em;color:#20364b;font-weight:750;font-variant-numeric:tabular-nums}
+.pulse-dashboard-progress-value span{font-size:12px;color:#64748b}
+.pulse-dashboard-progress-body{min-width:0;flex:1}
+.pulse-dashboard-progress-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;font-size:12px}
+.pulse-dashboard-progress-top strong{color:#32475d;font-size:13px}
+.pulse-dashboard-progress-top span{color:#64748b}
+.pulse-dashboard-progress .pulse-progress-track-large{height:9px}
+.pulse-dashboard-counters{display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:#64748b}
+.pulse-dashboard-counters strong{font-weight:750;color:#263c50;font-variant-numeric:tabular-nums}
+.pulse-dashboard-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(268px,315px);gap:16px;align-items:start}
+.pulse-dashboard-primary,.pulse-dashboard-secondary{min-width:0}
+.pulse-dashboard-primary .pulse-panel,.pulse-dashboard-secondary .pulse-panel{margin-bottom:14px}
+.pulse-dashboard-table{min-width:490px}
+.pulse-dashboard-table th:first-child,.pulse-dashboard-table td:first-child{min-width:150px}
+.pulse-dashboard-table .pulse-progress-inline{width:120px;min-width:100px}
+.pulse-dashboard-table .pulse-progress-inline>span{margin:0;color:#263c50;font-weight:700}
+.pulse-table-action-col{width:70px}
+.pulse-dashboard-empty{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;padding:35px 18px}
+.pulse-dashboard-empty strong{font-size:14px;color:#334155}
+.pulse-dashboard-empty span{font-size:12px;color:#64748b;max-width:380px;line-height:1.6}
+.pulse-dashboard-empty .btn{margin-top:4px}
+.pulse-summary-title{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:17px 18px 12px;border-bottom:1px solid #edf0f4}
+.pulse-summary-title h2,.pulse-links-panel h2{font-size:14px;font-weight:700;color:#283950;margin:0}
+.pulse-summary-title>span{font-size:10px;font-weight:650;color:#718096;border:1px solid #e2e8f0;border-radius:4px;padding:3px 6px}
+.pulse-summary-line{display:flex;align-items:start;justify-content:space-between;gap:10px;text-decoration:none;color:#334155;padding:14px 18px;border-bottom:1px solid #edf0f4}
+.pulse-summary-line:last-of-type{border-bottom:0}
+.pulse-summary-line:hover{background:#f8fafc}
+.pulse-summary-line>span{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:650;min-width:0}
+.pulse-summary-line small{font-size:10.5px;line-height:1.45;color:#748195;font-weight:400}
+.pulse-summary-line>strong{font-size:12px;color:#223850;font-weight:750;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pulse-summary-note{margin:0;border-top:1px solid #edf0f4;padding:12px 18px;font-size:11px;line-height:1.5;color:#92651d;background:#fffaf1}
+.pulse-links-panel{padding:16px 18px}
+.pulse-links-panel h2{margin-bottom:10px}
+.pulse-links-panel a{display:flex;justify-content:space-between;text-decoration:none;padding:9px 0;gap:10px;border-bottom:1px solid #edf0f4;font-size:12px;color:#486076;font-weight:600}
+.pulse-links-panel a:last-child{border-bottom:0}
+.pulse-links-panel a:hover{color:#175b93}
+.pulse-links-panel a span{font-size:18px;line-height:12px;color:#94a3b8}
+.pulse-project-facts>summary{list-style:none;padding:16px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pulse-project-facts>summary::-webkit-details-marker{display:none}
+.pulse-project-facts>summary>span{display:flex;flex-direction:column;gap:4px}
+.pulse-project-facts>summary strong{color:#283950;font-size:14px}
+.pulse-project-facts>summary small{color:#64748b;font-size:12px}
+.pulse-project-facts>summary svg{height:18px;width:18px;fill:none;stroke:#64748b;stroke-width:1.8;flex:none}
+.pulse-project-facts[open]>summary svg{transform:rotate(180deg)}
+.pulse-project-facts>summary:focus-visible{outline:2px solid #366eab;outline-offset:-3px}
+.pulse-project-facts .pulse-detail-grid{padding:18px 20px 22px;gap:16px 24px}
+/* Responsive: bring the execution schedule before the financial/tools sidebar. */
+@media(max-width:1120px){.pulse-dashboard-grid{grid-template-columns:minmax(0,1fr)}.pulse-dashboard-secondary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pulse-dashboard-secondary .pulse-panel{margin-bottom:0}}
+@media(max-width:760px){.pulse-dashboard-progress{padding:18px;gap:18px}.pulse-dashboard-progress-value{min-width:96px}.pulse-dashboard-progress-value strong{font-size:34px}.pulse-dashboard-progress-top span{display:none}.pulse-dashboard-counters{gap:10px 16px}.pulse-dashboard-secondary{display:flex;flex-direction:column;gap:0}.pulse-dashboard-secondary .pulse-panel{width:100%;margin-bottom:12px}.pulse-overview-heading .pulse-page-actions{justify-content:flex-start}}
+@media(max-width:540px){.pulse-dashboard-progress{flex-direction:column;align-items:stretch;gap:12px}.pulse-dashboard-progress-value{flex-direction:row;align-items:baseline;gap:12px}.pulse-dashboard-progress-value strong{font-size:31px}.pulse-dashboard-counters{gap:8px 13px}.pulse-dashboard-grid{gap:12px}.pulse-page-actions .btn{font-size:12px}}
+
+/* Compact multi-project overview to avoid a second row of oversized KPI cards. */
+.pulse-overview-counts{display:flex;align-items:center;flex-wrap:wrap;gap:10px 20px;border:1px solid #e3e8f0;border-radius:8px;background:#fff;padding:13px 18px;margin:-6px 0 16px;color:#5f6f82;font-size:12px}
+.pulse-overview-counts>strong{color:#253348;font-size:12px;margin-right:4px}
+.pulse-overview-counts span b{color:#1d3449;font-variant-numeric:tabular-nums}
+.pulse-overview-counts small{margin-left:auto;color:#8390a0;font-size:11px}
+@media(max-width:720px){.pulse-overview-counts small{flex-basis:100%;margin-left:0}}

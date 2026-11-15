@@ -69,6 +69,27 @@ class ExecutionScheduleTests(TestCase):
         self.assertEqual(work1.progress_percent, 0)
         self.assertEqual(PulseProgressUpdate.objects.filter(task=work1).count(), 3)
 
+    def test_project_overview_consolidates_execution_and_financial_cards(self):
+        overview = reverse("project_pulse:project_detail", args=[self.project.code])
+        empty = self.client.get(overview)
+        self.assertEqual(empty.status_code, 200)
+        self.assertContains(empty, "No execution categories yet")
+        self.assertContains(empty, "0%")
+        category = self.new_category("Mobilization")
+        self.new_work(category, "Site handover")
+        response = self.client.get(overview)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "pulse-dashboard-grid")
+        self.assertContains(response, "Financial snapshot")
+        self.assertContains(response, "Execution schedule")
+        self.assertContains(response, "Project information")
+        self.assertContains(response, "Financial controls")
+        self.assertContains(response, "More tools")
+        self.assertNotContains(response, "Site handover")  # Work list belongs on its category page.
+        self.assertContains(response, "Mobilization")
+        self.assertNotContains(response, "Expense classifications")  # No duplicate standalone panel.
+        self.assertContains(response, reverse("project_pulse:category_detail", args=[self.project.code, category.pk]))
+
     def test_schedule_screen_and_financial_linkage_preserved(self):
         cat = self.new_category("Mobilization")
         work = self.new_work(cat, "Site access")

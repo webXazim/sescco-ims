@@ -9,23 +9,35 @@
   <nav class="nav inventory-sidebar__nav" aria-label="Project Pulse sections">
     <div class="nav-group inventory-nav-group">
       <div class="nav-label">Workspace</div>
-      <a class="nav-link {% if page_key == 'pulse-home' %}active{% endif %}" href="{% url 'project_pulse:home' %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span>Overview</span></a>
-      {% if pulse_can_view_projects %}<a class="nav-link {% if page_key == 'pulse-projects' %}active{% endif %}" href="{% url 'project_pulse:project_list' %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM3 8V5h7l2 3"/></svg><span>Projects</span></a>{% endif %}
+      <a class="nav-link {% if page_key == 'pulse-home' %}active{% endif %}" href="{% url 'project_pulse:home' %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z"/></svg><span>Overview</span></a>
+      {% if pulse_can_view_projects %}<a class="nav-link {% if page_key == 'pulse-projects' and not project %}active{% endif %}" href="{% url 'project_pulse:project_list' %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h18v12H3zM3 8V5h7l2 3"/></svg><span>Projects</span></a>{% endif %}
     </div>
     {% if project and pulse_can_view_projects %}
     <div class="nav-group inventory-nav-group pulse-project-nav">
-      <div class="nav-label">Selected project</div>
-      <a href="{% url 'project_pulse:project_detail' project.code %}" class="pulse-selected-project" title="{{ project.name }}"><strong>{{ project.code }}</strong><small>{{ project.name|truncatechars:31 }}</small></a>
-      {% if pulse_can_view_categories %}<a class="nav-link {% if page_key == 'pulse-categories' %}active{% endif %}" href="{% url 'project_pulse:execution_schedule' project.code %}"><span>Execution schedule</span></a>{% endif %}
-      {% if pulse_can_view_tasks %}<a class="nav-link {% if page_key == 'pulse-tasks' %}active{% endif %}" href="{% url 'project_pulse:scheduled_works' project.code %}"><span>Scheduled works</span></a>{% endif %}
-      {% if pulse_can_view_expenses %}<a class="nav-link {% if page_key == 'pulse-expenses' %}active{% endif %}" href="{% url 'project_pulse:expenses' project.code %}"><span>Work expenses</span></a>{% endif %}
-      {% if pulse_can_view_expense_categories %}<a class="nav-link {% if page_key == 'pulse-expense-categories' %}active{% endif %}" href="{% url 'project_pulse:expense_categories' project.code %}"><span>Expense categories</span></a>{% endif %}
-      {% if pulse_can_view_budgets %}<a class="nav-link {% if page_key == 'pulse-budgets' %}active{% endif %}" href="{% url 'project_pulse:budgets' project.code %}"><span>Category budgets</span></a>{% endif %}
-      {% if pulse_can_view_financials %}<a class="nav-link {% if page_key == 'pulse-financials' %}active{% endif %}" href="{% url 'project_pulse:financials' project.code %}"><span>Profitability</span></a>{% endif %}
-      {% if pulse_can_view_reports %}<a class="nav-link {% if page_key == 'pulse-reports' %}active{% endif %}" href="{% url 'project_pulse:reports' project.code %}"><span>Reports</span></a>{% endif %}
-      {% if pulse_can_view_team %}<a class="nav-link {% if page_key == 'pulse-team' %}active{% endif %}" href="{% url 'project_pulse:project_team' project.code %}"><span>Project team</span></a>{% endif %}
-    </div>
-    {% endif %}
+      <div class="nav-label">Current project</div>
+      <a href="{% url 'project_pulse:project_detail' project.code %}" class="pulse-selected-project" title="{{ project.name }}"><strong>{{ project.name|truncatechars:33 }}</strong><small>{{ project.code|truncatechars:32 }}</small></a>
+      <a class="nav-link {% if page_key == 'pulse-projects' %}active{% endif %}" href="{% url 'project_pulse:project_detail' project.code %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 10h8M8 14h5"/></svg><span>Project overview</span></a>
+      {% if pulse_can_view_categories %}<a class="nav-link {% if page_key == 'pulse-categories' or page_key == 'pulse-tasks' %}active{% endif %}" href="{% url 'project_pulse:execution_schedule' project.code %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h3l2 2 4-4M12 7h8M4 16h3l2 2 4-4M12 17h8"/></svg><span>Execution schedule</span></a>{% elif pulse_can_view_tasks %}<a class="nav-link {% if page_key == 'pulse-tasks' %}active{% endif %}" href="{% url 'project_pulse:scheduled_works' project.code %}"><span>Scheduled works</span></a>{% endif %}
+      {% if pulse_can_view_reports %}<a class="nav-link {% if page_key == 'pulse-reports' %}active{% endif %}" href="{% url 'project_pulse:reports' project.code %}"><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-8M3 20h18"/></svg><span>Reports</span></a>{% endif %}
+      {% if pulse_can_view_expenses or pulse_can_view_budgets or pulse_can_view_financials %}
+      <details class="pulse-nav-disclosure" {% if page_key == 'pulse-expenses' or page_key == 'pulse-budgets' or page_key == 'pulse-financials' %}open{% endif %}>
+        <summary><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v12H3zM7 10h10M7 14h6"/></svg><span>Financial controls</span><svg class="pulse-nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary>
+        <div class="pulse-nav-subitems">
+          {% if pulse_can_view_expenses %}<a class="{% if page_key == 'pulse-expenses' %}active{% endif %}" href="{% url 'project_pulse:expenses' project.code %}">Work expenses</a>{% endif %}
+          {% if pulse_can_view_budgets %}<a class="{% if page_key == 'pulse-budgets' %}active{% endif %}" href="{% url 'project_pulse:budgets' project.code %}">Category budgets</a>{% endif %}
+          {% if pulse_can_view_financials %}<a class="{% if page_key == 'pulse-financials' %}active{% endif %}" href="{% url 'project_pulse:financials' project.code %}">Profitability</a>{% endif %}
+        </div>
+      </details>{% endif %}
+      {% if pulse_can_view_team or pulse_can_view_expense_categories or pulse_can_view_tasks %}
+      <details class="pulse-nav-disclosure" {% if page_key == 'pulse-team' or page_key == 'pulse-expense-categories' %}open{% endif %}>
+        <summary><svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>More tools</span><svg class="pulse-nav-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary>
+        <div class="pulse-nav-subitems">
+          {% if pulse_can_view_tasks %}<a class="{% if page_key == 'pulse-tasks' %}active{% endif %}" href="{% url 'project_pulse:scheduled_works' project.code %}">All scheduled works</a>{% endif %}
+          {% if pulse_can_view_expense_categories %}<a class="{% if page_key == 'pulse-expense-categories' %}active{% endif %}" href="{% url 'project_pulse:expense_categories' project.code %}">Expense categories</a>{% endif %}
+          {% if pulse_can_view_team %}<a class="{% if page_key == 'pulse-team' %}active{% endif %}" href="{% url 'project_pulse:project_team' project.code %}">Project team</a>{% endif %}
+        </div>
+      </details>{% endif %}
+    </div>{% endif %}
   </nav>
   <div class="sidebar-foot inventory-sidebar__footer">
     <details class="platform-account" data-platform-switcher>
