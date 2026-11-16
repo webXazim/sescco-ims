@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
+from apps.accounts.access_profiles import create_access_profile
 from apps.accounts.models import CompanyMembership
 from apps.accounts.modules import PlatformModule, membership_can_module, module_from_path
 from apps.accounts.roles import AccessRole
@@ -32,6 +33,44 @@ class UserManagementUiTests(TestCase):
         self.assertTrue(membership_can_module(self.access_admin, PlatformModule.ADMINISTRATION))
         self.assertFalse(membership_can_module(self.storekeeper, PlatformModule.ADMINISTRATION))
         self.assertTrue(membership_has_permission(self.access_admin, AccessPermission.ACCESS_USERS_MANAGE))
+
+    def test_inventory_custom_profile_with_settings_permission_does_not_see_payroll(self):
+        profile = create_access_profile(
+            actor_membership=self.owner,
+            payload={"name": "Inventory with settings only", "permissions": [
+                AccessPermission.INVENTORY_DASHBOARD_VIEW.value,
+                AccessPermission.INVENTORY_STOCK_VIEW.value,
+                AccessPermission.SETTINGS_VIEW.value,
+            ]},
+        )
+        user = get_user_model().objects.create_user(username="inventory-settings-only", password="TestPass!2026")
+        membership = CompanyMembership.objects.create(
+            company=self.company, user=user, role=AccessRole.CUSTOM, access_profile=profile,
+        )
+        self.assertTrue(membership_can_module(membership, PlatformModule.INVENTORY))
+        self.assertFalse(membership_can_module(membership, PlatformModule.PAYROLL))
+        self.client.force_login(user)
+        dashboard = self.client.get(reverse("core:dashboard"))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertNotIn("payroll", [module["key"] for module in dashboard.context["PLATFORM_CONTEXT"]["modules"]])
+        self.assertNotContains(dashboard, 'href="' + reverse("core:payroll") + '"')
+        self.assertEqual(self.client.get(reverse("core:payroll")).status_code, 403)
+
+    def test_internal_payroll_permission_still_unlocks_module(self):
+        profile = create_access_profile(
+            actor_membership=self.owner,
+            payload={"name": "Inventory and Payroll", "permissions": [
+                AccessPermission.INVENTORY_DASHBOARD_VIEW.value,
+                AccessPermission.INTERNAL_OVERVIEW_VIEW.value,
+            ]},
+        )
+        user = get_user_model().objects.create_user(username="inventory-payroll-authorized", password="TestPass!2026")
+        membership = CompanyMembership.objects.create(
+            company=self.company, user=user, role=AccessRole.CUSTOM, access_profile=profile,
+        )
+        self.assertTrue(membership_can_module(membership, PlatformModule.PAYROLL))
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(reverse("core:payroll")).status_code, 200)
 
     def test_administration_path_resolves_before_inventory_prefix(self):
         self.assertEqual(module_from_path("/app/administration/"), PlatformModule.ADMINISTRATION)

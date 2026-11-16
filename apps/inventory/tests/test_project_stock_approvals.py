@@ -390,6 +390,31 @@ class ProjectApprovalsTests(TestCase):
         self.assertEqual(approved.status, 'approved')
         self.assertTrue(StockTransfer.objects.for_company(self.company).exists())
 
+    def test_pending_transfer_filter_and_transfer_page_link(self):
+        from django.urls import reverse
+        receipt = self._add().approval_request
+        self._approve(receipt, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        transfer = transfer_stock(
+            user=self.requester, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location, destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
+        ).approval_request
+        # A fresh pending receipt should not appear in transfer-only results.
+        pending_receipt = self._add(material_name="Unrelated tools").approval_request
+        self.client.force_login(self.manager1)
+        filtered = self.client.get(reverse("inventory:approval_list"), {"kind": "transfer", "status": "pending"})
+        self.assertEqual(filtered.status_code, 200)
+        self.assertContains(filtered, str(transfer.reference)[:8].upper())
+        self.assertNotContains(filtered, str(pending_receipt.reference)[:8].upper())
+        self.assertContains(filtered, "Stock transfers")
+        self.assertContains(filtered, "Review")
+        self.client.force_login(self.requester)
+        history = self.client.get(reverse("inventory:transfer_list"))
+        self.assertEqual(history.status_code, 200)
+        self.assertContains(history, "Pending transfer approvals")
+        self.assertContains(history, "?status=pending&amp;kind=transfer", html=False)
+
     def test_transfer_only_can_submit_without_approval_permission(self):
         # Granting Transfer never grants Approve / Reject.
         user, _, _ = self._custom_user(

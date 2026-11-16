@@ -1,18 +1,87 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div></div>
-<section class="card"><div class="card-body">
-  <nav class="form-grid" aria-label="Approval statuses">
-    <a class="btn btn-sm {% if current_status == 'pending' %}btn-primary{% endif %}" href="?status=pending">Pending</a>
-    <a class="btn btn-sm {% if current_status == 'approved' %}btn-primary{% endif %}" href="?status=approved">Approved / applied</a>
-    <a class="btn btn-sm {% if current_status == 'rejected' %}btn-primary{% endif %}" href="?status=rejected">Rejected</a>
-    <a class="btn btn-sm" href="?status=all">All</a>
-  </nav>
-</div></section>
-<section class="card section-gap"><div class="table-wrap"><table class="data-table"><thead><tr><th>Submitted</th><th>Request</th><th>Type</th><th>Requested by</th><th>Status</th></tr></thead>
-<tbody>{% for approval in approvals %}<tr>
-<td>{{ approval.created_at|date:"d M Y H:i" }}</td>
-<td><a class="row-link" href="{% url 'inventory:approval_detail' approval.reference %}">{{ approval.reference|stringformat:"s"|slice:":8"|upper }}</a></td>
-<td>{{ approval.get_kind_display }}</td><td>{{ approval.requested_by.display_name }}</td><td><span class="status">{{ approval.get_status_display }}</span></td>
-</tr>{% empty %}<tr><td colspan="5"><div class="empty-state"><strong>No requests in this view.</strong></div></td></tr>{% endfor %}</tbody></table></div>{% include "partials/pagination.html" %}</section>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">{{ page_title }}</h1>
+    <p class="page-subtitle">{{ page_subtitle }}</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-body">
+    <form method="get" class="form-grid" aria-label="Filter stock requests">
+      <div class="field">
+        <label class="field-label" for="approval-status">Status</label>
+        <select class="input" id="approval-status" name="status">
+          {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="approval-kind">Request type</label>
+        <select class="input" id="approval-kind" name="kind">
+          {% for value, label in kind_choices %}
+            <option value="{{ value }}" {% if current_kind == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field" style="align-self:end; display:flex; gap:.5rem;">
+        <button class="btn btn-primary" type="submit">Apply</button>
+        <a class="btn" href="{% url 'inventory:approval_list' %}">Reset</a>
+      </div>
+    </form>
+    <p class="micro section-gap">Only authorized users can approve or reject. Your own submissions are visible for tracking but stay read-only.</p>
+  </div>
+</section>
+
+<section class="card section-gap">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Submitted</th>
+          <th>Request</th>
+          <th>Route / project</th>
+          <th>Item summary</th>
+          <th>Requested by</th>
+          <th>Projects awaiting action</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for approval in approvals %}
+          <tr>
+            <td>{{ approval.created_at|date:"d M Y H:i" }}</td>
+            <td>
+              <a class="row-link" href="{% url 'inventory:approval_detail' approval.reference %}">{{ approval.reference|stringformat:"s"|slice:":8"|upper }}</a>
+              <div class="cell-sub">{{ approval.get_kind_display }}</div>
+            </td>
+            <td>
+              <strong>{{ approval.route_summary }}</strong>
+              <div class="cell-sub">{{ approval.route_detail }}</div>
+            </td>
+            <td>
+              <strong>{{ approval.item_summary }}</strong>
+              <div class="cell-sub">{{ approval.quantity_summary }}</div>
+            </td>
+            <td>{{ approval.requested_by.display_name }}</td>
+            <td>
+              <strong>{{ approval.pending_project_summary }}</strong>
+              <div class="cell-sub">Affected: {{ approval.affected_project_summary }}</div>
+            </td>
+            <td><span class="status">{{ approval.get_status_display }}</span></td>
+            <td><a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}">Review</a></td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="8"><div class="empty-state"><strong>No requests in this view.</strong></div></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/pagination.html" %}
+</section>
 {% endblock %}

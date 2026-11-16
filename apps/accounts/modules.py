@@ -25,9 +25,12 @@ def membership_can_module(membership, module: PlatformModule | str) -> bool:
     if value is PlatformModule.INVENTORY:
         return membership_can_workspace(membership, Workspace.INVENTORY)
     if value is PlatformModule.PAYROLL:
+        # Management/Administration permissions alone do not grant Payroll access.
+        # In particular, Inventory custom profiles may have settings or shared
+        # management permissions without any Internal Payroll/Rental authority.
         return any(
             membership_can_workspace(membership, workspace)
-            for workspace in (Workspace.INTERNAL, Workspace.RENTAL, Workspace.MANAGEMENT)
+            for workspace in (Workspace.INTERNAL, Workspace.RENTAL)
         )
     if value is PlatformModule.PROJECT_PULSE:
         return membership_has_permission(membership, AccessPermission.PULSE_OVERVIEW_VIEW)

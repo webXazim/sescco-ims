@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:office' %}">Office stock</a><a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}">New transfer</a></div></div>
+<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><div class="head-actions"><a class="btn" href="{% url 'inventory:approval_list' %}?status=pending&amp;kind=transfer">Pending transfer approvals</a><a class="btn" href="{% url 'inventory:office' %}">Office stock</a><a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}">New transfer</a></div></div>
 <section class="card section-gap">
   <form class="explorer-toolbar transfer-filter-toolbar" method="get" data-live-filter-form>
     <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ filter_form.q.value|default:'' }}" maxlength="160" placeholder="Search material, reference, source, destination, or user…" aria-label="Search transfers" autocomplete="off" data-live-filter-search></div>

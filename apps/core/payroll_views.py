@@ -47,9 +47,11 @@ def _period_options(*, months: int = 12) -> list[dict[str, str]]:
 
 
 def _can_open_payroll_frontend(membership) -> bool:
+    # Match the module switcher and fail closed for management-only profiles.
+    # A settings/audit grant is not a Payroll or Rental Manpower grant.
     return any(
         membership_can_workspace(membership, workspace)
-        for workspace in (Workspace.INTERNAL, Workspace.RENTAL, Workspace.MANAGEMENT)
+        for workspace in (Workspace.INTERNAL, Workspace.RENTAL)
     )
 
 
@@ -72,12 +74,10 @@ def payroll_app(request):
     initials = "".join(part[0] for part in display_name.split()[:2]).upper() or "U"
     can_internal = membership_can_workspace(membership, Workspace.INTERNAL)
     can_rental = membership_can_workspace(membership, Workspace.RENTAL)
-    can_management = membership_can_workspace(membership, Workspace.MANAGEMENT)
-    # Management was an interim cross-workspace shell. When a membership already has
-    # an operational Payroll workspace, Administration is the authority for users and
-    # configuration, so do not expose a second "Management" destination. Keep the
-    # legacy read-only workspace only for management-only profiles to avoid stranding them.
-    show_management_workspace = can_management and not (can_internal or can_rental)
+    # Operational Payroll workspaces are Internal Payroll and Rental Manpower.
+    # The old generic management shell must not be exposed through Payroll just
+    # because a custom profile has Settings or Administration permissions.
+    show_management_workspace = False
 
     # 1.0.94: workspace membership is no longer enough to decide which bootstrap
     # payloads may be disclosed. Custom profiles can expose only one or two pages,

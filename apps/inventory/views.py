@@ -2713,15 +2713,120 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = _visible_stock_approvals(self.request).select_related("requested_by")
+        queryset = _visible_stock_approvals(self.request).select_related("requested_by").prefetch_related("decisions__project")
         status = self.request.GET.get("status", "pending")
         if status in StockApprovalRequest.Status.values:
             queryset = queryset.filter(status=status)
+        kind = self.request.GET.get("kind", "all")
+        if kind in StockApprovalRequest.Kind.values:
+            queryset = queryset.filter(kind=kind)
         return queryset.order_by("-created_at", "-pk")
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Stock requests remain pending until a project-scoped user with Approve / Reject permission approves each affected project.", current_status=self.request.GET.get("status", "pending"))
+        kind = self.request.GET.get("kind", "all")
+        current_status = self.request.GET.get("status", "pending")
+        ctx.update(
+            page_key="approvals",
+            page_title="Stock requests and approvals",
+            page_subtitle="Review pending project receipts and transfers here. Authorized users can approve or reject affected projects; the requester cannot self-approve.",
+            current_status=current_status,
+            current_kind=kind if kind in StockApprovalRequest.Kind.values else "all",
+            status_choices=[
+                ("pending", "Pending"),
+                ("approved", "Approved / applied"),
+                ("rejected", "Rejected"),
+                ("all", "All statuses"),
+            ],
+            kind_choices=[
+                ("all", "All requests"),
+                ("transfer", "Stock transfers"),
+                ("receipt", "Stock additions"),
+            ],
+        )
+
+        approvals = list(ctx.get("approvals", []))
+        location_ids = set()
+        project_ids = set()
+        unit_ids = set()
+        stock_item_ids = set()
+        for approval in approvals:
+            payload = approval.payload or {}
+            if approval.kind == StockApprovalRequest.Kind.RECEIPT:
+                if payload.get("project_id"):
+                    project_ids.add(payload["project_id"])
+                if payload.get("unit_id"):
+                    unit_ids.add(payload["unit_id"])
+            else:
+                if payload.get("source_location_id"):
+                    location_ids.add(payload["source_location_id"])
+                if payload.get("destination_location_id"):
+                    location_ids.add(payload["destination_location_id"])
+                for line in payload.get("allocations", []):
+                    if line.get("stock_item_id"):
+                        stock_item_ids.add(line["stock_item_id"])
+
+        locations = {
+            row.pk: row
+            for row in InventoryLocation.objects.for_company(self.request.company)
+            .select_related("project")
+            .filter(pk__in=location_ids)
+        }
+        projects = {
+            row.pk: row
+            for row in Project.objects.for_company(self.request.company).filter(pk__in=project_ids)
+        }
+        units = {
+            row.pk: row
+            for row in Unit.objects.for_company(self.request.company).filter(pk__in=unit_ids)
+        }
+        stocks = {
+            row.pk: row
+            for row in StockItem.objects.for_company(self.request.company).select_related("unit").filter(pk__in=stock_item_ids)
+        }
+
+        def _display_location(location):
+            if not location:
+                return "Unavailable"
+            label = location.code
+            if getattr(location, "name", ""):
+                label = f"{location.code} · {location.name}"
+            return label
+
+        for approval in approvals:
+            payload = approval.payload or {}
+            decision_rows = list(approval.decisions.all())
+            pending_codes = [row.project.code for row in decision_rows if row.status == StockApprovalDecision.Status.PENDING]
+            approval.pending_project_summary = ", ".join(pending_codes) if pending_codes else "None"
+            approval.affected_project_summary = ", ".join(row.project.code for row in decision_rows) or "—"
+            approval.item_count = 0
+            approval.item_summary = "—"
+            approval.quantity_summary = "—"
+            if approval.kind == StockApprovalRequest.Kind.RECEIPT:
+                project = projects.get(payload.get("project_id"))
+                unit = units.get(payload.get("unit_id"))
+                approval.route_summary = f"To {project.code}" if project else "To unavailable project"
+                approval.route_detail = project.name if project else "Project unavailable"
+                approval.item_count = 1
+                approval.item_summary = payload.get("material_name") or "Material"
+                qty = payload.get("quantity")
+                approval.quantity_summary = f"{qty} {unit.symbol}" if qty and unit else (str(qty) if qty else "—")
+            else:
+                source = locations.get(payload.get("source_location_id"))
+                destination = locations.get(payload.get("destination_location_id"))
+                approval.route_summary = f"{_display_location(source)} → {_display_location(destination)}"
+                approval.route_detail = f"From {source.project.code if getattr(source, 'project', None) else 'OFFICE'} to {destination.project.code if getattr(destination, 'project', None) else 'OFFICE'}" if source and destination else "Location unavailable"
+                allocations = payload.get("allocations", [])
+                approval.item_count = len(allocations)
+                if len(allocations) == 1:
+                    stock = stocks.get(allocations[0].get("stock_item_id"))
+                    approval.item_summary = stock.material_name if stock else "1 stock item"
+                    unit_symbol = stock.unit.symbol if stock and stock.unit_id else ""
+                    approval.quantity_summary = f"{allocations[0].get('quantity')} {unit_symbol}".strip()
+                else:
+                    approval.item_summary = f"{len(allocations)} items"
+                    approval.quantity_summary = f"{sum(1 for _ in allocations)} lines"
+        ctx["approvals"] = approvals
         return ctx
 
 

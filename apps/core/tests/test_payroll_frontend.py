@@ -59,15 +59,11 @@ class MergedPayrollFrontendTests(TestCase):
         self.assertIsNone(response.context["access_context"]["initial_workspace"])
         self.assertNotContains(response, 'data-workspace-switch="management"')
 
-    def test_management_only_auditor_keeps_legacy_read_only_workspace(self):
+    def test_management_only_auditor_cannot_open_payroll(self):
         self.make_user("auditor-management-link", AccessRole.READ_ONLY_AUDITOR)
         response = self.client.get(reverse("core:payroll"), {"workspace": "management"})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["access_context"]["payroll_workspaces"], ["management"])
-        self.assertEqual(response.context["access_context"]["initial_workspace"], "management")
-        self.assertTrue(response.context["show_management_workspace"])
-        self.assertContains(response, 'data-workspace-switch="management"')
+        self.assertEqual(response.status_code, 403)
 
     def test_disallowed_workspace_query_is_not_honored(self):
         self.make_user("internal-workspace-guard", AccessRole.INTERNAL_PAYROLL_OFFICER)
