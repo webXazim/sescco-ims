@@ -67,7 +67,7 @@ def membership_can_workspace(membership: CompanyMembership | None, workspace: Wo
     except ValueError:
         return False
     if value is Workspace.INVENTORY:
-        return _has_any(membership, INVENTORY_VIEW_PERMISSIONS | INVENTORY_EDIT_PERMISSIONS | INVENTORY_MANAGE_PERMISSIONS | {AccessPermission.INVENTORY_IMPORT_EXECUTE})
+        return _has_any(membership, INVENTORY_VIEW_PERMISSIONS | INVENTORY_EDIT_PERMISSIONS | INVENTORY_MANAGE_PERMISSIONS | {AccessPermission.INVENTORY_IMPORT_EXECUTE, AccessPermission.INVENTORY_STOCK_APPROVE})
     if value is Workspace.INTERNAL:
         return _has_any(membership, INTERNAL_VIEW_PERMISSIONS | INTERNAL_EDIT_PERMISSIONS | INTERNAL_REVIEW_PERMISSIONS | INTERNAL_APPROVE_PERMISSIONS | INTERNAL_PAY_PERMISSIONS)
     if value is Workspace.RENTAL:

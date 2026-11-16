@@ -19,8 +19,8 @@ class ProjectForm(StyledModelForm):
         from django.contrib.auth import get_user_model
         self.fields["inventory_manager"].queryset = get_user_model().objects.filter(pk__in=user_ids).order_by("username")
         self.fields["manager_name"].help_text = "Display name only; approval rights come from a user's access profile and project scope."
-        self.fields["inventory_manager"].label = "Dedicated inventory approver (optional)"
-        self.fields["inventory_manager"].help_text = "Optional dedicated approver. If blank, an eligible Project Pulse manager or a built-in Project Manager with All/Selected project scope and Inventory approval permission can approve. A dedicated approver takes priority."
+        self.fields["inventory_manager"].label = "Inventory approval contact (optional)"
+        self.fields["inventory_manager"].help_text = "Optional project contact. Approval authority comes from Project Inventory Approve / Reject permission and the user’s company/project scope, including custom profiles. This contact does not override access profiles."
 
     class Meta:
         model = Project

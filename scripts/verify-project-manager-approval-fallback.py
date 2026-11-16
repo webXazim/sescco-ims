@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline source guard for manager-backed inventory stock approvals.
+"""Offline source guard for permission-based inventory stock approvals.
 
 Production decision behavior remains covered by Django/PostgreSQL tests in
 apps.inventory.tests.test_project_stock_approvals.
@@ -9,22 +9,22 @@ import ast
 ROOT = Path(__file__).resolve().parents[1]
 checks = {
     'apps/inventory/services/approvals.py': [
-        '_eligible_project_approvers', 'can_decide', 'inventory_manager_id',
-        'PulseProjectTeamMember', 'role-project-manager',
+        '_eligible_project_approvers', 'can_decide', '_valid_approver_membership',
         'membership_allows_project', 'INVENTORY_STOCK_APPROVE',
-        'req.requested_by_id == user.pk', 'if row.status != StockApprovalDecision.Status.APPROVED',
+        '_require_projects', 'req.requested_by_id == user.pk',
+        'if row.status != StockApprovalDecision.Status.APPROVED',
     ],
     'apps/inventory/views.py': [
-        'def _visible_stock_approvals', 'StockApprovalDecision.objects.filter',
+        'def _visible_stock_approvals', 'InventoryApprovalAccessMixin',
+        'StockApprovalDecision.objects.filter',
         'if can_decide(request.user, project)',
     ],
     'apps/inventory/tests/test_project_stock_approvals.py': [
-        'test_fallback_to_scoped_project_manager_with_no_inventory_assignee',
-        'test_no_eligible_project_manager_blocks_before_stock_posting',
-        'test_dedicated_inventory_approver_overrides_all_scoped_project_manager',
-        'test_pulse_project_manager_can_approve_when_explicit_inventory_assignee_empty',
-        'test_revoking_pulse_manager_approval_fails_closed',
-        'test_all_scoped_project_manager_can_approve_new_company_project',
+        'test_custom_profile_approves_without_manager_designation',
+        'test_custom_permission_revocation_stops_approval',
+        'test_permission_only_user_can_view_review_and_decide',
+        'test_receive_only_can_submit_and_see_own_request',
+        'test_transfers_require_each_project_decision',
         'test_manager_cannot_approve_own_submission',
     ],
 }
@@ -34,4 +34,27 @@ for rel, needles in checks.items():
     for needle in needles:
         if needle not in text:
             raise SystemExit(f'MANAGER APPROVAL CHECK FAILED: {rel} missing {needle}')
-print('Project manager inventory approval source guards passed; run Django regression tests on staging.')
+print('Permission-based inventory approval source guards passed; run Django regression tests on staging.')
+
+# Role names and project manager designation must not gate a profile grant.
+approval_source = (ROOT / 'apps/inventory/services/approvals.py').read_text(encoding='utf-8')
+module = ast.parse(approval_source)
+methods = {
+    node.name: ast.get_source_segment(approval_source, node)
+    for node in module.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+}
+resolver = methods['_eligible_project_approvers']
+if 'role-project-manager' in resolver or 'inventory_manager_id' in resolver:
+    raise SystemExit('PERMISSION APPROVAL CHECK FAILED: resolver restricts custom-profile grants')
+if 'permission_grants__permission=' not in resolver:
+    raise SystemExit('PERMISSION APPROVAL CHECK FAILED: resolver not based on stored grant')
+if '_eligible_project_approvers(' in methods['can_decide']:
+    raise SystemExit('PERMISSION APPROVAL CHECK FAILED: can_decide still requires a designated manager')
+if '_require_projects(company, project_ids)' not in methods['queue_request']:
+    raise SystemExit('PERMISSION APPROVAL CHECK FAILED: request submission still requires a manager')
+for label in ('StockApprovalListView', 'StockApprovalDetailView', 'StockApprovalAttachmentView'):
+    if f'class {label}(InventoryApprovalAccessMixin' not in (ROOT / 'apps/inventory/views.py').read_text(encoding='utf-8'):
+        raise SystemExit(f'PERMISSION APPROVAL CHECK FAILED: {label} blocks approval-only profiles')
+if 'AccessPermission.INVENTORY_STOCK_APPROVE}' not in (ROOT / 'apps/accounts/permissions.py').read_text(encoding='utf-8'):
+    raise SystemExit('PERMISSION APPROVAL CHECK FAILED: approval-only users cannot open Inventory workspace')
+print('Custom-profile approval, submission separation, and inbox accessibility source checks passed.')

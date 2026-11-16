@@ -7,11 +7,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.accounts.models import CompanyMembership, MembershipProjectScope, ScopeMode
+from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership, MembershipProjectScope, ScopeMode
 from ..access import (restrict_inventory_location_queryset, restrict_inventory_stock,
                       restrict_inventory_movements, restrict_inventory_transfers)
 from ..services.approvals import can_decide
 from apps.accounts.roles import AccessRole
+from apps.accounts.access_catalog import AccessPermission
 from apps.core.tests.tenant import primary_company
 from apps.projects.models import Project
 from ..models import InventoryLocation, StockApprovalRequest, StockItem, StockMovement, StockTransfer, Unit
@@ -87,7 +88,7 @@ class ProjectApprovalsTests(TestCase):
         member.project_scope_mode = ScopeMode.ALL
         member.save(update_fields=("project_scope_mode", "updated_at"))
         member.project_scopes.all().delete()
-        self.assertFalse(can_decide(self.manager1, self.p2))  # dedicated approver still wins
+        self.assertTrue(can_decide(self.manager1, self.p2))  # explicit permission + All-project scope wins
         self.p2.inventory_manager = None
         self.p2.save()
         self.assertTrue(can_decide(self.manager1, self.p1))
@@ -175,24 +176,28 @@ class ProjectApprovalsTests(TestCase):
         result = self._approve(queued.approval_request, self.manager1, self.p1)
         self.assertEqual(result.status, "approved")
 
-    def test_no_eligible_project_manager_blocks_before_stock_posting(self):
+    def test_request_can_wait_for_authorized_approver_without_posting_stock(self):
         outside = Project.objects.create(company=self.company, code="NO-PM", name="No Manager")
         self.assertFalse(can_decide(self.manager1, outside))
         self.assertFalse(can_decide(self.manager2, outside))
-        with self.assertRaises(InventoryOperationError):
-            self._add(project=outside)
-        self.assertEqual(StockApprovalRequest.objects.for_company(self.company).count(), 0)
+        queued = self._add(project=outside).approval_request
+        self.assertEqual(queued.status, 'pending')
+        self.assertFalse(StockMovement.objects.for_company(self.company).exists())
+        self.assertFalse(StockItem.objects.for_company(self.company).filter(project=outside).exists())
+        # A later authorized profile can decide the same pending request.
+        member = CompanyMembership.objects.get(company=self.company, user=self.manager1)
+        MembershipProjectScope.objects.create(membership=member, project=outside)
+        self.assertTrue(can_decide(self.manager1, outside))
+        self.assertEqual(self._approve(queued, self.manager1, outside).status, 'approved')
 
-    def test_dedicated_inventory_approver_overrides_all_scoped_project_manager(self):
+    def test_dedicated_assignee_does_not_override_other_permission_holders(self):
         member = CompanyMembership.objects.get(company=self.company, user=self.manager2)
         member.project_scope_mode = ScopeMode.ALL
         member.save(update_fields=("project_scope_mode", "updated_at"))
-        self.assertFalse(can_decide(self.manager2, self.p1))
+        self.assertTrue(can_decide(self.manager2, self.p1))
         self.assertTrue(can_decide(self.manager1, self.p1))
-        request = self._add().approval_request
-        with self.assertRaises(InventoryOperationError):
-            self._approve(request, self.manager2, self.p1)
-        self.assertEqual(self._approve(request, self.manager1, self.p1).status, "approved")
+        req = self._add().approval_request
+        self.assertEqual(self._approve(req, self.manager2, self.p1).status, "approved")
 
     def test_pulse_project_manager_can_approve_when_explicit_inventory_assignee_empty(self):
         from apps.project_pulse.models import PulseProjectTeamMember
@@ -206,11 +211,11 @@ class ProjectApprovalsTests(TestCase):
         self.p1.inventory_manager = None
         self.p1.save()
         self.assertTrue(can_decide(pulse_user, self.p1))
-        self.assertFalse(can_decide(self.manager1, self.p1))  # Pulse manager has precedence
+        self.assertTrue(can_decide(self.manager1, self.p1))  # the grant is independent of the Pulse assignment
         queued = self._add().approval_request
         self.assertEqual(self._approve(queued, pulse_user, self.p1).status, "approved")
 
-    def test_revoking_pulse_manager_approval_fails_closed(self):
+    def test_revoked_pulse_manager_cannot_approve_but_other_authorized_user_can(self):
         from apps.project_pulse.models import PulseProjectTeamMember
         User = get_user_model()
         pulse_user = User.objects.create_user(username="pulse-no-inventory-grant", password="TestPass!2026")
@@ -219,13 +224,11 @@ class ProjectApprovalsTests(TestCase):
                                                role=PulseProjectTeamMember.Role.MANAGER)
         self.p1.inventory_manager = None
         self.p1.save()
-        # This project's appointed manager loses access. An otherwise eligible
-        # built-in manager must not override the explicit Pulse assignment.
         CompanyMembership.objects.filter(pk=membership.pk).update(is_active=False)
         self.assertFalse(can_decide(pulse_user, self.p1))
-        self.assertFalse(can_decide(self.manager1, self.p1))
-        with self.assertRaises(InventoryOperationError):
-            self._add()
+        self.assertTrue(can_decide(self.manager1, self.p1))
+        req = self._add().approval_request
+        self.assertEqual(self._approve(req, self.manager1, self.p1).status, "approved")
 
     def test_fallback_project_manager_approvals_visible_in_inbox(self):
         from django.urls import reverse
@@ -249,6 +252,197 @@ class ProjectApprovalsTests(TestCase):
         self.assertTrue(can_decide(self.manager1, new_project))
         pending = self._add(project=new_project).approval_request
         self.assertEqual(self._approve(pending, self.manager1, new_project).status, "approved")
+
+    def _custom_user(self, name, permissions, *, mode=ScopeMode.ALL, projects=()):
+        User = get_user_model()
+        user = User.objects.create_user(username=name, password="TestPass!2026")
+        profile = AccessProfile.objects.create(
+            company=self.company, key=f"custom-{name}", name=f"Custom {name}",
+        )
+        for permission in permissions:
+            AccessProfilePermission.objects.create(profile=profile, permission=permission.value)
+        membership = CompanyMembership.objects.create(
+            company=self.company, user=user, role=AccessRole.CUSTOM,
+            access_profile=profile, project_scope_mode=mode,
+        )
+        for project in projects:
+            MembershipProjectScope.objects.create(membership=membership, project=project)
+        return user, membership, profile
+
+    def test_custom_profile_approves_without_manager_designation(self):
+        user, _, _ = self._custom_user(
+            'custom-approver-one', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        self.assertTrue(can_decide(user, self.p1))
+        self.assertFalse(can_decide(user, self.p2))
+        req = self._add().approval_request
+        self.assertEqual(self._approve(req, user, self.p1).status, 'approved')
+        self.assertTrue(StockMovement.objects.for_company(self.company).exists())
+
+    def test_custom_profile_can_reject_in_scope(self):
+        user, _, _ = self._custom_user(
+            'custom-reject', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        req = self._add().approval_request
+        rejected = decide_request(
+            request=req, user=user, project_id=self.p1.pk,
+            decision='reject', reason='Invoice does not match',
+        )
+        self.assertEqual(rejected.status, 'rejected')
+        self.assertFalse(StockMovement.objects.for_company(self.company).exists())
+
+    def test_custom_receive_and_approve_cannot_self_approve(self):
+        user, _, _ = self._custom_user(
+            'custom-two-grants', [AccessPermission.INVENTORY_STOCK_RECEIVE, AccessPermission.INVENTORY_STOCK_APPROVE],
+        )
+        req = add_stock(
+            user=user, idempotency_key=uuid.uuid4(), movement_date=timezone.localdate(),
+            project=self.p1, material_name='Keyboard', supplier_name='Office Supplier',
+            supplier_phone='0509000099', unit=self.piece, quantity=Decimal('1'),
+        ).approval_request
+        self.assertTrue(can_decide(user, self.p1))
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, user, self.p1)
+        self.assertFalse(StockMovement.objects.for_company(self.company).exists())
+
+    def test_custom_permission_revocation_stops_approval(self):
+        user, _, profile = self._custom_user(
+            'custom-revoke-approve', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        req = self._add().approval_request
+        self.assertTrue(can_decide(user, self.p1))
+        AccessProfilePermission.objects.filter(
+            profile=profile, permission=AccessPermission.INVENTORY_STOCK_APPROVE.value,
+        ).delete()
+        self.assertFalse(can_decide(user, self.p1))
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, user, self.p1)
+        self.assertEqual(req.status, 'pending')
+        self.assertFalse(StockMovement.objects.for_company(self.company).exists())
+
+    def test_permission_only_user_can_view_review_and_decide(self):
+        from django.urls import reverse
+        user, _, _ = self._custom_user(
+            'custom-approval-inbox', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        req = self._add().approval_request
+        self.client.force_login(user)
+        inbox = self.client.get(reverse('inventory:approval_list'))
+        self.assertEqual(inbox.status_code, 200)
+        self.assertContains(inbox, str(req.reference)[:8].upper())
+        detail = self.client.get(reverse('inventory:approval_detail', args=[req.reference]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, 'Approve for this project')
+        action = self.client.post(reverse('inventory:approval_decide', args=[req.reference]), {
+            'project_id': self.p1.pk, 'decision': 'approve',
+        })
+        self.assertEqual(action.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'approved')
+
+    def test_receive_only_can_submit_and_see_own_request(self):
+        from django.urls import reverse
+        # Separate Receive/Approve permissions: receiving is not approval authority.
+        user, _, _ = self._custom_user(
+            'receive-only-operator', [AccessPermission.INVENTORY_STOCK_RECEIVE],
+        )
+        req = add_stock(
+            user=user, idempotency_key=uuid.uuid4(), movement_date=timezone.localdate(),
+            project=self.p1, material_name='Tools', supplier_name='Company supplier',
+            supplier_phone='0500000999', unit=self.piece, quantity=Decimal('1'),
+        ).approval_request
+        self.assertIsNotNone(req)
+        self.assertFalse(can_decide(user, self.p1))
+        self.client.force_login(user)
+        inbox = self.client.get(reverse('inventory:approval_list'))
+        self.assertEqual(inbox.status_code, 200)
+        self.assertContains(inbox, str(req.reference)[:8].upper())
+        self.assertEqual(self.client.get(reverse('inventory:approval_detail', args=[req.reference])).status_code, 200)
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, user, self.p1)
+
+    def test_transfers_require_each_project_decision(self):
+        # Different custom review profiles can approve source and destination.
+        source_user, _, _ = self._custom_user(
+            'transfer-source-approver', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        dest_user, _, _ = self._custom_user(
+            'transfer-dest-approver', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p2,),
+        )
+        rec = self._add().approval_request
+        self._approve(rec, source_user, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        transfer = transfer_stock(
+            user=self.requester, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location, destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
+        )
+        self.assertIsNotNone(transfer.approval_request)
+        self._approve(transfer.approval_request, source_user, self.p1)
+        self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
+        approved = self._approve(transfer.approval_request, dest_user, self.p2)
+        self.assertEqual(approved.status, 'approved')
+        self.assertTrue(StockTransfer.objects.for_company(self.company).exists())
+
+    def test_transfer_only_can_submit_without_approval_permission(self):
+        # Granting Transfer never grants Approve / Reject.
+        user, _, _ = self._custom_user(
+            'custom-transfer-only', [AccessPermission.INVENTORY_STOCK_TRANSFER],
+        )
+        rec = self._add().approval_request
+        self._approve(rec, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        result = transfer_stock(
+            user=user, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location, destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
+        )
+        self.assertIsNotNone(result.approval_request)
+        self.assertEqual(result.approval_request.status, 'pending')
+        self.assertFalse(can_decide(user, self.p1))
+        self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
+
+    def test_grant_revocation_during_two_project_transfer_blocks_post(self):
+        first, _, profile = self._custom_user(
+            'first-revokable', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        rec = self._add().approval_request
+        self._approve(rec, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        result = transfer_stock(
+            user=self.requester, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location, destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
+        )
+        req = result.approval_request
+        self._approve(req, first, self.p1)
+        AccessProfilePermission.objects.filter(profile=profile, permission=AccessPermission.INVENTORY_STOCK_APPROVE.value).delete()
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, self.manager2, self.p2)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'pending')
+        self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
+
+    def test_custom_scope_blocks_other_project_and_other_company(self):
+        user, _, _ = self._custom_user(
+            'project-selected-reviewer', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p1,),
+        )
+        self.assertFalse(can_decide(user, self.p2))
+        from apps.core.models import Company
+        other = Company.objects.create(name='Another company', slug='another-approval-company')
+        outside = Project.objects.create(company=other, code='OTHER-P', name='Other project')
+        self.assertFalse(can_decide(user, outside))
+        req = self._add(project=self.p2).approval_request
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, user, self.p2)
 
     def test_counted_laptops_cannot_have_fractional_quantities(self):
         self.assertFalse(self.piece.allows_fractional_quantities)

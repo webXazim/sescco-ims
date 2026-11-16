@@ -90,6 +90,22 @@ class ExecutionScheduleTests(TestCase):
         self.assertNotContains(response, "Expense classifications")  # No duplicate standalone panel.
         self.assertContains(response, reverse("project_pulse:category_detail", args=[self.project.code, category.pk]))
 
+    def test_project_overview_orders_categories_and_preserves_work_counts(self):
+        """A queryset must be sorted before converting it to a template list."""
+        late = save_category(actor=self.owner, project_id=self.project.pk,
+                             data={"name": "Late category", "sort_order": 20})
+        early = save_category(actor=self.owner, project_id=self.project.pk,
+                              data={"name": "Early category", "sort_order": 1})
+        self.new_work(late, "Late work")
+        self.new_work(early, "Early work")
+        self.new_work(early, "Second early work")
+        response = self.client.get(reverse("project_pulse:project_detail", args=[self.project.code]))
+        self.assertEqual(response.status_code, 200)
+        rows = response.context["categories"]
+        self.assertEqual([category.name for category in rows], ["Early category", "Late category"])
+        self.assertEqual([category.task_count for category in rows], [2, 1])
+        self.assertContains(response, "Execution progress")
+
     def test_schedule_screen_and_financial_linkage_preserved(self):
         cat = self.new_category("Mobilization")
         work = self.new_work(cat, "Site access")

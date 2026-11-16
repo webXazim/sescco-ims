@@ -184,10 +184,11 @@ def project_detail(request, code):
     project = _project_for_request(request, code)
     context = _context(request, page_key="pulse-projects", title=project.name)
     team = _active_team(project) if context["pulse_can_view_team"] else None
-    categories = (list(PulseWorkCategory.objects.filter(project=project, archived_at__isnull=True)
-        .annotate(task_count=Count("tasks", filter=Q(tasks__archived_at__isnull=True))))
+    categories = (list(
+        PulseWorkCategory.objects.filter(project=project, archived_at__isnull=True)
+        .annotate(task_count=Count("tasks", filter=Q(tasks__archived_at__isnull=True)))
         .order_by("sort_order", "name", "pk")
-        if context["pulse_can_view_categories"] else None)
+    ) if context["pulse_can_view_categories"] else None)
     task_count = (PulseTask.objects.filter(category__project=project, archived_at__isnull=True,
         category__archived_at__isnull=True).count() if context["pulse_can_view_tasks"] else None)
     project_metrics = None

@@ -861,7 +861,7 @@ class StockAdditionView(InventoryPermissionRequiredMixin, View):
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.approval_request:
-                    messages.info(request, "Receipt submitted for project inventory approval. Stock balance is unchanged.")
+                    messages.info(request, "Receipt submitted for approval by an authorized user in this project. Stock balance remains unchanged.")
                     return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This stock addition was already recorded.")
@@ -1284,7 +1284,7 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.approval_request:
-                    messages.info(request, "Transfer submitted for the affected project inventory approvers' approval. Stock balances are unchanged.")
+                    messages.info(request, "Transfer submitted for approval by authorized users in the affected project(s). Stock balances remain unchanged.")
                     return redirect("inventory:approval_detail", reference=result.approval_request.reference)
                 if result.duplicate_submission:
                     messages.info(request, "This transfer was already recorded.")
@@ -2664,8 +2664,27 @@ class StockMatchAPIView(InventoryPermissionRequiredMixin, View):
         )
 
 
-# Project stock requests: visibility is limited to the requester and currently
-# assigned managers; all decisions are rechecked by the service under row locks.
+# Approval-only profiles must see their scoped review inbox even without Stock/View.
+# Submitters with Receive/Transfer can see their own requests, not others'.
+_APPROVAL_READ_PERMISSIONS = (
+    AccessPermission.INVENTORY_STOCK_VIEW,
+    AccessPermission.INVENTORY_STOCK_RECEIVE,
+    AccessPermission.INVENTORY_STOCK_TRANSFER,
+    AccessPermission.INVENTORY_STOCK_APPROVE,
+)
+
+
+class InventoryApprovalAccessMixin(InventoryWorkspaceMixin):
+    def test_func(self):
+        membership = getattr(self.request, "company_membership", None)
+        return bool(super().test_func() and any(
+            membership_has_permission(membership, permission)
+            for permission in _APPROVAL_READ_PERMISSIONS
+        ))
+
+
+# Project stock requests: visibility is limited to the requester and eligible
+# project-scoped approvers; all decisions are rechecked under row locks.
 def _visible_stock_approvals(request):
     from apps.accounts.access_policy import restrict_projects
     from .services.approvals import can_decide
@@ -2688,8 +2707,7 @@ def _visible_stock_approvals(request):
     ).distinct()
 
 
-class StockApprovalListView(InventoryPermissionRequiredMixin, ListView):
-    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
     template_name = "inventory/approval_list.html"
     context_object_name = "approvals"
     paginate_by = 30
@@ -2703,12 +2721,11 @@ class StockApprovalListView(InventoryPermissionRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Unapplied stock requests remain pending until an eligible manager approves each affected project.", current_status=self.request.GET.get("status", "pending"))
+        ctx.update(page_key="approvals", page_title="Project stock approvals", page_subtitle="Stock requests remain pending until a project-scoped user with Approve / Reject permission approves each affected project.", current_status=self.request.GET.get("status", "pending"))
         return ctx
 
 
-class StockApprovalDetailView(InventoryPermissionRequiredMixin, DetailView):
-    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
     template_name = "inventory/approval_detail.html"
     context_object_name = "approval"
     slug_field = "reference"
@@ -2767,8 +2784,7 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
         return redirect("inventory:approval_detail", reference=reference)
 
 
-class StockApprovalAttachmentView(InventoryPermissionRequiredMixin, View):
-    inventory_permission = AccessPermission.INVENTORY_STOCK_VIEW
+class StockApprovalAttachmentView(InventoryApprovalAccessMixin, View):
 
     def get(self, request, reference):
         approval = get_object_or_404(_visible_stock_approvals(request), reference=reference)
