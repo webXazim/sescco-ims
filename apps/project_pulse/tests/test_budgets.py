@@ -165,13 +165,41 @@ class BudgetRevisionTests(TestCase):
         self.approve(rev)
 
     def test_budget_overview_visibility(self):
-        read_only_user, _ = self.make_member("readonly", ["pulse.overview.view", "pulse.projects.view", "pulse.tasks.view"])
+        # The v1.0.130 overview consolidates the former "Category budget control"
+        # card into a permission-gated "Financial snapshot". Check the actual
+        # budget figure and navigation, not the obsolete panel title.
+        self.approve(self.propose(amount="275.00"))
+        detail_url = reverse("project_pulse:project_detail", args=[self.project.code])
+        budget_url = reverse("project_pulse:budgets", args=[self.project.code])
+
+        read_only_user, _ = self.make_member("readonly", [
+            "pulse.overview.view", "pulse.projects.view", "pulse.tasks.view",
+        ])
         self.client.force_login(read_only_user)
-        page = self.client.get(reverse("project_pulse:project_detail", args=[self.project.code]))
+        page = self.client.get(detail_url)
         self.assertEqual(page.status_code, 200)
-        self.assertNotContains(page, "Category budget control")
-        self.assertNotContains(page, "View budgets")
+        self.assertNotContains(page, "Financial snapshot")
+        self.assertNotContains(page, "Approved budget")
+        self.assertNotContains(page, "SAR 275.00")
+        self.assertNotContains(page, f'href="{budget_url}"')
+        self.assertEqual(self.client.get(budget_url).status_code, 403)
+
+        budget_user, _ = self.make_member("budget-viewer", [
+            "pulse.overview.view", "pulse.projects.view", "pulse.tasks.view",
+            "pulse.expenses.view", "pulse.budgets.view",
+        ])
+        self.client.force_login(budget_user)
+        page = self.client.get(detail_url)
+        self.assertContains(page, "Financial snapshot")
+        self.assertContains(page, "Approved budget")
+        self.assertContains(page, "SAR 275.00")
+        self.assertContains(page, f'href="{budget_url}"')
+        self.assertNotContains(page, "Forecast final profit")
+
         self.client.force_login(self.owner_user)
-        self.assertContains(self.client.get(reverse("project_pulse:project_detail", args=[self.project.code])),
-                            "Category budget control")
-        self.assertEqual(self.client.get(reverse("project_pulse:budgets", args=[self.project.code])).status_code, 200)
+        owner_page = self.client.get(detail_url)
+        self.assertContains(owner_page, "Financial snapshot")
+        self.assertContains(owner_page, "Approved budget")
+        self.assertContains(owner_page, "SAR 275.00")
+        self.assertContains(owner_page, f'href="{budget_url}"')
+        self.assertEqual(self.client.get(budget_url).status_code, 200)
