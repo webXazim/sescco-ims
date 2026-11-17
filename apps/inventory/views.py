@@ -2736,6 +2736,7 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
                 ("pending", "Pending"),
                 ("approved", "Approved / applied"),
                 ("rejected", "Rejected"),
+                ("cancelled", "Cancelled"),
                 ("all", "All statuses"),
             ],
             kind_choices=[
@@ -2795,6 +2796,12 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
 
         for approval in approvals:
             payload = approval.payload or {}
+            approval.can_cancel = (
+                approval.kind == StockApprovalRequest.Kind.TRANSFER
+                and approval.status == StockApprovalRequest.Status.PENDING
+                and approval.requested_by_id == self.request.user.pk
+                and not approval.applied_transfer_id
+            )
             decision_rows = list(approval.decisions.all())
             pending_codes = [row.project.code for row in decision_rows if row.status == StockApprovalDecision.Status.PENDING]
             approval.pending_project_summary = ", ".join(pending_codes) if pending_codes else "None"
@@ -2843,6 +2850,12 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
         from .services.approvals import can_decide
         ctx = super().get_context_data(**kwargs)
         ctx.update(page_key="approvals", page_title=f"Approval {str(self.object.reference)[:8].upper()}", page_subtitle="Review the submitted quantities, project decisions and resulting posted stock operation.")
+        ctx["can_cancel"] = (
+            self.object.kind == StockApprovalRequest.Kind.TRANSFER
+            and self.object.status == StockApprovalRequest.Status.PENDING
+            and self.object.requested_by_id == self.request.user.pk
+            and not self.object.applied_transfer_id
+        )
         ctx["decisions"] = [
             {"row": row, "can_decide": self.object.status == StockApprovalRequest.Status.PENDING and row.status == "pending" and can_decide(self.request.user, row.project) and self.object.requested_by_id != self.request.user.pk}
             for row in self.object.decisions.all()
@@ -2886,6 +2899,24 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
                 messages.info(request, "Request rejected. No stock quantities were changed.")
             else:
                 messages.success(request, "Your approval was recorded. Another affected project still needs approval.")
+        return redirect("inventory:approval_detail", reference=reference)
+
+
+class StockApprovalCancelView(InventoryApprovalAccessMixin, View):
+    """POST-only cancellation by the original requester of an unposted transfer."""
+
+    def post(self, request, reference):
+        from .services.approvals import cancel_pending_transfer
+        approval = get_object_or_404(_visible_stock_approvals(request), reference=reference)
+        try:
+            cancel_pending_transfer(
+                request=approval, user=request.user,
+                reason=request.POST.get("reason", ""),
+            )
+        except InventoryOperationError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, "Pending transfer cancelled. No stock balances were changed.")
         return redirect("inventory:approval_detail", reference=reference)
 
 

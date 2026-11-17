@@ -18,6 +18,24 @@
 </tbody></table></div><p><strong>Reference:</strong> {{ approval.payload.document_reference|default:"—" }}</p>
 {% endif %}
 {% if approval.payload.notes %}<p><strong>Notes:</strong> {{ approval.payload.notes }}</p>{% endif %}
+{% if approval.status == 'cancelled' %}
+<p><strong>Cancelled by:</strong> {{ approval.cancelled_by.display_name|default:"Unavailable" }} &nbsp; <strong>Cancelled on:</strong> {{ approval.decided_at|date:"d M Y H:i" }}</p>
+<p><strong>Cancellation reason:</strong> {{ approval.cancellation_reason|default:"—" }}</p>
+<p class="micro">This transfer was cancelled before posting. No stock quantities were changed by this request.</p>
+{% endif %}
+{% if can_cancel %}
+<div class="form-section" id="cancel-transfer">
+  <h3>Cancel pending transfer</h3>
+  <p class="micro">Only the original requester can cancel this pending transfer. Any project decisions remain in history. This action cannot be undone.</p>
+  <form method="post" action="{% url 'inventory:approval_cancel' approval.reference %}">
+    {% csrf_token %}
+    <div class="field"><label class="field-label" for="cancel-transfer-reason">Cancellation reason <span aria-hidden="true">*</span></label>
+      <textarea class="input" id="cancel-transfer-reason" name="reason" rows="2" maxlength="500" required></textarea>
+    </div>
+    <button type="submit" class="btn">Cancel this pending transfer</button>
+  </form>
+</div>
+{% endif %}
 {% if approval.attachment %}<p><a href="{% url 'inventory:approval_attachment' approval.reference %}">View supporting attachment</a></p>{% endif %}
 {% if approval.applied_movement %}<p><a href="{% url 'inventory:movement_detail' approval.applied_movement.reference %}">View approved stock movement</a></p>{% endif %}
 {% if approval.applied_transfer %}<p><a href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">View completed stock transfer</a></p>{% endif %}

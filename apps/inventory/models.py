@@ -1171,6 +1171,7 @@ class StockApprovalRequest(models.Model):
         PENDING = "pending", "Pending"
         APPROVED = "approved", "Approved / applied"
         REJECTED = "rejected", "Rejected"
+        CANCELLED = "cancelled", "Cancelled"
 
     # Explicit primary key matches inventory migration 0019; avoid autodetector drift.
     id = models.BigAutoField(primary_key=True, serialize=False)
@@ -1187,6 +1188,8 @@ class StockApprovalRequest(models.Model):
     applied_transfer = models.OneToOneField("inventory.StockTransfer", on_delete=models.PROTECT, blank=True, null=True, related_name="approval_request")
     created_at = models.DateTimeField(auto_now_add=True)
     decided_at = models.DateTimeField(blank=True, null=True)
+    cancelled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, blank=True, null=True, related_name="cancelled_stock_approval_requests")
+    cancellation_reason = models.CharField(max_length=500, blank=True)
 
     objects = CompanyScopedManager()
 

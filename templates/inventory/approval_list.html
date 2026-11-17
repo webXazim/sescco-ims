@@ -72,7 +72,7 @@
               <div class="cell-sub">Affected: {{ approval.affected_project_summary }}</div>
             </td>
             <td><span class="status">{{ approval.get_status_display }}</span></td>
-            <td><a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}">Review</a></td>
+            <td><a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}">Review</a>{% if approval.can_cancel %} <a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}#cancel-transfer">Cancel</a>{% endif %}</td>
           </tr>
         {% empty %}
           <tr>

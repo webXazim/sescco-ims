@@ -525,3 +525,90 @@ class ProjectApprovalsTests(TestCase):
         self.assertTrue(self.kg.permits_fractional_quantity)
         result = self._add(quantity="0.999", unit=self.kg, material_name="Paint powder")
         self.assertIsNotNone(result.approval_request)
+
+    def _pending_project_transfer(self, *, destination=None):
+        receipt = self._add().approval_request
+        self._approve(receipt, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        transfer = transfer_stock(
+            user=self.requester, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=destination or self.office,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(item, 'new', Decimal('1'))],
+        ).approval_request
+        return transfer, item
+
+    def test_requester_can_cancel_pending_transfer_without_stock_movement(self):
+        from ..services.approvals import cancel_pending_transfer
+        req, item = self._pending_project_transfer()
+        before = item.current_quantity
+        cancelled = cancel_pending_transfer(
+            request=req, user=self.requester, reason='Source material no longer required',
+        )
+        self.assertEqual(cancelled.status, StockApprovalRequest.Status.CANCELLED)
+        self.assertEqual(cancelled.cancelled_by, self.requester)
+        self.assertEqual(cancelled.cancellation_reason, 'Source material no longer required')
+        self.assertIsNotNone(cancelled.decided_at)
+        self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
+        item.refresh_from_db()
+        self.assertEqual(item.current_quantity, before)
+        with self.assertRaises(InventoryOperationError):
+            self._approve(cancelled, self.manager1, self.p1)
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(request=cancelled, user=self.requester, reason='Again')
+
+    def test_cancellation_requires_original_requester_reason_and_pending_transfer(self):
+        from ..services.approvals import cancel_pending_transfer
+        req, item = self._pending_project_transfer()
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(request=req, user=self.manager1, reason='Not mine')
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(request=req, user=self.requester, reason='  ')
+        receipt = self._add(material_name='Another device').approval_request
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(request=receipt, user=self.requester, reason='Wrong type')
+        self.assertEqual(StockApprovalRequest.objects.get(pk=req.pk).status, 'pending')
+        self._approve(req, self.manager1, self.p1)
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(request=req, user=self.requester, reason='Already posted')
+
+    def test_cancel_after_first_of_two_project_approvals_preserves_history(self):
+        from ..services.approvals import cancel_pending_transfer
+        req, item = self._pending_project_transfer(destination=self.p2.inventory_location)
+        self._approve(req, self.manager1, self.p1)
+        cancelled = cancel_pending_transfer(request=req, user=self.requester, reason='Change of destination')
+        self.assertEqual(cancelled.status, 'cancelled')
+        self.assertEqual(cancelled.decisions.get(project=self.p1).status, 'approved')
+        self.assertEqual(cancelled.decisions.get(project=self.p2).status, 'pending')
+        with self.assertRaises(InventoryOperationError):
+            self._approve(req, self.manager2, self.p2)
+        self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
+        item.refresh_from_db()
+        self.assertEqual(item.current_quantity, Decimal('2'))
+
+    def test_cancel_page_and_pending_sidebar_counter_are_project_scoped(self):
+        from django.urls import reverse
+        from ..services.approvals import pending_visible_request_count
+        req, _item = self._pending_project_transfer(destination=self.p2.inventory_location)
+        member1 = CompanyMembership.objects.get(user=self.manager1, company=self.company)
+        member2 = CompanyMembership.objects.get(user=self.manager2, company=self.company)
+        requester = CompanyMembership.objects.get(user=self.requester, company=self.company)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager1, membership=member1), 1)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager2, membership=member2), 1)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.requester, membership=requester), 1)
+        self.client.force_login(self.requester)
+        listing = self.client.get(reverse('inventory:approval_list'))
+        self.assertEqual(listing.status_code, 200)
+        self.assertContains(listing, 'Pending stock requests visible to you')
+        detail_url = reverse('inventory:approval_detail', args=[req.reference])
+        cancel_url = reverse('inventory:approval_cancel', args=[req.reference])
+        self.assertContains(self.client.get(detail_url), 'Cancel pending transfer')
+        self.assertEqual(self.client.get(cancel_url).status_code, 405)
+        self.assertEqual(self.client.post(cancel_url, {'reason': 'No longer required'}).status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'cancelled')
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager1, membership=member1), 0)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.requester, membership=requester), 0)
+        self.assertContains(self.client.get(detail_url), 'No longer required')
+        self.assertContains(self.client.get(reverse('inventory:approval_list'), {'status':'cancelled'}), str(req.reference)[:8].upper())

@@ -16,6 +16,7 @@ def application_context(request):
         "AVAILABLE_COMPANY_MEMBERSHIPS": (),
         "ACCESS_CONTEXT": {},
         "PLATFORM_CONTEXT": {},
+        "NAV_STOCK_APPROVALS_COUNT": 0,
     }
     if request.user.is_authenticated:
         from apps.accounts.context import access_context_for_request, platform_context_for_request
@@ -36,6 +37,11 @@ def application_context(request):
 
         from apps.accounts.access_catalog import AccessPermission
         from apps.accounts.access_policy import membership_has_permission
+        from apps.inventory.services.approvals import pending_visible_request_count
+
+        context["NAV_STOCK_APPROVALS_COUNT"] = pending_visible_request_count(
+            company=company, user=request.user, membership=membership,
+        )
         from apps.core.trash import active_trash
         from apps.inventory.access import (
             restrict_inventory_location_queryset,

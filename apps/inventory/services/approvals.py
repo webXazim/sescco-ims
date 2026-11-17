@@ -200,3 +200,74 @@ def decide_request(*, request, user, project_id, decision, reason=""):
         after={"status": req.status, "project_id": project_id, "decision": decision, "reason": row.reason},
     )
     return req
+
+
+@transaction.atomic
+def cancel_pending_transfer(*, request, user, reason):
+    """Cancel the requester's unposted transfer without changing inventory.
+
+    Lock the same request row used by decide_request: only one of cancellation
+    or final approval can win. Keep any previous per-project decisions intact.
+    """
+    req = StockApprovalRequest.objects.for_company(request.company).select_for_update().get(pk=request.pk)
+    membership = user_membership_for_company(user, req.company)
+    if not membership or not user.is_active or req.requested_by_id != user.pk:
+        raise InventoryOperationError("Only the active original requester can cancel this transfer.")
+    if req.kind != StockApprovalRequest.Kind.TRANSFER:
+        raise InventoryOperationError("Only stock transfer requests can be cancelled here.")
+    if req.status != StockApprovalRequest.Status.PENDING or req.applied_transfer_id:
+        raise InventoryOperationError("Only pending, unposted transfers can be cancelled.")
+    reason = (reason or "").strip()
+    if not reason:
+        raise InventoryOperationError("A cancellation reason is required.")
+    req.status = StockApprovalRequest.Status.CANCELLED
+    req.cancelled_by = user
+    req.cancellation_reason = reason[:500]
+    req.decided_at = timezone.now()
+    req.save(update_fields=("status", "cancelled_by", "cancellation_reason", "decided_at"))
+
+    from apps.core.models import AuditArea
+    from apps.core.services.audit import record_audit_event
+    record_audit_event(
+        company=req.company, area=AuditArea.INVENTORY,
+        action="inventory.stock_approval.cancelled",
+        object_type="inventory.StockApprovalRequest", object_id=req.reference,
+        object_label=str(req), actor=user, actor_membership=membership,
+        after={"status": req.status, "kind": req.kind, "reason": req.cancellation_reason},
+    )
+    return req
+
+
+def pending_visible_request_count(*, company, user, membership):
+    """Count distinct pending requests visible to this user, including their own.
+
+    This mirrors the review inbox: a submitter can track their requests and an
+    approver can see requests for authorized projects. Other tenants are never
+    counted. Two-project transfers are counted once.
+    """
+    if (
+        not company or not user or not user.is_authenticated or not user.is_active
+        or not membership or not membership.is_active or membership.company_id != company.pk
+    ):
+        return 0
+    from django.db.models import Q
+    from apps.accounts.access_policy import restrict_projects
+    eligible_ids = []
+    if membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
+        pending_project_ids = StockApprovalDecision.objects.filter(
+            request__company=company,
+            request__status=StockApprovalRequest.Status.PENDING,
+            status=StockApprovalDecision.Status.PENDING,
+        ).values_list("project_id", flat=True).distinct()
+        candidates = restrict_projects(
+            Project.objects.for_company(company).filter(
+                deleted_at__isnull=True, pk__in=pending_project_ids,
+            ), membership
+        )
+        eligible_ids = [p.pk for p in candidates if _valid_approver_membership(membership, p)]
+    return (
+        StockApprovalRequest.objects.for_company(company)
+        .filter(status=StockApprovalRequest.Status.PENDING)
+        .filter(Q(requested_by_id=user.pk) | Q(decisions__project_id__in=eligible_ids))
+        .distinct().count()
+    )

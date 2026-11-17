@@ -32,7 +32,7 @@
       </a>{% endif %}
       {% if "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.approve" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'approvals' %}active{% endif %}" href="{% url 'inventory:approval_list' %}">
-        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 10l2 2 5-5M8 16h8"/></svg><span>Stock approvals</span>
+        <svg class="nav-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 10l2 2 5-5M8 16h8"/></svg><span>Stock approvals</span>{% if NAV_STOCK_APPROVALS_COUNT %}<span class="nav-count" title="Pending stock requests visible to you" aria-label="{{ NAV_STOCK_APPROVALS_COUNT }} pending stock requests visible to you">{{ NAV_STOCK_APPROVALS_COUNT }}</span>{% endif %}
       </a>{% endif %}
       {% if "inventory.stock.issue" in ACCESS_CONTEXT.effective_access.permissions %}
       <a class="nav-link {% if page_key == 'remove-stock' %}active{% endif %}" href="{% url 'core:remove_stock' %}">
