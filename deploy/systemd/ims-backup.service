@@ -15,6 +15,7 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 TimeoutStartSec=2h
 ExecStart=/bin/bash /opt/sites/ims/scripts/backup-to-google-drive.sh
+ExecStartPost=/bin/bash /opt/sites/ims/scripts/check-backup-health.sh
 
 [Install]
 WantedBy=multi-user.target

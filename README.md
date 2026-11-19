@@ -185,6 +185,9 @@ See:
 
 ## Backups
 
+For daily VPS backups with local retention, encrypted Google Drive storage,
+monitoring and disaster recovery, follow [the production backup runbook](docs/PRODUCTION_BACKUPS.md).
+
 ```bash
 ./scripts/backup.sh
 # For the configured encrypted off-site rclone remote:

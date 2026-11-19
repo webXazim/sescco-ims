@@ -4,21 +4,27 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/compose.sh"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/verify-backup.sh BACKUP_DIRECTORY [--require-recovery-bundle]
+Usage: scripts/verify-backup.sh BACKUP_DIRECTORY [--require-recovery-bundle] [--restore-database]
 
 Checks backup checksums, PostgreSQL archive readability, private-media archive
 readability, Project Pulse evidence archive and, when present, the source/configuration recovery bundle. This
-does not alter production data.
+does not alter production data. --restore-database also restores the dump into
+a disposable, network-isolated PostgreSQL container and queries Django migrations.
 USAGE
 }
 
-[[ $# -ge 1 && $# -le 2 ]] || { usage; exit 2; }
+[[ $# -ge 1 ]] || { usage; exit 2; }
 backup_dir="$1"
+shift
 require_recovery_bundle=0
-if [[ $# -eq 2 ]]; then
-  [[ "$2" == "--require-recovery-bundle" ]] || { usage; exit 2; }
-  require_recovery_bundle=1
-fi
+restore_database=0
+for option in "$@"; do
+  case "${option}" in
+    --require-recovery-bundle) require_recovery_bundle=1 ;;
+    --restore-database) restore_database=1 ;;
+    *) usage; exit 2 ;;
+  esac
+done
 
 if [[ "${backup_dir}" != /* ]]; then
   backup_dir="${PROJECT_ROOT}/${backup_dir#./}"
@@ -65,6 +71,10 @@ if [[ -f "${backup_dir}/source.bundle" || -f "${backup_dir}/production-config.ta
     || fatal "production-config.tar.gz is not a readable gzip/tar archive."
 elif (( require_recovery_bundle )); then
   fatal "Backup does not include the required source-code and production-configuration recovery bundle."
+fi
+
+if (( restore_database )); then
+  bash "${PROJECT_ROOT}/scripts/test-backup-database.sh" "${backup_dir}"
 fi
 
 printf 'Backup verified: %s\n' "${backup_dir}"

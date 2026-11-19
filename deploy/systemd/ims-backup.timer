@@ -2,7 +2,7 @@
 Description=Daily SESCCO IMS encrypted off-site backup
 
 [Timer]
-OnCalendar=*-*-* 02:20:00
+OnCalendar=*-*-* 02:20:00 Asia/Riyadh
 Persistent=true
 RandomizedDelaySec=20m
 Unit=ims-backup.service

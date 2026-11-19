@@ -16,63 +16,62 @@ Each backup directory contains:
 
 - `database.dump` — PostgreSQL custom-format dump;
 - `media.tar.gz` — private media volume;
+- `pulse-private.tar.gz` — private Project Pulse expense evidence;
 - `source.bundle` — Git bundle containing the deployed source-code history;
 - `production-config.tar.gz` — production environment configuration for
   recovery; protect the backup directory accordingly;
 - `manifest.txt` — service, source revision, version, and Payroll encryption-key fingerprint;
 - `SHA256SUMS` — integrity checksums.
 
-The default location is `./backups/<UTC timestamp>/`. Default retention is 30
-days and can be changed with `IMS_BACKUP_RETENTION_DAYS` in the shell or cron.
+## Production policy and current audit
 
-## Daily cron example
+The repository supplies the backup tooling; it does not prove that the VPS timer,
+Drive credentials, monitoring or restore drills are configured. Inspect those on
+VPS before treating this policy as operational. See [production setup](PRODUCTION_BACKUPS.md)
+for the complete installation, capacity planning, monitoring and recovery runbook.
 
-```cron
-20 2 * * * cd /opt/inventory-management-system && ./scripts/backup.sh >> /var/log/ims-backup.log 2>&1
-```
+The default location is `./backups/<UTC timestamp>/`. Local retention reads the
+shell first, then `.env.production`: `IMS_BACKUP_RETENTION_DAYS=7` and
+`IMS_BACKUP_KEEP_COUNT=7`. Cleanup removes only completed IMS snapshots older
+than seven days and always preserves the seven newest. Deployment/safety backups
+also count; this is a minimum count plus an age policy, not a disk quota.
+`IMS_BACKUP_RETENTION_DAYS=0` disables local cleanup.
 
-Copy backups to a second machine or private object storage. A backup that only
-exists on the same VPS is not sufficient disaster recovery.
+New backups are created with a private umask in a hidden temporary directory,
+verified, then renamed to the final timestamp. A failed capture removes its partial
+directory and does not prune older snapshots. Local capture and off-site jobs each
+have a non-blocking `flock` lock. Failed uploads retain the completed local backup;
+the next scheduled job creates and uploads a fresh one. Failed older uploads are
+not automatically retried: rerun `rclone copy` and `cryptcheck` for a chosen local
+snapshot if its particular recovery point is needed.
 
-## Verified encrypted Google Drive backups
+Backups contain plaintext production credentials locally. File permissions protect
+access; gzip is not encryption. The Drive destination must be an rclone `crypt`
+remote wrapping a dedicated Google Drive backup folder. The script checks its type
+before upload, uses `copy`, verifies with `cryptcheck`, and prunes only whole
+UTC-timestamp folders older than `IMS_OFFSITE_BACKUP_RETENTION_DAYS=90` after the
+new upload verifies. Setting remote retention to `0` disables remote cleanup.
+Never point the crypt remote at a folder holding unrelated data.
 
-Configure an encrypted rclone remote outside the repository, then set these
-values in `.env.production`:
+For database/document consistency set `IMS_BACKUP_QUIESCE_WEB=1` (the production
+example). This gracefully stops a running `ims_web` during DB/media/evidence
+capture and restarts it before verification/upload. Expect a brief maintenance
+outage; measure it on staging. Cleanup attempts restart on errors and SIGTERM.
+The gateway remains running. Stop any additional external writers too. With `0`
+(the script's compatibility default), PostgreSQL has a consistent logical snapshot,
+but concurrent file changes can produce missing or mismatched attachments. A hard
+kill or host crash can still leave the web service stopped; check it after a failed run.
 
-```dotenv
-IMS_OFFSITE_RCLONE_CONFIG=/opt/sites/ims/.secrets/rclone.conf
-IMS_OFFSITE_RCLONE_REMOTE=ms-backups:
-IMS_BACKUP_RETENTION_DAYS=30
-IMS_OFFSITE_BACKUP_RETENTION_DAYS=90
-```
-
-`scripts/backup-to-google-drive.sh` creates a complete recovery backup,
-verifies its checksums plus database/media/source/configuration archives,
-uploads it with `rclone copy` (never `sync`), then uses `rclone cryptcheck` to
-verify the encrypted off-site copy. It only prunes files older than the explicit
-off-site retention period after the new copy has passed verification.
-
-Install the supplied daily systemd timer after the first manual upload and
-rehearsal pass:
-
-```bash
-sudo install -m 644 deploy/systemd/ims-backup.service /etc/systemd/system/ims-backup.service
-sudo install -m 644 deploy/systemd/ims-backup.timer /etc/systemd/system/ims-backup.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now ims-backup.timer
-systemctl list-timers ims-backup.timer
-```
-
-Use `journalctl -u ims-backup.service -n 100 --no-pager` to review the most
-recent backup run. Never put the rclone configuration, crypt password/salt, or
-unencrypted `.env.production` in the repository.
+Use the supplied systemd timer, scheduled for 02:20 Asia/Riyadh with up to 20 minutes
+of jitter. Remove the old local-only cron job when enabling it. Review logs with
+`journalctl -u ims-backup.service -n 100 --no-pager`.
 
 ## Validation and rehearsal
 
-Validate a backup without replacing production data:
+Validate a backup and restore its database into a disposable container without replacing production data:
 
 ```bash
-./scripts/verify-backup.sh /absolute/path/to/backup --require-recovery-bundle
+bash scripts/verify-backup.sh /absolute/path/to/backup --require-recovery-bundle --restore-database
 ```
 
 Run the complete isolated restore rehearsal before enabling the timer and at
@@ -85,7 +84,9 @@ least monthly afterwards:
 
 ## Encryption-key recovery requirement
 
-The backup contains a SHA-256 **fingerprint** of `PAYROLL_FIELD_ENCRYPTION_KEY`, never the key itself.
+The manifest contains a SHA-256 **fingerprint** of `PAYROLL_FIELD_ENCRYPTION_KEY`.
+The actual key is also inside the protected production configuration archive; protect
+the entire recovery set as secret data.
 Store the actual key separately in a protected password/secret manager and a disaster-recovery copy.
 A database/media backup without that matching key is not a complete recovery set once encrypted Payroll
 payment data exists.
@@ -107,7 +108,7 @@ The restore script:
 2. creates a safety backup of current IMS data;
 3. stops only the IMS web and gateway services;
 4. replaces only the IMS database;
-5. replaces only the IMS private-media volume;
+5. replaces the IMS private-media and Project Pulse evidence volumes;
 6. applies the current release migrations and merge-integrity checks;
 7. collects static assets;
 8. starts the merged web/gateway services and waits for health checks.

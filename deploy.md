@@ -417,36 +417,23 @@ Operational users can subsequently be created with the `Storekeeper` role.
 
 ## 17. Create and verify the first backup
 
+Follow [the production backup runbook](docs/PRODUCTION_BACKUPS.md) to configure
+seven recent local recovery sets plus 90 days in encrypted Google Drive storage.
+A complete set includes the database, media, private Project Pulse evidence,
+source bundle, protected production configuration, manifest and checksums.
+
 ```sh
 cd /opt/sites/ims
-sudo ./scripts/backup.sh
-sudo find backups -maxdepth 2 -type f -ls
-```
-
-A complete backup includes:
-
-```text
-database.dump
-media.tar.gz
-manifest.txt
-SHA256SUMS
+bash scripts/backup.sh
 ```
 
 ## 18. Add an automatic daily backup
 
-Open root’s crontab:
-
-```sh
-sudo crontab -e
-```
-
-Add:
-
-```cron
-20 2 * * * cd /opt/sites/ims && ./scripts/backup.sh >> /var/log/ims-backup.log 2>&1
-```
-
-Backups are retained for 30 days by default. Also copy them to off-VPS storage.
+Use the supplied `ims-backup.service` and `ims-backup.timer` after the manual
+Drive upload, downloaded-copy verification, restore rehearsal and monitoring
+setup in [the runbook](docs/PRODUCTION_BACKUPS.md). The timer uses 02:20 Asia/Riyadh
+with up to 20 minutes of jitter. Remove any old IMS backup cron entry to prevent
+duplicate jobs. The recommended consistent capture briefly stops the web writer.
 
 ## 19. Routine updates
 
