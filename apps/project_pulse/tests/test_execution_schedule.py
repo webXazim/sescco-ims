@@ -104,7 +104,7 @@ class ExecutionScheduleTests(TestCase):
         rows = response.context["categories"]
         self.assertEqual([category.name for category in rows], ["Early category", "Late category"])
         self.assertEqual([category.task_count for category in rows], [2, 1])
-        self.assertContains(response, "Execution progress")
+        self.assertContains(response, "<h2>Work Progress</h2>", html=True)
 
     def test_schedule_screen_and_financial_linkage_preserved(self):
         cat = self.new_category("Mobilization")

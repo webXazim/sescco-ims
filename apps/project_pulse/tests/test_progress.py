@@ -306,7 +306,7 @@ class PulseProgressTests(TestCase):
         category = self.category()
         task = self.task(category)
         self.client.force_login(self.user)
-        self.assertContains(self.client.get(reverse("project_pulse:project_detail", args=[self.project.code])), "Execution progress")
+        self.assertContains(self.client.get(reverse("project_pulse:project_detail", args=[self.project.code])), "<h2>Work Progress</h2>", html=True)
         self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "0%")
         self.assertFalse(hasattr(task, "expense"))
         self.assertFalse(hasattr(category, "approved_budget"))

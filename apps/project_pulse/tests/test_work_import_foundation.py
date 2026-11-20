@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import CompanyMembership
@@ -15,6 +15,15 @@ from apps.project_pulse.models import PulseTask, PulseWorkCategory, PulseWorkImp
 from apps.project_pulse.work_services import save_category, save_task
 
 
+TEST_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+
+# Requests must reach the view even when the server is configured to redirect
+# ordinary HTTP traffic to HTTPS. This override applies to tests only.
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=TEST_STORAGES)
 class PulseWorkImportFoundationTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name="Pulse U1", slug="pulse-u1")
