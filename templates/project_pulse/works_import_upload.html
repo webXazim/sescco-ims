@@ -1,0 +1,16 @@
+{% extends 'project_pulse/base.html' %}
+{% load static %}
+{% block content %}
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:work_progress' project.code %}">Work Progress</a><span>/</span><strong>Import Works</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">{{ project.code }} · {{ project.name }}</span><h1>Import Works</h1><p>One Excel worksheet for the selected project. Category names and work details only.</p></div><a class="btn" href="{% url 'project_pulse:work_progress' project.code %}">Back to Work Progress</a></section>
+<section class="pulse-panel pulse-form-panel">
+  <div class="pulse-panel-head"><div><h2>Upload Excel (.xlsx)</h2><p>Upload a single-sheet workbook containing all your work categories and works.</p></div><a class="btn" download href="{% static 'project_pulse/files/Works_Import_Template.xlsx' %}">Download template</a></div>
+  {% if import_errors %}<div class="pulse-form-errors pulse-import-errors" role="alert"><strong>Correct these issues and upload again:</strong><ul>{% for error in import_errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="pulse-editor-form pulse-upload-form">{% csrf_token %}
+    <label class="pulse-form-field"><span>Choose workbook</span><input type="file" name="workbook" accept=".xlsx" required aria-describedby="pulse-import-guidance"></label>
+    <div id="pulse-import-guidance" class="pulse-import-guidance"><strong>Import rules</strong><p>Category name on its own row in column A, followed by <b>SN · Description · Unit · Quantity · % Completion</b> and the work rows. Repeat on the same worksheet.</p><p><b>Blank % Completion = 0%.</b> Existing work progress stays unchanged by default until you explicitly approve an overwrite in the preview.</p></div>
+    <div class="pulse-form-actions"><button class="btn btn-primary" type="submit">Preview Import</button><a class="btn" href="{% url 'project_pulse:work_progress' project.code %}">Cancel</a></div>
+  </form>
+</section>
+<section class="pulse-panel pulse-import-example"><div class="pulse-panel-head"><div><h2>Expected worksheet layout</h2><p>These are sample rows, not actual project data.</p></div></div><div class="pulse-table-wrap"><table class="pulse-table"><tbody><tr class="pulse-import-category-row"><th colspan="5" scope="rowgroup">Power Transformer</th></tr><tr class="pulse-import-header"><th>SN</th><th>Description</th><th>Unit</th><th>Quantity</th><th>% Completion</th></tr><tr><td>1</td><td>Transformer installation</td><td>EA</td><td>3</td><td>— (0%)</td></tr><tr><td>2</td><td>AVC panel installation</td><td>EA</td><td>4</td><td>35</td></tr><tr class="pulse-import-category-row"><th colspan="5" scope="rowgroup">Cable Installation</th></tr><tr class="pulse-import-header"><th>SN</th><th>Description</th><th>Unit</th><th>Quantity</th><th>% Completion</th></tr><tr><td>1</td><td>MV cable laying</td><td>LM</td><td>540</td><td>60%</td></tr></tbody></table></div></section>
+{% endblock %}

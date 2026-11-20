@@ -1,4 +1,4 @@
-"""Execution schedule upgrade: completion-only calculation and secure UI."""
+"""Execution schedule: percentage calculation and secure progress UI."""
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -46,23 +46,23 @@ class ExecutionScheduleTests(TestCase):
         self.assertEqual(projects[self.project.pk]["percent"], Decimal("0.0"))
         self.assertContains(self.client.get(reverse("project_pulse:category_detail", args=[self.project.code, category.pk])), "0%")
 
-    def test_completed_work_counts_and_reopen_audited(self):
+    def test_partial_percentages_complete_shortcut_and_reopen_are_audited(self):
         cat = self.new_category("Installation")
         work1 = self.new_work(cat, "Equipment installation")
         work2 = self.new_work(cat, "Inspection")
         empty = self.new_category("Testing")
-        # A legacy partial update must not count as completion.
+        # Partial percentages now contribute to execution progress.
         record_progress(actor=self.owner, project_id=self.project.pk, task_id=work1.pk,
                         status="in_progress", progress_percent=80, note="Partial progress")
         _, categories = calculate_progress([self.project.pk])
-        self.assertEqual(categories[cat.pk]["percent"], Decimal("0.0"))
+        self.assertEqual(categories[cat.pk]["percent"], Decimal("40.0"))
         url = reverse("project_pulse:task_completion", args=[self.project.code, work1.pk])
         self.assertEqual(self.client.get(url).status_code, 405)
         self.assertEqual(self.client.post(url, {"action":"complete"}).status_code, 302)
         projects, categories = calculate_progress([self.project.pk])
         self.assertEqual(categories[cat.pk]["percent"], Decimal("50.0"))
         self.assertEqual(categories[empty.pk]["percent"], Decimal("0.0"))
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("25.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("50.0"))
         self.assertEqual(self.client.post(url, {"action":"reopen"}).status_code, 302)
         work1.refresh_from_db()
         self.assertEqual(work1.status, PulseTask.Status.NOT_STARTED)
@@ -73,7 +73,7 @@ class ExecutionScheduleTests(TestCase):
         overview = reverse("project_pulse:project_detail", args=[self.project.code])
         empty = self.client.get(overview)
         self.assertEqual(empty.status_code, 200)
-        self.assertContains(empty, "No execution categories yet")
+        self.assertContains(empty, "No work categories yet")
         self.assertContains(empty, "0%")
         category = self.new_category("Mobilization")
         self.new_work(category, "Site handover")
@@ -81,7 +81,7 @@ class ExecutionScheduleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "pulse-dashboard-grid")
         self.assertContains(response, "Financial snapshot")
-        self.assertContains(response, "Execution schedule")
+        self.assertContains(response, "Work Progress")
         self.assertContains(response, "Project information")
         self.assertContains(response, "Financial controls")
         self.assertContains(response, "More tools")
@@ -110,7 +110,7 @@ class ExecutionScheduleTests(TestCase):
         cat = self.new_category("Mobilization")
         work = self.new_work(cat, "Site access")
         listing = self.client.get(reverse("project_pulse:execution_schedule", args=[self.project.code]))
-        self.assertContains(listing, "Execution schedule")
+        self.assertContains(listing, "Work Progress")
         detail = self.client.get(reverse("project_pulse:category_detail", args=[self.project.code, cat.pk]))
         self.assertContains(detail, "Site access")
         self.assertContains(detail, reverse("project_pulse:task_expenses", args=[self.project.code, work.pk]))

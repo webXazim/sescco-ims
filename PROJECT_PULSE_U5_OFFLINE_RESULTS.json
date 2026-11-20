@@ -1,0 +1,102 @@
+{
+  "total": 19,
+  "passed": 19,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "Grouped categories, valid rows and blank = 0",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Excel fractional percentage scaled exactly once",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Duplicate serial numbers reject case-insensitively",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Slug-colliding categories rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Repeated normalized category headings allowed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "More than one worksheet rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Negative completion rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Over-100 completion rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Fractional whole-number progress rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Non-numeric completion rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Negative quantity rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Duplicate category codes do not merge silently",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Only .xlsx accepted",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Unsupported extra columns reject data",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Formula completion rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Actual prepared BOQ: 151 works, 9 categories, zero errors",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Full Python source syntax",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Project Pulse migrations and legacy route aliases",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Production rollup: 45%, 30% => project 37.5% (ignore empty/cancelled)",
+      "status": "PASS",
+      "detail": ""
+    }
+  ]
+}

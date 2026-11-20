@@ -1,9 +1,9 @@
 {% extends 'project_pulse/base.html' %}
 {% block content %}
-<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:execution_schedule' project.code %}">Execution schedule</a><span>/</span><strong>{% if category %}Edit{% else %}Add{% endif %}</strong></nav>
-<section class="pulse-page-head"><div><span class="pulse-eyebrow">{{ project.code }}</span><h1>{% if category %}Edit execution category{% else %}Add execution category{% endif %}</h1><p>Organize project work into execution stages. A new category starts at 0% and progresses as its scheduled works are completed.</p></div><a class="btn" href="{% url 'project_pulse:execution_schedule' project.code %}">Cancel</a></section>
+<nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><a href="{% url 'project_pulse:work_progress' project.code %}">Work Progress</a><span>/</span><strong>{% if category %}Edit{% else %}Add{% endif %}</strong></nav>
+<section class="pulse-page-head"><div><span class="pulse-eyebrow">{{ project.code }}</span><h1>{% if category %}Edit Work Category{% else %}Add Work Category{% endif %}</h1><p>A category needs only its name. Add works under it now or import them later.</p></div><a class="btn" href="{% url 'project_pulse:work_progress' project.code %}">Cancel</a></section>
 <section class="pulse-panel pulse-form-panel"><form method="post" class="pulse-editor-form">{% csrf_token %}{% if form.non_field_errors %}<div class="pulse-form-errors">{{ form.non_field_errors }}</div>{% endif %}
 {% for field in form %}<label class="pulse-form-field"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="pulse-form-errors">{{ field.errors|striptags }}</small>{% endif %}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</label>{% endfor %}
-<p class="pulse-muted">Completion is calculated automatically from scheduled works. No progress percentage or contribution weight is required.</p>
-<div class="pulse-form-actions"><button class="btn btn-primary" type="submit">Save category</button><a class="btn" href="{% url 'project_pulse:execution_schedule' project.code %}">Cancel</a></div></form></section>
+<p class="pulse-muted">Completion will be calculated from its works. Existing category settings are retained when editing the name.</p>
+<div class="pulse-form-actions"><button class="btn btn-primary" type="submit">Save Work Category</button><a class="btn" href="{% url 'project_pulse:work_progress' project.code %}">Cancel</a></div></form></section>
 {% endblock %}

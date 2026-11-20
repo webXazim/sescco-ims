@@ -14,8 +14,9 @@ from .models import PulseTask, PulseWorkCategory, PulseProgressUpdate, PulseBudg
 
 
 _CATEGORY_FIELDS = ("name", "description", "sort_order", "progress_weight")
-_TASK_FIELDS = ("category", "title", "description", "assigned_to", "priority",
-                "status", "planned_start", "due_date", "sort_order", "progress_weight")
+_TASK_FIELDS = ("category", "serial_number", "title", "unit", "quantity",
+                "description", "assigned_to", "priority", "status", "planned_start",
+                "due_date", "sort_order", "progress_weight")
 
 
 def _checked_project(actor, project_id, permission):
@@ -60,7 +61,11 @@ def _category_snapshot(row):
 
 
 def _task_snapshot(row):
-    return {"category_id": row.category_id, "title": row.title,
+    return {"category_id": row.category_id, "serial_number": row.serial_number,
+            "title": row.title, "unit": row.unit,
+            "quantity": str(row.quantity) if row.quantity is not None else None,
+            "last_import_batch_id": row.last_import_batch_id,
+            "import_row_number": row.import_row_number,
             "description": row.description, "assigned_membership": str(row.assigned_to_id or ""),
             "priority": row.priority, "status": row.status,
             "progress_percent": row.progress_percent, "progress_weight": str(row.progress_weight),
@@ -119,9 +124,24 @@ def save_task(*, actor, project_id, data, task_id=None, request=None):
     for field in _TASK_FIELDS:
         if field in data:
             setattr(row, field, data[field])
-    # U03's status editor remains usable. Any status-driven percentage adjustment
-    # creates an explicit, immutable progress-history row.
-    row.progress_percent = 100 if row.status == PulseTask.Status.COMPLETED else 0
+    # Metadata edits preserve progress. For older service callers that still
+    # submit a *changed* status, only authorized progress editors may change it.
+    # A completed work cannot be silently reopened/reset via metadata editing:
+    # that requires the explicit percentage + status progress workflow.
+    if row.status != old_status:
+        if not all(membership_has_permission(actor, perm) for perm in (
+            AccessPermission.PULSE_PROGRESS_VIEW, AccessPermission.PULSE_PROGRESS_UPDATE
+        )):
+            raise PermissionDenied("Progress update permission is required to change work status.")
+        if row.status == PulseTask.Status.COMPLETED:
+            row.progress_percent = 100
+        elif row.status == PulseTask.Status.NOT_STARTED:
+            if old_percent > 0:
+                raise ValidationError({"status": "Use Update Progress to reset an existing work to 0%."})
+            row.progress_percent = 0
+        elif old_percent == 100:
+            raise ValidationError({"status": "Use Update Progress to reopen a completed work with an explicit percentage."})
+    # If status was not changed, preserve row.progress_percent exactly.
     if row.category.project_id != project.pk or row.category.archived_at is not None:
         raise ValidationError({"category": "Choose an active category within this project."})
     row.save()

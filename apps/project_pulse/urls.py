@@ -8,11 +8,18 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("projects/", views.project_list, name="project_list"),
     path("projects/<str:code>/", views.project_detail, name="project_detail"),
-    # Legacy task URLs remain valid; new schedule aliases are the primary UI.
+    # Canonical work-management routes. Keep older URLs and names for bookmarks,
+    # incoming links, and existing integrations.
+    path("projects/<str:code>/work-progress/", views.work_categories, name="work_progress"),
+    path("projects/<str:code>/works/", views.task_list, name="works"),
+    # Legacy schedule/task URLs remain available without redirecting POST actions.
     path("my-tasks/", views.my_tasks, name="my_tasks"),
     path("projects/<str:code>/execution-schedule/", views.work_categories, name="execution_schedule"),
     path("projects/<str:code>/scheduled-works/", views.task_list, name="scheduled_works"),
     path("projects/<str:code>/categories/", views.work_categories, name="categories"),
+    path("projects/<str:code>/works/import/", views.works_import_upload, name="works_import_upload"),
+    path("projects/<str:code>/works/import/<int:batch_id>/preview/", views.works_import_preview, name="works_import_preview"),
+    path("projects/<str:code>/works/import/<int:batch_id>/apply/", views.works_import_apply, name="works_import_apply"),
     path("projects/<str:code>/categories/<int:category_id>/", views.category_detail, name="category_detail"),
     path("projects/<str:code>/categories/new/", views.category_form, name="category_new"),
     path("projects/<str:code>/categories/<int:category_id>/edit/", views.category_form, name="category_edit"),

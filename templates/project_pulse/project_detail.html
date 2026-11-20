@@ -3,15 +3,15 @@
 <nav class="pulse-breadcrumb"><a href="{% url 'project_pulse:project_list' %}">Projects</a><span>/</span><strong>{{ project.code }}</strong></nav>
 <section class="pulse-page-head pulse-overview-heading">
   <div><span class="pulse-eyebrow">Project overview · {{ project.code }}</span><h1>{{ project.name }}</h1><p>{% if project.client_name %}{{ project.client_name }}{% else %}SESCCO project{% endif %}{% if project.location %} · {{ project.location }}{% endif %}</p></div>
-  <div class="pulse-page-actions"><span class="pulse-status pulse-status--{{ project.status }}">{{ project.get_status_display }}</span>{% if pulse_can_view_categories %}<a class="btn btn-primary" href="{% url 'project_pulse:execution_schedule' project.code %}">Open execution schedule</a>{% elif pulse_can_view_tasks %}<a class="btn btn-primary" href="{% url 'project_pulse:scheduled_works' project.code %}">View scheduled works</a>{% endif %}</div>
+  <div class="pulse-page-actions"><span class="pulse-status pulse-status--{{ project.status }}">{{ project.get_status_display }}</span>{% if pulse_can_view_categories %}<a class="btn btn-primary" href="{% url 'project_pulse:work_progress' project.code %}">Open Work Progress</a>{% elif pulse_can_view_tasks %}<a class="btn btn-primary" href="{% url 'project_pulse:works' project.code %}">View Works</a>{% endif %}</div>
 </section>
 {% if pulse_can_view_progress %}
 <section class="pulse-dashboard-progress" aria-label="Project execution progress">
   <div class="pulse-dashboard-progress-value"><strong>{{ project_metrics.percent|default:0 }}%</strong><span>Project completed</span></div>
   <div class="pulse-dashboard-progress-body">
-    <div class="pulse-dashboard-progress-top"><strong>Execution progress</strong><span>Based on completed scheduled works</span></div>
+    <div class="pulse-dashboard-progress-top"><strong>Work progress</strong><span>Based on actual work completion percentages</span></div>
     <div class="pulse-progress-track pulse-progress-track-large" role="progressbar" aria-label="Project completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ project_metrics.percent|default:0 }}"><div class="pulse-progress-fill" style="width:{{ project_metrics.percent|default:0 }}%"></div></div>
-    <div class="pulse-dashboard-counters"><span><strong>{{ project_metrics.completed_count|default:0 }}</strong> completed</span><span><strong>{{ project_metrics.task_count|default:0 }}</strong> scheduled works</span><span><strong>{{ project_metrics.overdue_count|default:0 }}</strong> overdue</span></div>
+    <div class="pulse-dashboard-counters"><span><strong>{{ project_metrics.completed_count|default:0 }}</strong> completed</span><span><strong>{{ project_metrics.task_count|default:0 }}</strong> works</span><span><strong>{{ project_metrics.overdue_count|default:0 }}</strong> overdue</span></div>
   </div>
 </section>
 {% endif %}
@@ -19,14 +19,14 @@
   <div class="pulse-dashboard-primary">
     {% if pulse_can_view_categories %}
     <section class="pulse-panel pulse-schedule-panel">
-      <div class="pulse-panel-head"><div><h2>Execution schedule</h2><p>Execution categories and their work completion.</p></div><a class="pulse-text-link" href="{% url 'project_pulse:execution_schedule' project.code %}">View schedule</a></div>
-      <div class="pulse-table-wrap"><table class="pulse-table pulse-dashboard-table"><thead><tr><th>Execution category</th><th>Works</th>{% if pulse_can_view_progress %}<th>Completion</th>{% endif %}<th class="pulse-table-action-col"></th></tr></thead><tbody>
+      <div class="pulse-panel-head"><div><h2>Work Progress</h2><p>Work Categories and their work completion.</p></div><a class="pulse-text-link" href="{% url 'project_pulse:work_progress' project.code %}">View work progress</a></div>
+      <div class="pulse-table-wrap"><table class="pulse-table pulse-dashboard-table"><thead><tr><th>Work Category</th><th>Works</th>{% if pulse_can_view_progress %}<th>Completion</th>{% endif %}<th class="pulse-table-action-col"></th></tr></thead><tbody>
       {% for cat in categories %}
       <tr><td><strong>{{ cat.name }}</strong></td><td>{{ cat.task_count }}</td>{% if pulse_can_view_progress %}<td><div class="pulse-progress-inline"><span>{{ cat.pulse_metrics.percent|default:0 }}%</span><div class="pulse-progress-track"><div class="pulse-progress-fill" style="width:{{ cat.pulse_metrics.percent|default:0 }}%"></div></div></div></td>{% endif %}<td>{% if pulse_can_view_tasks %}<a class="pulse-text-link" href="{% url 'project_pulse:category_detail' project.code cat.pk %}">Open</a>{% endif %}</td></tr>
-      {% empty %}<tr><td colspan="{% if pulse_can_view_progress %}4{% else %}3{% endif %}"><div class="pulse-dashboard-empty"><strong>No execution categories yet</strong><span>Add the first execution category, then list the scheduled works that need to be completed.</span><a class="pulse-text-link" href="{% url 'project_pulse:execution_schedule' project.code %}">Open execution schedule</a></div></td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="{% if pulse_can_view_progress %}4{% else %}3{% endif %}"><div class="pulse-dashboard-empty"><strong>No work categories yet</strong><span>Add the first work category, then list the works that need to be completed.</span><a class="pulse-text-link" href="{% url 'project_pulse:work_progress' project.code %}">Open Work Progress</a></div></td></tr>{% endfor %}
       </tbody></table></div>
     </section>
-    {% elif pulse_can_view_tasks %}<section class="pulse-panel"><div class="pulse-panel-head"><div><h2>Scheduled works</h2><p>View the work items available to your profile.</p></div><a class="pulse-text-link" href="{% url 'project_pulse:scheduled_works' project.code %}">Open works</a></div></section>{% endif %}
+    {% elif pulse_can_view_tasks %}<section class="pulse-panel"><div class="pulse-panel-head"><div><h2>Works</h2><p>View the work items available to your profile.</p></div><a class="pulse-text-link" href="{% url 'project_pulse:works' project.code %}">Open works</a></div></section>{% endif %}
     <details class="pulse-panel pulse-project-facts">
       <summary><span><strong>Project information</strong><small>Client, location, manager and key dates</small></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary>
       <dl class="pulse-detail-grid"><div><dt>Project code</dt><dd>{{ project.code }}</dd></div><div><dt>Client</dt><dd>{{ project.client_name|default:'—' }}</dd></div><div><dt>Location</dt><dd>{{ project.location|default:'—' }}</dd></div><div><dt>Manager (register)</dt><dd>{{ project.manager_name|default:'Not assigned' }}</dd></div><div><dt>Start date</dt><dd>{{ project.start_date|date:'d M Y'|default:'—' }}</dd></div><div><dt>Expected completion</dt><dd>{{ project.expected_completion_date|date:'d M Y'|default:'—' }}</dd></div><div><dt>Actual completion</dt><dd>{{ project.end_date|date:'d M Y'|default:'—' }}</dd></div><div><dt>Project status</dt><dd>{{ project.get_status_display }}</dd></div></dl>
@@ -42,7 +42,7 @@
     </section>{% endif %}
     {% if pulse_can_view_reports or pulse_can_view_team or pulse_can_view_expense_categories or pulse_can_view_tasks %}
     <section class="pulse-panel pulse-links-panel"><h2>Quick access</h2>
-      {% if pulse_can_view_tasks %}<a href="{% url 'project_pulse:scheduled_works' project.code %}">All scheduled works <span>›</span></a>{% endif %}
+      {% if pulse_can_view_tasks %}<a href="{% url 'project_pulse:works' project.code %}">All Works <span>›</span></a>{% endif %}
       {% if pulse_can_view_reports %}<a href="{% url 'project_pulse:reports' project.code %}">Project reports <span>›</span></a>{% endif %}
       {% if pulse_can_view_team %}<a href="{% url 'project_pulse:project_team' project.code %}">Project team <span>›</span></a>{% endif %}
       {% if pulse_can_view_expense_categories %}<a href="{% url 'project_pulse:expense_categories' project.code %}">Expense categories <span>›</span></a>{% endif %}

@@ -75,7 +75,7 @@ class PulseProgressTests(TestCase):
                    "pulse.progress.view", "pulse.progress.update"]
         self.assertEqual(len(_clean_permissions(allowed)), 5)
 
-    def test_completed_work_counts_ignore_legacy_partial_and_weights(self):
+    def test_partial_work_progress_and_equal_category_averages(self):
         civil = self.category(weight="2.00")
         elec = self.category("Electrical", weight="1.00")
         t1 = self.task(civil, weight="2.00")
@@ -86,9 +86,9 @@ class PulseProgressTests(TestCase):
         record_progress(actor=self.owner, project_id=self.project.pk, task_id=t2.pk,
                         progress_percent=100, status="completed", note="Finished")
         projects, categories = calculate_progress([self.project.pk, self.other_project.pk])
-        self.assertEqual(categories[civil.pk]["percent"], Decimal("50.0"))
+        self.assertEqual(categories[civil.pk]["percent"], Decimal("75.0"))
         self.assertEqual(categories[elec.pk]["percent"], Decimal("0.0"))
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("25.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("37.5"))
         self.assertEqual(projects[self.project.pk]["completed_count"], 1)
         self.assertEqual(projects[self.project.pk]["task_count"], 3)
         self.assertFalse(projects[self.other_project.pk]["has_work"])
@@ -104,9 +104,9 @@ class PulseProgressTests(TestCase):
                         progress_percent=20, status="cancelled")
         set_task_archive(actor=self.owner, project_id=self.project.pk, task_id=archived.pk, archive=True)
         projects, categories = calculate_progress([self.project.pk])
-        self.assertEqual(categories[category.pk]["percent"], Decimal("0.0"))
+        self.assertEqual(categories[category.pk]["percent"], Decimal("70.0"))
         self.assertEqual(projects[self.project.pk]["task_count"], 1)
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("0.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("70.0"))
 
     def test_empty_category_starts_at_zero_and_invalid_weight_rejected(self):
         empty = self.category(name="Empty", weight="99.00")
@@ -116,7 +116,8 @@ class PulseProgressTests(TestCase):
                         progress_percent=100, status="completed")
         projects, categories = calculate_progress([self.project.pk])
         self.assertFalse(categories[empty.pk]["has_work"])
-        self.assertEqual(projects[self.project.pk]["percent"], Decimal("50.0"))
+        self.assertEqual(projects[self.project.pk]["percent"], Decimal("100.0"))
+        self.assertEqual(projects[self.project.pk]["measured_categories"], 1)
         with self.assertRaises(ValidationError):
             self.category("Invalid", weight="0")
         with self.assertRaises(ValidationError):
@@ -143,7 +144,7 @@ class PulseProgressTests(TestCase):
                             progress_percent=30, status="in_progress")
         self.assertTrue(AuditEvent.objects.filter(action="pulse.task.progress_updated").exists())
 
-    def test_legacy_status_editor_records_history_and_normalizes(self):
+    def test_legacy_service_status_change_is_audited_and_partial_is_not_reset(self):
         category = self.category()
         task = self.task(category)
         details = {"category": category, "title": task.title, "description": "", "assigned_to": None,
@@ -152,11 +153,19 @@ class PulseProgressTests(TestCase):
         save_task(actor=self.owner, project_id=self.project.pk, data=details, task_id=task.pk)
         task.refresh_from_db()
         self.assertEqual(task.progress_percent, 100)
+        with self.assertRaises(ValidationError):
+            save_task(actor=self.owner, project_id=self.project.pk,
+                      data={**details, "status": "blocked"}, task_id=task.pk)
+        # Explicit progress editor is required to reopen a completed work.
+        record_progress(actor=self.owner, project_id=self.project.pk, task_id=task.pk,
+                        progress_percent=35, status="blocked", note="Remobilization")
         save_task(actor=self.owner, project_id=self.project.pk,
-                  data={**details, "status": "blocked"}, task_id=task.pk)
+                  data={**details, "status": "blocked", "title": "Revised scope"}, task_id=task.pk)
         task.refresh_from_db()
-        self.assertEqual(task.progress_percent, 0)
-        self.assertEqual(list(task.progress_updates.values_list("new_percent", flat=True)), [0, 100])
+        self.assertEqual(task.progress_percent, 35)
+        self.assertEqual(task.status, PulseTask.Status.BLOCKED)
+        self.assertEqual(task.title, "Revised scope")
+        self.assertEqual(list(task.progress_updates.values_list("new_percent", flat=True)), [35, 100])
 
     def test_project_scoped_user_can_complete_unassigned_works_but_not_other_projects(self):
         category = self.category()
@@ -172,9 +181,10 @@ class PulseProgressTests(TestCase):
         self.client.force_login(user)
         self.assertEqual(self.client.get(reverse("project_pulse:task_progress", args=[self.project.code, own.pk])).status_code, 200)
         self.assertEqual(self.client.post(reverse("project_pulse:task_progress_update", args=[self.project.code, own.pk]),
-                {"progress_percent": "40", "status": "in_progress", "note": "Excavated"}).status_code, 302)
+                {"progress_percent": "40", "status": "auto", "note": "Excavated"}).status_code, 302)
         own.refresh_from_db()
-        self.assertEqual(own.progress_percent, 0)
+        self.assertEqual(own.progress_percent, 40)
+        self.assertEqual(own.status, PulseTask.Status.IN_PROGRESS)
         self.assertEqual(self.client.post(reverse("project_pulse:task_progress_update", args=[self.project.code, other.pk]),
                 {"status": "in_progress"}).status_code, 302)
         self.assertEqual(self.client.get(reverse("project_pulse:task_progress", args=[self.other_project.code, own.pk])).status_code, 404)
@@ -224,23 +234,59 @@ class PulseProgressTests(TestCase):
             record_progress(actor=self.owner, project_id=self.project.pk, task_id=task.pk,
                             progress_percent=50, status="in_progress")
 
-    def test_task_editor_can_complete_and_reopen_without_new_weight_posted(self):
+    def test_task_metadata_editor_cannot_modify_progress_or_status(self):
         category = self.category()
         task = self.task(category)
+        record_progress(actor=self.owner, project_id=self.project.pk, task_id=task.pk,
+                        progress_percent=65, status="in_progress", note="Site measurement")
         self.client.force_login(self.user)
         url = reverse("project_pulse:task_edit", args=[self.project.code, task.pk])
-        payload = {"category": category.pk, "title": "Excavate", "description": "",
-                   "priority": "normal", "status": "completed", "sort_order": 0}
+        payload = {"category": category.pk, "title": "Excavation revised", "description": "",
+                   "priority": "normal", "status": "completed", "progress_percent": "100", "sort_order": 0}
         response = self.client.post(url, payload)
         self.assertEqual(response.status_code, 302, response.content.decode()[:200])
         task.refresh_from_db()
-        self.assertEqual(task.progress_percent, 100)
-        self.assertEqual(task.status, PulseTask.Status.COMPLETED)
-        response = self.client.post(url, {**payload, "status": "blocked"})
-        self.assertEqual(response.status_code, 302, response.content.decode()[:200])
+        self.assertEqual(task.title, "Excavation revised")
+        self.assertEqual(task.progress_percent, 65)
+        self.assertEqual(task.status, PulseTask.Status.IN_PROGRESS)
+        self.assertEqual(task.progress_updates.count(), 1)
+        form = self.client.get(url)
+        self.assertNotContains(form, 'name="status"')
+        self.assertNotContains(form, 'name="progress_percent"')
+
+    def test_progress_update_automatically_derives_status_and_preserves_exceptions(self):
+        task = self.task(self.category())
+        self.client.force_login(self.user)
+        url = reverse("project_pulse:task_progress_update", args=[self.project.code, task.pk])
+        self.assertEqual(self.client.post(url, {"progress_percent": "40", "note": "Progress"}).status_code, 302)
         task.refresh_from_db()
-        self.assertEqual(task.progress_percent, 0)
-        self.assertEqual(task.progress_updates.count(), 2)
+        self.assertEqual((task.progress_percent, task.status), (40, PulseTask.Status.IN_PROGRESS))
+        self.assertEqual(self.client.post(url, {"progress_percent": "70", "status": "on_hold"}).status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual((task.progress_percent, task.status), (70, PulseTask.Status.ON_HOLD))
+        self.assertEqual(self.client.post(url, {"progress_percent": "100", "status": "auto"}).status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual((task.progress_percent, task.status), (100, PulseTask.Status.COMPLETED))
+        self.assertEqual(self.client.post(url, {"progress_percent": "20", "status": "auto"}).status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual((task.progress_percent, task.status), (20, PulseTask.Status.IN_PROGRESS))
+        self.assertEqual(self.client.post(url, {"progress_percent": "0", "status": "auto"}).status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual((task.progress_percent, task.status), (0, PulseTask.Status.NOT_STARTED))
+        self.assertEqual(task.progress_updates.count(), 5)
+
+    def test_progress_forms_reject_missing_or_out_of_range_percentage(self):
+        task = self.task(self.category())
+        self.client.force_login(self.user)
+        url = reverse("project_pulse:task_progress_update", args=[self.project.code, task.pk])
+        for bad in ({"status": "auto"}, {"progress_percent": "101"},
+                    {"progress_percent": "-1"}, {"progress_percent": "3.5"},
+                    {"progress_percent": "100", "status": "blocked"}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.client.post(url, bad).status_code, 302)
+                task.refresh_from_db()
+                self.assertEqual((task.status, task.progress_percent), ("not_started", 0))
+        self.assertEqual(task.progress_updates.count(), 0)
 
     def test_progress_note_only_and_archived_task_readonly(self):
         category = self.category()
@@ -261,6 +307,6 @@ class PulseProgressTests(TestCase):
         task = self.task(category)
         self.client.force_login(self.user)
         self.assertContains(self.client.get(reverse("project_pulse:project_detail", args=[self.project.code])), "Execution progress")
-        self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "Not complete")
+        self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "0%")
         self.assertFalse(hasattr(task, "expense"))
         self.assertFalse(hasattr(category, "approved_budget"))

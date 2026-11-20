@@ -85,7 +85,8 @@ class WorkCategoryTaskTests(TestCase):
         })
         self.assertEqual(task_response.status_code, 302, task_response.content.decode()[:300])
         task = PulseTask.objects.get(category=category)
-        self.assertEqual(task.status, PulseTask.Status.IN_PROGRESS)
+        # Injected status must not bypass the separate progress-update workflow.
+        self.assertEqual(task.status, PulseTask.Status.NOT_STARTED)
         self.assertEqual(task.priority, PulseTask.Priority.NORMAL)  # Priority is a legacy optional detail, not part of the execution form.
         self.assertIsNone(task.assigned_to)
         self.assertContains(self.client.get(reverse("project_pulse:tasks", args=[self.project.code])), "Excavation")
@@ -253,7 +254,7 @@ class WorkCategoryTaskTests(TestCase):
         self.assertNotContains(self.client.get(listing_url), "Excavation")
         self.assertContains(self.client.get(listing_url + "?archived=1"), "Excavation")
 
-    def test_task_edit_changes_status_and_due_date(self):
+    def test_task_edit_changes_details_without_changing_status(self):
         category = self.category()
         task = save_task(actor=self.owner, project_id=self.project.pk,
                          data=self.task_data(category))
@@ -265,6 +266,7 @@ class WorkCategoryTaskTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         task.refresh_from_db()
         self.assertEqual(task.title, "Excavation Phase 2")
-        self.assertEqual(task.status, PulseTask.Status.BLOCKED)
+        self.assertEqual(task.status, PulseTask.Status.NOT_STARTED)
+        self.assertEqual(task.progress_percent, 0)
         self.assertEqual(task.due_date.isoformat(), "2026-12-15")
         self.assertTrue(AuditEvent.objects.filter(action="pulse.task.updated").exists())

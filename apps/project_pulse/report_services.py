@@ -134,16 +134,15 @@ def build_report(*, project, actor, filters, export=False):
         overall, _ = calculate_progress([project.pk])
         overall_data = overall[project.pk]
         rows = [(t.category.name, t.title, t.get_status_display(),
-                 'Complete' if t.status == t.Status.COMPLETED else 'Not complete',
-                 t.due_date or '') for t in tasks]
+                 f"{t.progress_percent}%", t.due_date or '') for t in tasks]
         return PulseReport(kind, 'Execution progress',
-            ('Execution category', 'Scheduled work', 'Status', 'Completion', 'Target date'), rows,
-            [('Filtered scheduled works', len(tasks)),
+            ('Work Category', 'Work', 'Status', 'Completion', 'Target date'), rows,
+            [('Filtered works', len(tasks)),
              ('Filtered completed', sum(t.status == t.Status.COMPLETED for t in tasks)),
              ('Overall project progress', f"{overall_data['percent']}%"),
              ('Overall overdue works', overall_data['overdue_count'])],
             ['Dates filter work target dates, not status update dates.',
-             'Overall progress is the equal-category average of completed / eligible scheduled works.',
+             'Overall progress is the average of actual work percentages within each nonempty category, then the equal average of those categories.',
              'Archived work/categories and (unless selected) cancelled work are excluded.'])
 
     if kind == 'expenses':
@@ -181,7 +180,7 @@ def build_report(*, project, actor, filters, export=False):
             elif entry.approval_status == entry.ApprovalStatus.PENDING:
                 pending_total += entry.amount
         return PulseReport(kind, 'Scheduled-work expenses',
-            ('Date', 'Execution category', 'Scheduled work', 'Expense type', 'Description', 'Supplier',
+            ('Date', 'Work Category', 'Work', 'Expense type', 'Description', 'Supplier',
              'Approval status', 'Amount SAR', 'Paid SAR', 'Due SAR'), rows,
             [('Entries', len(entries)), ('Recorded SAR', recorded_total), ('Approved SAR', approved_total),
              ('Pending SAR', pending_total), ('Paid SAR', paid_total),

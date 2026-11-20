@@ -1,4 +1,5 @@
 """Scoped, permissioned Project Pulse pages and project-team administration."""
+import json
 from django.contrib import messages
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
@@ -8,7 +9,7 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Q, Count, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import HttpResponseBadRequest, FileResponse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_allows_project, membership_has_permission
@@ -20,7 +21,7 @@ from .access import (require_project_list_access, require_team_manage,
                      require_tasks_view, require_tasks_manage, require_progress_view,
                      require_progress_update, scoped_projects)
 from .models import (PulseProjectTeamMember, PulseWorkCategory, PulseTask,
-                     PulseProgressUpdate, PulseExpenseCategory, PulseExpenseEntry, PulseExpenseChange,
+                     PulseProgressUpdate, PulseWorkImportBatch, PulseExpenseCategory, PulseExpenseEntry, PulseExpenseChange,
                      PulseExpensePayment, PulseExpenseAttachment)
 from .expense_services import (save_expense_category, archive_expense_category,
                                save_expense, void_expense, expense_rollups,
@@ -42,6 +43,8 @@ from .models import PulseContractRevision, PulseContractVariation, PulseCostFore
 from .commercial_services import (commercial_summary, propose_contract, review_contract,
     propose_variation, review_variation, propose_forecast, review_forecast)
 from .work_services import save_category, set_category_archive, save_task, set_task_archive
+from .import_services import (WorkImportError, parse_workbook, build_import_preview,
+                              create_preview_batch, apply_work_import)
 from .services import assign_team_member, remove_team_member
 from .progress_services import calculate_progress, can_update_task_progress, record_progress
 from .access import require_reports_view, require_reports_export
@@ -63,6 +66,10 @@ def _context(request, *, page_key, title):
         "pulse_can_manage_categories": membership_has_permission(member, AccessPermission.PULSE_CATEGORIES_MANAGE),
         "pulse_can_view_tasks": membership_has_permission(member, AccessPermission.PULSE_TASKS_VIEW),
         "pulse_can_manage_tasks": membership_has_permission(member, AccessPermission.PULSE_TASKS_MANAGE),
+        "pulse_can_import_works": all(membership_has_permission(member, p) for p in (
+            AccessPermission.PULSE_CATEGORIES_VIEW, AccessPermission.PULSE_CATEGORIES_MANAGE,
+            AccessPermission.PULSE_TASKS_VIEW, AccessPermission.PULSE_TASKS_MANAGE,
+        )),
         "pulse_can_view_progress": membership_has_permission(member, AccessPermission.PULSE_TASKS_VIEW) and membership_has_permission(member, AccessPermission.PULSE_PROGRESS_VIEW),
         "pulse_can_update_progress": membership_has_permission(member, AccessPermission.PULSE_PROGRESS_UPDATE),
         "pulse_can_view_expense_categories": membership_has_permission(member, AccessPermission.PULSE_EXPENSE_CATEGORIES_VIEW),
@@ -279,22 +286,117 @@ def _task_for_request(project, task_id):
     ).filter(category__project=project), pk=task_id)
 
 
+
+def _require_import_access(request):
+    # Authorize both sides of an import; never grant category writers an
+    # implicit task-management capability.
+    require_categories_manage(request)
+    require_tasks_manage(request)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def works_import_upload(request, code):
+    _require_import_access(request)
+    project = _project_for_request(request, code)
+    if not _pulse_work_editable(project):
+        raise PermissionDenied("Only active projects can import works.")
+    errors = []
+    if request.method == "POST":
+        upload = request.FILES.get("workbook")
+        if upload is None:
+            errors = ["Select an .xlsx file first."]
+        else:
+            try:
+                parsed = parse_workbook(upload)
+                preview = build_import_preview(project, parsed)
+                if preview["errors"]:
+                    errors = preview["errors"]
+                else:
+                    batch = create_preview_batch(project=project, actor=request.company_membership,
+                                                 preview=preview)
+                    return redirect("project_pulse:works_import_preview", code=project.code, batch_id=batch.pk)
+            except WorkImportError as exc:
+                errors = [str(exc)]
+    return render(request, "project_pulse/works_import_upload.html", {
+        **_context(request, page_key="pulse-import", title="Import Works"),
+        "project": project, "import_errors": errors,
+    })
+
+
+@login_required
+@require_GET
+def works_import_preview(request, code, batch_id):
+    _require_import_access(request)
+    project = _project_for_request(request, code)
+    batch = get_object_or_404(PulseWorkImportBatch, pk=batch_id, project=project,
+                              uploaded_by=request.company_membership)
+    if batch.status != PulseWorkImportBatch.Status.PREVIEW or not batch.preview_data:
+        messages.info(request, "This Excel preview is no longer available.")
+        return redirect("project_pulse:categories", code=project.code)
+    return render(request, "project_pulse/works_import_preview.html", {
+        **_context(request, page_key="pulse-import", title="Review Work Import"),
+        "project": project, "batch": batch, "preview": batch.preview_data,
+        "expired": not batch.preview_expires_at or batch.preview_expires_at <= timezone.now(),
+    })
+
+
+@login_required
+@require_POST
+def works_import_apply(request, code, batch_id):
+    _require_import_access(request)
+    project = _project_for_request(request, code)
+    # Only these preview-row decisions are forwarded, never client-supplied
+    # task values/IDs/percentages. The server's saved preview is authoritative.
+    decisions = {k[len("decision_"):]: v for k, v in request.POST.items()
+                 if k.startswith("decision_")}
+    try:
+        packed = json.loads(request.POST.get("decisions_json", "{}"))
+        if not isinstance(packed, dict) or len(packed) > 2500 or any(
+            not isinstance(k, str) or not k.isdecimal() or
+            not isinstance(v, str) for k, v in packed.items()
+        ):
+            return HttpResponseBadRequest("Invalid work import choices.")
+        decisions.update(packed)
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest("Invalid work import choices.")
+    try:
+        results = apply_work_import(
+            actor=request.company_membership, project_id=project.pk,
+            batch_id=batch_id, decisions=decisions, request=request,
+        )
+    except (ValidationError, WorkImportError) as exc:
+        messages.error(request, _error_text(exc))
+        return redirect("project_pulse:works_import_preview", code=project.code, batch_id=batch_id)
+    messages.success(request, f"Works imported: {results['created']} created, "
+                     f"{results['updated']} updated, {results['unchanged']} retained, "
+                     f"{results['skipped']} skipped.")
+    return redirect("project_pulse:tasks", code=project.code)
+
+
 @login_required
 @require_GET
 def work_categories(request, code):
     require_categories_view(request)
     project = _project_for_request(request, code)
-    rows = list(PulseWorkCategory.objects.filter(project=project)
-        .annotate(task_count=Count("tasks", filter=Q(tasks__archived_at__isnull=True)))
-        .order_by("sort_order", "name", "pk"))
-    context = _context(request, page_key="pulse-categories", title=f"{project.name} · Execution schedule")
+    search = request.GET.get("q", "").strip()[:120]
+    query = PulseWorkCategory.objects.filter(project=project)
+    if search:
+        query = query.filter(name__icontains=search)
+    rows = list(query.annotate(
+        task_count=Count("tasks", filter=Q(tasks__archived_at__isnull=True))
+    ).order_by("sort_order", "name", "pk"))
+    context = _context(request, page_key="pulse-categories", title=f"{project.name} · Work Progress")
+    overall = None
     if context["pulse_can_view_progress"]:
-        _, category_summaries = calculate_progress([project.pk])
+        project_summaries, category_summaries = calculate_progress([project.pk])
+        overall = project_summaries.get(project.pk)
         for category in rows:
             category.pulse_metrics = category_summaries.get(category.pk)
     return render(request, "project_pulse/categories.html", {
         **context,
         "project": project, "categories": rows, "work_editable": _pulse_work_editable(project),
+        "search_query": search, "project_metrics": overall,
     })
 
 
@@ -316,12 +418,12 @@ def category_form(request, code, category_id=None):
             except ValidationError as error:
                 form.add_error(None, _error_text(error))
             else:
-                messages.success(request, f"Execution category {result.name} saved.")
+                messages.success(request, f"Work category {result.name} saved.")
                 return redirect("project_pulse:categories", code=project.code)
     else:
         form = PulseCategoryForm(instance=row)
     return render(request, "project_pulse/category_form.html", {
-        **_context(request, page_key="pulse-categories", title="Edit execution category" if row else "Add execution category"),
+        **_context(request, page_key="pulse-categories", title="Edit work category" if row else "Add work category"),
         "project": project, "category": row, "form": form,
     })
 
@@ -369,9 +471,10 @@ def task_list(request, code):
         status = ""
     search = request.GET.get("q", "").strip()[:120]
     if search:
-        rows = rows.filter(Q(title__icontains=search) | Q(description__icontains=search))
+        rows = rows.filter(Q(title__icontains=search) | Q(description__icontains=search) |
+                           Q(serial_number__icontains=search) | Q(unit__icontains=search))
     page = Paginator(rows.order_by("sort_order", "due_date", "pk"), 35).get_page(request.GET.get("page"))
-    context = _context(request, page_key="pulse-tasks", title=f"{project.name} · Scheduled works")
+    context = _context(request, page_key="pulse-tasks", title=f"{project.name} · Works")
     if context["pulse_can_view_progress"]:
         for task in page.object_list:
             task.pulse_can_update = (context["pulse_can_update_progress"] and
@@ -427,7 +530,7 @@ def task_form(request, code, task_id=None):
             except ValidationError as error:
                 form.add_error(None, _error_text(error))
             else:
-                messages.success(request, f"Scheduled work {result.title} saved.")
+                messages.success(request, f"Work {result.title} saved.")
                 return redirect("project_pulse:tasks", code=project.code)
     else:
         form = PulseTaskForm(instance=row, project=project)
@@ -435,7 +538,7 @@ def task_form(request, code, task_id=None):
         if not row and selected_category.isdecimal() and form.fields["category"].queryset.filter(pk=int(selected_category)).exists():
             form.initial["category"] = int(selected_category)
     return render(request, "project_pulse/task_form.html", {
-        **_context(request, page_key="pulse-tasks", title="Edit scheduled work" if row else "New scheduled work"),
+        **_context(request, page_key="pulse-tasks", title="Edit work" if row else "New work"),
         "project": project, "task": row, "form": form,
     })
 
@@ -470,9 +573,14 @@ def task_progress(request, code, task_id):
     history = (PulseProgressUpdate.objects.filter(task=task)
         .select_related("updated_by__user").order_by("-created_at", "-pk")[:100])
     return render(request, "project_pulse/task_progress.html", {
-        **_context(request, page_key="pulse-tasks", title=f"{task.title} · Execution history"),
+        **_context(request, page_key="pulse-tasks", title=f"{task.title} · Progress history"),
         "project": project, "task": task, "history": history, "can_update_task": can_update,
-        "progress_form": PulseProgressForm(initial={"status": task.status}),
+        "progress_form": PulseProgressForm(initial={
+            "progress_percent": task.progress_percent,
+            "status": (task.status if task.status in (
+                PulseTask.Status.BLOCKED, PulseTask.Status.ON_HOLD, PulseTask.Status.CANCELLED
+            ) else "auto"),
+        }),
     })
 
 
@@ -490,13 +598,13 @@ def task_progress_update(request, code, task_id):
     try:
         record_progress(
             actor=request.company_membership, project_id=project.pk, task_id=task_id,
-            progress_percent=100 if form.cleaned_data["status"] == PulseTask.Status.COMPLETED else 0,
+            progress_percent=form.cleaned_data["progress_percent"],
             status=form.cleaned_data["status"], note=form.cleaned_data["note"], request=request,
         )
     except ValidationError as error:
         messages.error(request, _error_text(error))
     else:
-        messages.success(request, "Scheduled work status saved in the execution history.")
+        messages.success(request, "Work progress saved in the execution history.")
     return redirect("project_pulse:task_progress", code=project.code, task_id=task_id)
 
 
@@ -504,30 +612,30 @@ def task_progress_update(request, code, task_id):
 @login_required
 @require_POST
 def task_completion(request, code, task_id):
-    """Quick complete/reopen from the execution schedule, with an audit trail."""
+    """Legacy complete/reopen shortcut, kept for compatibility and audit."""
     require_progress_update(request)
     project = _project_for_request(request, code)
     action = request.POST.get("action", "")
     if action not in ("complete", "reopen"):
-        return HttpResponseBadRequest("Invalid scheduled work completion action.")
+        return HttpResponseBadRequest("Invalid work completion action.")
     status = (PulseTask.Status.COMPLETED if action == "complete"
               else PulseTask.Status.NOT_STARTED)
     existing = _task_for_request(project, task_id)
     if existing.status == PulseTask.Status.CANCELLED:
-        messages.error(request, "Cancelled scheduled works cannot be completed from this shortcut.")
+        messages.error(request, "Cancelled works cannot be completed from this shortcut.")
         return redirect("project_pulse:scheduled_works", code=project.code)
     try:
         record_progress(
             actor=request.company_membership, project_id=project.pk,
             task_id=task_id, status=status,
             progress_percent=100 if action == "complete" else 0,
-            note="Completed from execution schedule." if action == "complete" else "Reopened from execution schedule.",
+            note="Completed from work progress shortcut." if action == "complete" else "Reopened from work progress shortcut.",
             request=request,
         )
     except ValidationError as error:
         messages.error(request, _error_text(error))
     else:
-        messages.success(request, "Scheduled work completed." if action == "complete" else "Scheduled work reopened.")
+        messages.success(request, "Work completed." if action == "complete" else "Work reopened.")
     # Always go to the category schedule; never trust a user-supplied redirect.
     task = _task_for_request(project, task_id)
     if membership_has_permission(request.company_membership, AccessPermission.PULSE_CATEGORIES_VIEW):
@@ -542,7 +650,7 @@ def category_detail(request, code, category_id):
     require_categories_view(request)
     project = _project_for_request(request, code)
     category = _category_for_request(project, category_id)
-    context = _context(request, page_key="pulse-categories", title=f"{category.name} · Execution schedule")
+    context = _context(request, page_key="pulse-categories", title=f"{category.name} · Work Category")
     scheduled = []
     page = None
     if context["pulse_can_view_tasks"]:

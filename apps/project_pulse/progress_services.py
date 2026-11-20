@@ -1,4 +1,4 @@
-"""Audited operational progress updates and completed-work count rollups."""
+"""Audited percentage-based operational progress and equal-category rollups."""
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -42,13 +42,13 @@ def _percent(numerator, denominator):
 
 
 def calculate_progress(project_ids, *, today=None):
-    """Count-based project execution progress, never financial or manually weighted.
+    """Equal-weight progress of eligible works and nonempty categories.
 
-    For each active execution category: completed non-cancelled, non-archived
-    scheduled works / eligible scheduled works. Empty categories display 0%.
-    Every active category, including an empty one, contributes equally to the
-    project average. Archived categories and cancelled/archived works are
-    excluded. Historical partial task percentages are ignored.
+    Each work contributes its actual 0–100 percent, regardless of its weight or
+    quantity; each nonempty active category contributes equally to its project.
+    Archived/cancelled works and archived categories never contribute. Preserve
+    full decimal precision until the display-level, half-up 0.1% rounding.
+    Counts remain available separately for the dashboard.
     """
     ids = list(dict.fromkeys(project_ids))
     if not ids:
@@ -69,47 +69,56 @@ def calculate_progress(project_ids, *, today=None):
             "id": cat["id"], "project_id": cat["project_id"],
             "percent": Decimal("0.0"), "has_work": False,
             "task_count": 0, "completed_count": 0, "overdue_count": 0,
+            "_work_percent_sum": _ZERO,
         }
         projects[cat["project_id"]]["category_count"] += 1
     if cats:
         for task in PulseTask.objects.filter(
             category_id__in=cats, archived_at__isnull=True,
         ).exclude(status=PulseTask.Status.CANCELLED).values(
-            "category_id", "status", "due_date"
+            "category_id", "status", "progress_percent", "due_date"
         ):
             category = cats[task["category_id"]]
             completed = task["status"] == PulseTask.Status.COMPLETED
             category["task_count"] += 1
+            category["_work_percent_sum"] += Decimal(task["progress_percent"])
             if completed:
                 category["completed_count"] += 1
             if task["due_date"] and task["due_date"] < today and not completed:
                 category["overdue_count"] += 1
     for category in cats.values():
         project = projects[category["project_id"]]
-        category["has_work"] = category["task_count"] > 0
-        if category["has_work"]:
+        count = category["task_count"]
+        category["has_work"] = count > 0
+        if count:
+            raw_percent = category.pop("_work_percent_sum") / Decimal(count)
+            category["percent"] = raw_percent.quantize(_TENTH, rounding=ROUND_HALF_UP)
+            project["_category_percent_sum"] += raw_percent
             project["measured_categories"] += 1
-        category["percent"] = _percent(
-            Decimal(category["completed_count"] * 100), Decimal(category["task_count"])
-        )
-        project["task_count"] += category["task_count"]
+        else:
+            category.pop("_work_percent_sum")
+        project["task_count"] += count
         project["completed_count"] += category["completed_count"]
         project["overdue_count"] += category["overdue_count"]
-        # Full precision before project-level rounding; include empty categories.
-        if category["task_count"]:
-            project["_category_percent_sum"] += (
-                Decimal(category["completed_count"] * 100) / Decimal(category["task_count"])
-            )
     for project in projects.values():
         project["has_work"] = project["task_count"] > 0
         project["percent"] = _percent(
-            project.pop("_category_percent_sum"), Decimal(project["category_count"])
+            project.pop("_category_percent_sum"), Decimal(project["measured_categories"])
         )
     return projects, cats
 
 
+def status_for_percentage(progress_percent):
+    """Normal execution status, unless an operator explicitly chooses an exception."""
+    if progress_percent == 100:
+        return PulseTask.Status.COMPLETED
+    if progress_percent == 0:
+        return PulseTask.Status.NOT_STARTED
+    return PulseTask.Status.IN_PROGRESS
+
+
 @transaction.atomic
-def record_progress(*, actor, project_id, task_id, progress_percent, status, note="", request=None):
+def record_progress(*, actor, project_id, task_id, progress_percent, status="auto", note="", request=None):
     """Atomic progress edit; project lock serializes against task edits/archives."""
     required = (AccessPermission.PULSE_OVERVIEW_VIEW, AccessPermission.PULSE_PROJECTS_VIEW,
                 AccessPermission.PULSE_TASKS_VIEW, AccessPermission.PULSE_PROGRESS_VIEW,
@@ -129,15 +138,26 @@ def record_progress(*, actor, project_id, task_id, progress_percent, status, not
     if task.archived_at is not None or task.category.archived_at is not None:
         raise ValidationError("Archived tasks cannot be updated.")
     if not can_update_task_progress(actor, task):
-        raise PermissionDenied("You are not authorized to update scheduled works in this project.")
+        raise PermissionDenied("You are not authorized to update works in this project.")
     try:
         percentage = int(progress_percent)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValidationError({"progress_percent": "Enter a whole number from 0 to 100."}) from exc
     if str(progress_percent).strip() != str(percentage) or not 0 <= percentage <= 100:
         raise ValidationError({"progress_percent": "Enter a whole number from 0 to 100."})
-    if status not in PulseTask.Status.values:
-        raise ValidationError({"status": "Invalid task status."})
+    if status in (None, "", "auto"):
+        status = status_for_percentage(percentage)
+    elif status not in PulseTask.Status.values:
+        raise ValidationError({"status": "Invalid work status."})
+    # A completed work must have exactly 100%, and a not-started work must
+    # have 0%; Blocked/On Hold/Cancelled may preserve any partial value <100%.
+    # Keep explicit invalid combinations as errors, never silently rewrite them.
+    if status == PulseTask.Status.COMPLETED and percentage != 100:
+        raise ValidationError({"progress_percent": "Completed works must have 100% progress."})
+    if status != PulseTask.Status.COMPLETED and percentage == 100:
+        raise ValidationError({"status": "100% progress must have Completed status."})
+    if status == PulseTask.Status.NOT_STARTED and percentage != 0:
+        raise ValidationError({"status": "Not-started works must have 0% progress."})
     note = (note or "").strip()
     if len(note) > 2000:
         raise ValidationError({"note": "Progress note must be 2,000 characters or fewer."})

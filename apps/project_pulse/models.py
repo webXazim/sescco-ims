@@ -149,6 +149,59 @@ class PulseWorkCategory(models.Model):
         return f"{self.project.code} · {self.name}"
 
 
+class PulseWorkImportBatch(models.Model):
+    """Import provenance for a single selected project's Works workbook.
+
+    Upgrade 3/5 stores only normalized preview rows temporarily, never the
+    original workbook. Applied previews are cleared; audit history remains.
+    """
+
+    class Status(models.TextChoices):
+        PREVIEW = "preview", "Preview"
+        APPLIED = "applied", "Applied"
+        FAILED = "failed", "Failed"
+
+    project = models.ForeignKey(
+        "projects.Project", on_delete=models.PROTECT, related_name="pulse_work_imports"
+    )
+    uploaded_by = models.ForeignKey(
+        "accounts.CompanyMembership", on_delete=models.PROTECT,
+        related_name="pulse_work_imports_uploaded",
+    )
+    filename = models.CharField(max_length=255)
+    sha256 = models.CharField(max_length=64, db_index=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PREVIEW)
+    category_count = models.PositiveIntegerField(default=0)
+    created_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    unchanged_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField(blank=True, null=True)
+    # Validated, normalized rows only; cleared immediately after a successful import.
+    preview_data = models.JSONField(default=dict, blank=True)
+    preview_expires_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ("-created_at", "-pk")
+        indexes = [
+            models.Index(fields=("project", "sha256"), name="pulse_work_import_hash_idx"),
+            models.Index(fields=("project", "status"), name="pulse_work_import_state_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.project_id and self.uploaded_by_id:
+            if self.project.company_id != self.uploaded_by.company_id:
+                raise ValidationError({"uploaded_by": "The uploader must belong to the project company."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.project.code} · {self.filename} ({self.status})"
+
+
 class PulseTask(models.Model):
     """One task in one work category with weighted operational completion."""
 
@@ -169,8 +222,18 @@ class PulseTask(models.Model):
     category = models.ForeignKey(
         PulseWorkCategory, on_delete=models.PROTECT, related_name="tasks"
     )
-    title = models.CharField(max_length=180)
+    # A work's SN is only unique within its category; multiple categories may
+    # all begin at SN 1. Legacy tasks retain an empty SN until assigned.
+    serial_number = models.CharField(max_length=48, blank=True)
+    title = models.CharField(max_length=1000)
     description = models.TextField(blank=True)
+    unit = models.CharField(max_length=32, blank=True)
+    quantity = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    last_import_batch = models.ForeignKey(
+        PulseWorkImportBatch, on_delete=models.PROTECT, blank=True, null=True,
+        related_name="last_imported_works",
+    )
+    import_row_number = models.PositiveIntegerField(blank=True, null=True)
     assigned_to = models.ForeignKey(
         "accounts.CompanyMembership", on_delete=models.PROTECT, null=True, blank=True,
         related_name="pulse_assigned_tasks",
@@ -193,6 +256,15 @@ class PulseTask(models.Model):
     class Meta:
         ordering = ("sort_order", "due_date", "pk")
         constraints = [
+            models.UniqueConstraint(
+                fields=("category", "serial_number"),
+                condition=~Q(serial_number=""),
+                name="pulse_task_category_sn_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(quantity__gte=0) | Q(quantity__isnull=True),
+                name="pulse_task_qty_nonnegative",
+            ),
             models.CheckConstraint(condition=Q(progress_weight__gt=0), name="pulse_task_weight_gt_zero"),
             models.CheckConstraint(condition=Q(progress_percent__gte=0, progress_percent__lte=100), name="pulse_task_percent_range"),
             models.CheckConstraint(
@@ -215,8 +287,12 @@ class PulseTask(models.Model):
         super().clean()
         errors = {}
         self.title = " ".join((self.title or "").split())
+        self.serial_number = " ".join((self.serial_number or "").split())
+        self.unit = " ".join((self.unit or "").split())
         if not self.title:
-            errors["title"] = "Task title is required."
+            errors["title"] = "Work description is required."
+        if self.quantity is not None and self.quantity < 0:
+            errors["quantity"] = "Work quantity cannot be negative."
         if self.progress_weight is not None and self.progress_weight <= 0:
             errors["progress_weight"] = "Task progress weight must be greater than zero."
         if self.progress_percent is not None and not (0 <= self.progress_percent <= 100):
@@ -230,6 +306,8 @@ class PulseTask(models.Model):
         if self.planned_start and self.due_date and self.due_date < self.planned_start:
             errors["due_date"] = "Due date cannot be earlier than the planned start."
         if self.category_id:
+            if self.last_import_batch_id and self.last_import_batch.project_id != self.category.project_id:
+                errors["last_import_batch"] = "The import batch must belong to this project's works."
             if self.category.archived_at is not None and self.archived_at is None:
                 errors["category"] = "Cannot place an active task under an archived category."
             if self.created_by_id and self.created_by.company_id != self.category.project.company_id:

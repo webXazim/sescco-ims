@@ -10,21 +10,17 @@ from .models import PulseTask, PulseWorkCategory, PulseProjectTeamMember
 class PulseCategoryForm(forms.ModelForm):
     class Meta:
         model = PulseWorkCategory
-        fields = ("name", "description", "sort_order")
-        labels = {"name": "Execution category", "sort_order": "Display order"}
-        widgets = {
-            "description": forms.Textarea(attrs={"rows": 2}),
-            "sort_order": forms.NumberInput(attrs={"min": 0}),
-        }
+        fields = ("name",)
+        labels = {"name": "Work Category Name"}
 
 
 class PulseTaskForm(forms.ModelForm):
-    """Scheduled works are project milestones, not personal assignments."""
+    """Project works are execution activities, not personal assignments."""
     class Meta:
         model = PulseTask
-        fields = ("category", "title", "description", "status", "planned_start", "due_date", "sort_order")
+        fields = ("category", "serial_number", "title", "unit", "quantity", "description", "planned_start", "due_date", "sort_order")
         labels = {
-            "category": "Execution category", "title": "Scheduled work",
+            "category": "Work category", "serial_number": "SN", "title": "Work", "unit": "Unit", "quantity": "Quantity",
             "planned_start": "Planned start", "due_date": "Target completion",
             "sort_order": "Display order",
         }
@@ -33,6 +29,7 @@ class PulseTaskForm(forms.ModelForm):
             "planned_start": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "due_date": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "sort_order": forms.NumberInput(attrs={"min": 0}),
+            "quantity": forms.NumberInput(attrs={"step": "0.0001", "min": "0"}),
         }
 
     def __init__(self, *args, project, **kwargs):
@@ -40,22 +37,22 @@ class PulseTaskForm(forms.ModelForm):
         self.fields["category"].queryset = PulseWorkCategory.objects.filter(
             project=project, archived_at__isnull=True
         )
-        self.fields["category"].empty_label = "Choose execution category"
+        self.fields["category"].empty_label = "Choose work category"
 
-    def clean(self):
-        data = super().clean()
-        status = data.get("status")
-        if status == PulseTask.Status.COMPLETED:
-            self.instance.progress_percent = 100
-        elif status is not None:
-            # Scheduled-work progress is binary. Historical partial updates stay
-            # in the audit trail, not in new execution progress calculations.
-            self.instance.progress_percent = 0
-        return data
 
 
 class PulseProgressForm(forms.Form):
-    status = forms.ChoiceField(label="Execution status", choices=PulseTask.Status.choices)
+    progress_percent = forms.IntegerField(
+        label="Percentage of completion", min_value=0, max_value=100,
+        widget=forms.NumberInput(attrs={"min": "0", "max": "100", "step": "1", "inputmode": "numeric"}),
+        help_text="Use a whole percentage from 0 to 100. A blank percentage in an Excel import is treated as 0%.",
+    )
+    status = forms.ChoiceField(
+        label="Work status", required=False,
+        choices=[("auto", "Automatic (based on percentage)")] + list(PulseTask.Status.choices),
+        initial="auto",
+        help_text="Automatic: 0% Not started, 1–99% In progress, 100% Completed. Blocked, On hold and Cancelled preserve partial progress.",
+    )
     note = forms.CharField(
         required=False, max_length=2000,
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Work completed, evidence or reason for delay"}),
