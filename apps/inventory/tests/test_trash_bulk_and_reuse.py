@@ -8,9 +8,11 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.roles import AccessRole
 from apps.core.tests.tenant import grant_company_access, primary_company
 from apps.core.trash import cascade_to_trash, move_to_trash
 from apps.inventory.models import StockItem, StockMovement, Supplier, Unit
+from apps.inventory.services.approvals import decide_request
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
 
@@ -25,14 +27,41 @@ class TrashAndMasterReuseTests(TestCase):
         cls.regular = get_user_model().objects.create_user(
             username="trash-bulk-member", password="valid-password"
         )
+        cls.approver = get_user_model().objects.create_user(
+            username="trash-bulk-approver", password="valid-password"
+        )
         grant_company_access(cls.admin, company=cls.company)
         grant_company_access(cls.regular, company=cls.company)
+        grant_company_access(
+            cls.approver,
+            company=cls.company,
+            role=AccessRole.PROJECT_MANAGER,
+        )
 
     def setUp(self):
         self.client.force_login(self.admin)
 
     def supplier(self, *, name="Duplicate Supplier", phone="0501234567"):
         return Supplier.objects.create(company=self.company, name=name, phone=phone)
+
+    def add_project_stock(self, *, project, unit, quantity, material, phone):
+        request = add_stock(
+            user=self.admin,
+            idempotency_key=uuid4(),
+            quantity=Decimal(quantity),
+            movement_date=timezone.localdate(),
+            project=project,
+            material_name=material,
+            supplier_name="Source vendor",
+            supplier_phone=phone,
+            unit=unit,
+        ).approval_request
+        return decide_request(
+            request=request,
+            user=self.approver,
+            project_id=project.pk,
+            decision="approve",
+        ).applied_movement
 
     def test_trashed_supplier_can_be_recreated_then_old_one_cannot_be_restored(self):
         previous = self.supplier()
@@ -83,14 +112,15 @@ class TrashAndMasterReuseTests(TestCase):
     def test_history_bearing_stock_is_hidden_but_stock_and_movement_remain(self):
         project = Project.objects.create(company=self.company, code="TRASH-STOCK", name="Trash stock")
         unit = Unit.objects.for_company(self.company).get(normalized_name="piece")
-        result = add_stock(
-            user=self.admin, idempotency_key=uuid4(), quantity=Decimal("3"),
-            movement_date=timezone.localdate(), project=project,
-            material_name="Copper plate", supplier_name="Steel Company",
-            supplier_phone="0559988776", unit=unit,
+        movement = self.add_project_stock(
+            project=project,
+            unit=unit,
+            quantity="3",
+            material="Copper plate",
+            phone="0559988776",
         )
-        item = result.movement.stock_item
-        movement_pk = result.movement.pk
+        item = movement.stock_item
+        movement_pk = movement.pk
         move_to_trash(item, user=self.admin, reason="Old record")
         response = self.client.post(reverse("inventory:trash_delete"), {
             "action": "selected", "selected": [f"stock:{item.reference}"],
@@ -106,13 +136,14 @@ class TrashAndMasterReuseTests(TestCase):
     def test_empty_trash_also_dismisses_project_owned_cascade_children(self):
         project = Project.objects.create(company=self.company, code="TRASH-PARENT", name="Deleted project")
         unit = Unit.objects.for_company(self.company).get(normalized_name="piece")
-        result = add_stock(
-            user=self.admin, idempotency_key=uuid4(), quantity=Decimal("2"),
-            movement_date=timezone.localdate(), project=project,
-            material_name="Project history item", supplier_name="Source vendor",
-            supplier_phone="0501230000", unit=unit,
+        movement = self.add_project_stock(
+            project=project,
+            unit=unit,
+            quantity="2",
+            material="Project history item",
+            phone="0501230000",
         )
-        stock = result.movement.stock_item
+        stock = movement.stock_item
         location = stock.location
         move_to_trash(project, user=self.admin, reason="Project no longer used")
         cascade_to_trash(root=project, children=[stock, location], user=self.admin, reason="Project no longer used")
@@ -126,7 +157,7 @@ class TrashAndMasterReuseTests(TestCase):
         self.assertIsNone(stock.purge_after)
         self.assertIsNone(location.purge_after)
         self.assertIsNone(project.purge_after)
-        self.assertTrue(StockMovement.objects.filter(pk=result.movement.pk).exists())
+        self.assertTrue(StockMovement.objects.filter(pk=movement.pk).exists())
 
     def test_selected_delete_rejects_invalid_scope_and_anonymous(self):
         record = self.supplier()

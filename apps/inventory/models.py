@@ -1161,7 +1161,7 @@ class StockTransferLine(models.Model):
 
 
 class StockApprovalRequest(models.Model):
-    """Immutable submitted receipt/transfer waiting for the affected project managers."""
+    """Immutable submitted receipt/transfer waiting for its required project approval."""
 
     class Kind(models.TextChoices):
         RECEIPT = "receipt", "Stock receipt"
@@ -1213,6 +1213,7 @@ class StockApprovalDecision(models.Model):
 
     request = models.ForeignKey(StockApprovalRequest, on_delete=models.PROTECT, related_name="decisions")
     project = models.ForeignKey("projects.Project", on_delete=models.PROTECT, related_name="stock_approval_decisions")
+    is_required = models.BooleanField(default=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
     reason = models.CharField(max_length=500, blank=True)
     decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, blank=True, null=True, related_name="inventory_approval_decisions")

@@ -1,25 +1,27 @@
-"""Project-level two-sided stock approvals. A pending request never mutates stock."""
+"""Project stock approvals. A pending request never mutates stock."""
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
 
-from django.db import IntegrityError, transaction
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounts.access_catalog import AccessPermission
-from apps.accounts.access_policy import membership_allows_project, membership_has_permission
+from apps.accounts.access_catalog import AccessPermission, system_profile_key_for_role
+from apps.accounts.access_policy import (
+    membership_allows_project,
+    membership_has_permission,
+    restrict_projects,
+)
 from apps.accounts.models import CompanyMembership
 from apps.accounts.permissions import user_membership_for_company
+from apps.accounts.roles import AccessRole
 from apps.projects.models import Project
+
 from ..models import InventoryLocation, StockApprovalDecision, StockApprovalRequest, StockItem, Unit
-from .stock import InventoryOperationError, _require_inventory_permission
-
-
-def _projects_for_locations(*locations):
-    return sorted({loc.project_id for loc in locations if loc and loc.project_id})
+from .stock import InventoryOperationError
 
 
 def _valid_approver_membership(membership, project):
@@ -97,6 +99,50 @@ def can_decide(user, project):
     )
 
 
+def _is_company_owner(membership):
+    profile = getattr(membership, "access_profile", None)
+    return bool(
+        profile and profile.is_system and profile.is_active
+        and profile.key == system_profile_key_for_role(AccessRole.OWNER)
+    )
+
+
+def can_decide_request(user, request, project):
+    """Apply approval access and the narrow Company Owner self-review exception."""
+    membership = user_membership_for_company(user, project.company)
+    owner_transfer_review = bool(
+        request.kind == StockApprovalRequest.Kind.TRANSFER
+        and _is_company_owner(membership)
+    )
+    return bool(
+        user.is_active
+        and _valid_approver_membership(membership, project)
+        and (request.requested_by_id != user.pk or owner_transfer_review)
+    )
+
+
+def _required_decisions(request):
+    """Return decisions that can block posting under the current transfer policy.
+
+    Older project-to-project requests may still contain a source-project row. Only
+    the destination row is required. Legacy requests sent to an office retain their
+    original row so they can still be completed.
+    """
+    decisions = request.decisions.filter(is_required=True)
+    if request.kind != StockApprovalRequest.Kind.TRANSFER:
+        return decisions
+    destination_id = (request.payload or {}).get("destination_location_id")
+    destination = (
+        InventoryLocation.objects.for_company(request.company)
+        .only("project_id")
+        .filter(pk=destination_id)
+        .first()
+    )
+    if destination and destination.project_id:
+        return decisions.filter(project_id=destination.project_id)
+    return decisions
+
+
 def _apply(req):
     """Replay immutable submission through the original stock services and their validations."""
     from .stock import add_stock
@@ -104,11 +150,12 @@ def _apply(req):
 
     # Re-check each decision maker's CURRENT approval grant and project scope.
     # A manager assignment change alone must not override explicit profile grants.
-    project_ids = list(req.decisions.values_list("project_id", flat=True))
+    required_decisions = _required_decisions(req)
+    project_ids = list(required_decisions.values_list("project_id", flat=True))
     if not project_ids:
         raise InventoryOperationError("The approval request no longer contains any project decisions.")
     _require_projects(req.company, project_ids)
-    for row in req.decisions.select_related("project", "decided_by"):
+    for row in required_decisions.select_related("project", "decided_by"):
         if row.status != StockApprovalDecision.Status.APPROVED or not row.decided_by_id or not can_decide(row.decided_by, row.project):
             raise InventoryOperationError("The project inventory approver assignment or approval access changed. Reject and resubmit this request.")
     payload = req.payload
@@ -163,13 +210,14 @@ def decide_request(*, request, user, project_id, decision, reason=""):
     req = StockApprovalRequest.objects.for_company(request.company).select_for_update().get(pk=request.pk)
     if req.status != StockApprovalRequest.Status.PENDING:
         raise InventoryOperationError("This request is already finalized.")
-    row = StockApprovalDecision.objects.select_for_update().select_related("project").filter(
-        request=req, project_id=project_id,
+    row = _required_decisions(req).select_for_update().select_related("project").filter(
+        project_id=project_id,
     ).first()
-    if row is None or not can_decide(user, row.project):
-        raise InventoryOperationError("Only a user with Project Inventory Approve / Reject permission and access to this project can decide.")
-    if req.requested_by_id == user.pk:
-        raise InventoryOperationError("The requester cannot approve their own stock movement.")
+    if row is None or not can_decide_request(user, req, row.project):
+        raise InventoryOperationError(
+            "Only an authorized project approver can decide this request. "
+            "Only Company Owners may decide a transfer request they submitted."
+        )
     if row.status != StockApprovalDecision.Status.PENDING:
         raise InventoryOperationError("Your project has already decided this request.")
     if decision == "reject" and not reason.strip():
@@ -183,7 +231,7 @@ def decide_request(*, request, user, project_id, decision, reason=""):
         req.status = StockApprovalRequest.Status.REJECTED
         req.decided_at = timezone.now()
         req.save(update_fields=("status", "decided_at"))
-    elif not req.decisions.exclude(status=StockApprovalDecision.Status.APPROVED).exists():
+    elif not _required_decisions(req).exclude(status=StockApprovalDecision.Status.APPROVED).exists():
         # Last approval is the only place that stock is moved. Any failure rolls back
         # this decision and all stock changes so the pending request can be reviewed.
         try:
@@ -238,6 +286,80 @@ def cancel_pending_transfer(*, request, user, reason):
     return req
 
 
+@transaction.atomic
+def cancel_pending_project_requests(*, project, user, reason, http_request=None):
+    """Cancel unposted stock work when an administrator deletes its project."""
+    location_ids = set(
+        InventoryLocation.objects.for_company(project.company)
+        .filter(project=project)
+        .values_list("pk", flat=True)
+    )
+    location_id_strings = {str(value) for value in location_ids}
+    candidates = StockApprovalRequest.objects.for_company(project.company).filter(
+        status=StockApprovalRequest.Status.PENDING
+    ).values("pk", "kind", "payload")
+    request_ids = []
+    for candidate in candidates.iterator():
+        payload = candidate["payload"] or {}
+        if candidate["kind"] == StockApprovalRequest.Kind.RECEIPT:
+            involved = str(payload.get("project_id")) == str(project.pk)
+        else:
+            involved = any(
+                str(payload.get(field)) in location_id_strings
+                for field in ("source_location_id", "destination_location_id")
+            )
+        if involved:
+            request_ids.append(candidate["pk"])
+    requests = list(
+        StockApprovalRequest.objects.for_company(project.company)
+        .select_for_update()
+        .filter(pk__in=request_ids, status=StockApprovalRequest.Status.PENDING)
+        .order_by("pk")
+    )
+    cancellation_reason = (
+        f"Project {project.code} moved to Trash. {(reason or '').strip()}"
+    ).strip()[:500]
+    cancelled = 0
+    for req in requests:
+        req.status = StockApprovalRequest.Status.CANCELLED
+        req.cancelled_by = user
+        req.cancellation_reason = cancellation_reason
+        req.decided_at = timezone.now()
+        req.save(
+            update_fields=(
+                "status",
+                "cancelled_by",
+                "cancellation_reason",
+                "decided_at",
+            )
+        )
+        from apps.core.models import AuditArea
+        from apps.core.services.audit import record_audit_event
+
+        record_audit_event(
+            company=req.company,
+            area=AuditArea.INVENTORY,
+            action="inventory.stock_approval.cancelled",
+            object_type="inventory.StockApprovalRequest",
+            object_id=req.reference,
+            object_label=str(req),
+            actor=user,
+            actor_membership=user_membership_for_company(user, req.company),
+            after={
+                "status": req.status,
+                "kind": req.kind,
+                "reason": req.cancellation_reason,
+            },
+            metadata={
+                "trigger": "project.moved_to_trash",
+                "project_id": project.pk,
+            },
+            request=http_request,
+        )
+        cancelled += 1
+    return cancelled
+
+
 def pending_visible_request_count(*, company, user, membership):
     """Count distinct pending requests visible to this user, including their own.
 
@@ -250,13 +372,12 @@ def pending_visible_request_count(*, company, user, membership):
         or not membership or not membership.is_active or membership.company_id != company.pk
     ):
         return 0
-    from django.db.models import Q
-    from apps.accounts.access_policy import restrict_projects
     eligible_ids = []
     if membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
         pending_project_ids = StockApprovalDecision.objects.filter(
             request__company=company,
             request__status=StockApprovalRequest.Status.PENDING,
+            is_required=True,
             status=StockApprovalDecision.Status.PENDING,
         ).values_list("project_id", flat=True).distinct()
         candidates = restrict_projects(

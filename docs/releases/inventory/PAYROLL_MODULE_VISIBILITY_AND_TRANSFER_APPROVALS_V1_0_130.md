@@ -18,7 +18,7 @@ Transfer approval/rejection already existed under Inventory → Project approval
 1. The user with **Inventory · Stock · Transfer** creates a project transfer (pending, no immediate stock movement).
 2. Another user with **Project Inventory · Approve / Reject** for the affected project opens **Inventory → Stock approvals** or **Transfers → Pending transfer approvals**.
 3. Choose **Pending** and **Stock transfers**, open the request, review quantities, and Approve/Reject for each applicable project.
-4. For project-to-project transfers both project decisions are required; only after the final valid approval is stock posted. A requester cannot approve their own submission.
+4. Transfers sent to a project require only that destination project's decision. A built-in Company Owner may approve their own transfer submission; other requesters require a separate approver.
 5. **Transfer history** lists posted transfers; pending requests remain in the approval inbox.
 
 ## Deployment

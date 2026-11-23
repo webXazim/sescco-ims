@@ -13,6 +13,8 @@ from .views import (
     OpeningTemplateView,
     ProjectInventoryExportView,
     StockHistoryExportView,
+    TransferWorkbookExportView,
+    TransferWorkbookImportView,
 )
 
 app_name = "data_exchange"
@@ -42,6 +44,16 @@ urlpatterns = [
         "exports/project/<str:code>/<str:file_format>/",
         ProjectInventoryExportView.as_view(),
         name="project_inventory_export",
+    ),
+    path(
+        "exports/transfers/<int:location_id>/worksheet/",
+        TransferWorkbookExportView.as_view(),
+        name="transfer_workbook_export",
+    ),
+    path(
+        "transfers/excel/<int:location_id>/",
+        TransferWorkbookImportView.as_view(),
+        name="transfer_workbook",
     ),
     path("imports/", ImportJobListView.as_view(), name="import_list"),
     path("imports/legacy/new/", LegacyImportCreateView.as_view(), name="legacy_import"),

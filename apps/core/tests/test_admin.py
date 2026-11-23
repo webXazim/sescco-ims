@@ -6,7 +6,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from apps.accounts.roles import AccessRole
 from apps.inventory.models import StockItem, StockMovement, Unit
+from apps.inventory.services.approvals import decide_request
 from apps.inventory.services.stock import add_stock
 from apps.projects.models import Project
 from apps.core.tests.tenant import grant_company_access, primary_company
@@ -27,9 +29,18 @@ class AdministrationExperienceTests(TestCase):
             email="keeper@example.com",
             password="safe-password",
         )
+        self.approver = User.objects.create_user(
+            username="admin-stock-approver",
+            password="safe-password",
+        )
         self.company = primary_company()
         grant_company_access(self.admin, company=self.company)
         grant_company_access(self.keeper, company=self.company)
+        grant_company_access(
+            self.approver,
+            company=self.company,
+            role=AccessRole.PROJECT_MANAGER,
+        )
         self.project = Project.objects.create(company=self.company, code="ADMIN-01", name="Admin Project")
         self.unit = Unit.objects.get(normalized_name="bag")
         result = add_stock(
@@ -44,14 +55,20 @@ class AdministrationExperienceTests(TestCase):
             unit=self.unit,
             minimum_quantity=Decimal("3"),
         )
-        self.stock_item = result.movement.stock_item
-        self.movement = result.movement
+        approved = decide_request(
+            request=result.approval_request,
+            user=self.approver,
+            project_id=self.project.pk,
+            decision="approve",
+        )
+        self.stock_item = approved.applied_movement.stock_item
+        self.movement = approved.applied_movement
         self.client.force_login(self.admin)
 
     def test_admin_index_links_back_to_workspace(self):
         response = self.client.get(reverse("admin:index"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "System administration")
+        self.assertContains(response, "SESCCO MS Administration")
         self.assertContains(response, "Daily operations")
         self.assertContains(response, "Configuration and audit")
         self.assertEqual(response.context["site_url"], "/app/")
@@ -96,13 +113,20 @@ class AdministrationExperienceTests(TestCase):
         self.assertContains(response, "Reverse safely")
         self.assertNotContains(response, 'name="_save"')
 
-    def test_admin_can_delete_unused_configuration_but_not_audited_stock(self):
+    def test_admin_uses_safe_trash_for_projects_and_cannot_delete_audited_stock(self):
         unused_project = Project.objects.create(company=self.company, code="DELETE-01", name="Unused Project")
         delete_url = reverse("admin:projects_project_delete", args=[unused_project.pk])
-        self.assertEqual(self.client.get(delete_url).status_code, 200)
-        response = self.client.post(delete_url, {"post": "yes"})
+        self.assertEqual(self.client.get(delete_url).status_code, 403)
+        response = self.client.post(
+            reverse("admin:projects_project_changelist"),
+            {
+                "action": "move_selected_projects_to_trash",
+                "_selected_action": [unused_project.pk],
+            },
+        )
         self.assertRedirects(response, reverse("admin:projects_project_changelist"))
-        self.assertFalse(Project.objects.filter(pk=unused_project.pk).exists())
+        unused_project.refresh_from_db()
+        self.assertIsNotNone(unused_project.deleted_at)
 
         protected_url = reverse(
             "admin:inventory_stockitem_delete", args=[self.stock_item.pk]

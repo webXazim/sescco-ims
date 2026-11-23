@@ -1,4 +1,5 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils.html import format_html
@@ -8,11 +9,13 @@ from apps.accounts.roles import Capability, Workspace
 
 from .forms import ProjectForm
 from .models import Project
+from .services import trash_unused_project
 
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
     form = ProjectForm
+    actions = ("move_selected_projects_to_trash",)
 
     def get_form(self, request, obj=None, **kwargs):
         base_form = super().get_form(request, obj, **kwargs)
@@ -119,9 +122,34 @@ class ProjectAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def has_delete_permission(self, request, obj=None):
-        if not membership_has_capability(getattr(request, "company_membership", None), Capability.MANAGE_INVENTORY):
-            return False
-        return obj is None or not (obj.stock_items.exists() or obj.import_jobs.exists())
+        # Projects always use the audited 30-day Trash workflow. Django's hard
+        # delete would bypass retention and can destroy unaudited empty projects.
+        return False
+
+    @admin.action(description="Move selected projects to Trash for 30 days")
+    def move_selected_projects_to_trash(self, request, queryset):
+        membership = getattr(request, "company_membership", None)
+        if not membership_has_capability(membership, Capability.MANAGE_INVENTORY):
+            raise PermissionDenied("Project lifecycle authority is required.")
+        moved = 0
+        errors = []
+        for project in queryset.filter(deleted_at__isnull=True):
+            try:
+                trash_unused_project(
+                    actor_membership=membership,
+                    project_id=project.pk,
+                    confirmation="",
+                    reason="Moved to Trash from system administration.",
+                    request=request,
+                )
+            except ValidationError as exc:
+                errors.extend(exc.messages)
+            else:
+                moved += 1
+        if moved:
+            self.message_user(request, f"{moved} project(s) moved to Trash for 30 days.")
+        if errors:
+            self.message_user(request, " ".join(errors), level=messages.ERROR)
 
     def get_actions(self, request):
         actions = super().get_actions(request)

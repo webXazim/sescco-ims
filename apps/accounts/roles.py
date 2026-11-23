@@ -146,7 +146,7 @@ ROLE_DEFINITIONS: dict[str, RoleDefinition] = {
         workspaces=(Workspace.INVENTORY,),
         edit_workspaces=(),
         capabilities=frozenset(),
-        description="Assigned project stock visibility and approval/rejection of incoming or outgoing stock requests; no stock mutation rights.",
+        description="Assigned project stock visibility and approval/rejection of incoming stock requests; no stock mutation rights.",
     ),
     AccessRole.STOREKEEPER: RoleDefinition(
         label=AccessRole.STOREKEEPER.label,

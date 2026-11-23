@@ -550,7 +550,7 @@
           <small class="access-field-error" id="fieldError-membershipIds"></small>
         </div>
         <small class="access-field-error" id="fieldError-expectedMembershipIds"></small>
-        <div class="access-form-note"><strong>Security:</strong> Changes are audited. Moved users must sign in again; their existing project, branch and location scopes remain unchanged. A user cannot approve their own inventory request.</div>
+        <div class="access-form-note"><strong>Security:</strong> Changes are audited. Moved users must sign in again; their existing project, branch and location scopes remain unchanged. Only a Company Owner can approve their own inventory transfer request.</div>
       </section>
     </div>`;
     const modeControls = [...els.drawerBody.querySelectorAll('[name="accessCloneAssignmentMode"]')];
@@ -854,7 +854,7 @@
 
       <section class="access-form-section">
         <div class="access-section-head"><div><strong>Operational scopes</strong><span>Use Selected only to limit otherwise-permitted operations to explicit company records.</span></div></div>
-        <div class="access-form-note">For Project Managers, <strong>All company projects</strong> includes new projects automatically. Stock approval still requires a separate approver assignment on each project; this scope does not grant other Inventory or financial permissions.</div>
+        <div class="access-form-note">For Project Managers, <strong>All company projects</strong> includes new projects automatically. Stock approval still requires the Approve / Reject permission; this scope does not grant other Inventory or financial permissions.</div>
         <div class="access-scope-grid">
           ${scopeCardMarkup(user, "projects", !canEditAccess && !creating)}
           ${scopeCardMarkup(user, "branches", !canEditAccess && !creating)}

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db.models import Q
+from django.utils import timezone
 
 from apps.core.forms import StyledForm
-from apps.inventory.access import restrict_inventory_projects
-from apps.inventory.models import Unit
+from apps.inventory.access import (
+    restrict_inventory_location_queryset,
+    restrict_inventory_projects,
+)
+from apps.inventory.models import InventoryLocation, Unit
 from apps.projects.models import Project
 
 from .models import MAX_IMPORT_SIZE
@@ -71,6 +76,61 @@ class OpeningStockImportUploadForm(StyledForm):
 
     def clean_source_file(self):
         return validate_workbook(self.cleaned_data.get("source_file"))
+
+
+class TransferWorkbookUploadForm(StyledForm):
+    source_file = forms.FileField(
+        label="Completed transfer worksheet",
+        help_text="Upload the XLSX worksheet exported from this source location.",
+    )
+    destination_location = forms.ModelChoiceField(
+        queryset=InventoryLocation.objects.none(),
+        label="Send stock to",
+        help_text="Choose the receiving project or office in SESCCO MS.",
+    )
+    transfer_date = forms.DateField(
+        widget=forms.DateInput(attrs={"type": "date"}),
+        initial=timezone.localdate,
+    )
+    document_reference = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Reference",
+    )
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, company=None, membership=None, source_location=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.source_location = source_location
+        locations = (
+            InventoryLocation.objects.for_company(company)
+            .select_related("project")
+            .filter(is_active=True, archived_at__isnull=True, deleted_at__isnull=True)
+            .filter(
+                Q(location_type=InventoryLocation.Type.OFFICE)
+                | Q(
+                    location_type=InventoryLocation.Type.PROJECT,
+                    project__status=Project.Status.ACTIVE,
+                    project__deleted_at__isnull=True,
+                )
+            )
+        )
+        if membership is not None:
+            locations = restrict_inventory_location_queryset(locations, membership)
+        if source_location is not None:
+            locations = locations.exclude(pk=source_location.pk)
+        self.fields["destination_location"].queryset = locations.order_by(
+            "location_type", "code"
+        )
+
+    def clean_source_file(self):
+        return validate_workbook(self.cleaned_data.get("source_file"))
+
+    def clean_transfer_date(self):
+        value = self.cleaned_data["transfer_date"]
+        if value > timezone.localdate():
+            raise ValidationError("Transfer date cannot be in the future.")
+        return value
 
 
 class ImportConfirmForm(StyledForm):

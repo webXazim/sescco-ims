@@ -5,13 +5,22 @@ from django.db import transaction
 from django.http import HttpRequest
 from django.utils import timezone
 
+from apps.accounts.models import CompanyMembership
 from apps.accounts.permissions import membership_can_edit, membership_has_capability
 from apps.accounts.roles import Capability, Workspace
-from apps.accounts.models import CompanyMembership
 from apps.core.models import AuditArea
 from apps.core.services.audit import record_audit_event
-from apps.core.services.lifecycle import LifecycleAction, record_lifecycle_action, require_lifecycle_action
-from apps.core.trash import cascade_to_trash, move_to_trash, restore_from_trash, restore_trash_cascade
+from apps.core.services.lifecycle import (
+    LifecycleAction,
+    record_lifecycle_action,
+    require_lifecycle_action,
+)
+from apps.core.trash import (
+    cascade_to_trash,
+    move_to_trash,
+    restore_from_trash,
+    restore_trash_cascade,
+)
 
 from .models import Project
 
@@ -126,6 +135,14 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
     project = _project_for_membership(membership=actor_membership, identifier=project_id)
     decision = require_lifecycle_action(project, LifecycleAction.DELETE, confirmation=confirmation, reason=reason)
     before = project_snapshot(project)
+    from apps.inventory.services.approvals import cancel_pending_project_requests
+
+    cancelled_stock_requests = cancel_pending_project_requests(
+        project=project,
+        user=actor_membership.user,
+        reason=reason,
+        http_request=request,
+    )
     from apps.inventory.models import InventoryLocation, StockItem
 
     cascade_children = list(
@@ -157,6 +174,7 @@ def trash_unused_project(*, actor_membership: CompanyMembership, project_id, con
             "cascade_scope": "project_operations",
             "cascade_mode": "soft_delete_inventory_children",
             "cascaded_inventory_masters": cascaded,
+            "cancelled_stock_requests": cancelled_stock_requests,
             "stock_records_with_balance": decision.evidence.get("quantity_bearing_stock", 0),
             "open_rental_assignments": decision.evidence.get("open_rental_assignments", 0),
         },
@@ -189,4 +207,3 @@ def restore_project_trash(*, actor_membership: CompanyMembership, project_id, re
         metadata={"retention_days": 30, "cascade_scope": "project_operations", "restored_children": restored_children}, request=request,
     )
     return project
-

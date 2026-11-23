@@ -7,6 +7,7 @@
     {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}?destination={{ office.pk }}">Return stock from project</a>{% endif %}
     {% if office and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}
     {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}?source={{ office.pk }}">Transfer from office</a>{% endif %}
+    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions and "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions and "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'data_exchange:transfer_workbook' office.pk %}">Excel transfer</a>{% endif %}
   </div>
 </div>
 {% if not office %}

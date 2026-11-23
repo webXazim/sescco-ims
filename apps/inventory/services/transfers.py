@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.access_catalog import AccessPermission
+from apps.projects.models import Project
 
 from ..access import location_in_inventory_scope
 from ..models import (
@@ -161,6 +162,26 @@ def transfer_stock(
         totals[item_id] += quantity
 
     with transaction.atomic():
+        if approved_request is None:
+            project_ids = sorted({
+                project_id
+                for project_id in (
+                    source_location.project_id,
+                    destination_location.project_id,
+                )
+                if project_id
+            })
+            locked_projects = list(
+                Project.objects.for_company(company)
+                .select_for_update()
+                .filter(pk__in=project_ids)
+                .order_by("pk")
+            )
+            if len(locked_projects) != len(project_ids) or any(
+                project.deleted_at or project.status != Project.Status.ACTIVE
+                for project in locked_projects
+            ):
+                raise InactiveStockError("Transfers require active, non-deleted projects.")
         locations = {
             location.pk: location
             for location in InventoryLocation.objects.for_company(company).select_for_update(of=("self",))
@@ -170,6 +191,24 @@ def transfer_stock(
         }
         source_location = locations[source_location.pk]
         destination_location = locations[destination_location.pk]
+        if approved_request is None:
+            from ..models import StockApprovalRequest
+
+            pending = StockApprovalRequest.objects.for_company(company).filter(
+                kind="transfer",
+                idempotency_key=idempotency_key,
+            ).first()
+            if pending:
+                return TransferResult(
+                    transfer=None,
+                    duplicate_submission=True,
+                    approval_request=pending,
+                )
+            existing = StockTransfer.objects.for_company(company).filter(
+                idempotency_key=idempotency_key,
+            ).first()
+            if existing:
+                return TransferResult(existing, duplicate_submission=True)
         _require_active_location(source_location, "source")
         _require_active_location(destination_location, "destination")
 
@@ -202,12 +241,12 @@ def transfer_stock(
             ):
                 raise InventoryOperationError("Used stock cannot be transferred as new.")
 
-        if (source_location.project_id or destination_location.project_id) and approved_request is None:
-            from .approvals import queue_request, _projects_for_locations
+        if destination_location.project_id and approved_request is None:
+            from .approvals import queue_request
             approval, duplicated = queue_request(
                 company=company, requested_by=user, kind="transfer",
                 idempotency_key=idempotency_key, attachment=attachment,
-                project_ids=_projects_for_locations(source_location, destination_location),
+                project_ids=[destination_location.project_id],
                 payload={
                     "source_location_id": source_location.pk,
                     "destination_location_id": destination_location.pk,

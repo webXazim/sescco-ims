@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
+  <div class="head-actions">
+    {% if "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'data_exchange:transfer_workbook_export' source.pk %}">Download fresh worksheet</a>{% endif %}
+    <a class="btn" href="{% url 'inventory:transfer_create' %}?source={{ source.pk }}">Use on-screen transfer</a>
+  </div>
+</div>
+<section class="card form-card section-gap">
+  <div class="card-head"><div><h2 class="card-title">{{ source.code }} · {{ source.name }}</h2><div class="card-meta">Source inventory location</div></div></div>
+  <div class="card-body">
+    <div class="alert alert-info">Fill only the New, Used, Damaged or Lost quantity columns. The destination is selected here, never trusted from Excel. Changed source balances require a fresh worksheet.</div>
+    <form method="post" enctype="multipart/form-data" novalidate class="section-gap" data-crud-form>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger">{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
+      <div class="form-grid">
+        {% include "partials/form_field.html" with field=form.source_file %}
+        {% include "partials/form_field.html" with field=form.destination_location %}
+        {% include "partials/form_field.html" with field=form.transfer_date %}
+        {% include "partials/form_field.html" with field=form.document_reference %}
+        <div class="field field-full">{% include "partials/form_field.html" with field=form.notes %}</div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Import and submit transfer</button><a class="btn" href="{% url 'inventory:transfer_list' %}">Cancel</a></div>
+    </form>
+  </div>
+</section>
+{% endblock %}

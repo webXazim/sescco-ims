@@ -10,7 +10,7 @@ from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from apps.accounts.access_catalog import AccessPermission
-from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
+from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin
 from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
 from apps.core.models import AuditArea, Company
 from apps.core.services.audit import record_audit_event
@@ -19,7 +19,6 @@ from apps.core.trash import TRASH_RETENTION_DAYS
 from apps.inventory.access import (
     restrict_inventory_location_queryset,
     restrict_inventory_projects,
-    restrict_inventory_stock,
 )
 from apps.inventory.models import InventoryLocation, StockItem
 from apps.inventory.selectors import apply_stock_search, stock_movements
@@ -292,8 +291,9 @@ class ProjectDeleteView(InventoryAdminRequiredMixin, View):
             "delete_allowed": decision.allowed,
             "delete_blockers": decision.blockers,
             "effects": (
-                "The project master is hidden from current operational selectors immediately.",
-                "Project inventory locations and current Rental Manpower assignment scope follow the deleted project automatically while historical records remain protected.",
+                "The project and all of its current stock records are moved to Trash together.",
+                "Pending stock receipts or transfers involving this project are cancelled without changing balances.",
+                "Movements, completed transfers, approvals and Rental Manpower history remain protected.",
                 "The deleted project remains recoverable from Delete for 30 days and restores its previous operational scope safely.",
             ),
         }

@@ -21,10 +21,10 @@ from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
 from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
 from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
-from apps.core.models import AuditArea, TrashCascadeLink
+from apps.core.models import AuditArea, AuditEvent, TrashCascadeLink
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
-from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, move_to_trash, restore_from_trash
+from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, restore_from_trash
 from apps.core.trash_purge import dismiss_trash_entry
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
@@ -35,7 +35,6 @@ from apps.projects.services import restore_project_trash
 
 from .access import (
     location_in_inventory_scope,
-    project_in_inventory_scope,
     restrict_inventory_location_queryset,
     restrict_inventory_movements,
     restrict_inventory_projects,
@@ -98,7 +97,6 @@ from .services.stock import (
     add_stock,
     adjust_stock,
     reverse_movement,
-    set_stock_item_status,
     use_stock,
 )
 from .services.transfers import reverse_transfer, transfer_stock
@@ -1284,8 +1282,15 @@ class StockTransferCreateView(InventoryPermissionRequiredMixin, View):
                 form.add_error(None, _operation_error_message(exc))
             else:
                 if result.approval_request:
-                    messages.info(request, "Transfer submitted for approval by authorized users in the affected project(s). Stock balances remain unchanged.")
-                    return redirect("inventory:approval_detail", reference=result.approval_request.reference)
+                    messages.info(
+                        request,
+                        "Transfer submitted for approval by an authorized user for the "
+                        "destination project. Stock balances remain unchanged.",
+                    )
+                    return redirect(
+                        "inventory:approval_detail",
+                        reference=result.approval_request.reference,
+                    )
                 if result.duplicate_submission:
                     messages.info(request, "This transfer was already recorded.")
                 else:
@@ -2695,6 +2700,7 @@ def _visible_stock_approvals(request):
         # project names or cross-company requests to a broadly scoped manager.
         candidate_ids = StockApprovalDecision.objects.filter(
             request__company=request.company,
+            is_required=True,
         ).values_list("project_id", flat=True).distinct()
         candidates = restrict_projects(
             Project.objects.for_company(request.company).select_related("company", "inventory_manager")
@@ -2703,7 +2709,7 @@ def _visible_stock_approvals(request):
         eligible_ids = [project.pk for project in candidates if can_decide(request.user, project)]
     return StockApprovalRequest.objects.for_company(request.company).filter(
         Q(requested_by=request.user)
-        | Q(decisions__project_id__in=eligible_ids)
+        | Q(decisions__project_id__in=eligible_ids, decisions__is_required=True)
     ).distinct()
 
 
@@ -2729,7 +2735,10 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
         ctx.update(
             page_key="approvals",
             page_title="Stock requests and approvals",
-            page_subtitle="Review pending project receipts and transfers here. Authorized users can approve or reject affected projects; the requester cannot self-approve.",
+            page_subtitle=(
+                "Review pending project receipts and incoming transfers. Company Owners can "
+                "approve their own transfer requests; other requesters need a separate approver."
+            ),
             current_status=current_status,
             current_kind=kind if kind in StockApprovalRequest.Kind.values else "all",
             status_choices=[
@@ -2802,10 +2811,25 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
                 and approval.requested_by_id == self.request.user.pk
                 and not approval.applied_transfer_id
             )
-            decision_rows = list(approval.decisions.all())
-            pending_codes = [row.project.code for row in decision_rows if row.status == StockApprovalDecision.Status.PENDING]
+            source = None
+            destination = None
+            if approval.kind == StockApprovalRequest.Kind.TRANSFER:
+                source = locations.get(payload.get("source_location_id"))
+                destination = locations.get(payload.get("destination_location_id"))
+            decision_rows = [row for row in approval.decisions.all() if row.is_required]
+            if destination and destination.project_id:
+                decision_rows = [
+                    row for row in decision_rows
+                    if row.project_id == destination.project_id
+                ]
+            pending_codes = [
+                row.project.code for row in decision_rows
+                if row.status == StockApprovalDecision.Status.PENDING
+            ]
             approval.pending_project_summary = ", ".join(pending_codes) if pending_codes else "None"
-            approval.affected_project_summary = ", ".join(row.project.code for row in decision_rows) or "—"
+            approval.approval_project_summary = (
+                ", ".join(row.project.code for row in decision_rows) or "—"
+            )
             approval.item_count = 0
             approval.item_summary = "—"
             approval.quantity_summary = "—"
@@ -2819,8 +2843,6 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
                 qty = payload.get("quantity")
                 approval.quantity_summary = f"{qty} {unit.symbol}" if qty and unit else (str(qty) if qty else "—")
             else:
-                source = locations.get(payload.get("source_location_id"))
-                destination = locations.get(payload.get("destination_location_id"))
                 approval.route_summary = f"{_display_location(source)} → {_display_location(destination)}"
                 approval.route_detail = f"From {source.project.code if getattr(source, 'project', None) else 'OFFICE'} to {destination.project.code if getattr(destination, 'project', None) else 'OFFICE'}" if source and destination else "Location unavailable"
                 allocations = payload.get("allocations", [])
@@ -2844,36 +2866,147 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
     slug_url_kwarg = "reference"
 
     def get_queryset(self):
-        return _visible_stock_approvals(self.request).select_related("requested_by", "applied_movement", "applied_transfer").prefetch_related("decisions__project", "decisions__decided_by")
+        return (
+            _visible_stock_approvals(self.request)
+            .select_related("requested_by", "applied_movement", "applied_transfer")
+            .prefetch_related("decisions__project", "decisions__decided_by")
+        )
 
     def get_context_data(self, **kwargs):
-        from .services.approvals import can_decide
+        from .services.approvals import can_decide_request
         ctx = super().get_context_data(**kwargs)
-        ctx.update(page_key="approvals", page_title=f"Approval {str(self.object.reference)[:8].upper()}", page_subtitle="Review the submitted quantities, project decisions and resulting posted stock operation.")
+        ctx.update(
+            page_key="approvals",
+            page_title=f"Approval {str(self.object.reference)[:8].upper()}",
+            page_subtitle=(
+                "Review the submitted quantities, project decision and resulting "
+                "posted stock operation."
+            ),
+        )
         ctx["can_cancel"] = (
             self.object.kind == StockApprovalRequest.Kind.TRANSFER
             and self.object.status == StockApprovalRequest.Status.PENDING
             and self.object.requested_by_id == self.request.user.pk
             and not self.object.applied_transfer_id
         )
-        ctx["decisions"] = [
-            {"row": row, "can_decide": self.object.status == StockApprovalRequest.Status.PENDING and row.status == "pending" and can_decide(self.request.user, row.project) and self.object.requested_by_id != self.request.user.pk}
-            for row in self.object.decisions.all()
-        ]
         payload = self.object.payload
+        required_project_id = None
         if self.object.kind == StockApprovalRequest.Kind.RECEIPT:
-            ctx["receipt_project"] = Project.objects.for_company(self.request.company).filter(pk=payload.get("project_id")).first()
-            ctx["receipt_unit"] = Unit.objects.for_company(self.request.company).filter(pk=payload.get("unit_id")).first()
+            ctx["receipt_project"] = (
+                Project.objects.for_company(self.request.company)
+                .filter(pk=payload.get("project_id"))
+                .first()
+            )
+            ctx["receipt_unit"] = (
+                Unit.objects.for_company(self.request.company)
+                .filter(pk=payload.get("unit_id"))
+                .first()
+            )
         else:
-            ctx["transfer_source"] = InventoryLocation.objects.for_company(self.request.company).filter(pk=payload.get("source_location_id")).first()
-            ctx["transfer_destination"] = InventoryLocation.objects.for_company(self.request.company).filter(pk=payload.get("destination_location_id")).first()
+            ctx["transfer_source"] = (
+                InventoryLocation.objects.for_company(self.request.company)
+                .filter(pk=payload.get("source_location_id"))
+                .first()
+            )
+            ctx["transfer_destination"] = (
+                InventoryLocation.objects.for_company(self.request.company)
+                .filter(pk=payload.get("destination_location_id"))
+                .first()
+            )
+            if ctx["transfer_destination"] and ctx["transfer_destination"].project_id:
+                required_project_id = ctx["transfer_destination"].project_id
             raw_allocations = payload.get("allocations", [])
             item_ids = [line["stock_item_id"] for line in raw_allocations]
-            stock_map = {item.pk: item for item in StockItem.objects.for_company(self.request.company).select_related("unit").filter(pk__in=item_ids)}
+            stock_map = {
+                item.pk: item
+                for item in StockItem.objects.for_company(self.request.company)
+                .select_related("unit")
+                .filter(pk__in=item_ids)
+            }
             ctx["transfer_allocations"] = [
-                {"stock": stock_map.get(line["stock_item_id"]), "quantity": line["quantity"], "outcome": line["outcome"]}
+                {
+                    "stock": stock_map.get(line["stock_item_id"]),
+                    "quantity": line["quantity"],
+                    "outcome": line["outcome"],
+                }
                 for line in raw_allocations
             ]
+
+        decision_rows = [row for row in self.object.decisions.all() if row.is_required]
+        if required_project_id:
+            decision_rows = [row for row in decision_rows if row.project_id == required_project_id]
+        ctx["decisions"] = [
+            {
+                "row": row,
+                "can_decide": (
+                    self.object.status == StockApprovalRequest.Status.PENDING
+                    and row.status == StockApprovalDecision.Status.PENDING
+                    and can_decide_request(self.request.user, self.object, row.project)
+                ),
+            }
+            for row in decision_rows
+        ]
+
+        activity = list(
+            AuditEvent.objects.filter(
+                company=self.request.company,
+                object_type="inventory.StockApprovalRequest",
+                object_id=str(self.object.reference),
+            ).order_by("created_at", "id")
+        )
+        activity_project_ids = {
+            str(event.after.get("project_id"))
+            for event in activity
+            if event.after.get("project_id")
+        }
+        activity_projects = {
+            str(project.pk): project
+            for project in Project.objects.for_company(self.request.company).filter(
+                pk__in=activity_project_ids
+            )
+        }
+        action_labels = {
+            "inventory.stock_approval.submitted": "Request submitted",
+            "inventory.transfer_workbook.imported": "Excel transfer imported",
+            "inventory.stock_approval.approved": "Request approved",
+            "inventory.stock_approval.rejected": "Request rejected",
+            "inventory.stock_approval.cancelled": "Request cancelled",
+        }
+        for event in activity:
+            event.activity_label = action_labels.get(event.action, event.action)
+            event.activity_actor = event.actor_display_name or event.actor_username or "System"
+            project = activity_projects.get(str(event.after.get("project_id")))
+            project_label = f"{project.code} · {project.name}" if project else ""
+            reason = event.after.get("reason") or ""
+            if event.action == "inventory.stock_approval.submitted":
+                event.activity_detail = (
+                    f"{self.object.get_kind_display()} created and queued for review."
+                )
+            elif event.action == "inventory.transfer_workbook.imported":
+                event.activity_detail = "Transfer quantities imported from a validated worksheet."
+            elif event.action == "inventory.stock_approval.approved":
+                if event.after.get("status") == StockApprovalRequest.Status.APPROVED:
+                    event.activity_detail = (
+                        f"Approved for {project_label}. Stock posted."
+                        if project_label else "Approval recorded and stock posted."
+                    )
+                else:
+                    event.activity_detail = (
+                        f"Approval recorded for {project_label}."
+                        if project_label else "Approval recorded."
+                    )
+            elif event.action == "inventory.stock_approval.rejected":
+                event.activity_detail = (
+                    f"Rejected for {project_label}."
+                    if project_label else "Request rejected."
+                )
+            elif event.action == "inventory.stock_approval.cancelled":
+                event.activity_detail = "Request cancelled before stock was posted."
+            else:
+                event.activity_detail = ""
+            if reason:
+                event.activity_detail = f"{event.activity_detail} Reason: {reason}".strip()
+        ctx["approval_activity"] = activity
         return ctx
 
 
@@ -2894,11 +3027,17 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
             messages.error(request, _operation_error_message(exc) if isinstance(exc, ValidationError) else str(exc))
         else:
             if result.status == StockApprovalRequest.Status.APPROVED:
-                messages.success(request, "All required project approvals were recorded; stock was posted safely.")
+                messages.success(
+                    request,
+                    "The required project approval was recorded; stock was posted safely.",
+                )
             elif result.status == StockApprovalRequest.Status.REJECTED:
                 messages.info(request, "Request rejected. No stock quantities were changed.")
             else:
-                messages.success(request, "Your approval was recorded. Another affected project still needs approval.")
+                messages.success(
+                    request,
+                    "Your approval was recorded. Another required approval still remains.",
+                )
         return redirect("inventory:approval_detail", reference=reference)
 
 

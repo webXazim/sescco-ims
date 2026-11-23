@@ -10,7 +10,9 @@ from django.urls import reverse
 from django.utils import timezone
 from openpyxl import load_workbook
 
+from apps.accounts.roles import AccessRole
 from apps.inventory.models import Unit
+from apps.inventory.services.approvals import decide_request
 from apps.inventory.services.stock import add_stock, use_stock
 from apps.projects.models import Project
 from apps.core.tests.tenant import grant_company_access, primary_company
@@ -23,8 +25,17 @@ User = get_user_model()
 class FilteredExportTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="keeper", password="safe-password")
+        self.approver = User.objects.create_user(
+            username="export-approver",
+            password="safe-password",
+        )
         self.company = primary_company()
         grant_company_access(self.user, company=self.company)
+        grant_company_access(
+            self.approver,
+            company=self.company,
+            role=AccessRole.PROJECT_MANAGER,
+        )
         self.client.force_login(self.user)
         self.project = Project.objects.create(company=self.company, code="ARAMCO-01", name="Aramco Project")
         self.other_project = Project.objects.create(company=self.company, code="NEOM-02", name="NEOM Project")
@@ -32,7 +43,7 @@ class FilteredExportTests(TestCase):
         self.today = timezone.localdate()
 
     def add(self, *, index=1, project=None, material=None):
-        return add_stock(
+        result = add_stock(
             user=self.user,
             idempotency_key=uuid.uuid4(),
             quantity=Decimal("10"),
@@ -47,7 +58,13 @@ class FilteredExportTests(TestCase):
             minimum_quantity=Decimal("2"),
             unit_price=Decimal("24.50"),
             invoice_reference=f"INV-{index}",
-        ).movement.stock_item
+        )
+        return decide_request(
+            request=result.approval_request,
+            user=self.approver,
+            project_id=(project or self.project).pk,
+            decision="approve",
+        ).applied_movement.stock_item
 
     def test_csv_exports_every_filtered_row_not_only_current_page(self):
         for index in range(1, 56):

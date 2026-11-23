@@ -25,7 +25,8 @@ def _hard_delete_is_history_safe(instance) -> bool:
 
     # An active balance cannot be physically discarded at Trash expiry even
     # if legacy/imported data lacks a movement row. Keep a hidden tombstone.
-    if isinstance(instance, StockItem) and instance.current_quantity:
+    stock_item_model = django_apps.get_model("inventory", "StockItem")
+    if isinstance(instance, stock_item_model) and instance.current_quantity:
         return False
 
     using = router.db_for_write(instance.__class__, instance=instance)

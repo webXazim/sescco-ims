@@ -182,6 +182,7 @@ class ExportAudit(models.Model):
         STOCK_HISTORY = "stock_history", "Stock history"
         PROJECT_INVENTORY = "project_inventory", "Project inventory"
         OPENING_TEMPLATE = "opening_template", "Opening-stock template"
+        TRANSFER_WORKSHEET = "transfer_worksheet", "Stock transfer worksheet"
 
     class Format(models.TextChoices):
         XLSX = "xlsx", "Excel"

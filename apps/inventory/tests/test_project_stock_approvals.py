@@ -1,22 +1,40 @@
-"""Regression coverage for pending project receipts and two-sided transfer approvals."""
+"""Regression coverage for project receipts and destination transfer approvals."""
 import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.accounts.models import AccessProfile, AccessProfilePermission, CompanyMembership, MembershipProjectScope, ScopeMode
-from ..access import (restrict_inventory_location_queryset, restrict_inventory_stock,
-                      restrict_inventory_movements, restrict_inventory_transfers)
-from ..services.approvals import can_decide
-from apps.accounts.roles import AccessRole
 from apps.accounts.access_catalog import AccessPermission
+from apps.accounts.models import (
+    AccessProfile,
+    AccessProfilePermission,
+    CompanyMembership,
+    MembershipProjectScope,
+    ScopeMode,
+)
+from apps.accounts.roles import AccessRole
+from apps.core.models import AuditEvent
 from apps.core.tests.tenant import primary_company
 from apps.projects.models import Project
-from ..models import InventoryLocation, StockApprovalRequest, StockItem, StockMovement, StockTransfer, Unit
-from ..services.approvals import decide_request
+
+from ..access import (
+    restrict_inventory_location_queryset,
+    restrict_inventory_movements,
+    restrict_inventory_stock,
+    restrict_inventory_transfers,
+)
+from ..models import (
+    InventoryLocation,
+    StockApprovalDecision,
+    StockApprovalRequest,
+    StockItem,
+    StockMovement,
+    StockTransfer,
+    Unit,
+)
+from ..services.approvals import can_decide, decide_request
 from ..services.stock import InventoryOperationError, add_stock
 from ..services.transfers import TransferAllocation, transfer_stock
 
@@ -139,7 +157,7 @@ class ProjectApprovalsTests(TestCase):
         self.assertEqual(result.status, "rejected")
         self.assertEqual(StockMovement.objects.for_company(self.company).count(), 0)
 
-    def test_transfer_between_two_projects_needs_both_managers(self):
+    def test_transfer_between_two_projects_needs_only_destination_manager(self):
         created = self._add()
         self._approve(created.approval_request, self.manager1, self.p1)
         item = StockItem.objects.for_company(self.company).get(project=self.p1)
@@ -151,8 +169,10 @@ class ProjectApprovalsTests(TestCase):
             allocations=[TransferAllocation(item, "new", Decimal("1"))],
         )
         self.assertIsNone(result.transfer)
-        self.assertEqual(result.approval_request.decisions.count(), 2)
-        self._approve(result.approval_request, self.manager1, self.p1)
+        self.assertEqual(result.approval_request.decisions.count(), 1)
+        self.assertEqual(result.approval_request.decisions.get().project, self.p2)
+        with self.assertRaises(InventoryOperationError):
+            self._approve(result.approval_request, self.manager1, self.p1)
         item.refresh_from_db()
         self.assertEqual(item.current_quantity, Decimal("2"))
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
@@ -162,6 +182,48 @@ class ProjectApprovalsTests(TestCase):
         self.assertEqual(item.current_quantity, Decimal("1"))
         self.assertEqual(done.applied_transfer.lines.count(), 1)
         self.assertEqual(done.applied_transfer.lines.get().destination_stock_item.current_quantity, Decimal("1"))
+
+    def test_transfer_from_project_to_office_posts_without_approval(self):
+        created = self._add()
+        self._approve(created.approval_request, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        result = transfer_stock(
+            user=self.requester, idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=self.office,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(item, "new", Decimal("1"))],
+        )
+        self.assertIsNotNone(result.transfer)
+        self.assertIsNone(result.approval_request)
+        item.refresh_from_db()
+        self.assertEqual(item.current_quantity, Decimal("1"))
+
+    def test_legacy_source_decision_does_not_block_destination_approval(self):
+        created = self._add()
+        self._approve(created.approval_request, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        request = transfer_stock(
+            user=self.requester,
+            idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(item, "new", Decimal("1"))],
+        ).approval_request
+        StockApprovalDecision.objects.create(
+            request=request,
+            project=self.p1,
+            is_required=False,
+        )
+
+        approved = self._approve(request, self.manager2, self.p2)
+
+        self.assertEqual(approved.status, StockApprovalRequest.Status.APPROVED)
+        self.assertEqual(
+            approved.decisions.get(project=self.p1).status,
+            StockApprovalDecision.Status.PENDING,
+        )
 
     def test_fallback_to_scoped_project_manager_with_no_inventory_assignee(self):
         self.p1.inventory_manager = None
@@ -365,8 +427,7 @@ class ProjectApprovalsTests(TestCase):
         with self.assertRaises(InventoryOperationError):
             self._approve(req, user, self.p1)
 
-    def test_transfers_require_each_project_decision(self):
-        # Different custom review profiles can approve source and destination.
+    def test_transfers_require_destination_project_decision(self):
         source_user, _, _ = self._custom_user(
             'transfer-source-approver', [AccessPermission.INVENTORY_STOCK_APPROVE],
             mode=ScopeMode.SELECTED, projects=(self.p1,),
@@ -384,7 +445,12 @@ class ProjectApprovalsTests(TestCase):
             transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
         )
         self.assertIsNotNone(transfer.approval_request)
-        self._approve(transfer.approval_request, source_user, self.p1)
+        self.assertEqual(
+            list(transfer.approval_request.decisions.values_list('project_id', flat=True)),
+            [self.p2.pk],
+        )
+        with self.assertRaises(InventoryOperationError):
+            self._approve(transfer.approval_request, source_user, self.p1)
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
         approved = self._approve(transfer.approval_request, dest_user, self.p2)
         self.assertEqual(approved.status, 'approved')
@@ -402,7 +468,7 @@ class ProjectApprovalsTests(TestCase):
         ).approval_request
         # A fresh pending receipt should not appear in transfer-only results.
         pending_receipt = self._add(material_name="Unrelated tools").approval_request
-        self.client.force_login(self.manager1)
+        self.client.force_login(self.manager2)
         filtered = self.client.get(reverse("inventory:approval_list"), {"kind": "transfer", "status": "pending"})
         self.assertEqual(filtered.status_code, 200)
         self.assertContains(filtered, str(transfer.reference)[:8].upper())
@@ -430,13 +496,13 @@ class ProjectApprovalsTests(TestCase):
         )
         self.assertIsNotNone(result.approval_request)
         self.assertEqual(result.approval_request.status, 'pending')
-        self.assertFalse(can_decide(user, self.p1))
+        self.assertFalse(can_decide(user, self.p2))
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
 
-    def test_grant_revocation_during_two_project_transfer_blocks_post(self):
-        first, _, profile = self._custom_user(
-            'first-revokable', [AccessPermission.INVENTORY_STOCK_APPROVE],
-            mode=ScopeMode.SELECTED, projects=(self.p1,),
+    def test_destination_approval_grant_revocation_blocks_post(self):
+        destination_approver, _, profile = self._custom_user(
+            'destination-revokable', [AccessPermission.INVENTORY_STOCK_APPROVE],
+            mode=ScopeMode.SELECTED, projects=(self.p2,),
         )
         rec = self._add().approval_request
         self._approve(rec, self.manager1, self.p1)
@@ -447,10 +513,9 @@ class ProjectApprovalsTests(TestCase):
             transfer_date=timezone.localdate(), allocations=[TransferAllocation(item, 'new', Decimal('1'))],
         )
         req = result.approval_request
-        self._approve(req, first, self.p1)
         AccessProfilePermission.objects.filter(profile=profile, permission=AccessPermission.INVENTORY_STOCK_APPROVE.value).delete()
         with self.assertRaises(InventoryOperationError):
-            self._approve(req, self.manager2, self.p2)
+            self._approve(req, destination_approver, self.p2)
         req.refresh_from_db()
         self.assertEqual(req.status, 'pending')
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
@@ -486,6 +551,53 @@ class ProjectApprovalsTests(TestCase):
         req.save(update_fields=("requested_by",))
         with self.assertRaises(InventoryOperationError):
             self._approve(req, self.manager1, self.p1)
+
+    def test_company_owner_can_submit_and_approve_destination_transfer_with_activity(self):
+        from django.urls import reverse
+
+        receipt = self._add().approval_request
+        self._approve(receipt, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        self.client.force_login(self.requester)
+        response = self.client.post(reverse('inventory:transfer_create'), {
+            'source_location': self.p1.inventory_location.pk,
+            'destination_location': self.p2.inventory_location.pk,
+            'idempotency_key': uuid.uuid4(),
+            'transfer_date': timezone.localdate().isoformat(),
+            f'item_{item.pk}_new': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        request = StockApprovalRequest.objects.for_company(self.company).filter(kind='transfer').get()
+        self.assertEqual(request.requested_by, self.requester)
+        self.assertEqual(request.decisions.get().project, self.p2)
+        detail_url = reverse('inventory:approval_detail', args=[request.reference])
+        detail = self.client.get(detail_url)
+        self.assertContains(detail, 'Approve for this project')
+        self.assertContains(detail, 'Activity history')
+
+        decision_response = self.client.post(reverse('inventory:approval_decide', args=[request.reference]), {
+            'project_id': self.p2.pk,
+            'decision': 'approve',
+        })
+        self.assertRedirects(decision_response, detail_url)
+        request.refresh_from_db()
+        decision = request.decisions.get()
+        self.assertEqual(request.status, StockApprovalRequest.Status.APPROVED)
+        self.assertEqual(decision.decided_by, self.requester)
+        self.assertIsNotNone(decision.decided_at)
+        events = list(AuditEvent.objects.filter(
+            company=self.company,
+            object_type='inventory.StockApprovalRequest', object_id=str(request.reference),
+        ).order_by('created_at'))
+        self.assertEqual([event.action for event in events], [
+            'inventory.stock_approval.submitted',
+            'inventory.stock_approval.approved',
+        ])
+        self.assertEqual(events[-1].actor, self.requester)
+        self.assertIsNotNone(events[-1].created_at)
+        detail = self.client.get(detail_url)
+        self.assertContains(detail, 'Request approved')
+        self.assertContains(detail, self.requester.display_name)
 
     # Regression: legacy migration 0019 could leave countable units decimal-enabled.
 
@@ -533,7 +645,7 @@ class ProjectApprovalsTests(TestCase):
         transfer = transfer_stock(
             user=self.requester, idempotency_key=uuid.uuid4(),
             source_location=self.p1.inventory_location,
-            destination_location=destination or self.office,
+            destination_location=destination or self.p2.inventory_location,
             transfer_date=timezone.localdate(),
             allocations=[TransferAllocation(item, 'new', Decimal('1'))],
         ).approval_request
@@ -554,7 +666,7 @@ class ProjectApprovalsTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.current_quantity, before)
         with self.assertRaises(InventoryOperationError):
-            self._approve(cancelled, self.manager1, self.p1)
+            self._approve(cancelled, self.manager2, self.p2)
         with self.assertRaises(InventoryOperationError):
             cancel_pending_transfer(request=cancelled, user=self.requester, reason='Again')
 
@@ -569,17 +681,15 @@ class ProjectApprovalsTests(TestCase):
         with self.assertRaises(InventoryOperationError):
             cancel_pending_transfer(request=receipt, user=self.requester, reason='Wrong type')
         self.assertEqual(StockApprovalRequest.objects.get(pk=req.pk).status, 'pending')
-        self._approve(req, self.manager1, self.p1)
+        self._approve(req, self.manager2, self.p2)
         with self.assertRaises(InventoryOperationError):
             cancel_pending_transfer(request=req, user=self.requester, reason='Already posted')
 
-    def test_cancel_after_first_of_two_project_approvals_preserves_history(self):
+    def test_cancel_before_destination_approval_preserves_history(self):
         from ..services.approvals import cancel_pending_transfer
         req, item = self._pending_project_transfer(destination=self.p2.inventory_location)
-        self._approve(req, self.manager1, self.p1)
         cancelled = cancel_pending_transfer(request=req, user=self.requester, reason='Change of destination')
         self.assertEqual(cancelled.status, 'cancelled')
-        self.assertEqual(cancelled.decisions.get(project=self.p1).status, 'approved')
         self.assertEqual(cancelled.decisions.get(project=self.p2).status, 'pending')
         with self.assertRaises(InventoryOperationError):
             self._approve(req, self.manager2, self.p2)
@@ -594,7 +704,7 @@ class ProjectApprovalsTests(TestCase):
         member1 = CompanyMembership.objects.get(user=self.manager1, company=self.company)
         member2 = CompanyMembership.objects.get(user=self.manager2, company=self.company)
         requester = CompanyMembership.objects.get(user=self.requester, company=self.company)
-        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager1, membership=member1), 1)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager1, membership=member1), 0)
         self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager2, membership=member2), 1)
         self.assertEqual(pending_visible_request_count(company=self.company, user=self.requester, membership=requester), 1)
         self.client.force_login(self.requester)
@@ -608,7 +718,7 @@ class ProjectApprovalsTests(TestCase):
         self.assertEqual(self.client.post(cancel_url, {'reason': 'No longer required'}).status_code, 302)
         req.refresh_from_db()
         self.assertEqual(req.status, 'cancelled')
-        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager1, membership=member1), 0)
+        self.assertEqual(pending_visible_request_count(company=self.company, user=self.manager2, membership=member2), 0)
         self.assertEqual(pending_visible_request_count(company=self.company, user=self.requester, membership=requester), 0)
         self.assertContains(self.client.get(detail_url), 'No longer required')
         self.assertContains(self.client.get(reverse('inventory:approval_list'), {'status':'cancelled'}), str(req.reference)[:8].upper())

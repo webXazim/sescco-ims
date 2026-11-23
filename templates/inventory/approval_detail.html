@@ -4,7 +4,7 @@
 <section class="card"><div class="card-head"><h2 class="card-title">{{ approval.get_kind_display }} — {{ approval.get_status_display }}</h2></div>
 <div class="card-body">
 <p><strong>Submitted:</strong> {{ approval.created_at|date:"d M Y H:i" }} &nbsp; <strong>Requested by:</strong> {{ approval.requested_by.display_name }}</p>
-{% if approval.status == 'pending' %}<p class="micro">No stock balances have changed. All project approvals are needed before posting.</p>{% endif %}
+{% if approval.status == 'pending' %}<p class="micro">No stock balances have changed. {% if approval.kind == 'transfer' %}Only the destination project's approval is required before posting.{% else %}The project's approval is required before posting.{% endif %}</p>{% endif %}
 {% if approval.kind == 'receipt' %}
 <div class="table-wrap"><table class="data-table"><thead><tr><th>Project</th><th>Material</th><th>Condition</th><th>Quantity</th><th>Unit</th><th>Unit price</th></tr></thead><tbody>
 <tr><td>{{ receipt_project.code|default:"Unavailable" }}</td><td><strong>{{ approval.payload.material_name }}</strong><div class="cell-sub">{{ approval.payload.description }}</div></td>
@@ -21,7 +21,7 @@
 {% if approval.status == 'cancelled' %}
 <p><strong>Cancelled by:</strong> {{ approval.cancelled_by.display_name|default:"Unavailable" }} &nbsp; <strong>Cancelled on:</strong> {{ approval.decided_at|date:"d M Y H:i" }}</p>
 <p><strong>Cancellation reason:</strong> {{ approval.cancellation_reason|default:"—" }}</p>
-<p class="micro">This transfer was cancelled before posting. No stock quantities were changed by this request.</p>
+<p class="micro">This request was cancelled before posting. No stock quantities were changed by this request.</p>
 {% endif %}
 {% if can_cancel %}
 <div class="form-section" id="cancel-transfer">
@@ -40,7 +40,7 @@
 {% if approval.applied_movement %}<p><a href="{% url 'inventory:movement_detail' approval.applied_movement.reference %}">View approved stock movement</a></p>{% endif %}
 {% if approval.applied_transfer %}<p><a href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">View completed stock transfer</a></p>{% endif %}
 </div></section>
-<section class="card section-gap"><div class="card-head"><h2 class="card-title">Project approvals</h2></div><div class="card-body">
+<section class="card section-gap"><div class="card-head"><h2 class="card-title">Required project approval</h2></div><div class="card-body">
 {% for entry in decisions %}<div class="form-section"><strong>{{ entry.row.project.code }} · {{ entry.row.project.name }}</strong> — {{ entry.row.get_status_display }} <span class="micro">Approval requires the Inventory Approve / Reject permission and this project in scope</span>
 {% if entry.row.decided_by %}<span class="micro"> by {{ entry.row.decided_by.display_name }} on {{ entry.row.decided_at|date:"d M Y H:i" }}</span>{% endif %}
 {% if entry.row.reason %}<p class="micro">Reason: {{ entry.row.reason }}</p>{% endif %}
@@ -51,4 +51,9 @@
 <button class="btn" type="submit" name="decision" value="reject">Reject request</button>
 </form>{% endif %}
 </div>{% endfor %}</div></section>
+<section class="card section-gap"><div class="card-head"><h2 class="card-title">Activity history</h2></div><div class="card-body">
+{% for event in approval_activity %}<div class="form-section"><strong>{{ event.activity_label }}</strong><span class="micro"> by {{ event.activity_actor }} on {{ event.created_at|date:"d M Y H:i" }}</span>
+{% if event.activity_detail %}<p class="micro">{{ event.activity_detail }}</p>{% endif %}</div>
+{% empty %}<div class="empty-state"><strong>No activity recorded.</strong></div>{% endfor %}
+</div></section>
 {% endblock %}

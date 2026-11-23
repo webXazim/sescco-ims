@@ -271,21 +271,29 @@ def add_stock(
         raise InventoryOperationError("Invalid receipt approval authorization.")
     if project is not None and approved_request is None:
         from .approvals import queue_request
-        approval, duplicated = queue_request(
-            company=company, requested_by=user, kind="receipt",
-            idempotency_key=idempotency_key, project_ids=[project.pk], attachment=attachment,
-            payload={
-                "project_id": project.pk, "unit_id": unit.pk,
-                "quantity": str(quantity), "movement_date": movement_date.isoformat(),
-                "condition": condition, "material_name": material_name,
-                "supplier_name": supplier_name, "supplier_phone": supplier_phone,
-                "description": description, "supplier_location": supplier_location,
-                "minimum_quantity": str(minimum_quantity),
-                "unit_price": str(unit_price) if unit_price is not None else None,
-                "invoice_reference": invoice_reference, "notes": notes,
-                "confirm_similar": bool(confirm_similar),
-            },
-        )
+        with transaction.atomic():
+            locked_project = (
+                Project.objects.for_company(company)
+                .select_for_update()
+                .get(pk=project.pk)
+            )
+            if locked_project.deleted_at or locked_project.status != Project.Status.ACTIVE:
+                raise InactiveStockError("Only active, non-deleted projects can receive stock.")
+            approval, duplicated = queue_request(
+                company=company, requested_by=user, kind="receipt",
+                idempotency_key=idempotency_key, project_ids=[project.pk], attachment=attachment,
+                payload={
+                    "project_id": project.pk, "unit_id": unit.pk,
+                    "quantity": str(quantity), "movement_date": movement_date.isoformat(),
+                    "condition": condition, "material_name": material_name,
+                    "supplier_name": supplier_name, "supplier_phone": supplier_phone,
+                    "description": description, "supplier_location": supplier_location,
+                    "minimum_quantity": str(minimum_quantity),
+                    "unit_price": str(unit_price) if unit_price is not None else None,
+                    "invoice_reference": invoice_reference, "notes": notes,
+                    "confirm_similar": bool(confirm_similar),
+                },
+            )
         return MovementResult(movement=None, duplicate_submission=duplicated, approval_request=approval)
 
     try:
