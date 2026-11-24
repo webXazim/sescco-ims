@@ -308,7 +308,7 @@ def works_import_upload(request, code):
             errors = ["Select an .xlsx file first."]
         else:
             try:
-                parsed = parse_workbook(upload)
+                parsed = parse_workbook(upload, project=project)
                 preview = build_import_preview(project, parsed)
                 if preview["errors"]:
                     errors = preview["errors"]

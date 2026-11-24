@@ -99,7 +99,7 @@ def can_decide(user, project):
     )
 
 
-def _is_company_owner(membership):
+def is_company_owner(membership):
     profile = getattr(membership, "access_profile", None)
     return bool(
         profile and profile.is_system and profile.is_active
@@ -112,12 +112,30 @@ def can_decide_request(user, request, project):
     membership = user_membership_for_company(user, project.company)
     owner_transfer_review = bool(
         request.kind == StockApprovalRequest.Kind.TRANSFER
-        and _is_company_owner(membership)
+        and is_company_owner(membership)
     )
     return bool(
         user.is_active
         and _valid_approver_membership(membership, project)
         and (request.requested_by_id != user.pk or owner_transfer_review)
+    )
+
+
+def can_cancel_pending_transfer(user, request, membership=None):
+    """Return whether this user can cancel an unposted transfer request."""
+    membership = membership or user_membership_for_company(user, request.company)
+    return bool(
+        user.is_active
+        and membership
+        and membership.is_active
+        and membership.company_id == request.company_id
+        and request.kind == StockApprovalRequest.Kind.TRANSFER
+        and request.status == StockApprovalRequest.Status.PENDING
+        and not request.applied_transfer_id
+        and (
+            request.requested_by_id == user.pk
+            or is_company_owner(membership)
+        )
     )
 
 
@@ -252,15 +270,26 @@ def decide_request(*, request, user, project_id, decision, reason=""):
 
 @transaction.atomic
 def cancel_pending_transfer(*, request, user, reason):
-    """Cancel the requester's unposted transfer without changing inventory.
+    """Cancel an authorized unposted transfer without changing inventory.
 
     Lock the same request row used by decide_request: only one of cancellation
     or final approval can win. Keep any previous per-project decisions intact.
     """
     req = StockApprovalRequest.objects.for_company(request.company).select_for_update().get(pk=request.pk)
     membership = user_membership_for_company(user, req.company)
-    if not membership or not user.is_active or req.requested_by_id != user.pk:
-        raise InventoryOperationError("Only the active original requester can cancel this transfer.")
+    if not (
+        user.is_active
+        and membership
+        and membership.is_active
+        and membership.company_id == req.company_id
+        and (
+            req.requested_by_id == user.pk
+            or is_company_owner(membership)
+        )
+    ):
+        raise InventoryOperationError(
+            "Only the original requester or a Company Owner can cancel this pending transfer."
+        )
     if req.kind != StockApprovalRequest.Kind.TRANSFER:
         raise InventoryOperationError("Only stock transfer requests can be cancelled here.")
     if req.status != StockApprovalRequest.Status.PENDING or req.applied_transfer_id:
@@ -372,6 +401,10 @@ def pending_visible_request_count(*, company, user, membership):
         or not membership or not membership.is_active or membership.company_id != company.pk
     ):
         return 0
+    if is_company_owner(membership):
+        return StockApprovalRequest.objects.for_company(company).filter(
+            status=StockApprovalRequest.Status.PENDING
+        ).count()
     eligible_ids = []
     if membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
         pending_project_ids = StockApprovalDecision.objects.filter(

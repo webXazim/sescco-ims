@@ -1,4 +1,4 @@
-"""Upgrade 3: single-sheet Works Excel upload, preview and safe reimport."""
+"""Project Pulse template/report Excel upload, preview and safe reimport."""
 from datetime import timedelta
 from io import BytesIO
 
@@ -11,12 +11,17 @@ from openpyxl import Workbook
 
 from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
-from apps.core.models import Company
-from apps.projects.models import Project
-from apps.project_pulse.import_services import WorkImportError, parse_workbook
-from apps.project_pulse.models import PulseProgressUpdate, PulseTask, PulseWorkCategory, PulseWorkImportBatch
+from apps.core.models import AuditEvent, Company
+from apps.project_pulse.import_services import parse_workbook
+from apps.project_pulse.models import (
+    PulseProgressUpdate,
+    PulseTask,
+    PulseWorkCategory,
+    PulseWorkImportBatch,
+)
 from apps.project_pulse.progress_services import record_progress
 from apps.project_pulse.work_services import save_category, save_task
+from apps.projects.models import Project
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -46,6 +51,45 @@ def build_file(*, sections=None, extra_sheet=False, formulas=False):
     workbook.save(output)
     return SimpleUploadedFile("works.xlsx", output.getvalue(),
                               content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def build_progress_report(*, project_sheet="Import project", progress=0.5):
+    workbook = Workbook()
+
+    def add_report(sheet, category, work_prefix):
+        sheet.append(["Work Category", "Works", "Completion (%)", "Issues", "Remarks"])
+        sheet.merge_cells("A2:C2")
+        sheet["A2"] = category
+        sheet.append([
+            None,
+            f"{work_prefix}.1 - Prepare and level base surface",
+            progress,
+            "Inspection pending",
+            "One basin complete",
+        ])
+        sheet["C3"].number_format = "0%"
+        sheet.append([
+            None,
+            f"{work_prefix}.2 - Pour and cure concrete",
+            1,
+            None,
+            "Complete",
+        ])
+        sheet["C4"].number_format = "0%"
+
+    other = workbook.active
+    other.title = "Other Site"
+    add_report(other, "Other Works", "9")
+    selected = workbook.create_sheet(project_sheet)
+    add_report(selected, "Foundation", "1")
+    workbook.create_sheet("Sheet2")
+    output = BytesIO()
+    workbook.save(output)
+    return SimpleUploadedFile(
+        "Work Progress report.xlsx",
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=STORAGES)
@@ -204,6 +248,77 @@ class ExcelWorkImportTests(TestCase):
         file = SimpleUploadedFile("works.xlsx", output.getvalue())
         parsed = parse_workbook(file)
         self.assertEqual(parsed["categories"][0]["works"][0]["progress"], 25)
+
+    def test_formatted_multi_sheet_report_imports_matching_project_sheet(self):
+        response = self.upload(build_progress_report())
+        self.assertEqual(response.status_code, 302)
+        batch = self.latest()
+        preview = batch.preview_data
+        self.assertEqual(preview["layout"], "work_progress_report")
+        self.assertEqual(preview["worksheet"], self.project.name)
+        self.assertEqual(preview["category_count"], 1)
+        self.assertEqual(preview["counts"], {"new": 2, "changed": 0, "unchanged": 0})
+        first = preview["items"][0]
+        self.assertEqual((first["serial"], first["progress"]), ("1.1", 50))
+        self.assertIn("Issues:\nInspection pending", first["description"])
+        self.assertIn("Remarks:\nOne basin complete", first["description"])
+        self.assertFalse(first["unit_provided"])
+        self.assertFalse(first["quantity_provided"])
+
+        preview_page = self.client.get(reverse(
+            "project_pulse:works_import_preview",
+            args=[self.project.code, batch.pk],
+        ))
+        self.assertContains(preview_page, "Sheet: Import project")
+        self.assertContains(preview_page, "Inspection pending")
+        self.assertEqual(self.apply(batch).status_code, 302)
+        task = PulseTask.objects.get(
+            category__project=self.project,
+            category__name="Foundation",
+            serial_number="1.1",
+        )
+        self.assertEqual(task.progress_percent, 50)
+        self.assertIn("One basin complete", task.description)
+        self.assertEqual(task.unit, "")
+        self.assertIsNone(task.quantity)
+        event = AuditEvent.objects.get(
+            action="pulse.work_import.applied",
+            object_id=str(batch.pk),
+        )
+        self.assertEqual(event.after["worksheet"], "Import project")
+        self.assertEqual(event.after["layout"], "work_progress_report")
+
+    def test_report_reimport_preserves_unit_and_quantity_not_present_in_report(self):
+        initial = build_file(sections=[(
+            "Foundation",
+            [("1.1", "Prepare and level base surface", "EA", 7, 25)],
+        )])
+        self.upload(initial)
+        self.apply(self.latest())
+
+        self.upload(build_progress_report())
+        batch = self.latest()
+        item = batch.preview_data["items"][0]
+        self.assertEqual(item["kind"], "changed")
+        self.assertNotIn("unit", item["changes"])
+        self.assertNotIn("quantity", item["changes"])
+        self.assertIn("description", item["changes"])
+        self.assertEqual(self.apply(batch, {"decision_0": "all"}).status_code, 302)
+        task = PulseTask.objects.get(
+            category__project=self.project,
+            category__name="Foundation",
+            serial_number="1.1",
+        )
+        self.assertEqual(task.unit, "EA")
+        self.assertEqual(str(task.quantity), "7.0000")
+        self.assertEqual(task.progress_percent, 50)
+        self.assertIn("Inspection pending", task.description)
+
+    def test_multi_sheet_report_requires_a_sheet_matching_selected_project(self):
+        response = self.upload(build_progress_report(project_sheet="Different Project"))
+        self.assertContains(response, "No report worksheet matches project")
+        self.assertContains(response, "Available report sheets")
+        self.assertFalse(PulseWorkImportBatch.objects.exists())
 
     def test_unnumbered_legacy_work_requires_manual_matching(self):
         category = save_category(actor=self.owner, project_id=self.project.pk, data={"name": "Power Transformer"})

@@ -26,7 +26,7 @@
 {% if can_cancel %}
 <div class="form-section" id="cancel-transfer">
   <h3>Cancel pending transfer</h3>
-  <p class="micro">Only the original requester can cancel this pending transfer. Any project decisions remain in history. This action cannot be undone.</p>
+  <p class="micro">The original requester or a Company Owner can cancel this pending transfer. Any project decisions remain in history. This action cannot be undone.</p>
   <form method="post" action="{% url 'inventory:approval_cancel' approval.reference %}">
     {% csrf_token %}
     <div class="field"><label class="field-label" for="cancel-transfer-reason">Cancellation reason <span aria-hidden="true">*</span></label>

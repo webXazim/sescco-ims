@@ -1,4 +1,4 @@
-"""Single-sheet Work Category / Works Excel importer (Upgrade 3/5).
+"""Project-scoped template and formatted Work Progress Excel importer.
 
 The workbook is never persisted: only validated, normalized preview rows are
 kept temporarily in a project-scoped import batch. No prices, expenses, stock
@@ -38,6 +38,14 @@ _HEADER_ALIASES = ({"sn", "s/n", "serial no", "serial number"},
                    {"description", "work", "works"},
                    {"unit", "uom"}, {"quantity", "qty"},
                    {"% completion", "completion %", "completion", "progress %", "% progress"})
+_REPORT_HEADER_ALIASES = (
+    {"work category", "category"},
+    {"works", "work", "description"},
+    {"completion (%)", "completion %", "% completion", "completion", "progress %"},
+    {"issues", "issue"},
+    {"remarks", "remark", "notes"},
+)
+_REPORT_WORK_PATTERN = re.compile(r"^(.+?)\s+[-–—]\s+(.+)$")
 
 
 class WorkImportError(Exception):
@@ -48,6 +56,16 @@ def _text(value):
     if value is None:
         return ""
     return " ".join(str(value).split())
+
+
+def _multiline_text(value):
+    if value is None:
+        return ""
+    return "\n".join(
+        " ".join(line.split())
+        for line in str(value).splitlines()
+        if line.strip()
+    )
 
 
 def _is_empty(cell):
@@ -97,7 +115,9 @@ def _completion(cell, line, errors):
     if _is_empty(cell):
         return 0, True
     value = cell.value
-    is_percent_format = "%" in (cell.number_format or "") and not isinstance(value, str)
+    number_format = re.sub(r'"[^"]*"', "", cell.number_format or "")
+    number_format = re.sub(r"\\.", "", number_format)
+    is_percent_format = "%" in number_format and not isinstance(value, str)
     if isinstance(value, str) and value.strip().endswith("%"):
         value = value.strip()[:-1].strip()
     # Copy value to an isolated object to keep _decimal's strict validation.
@@ -116,12 +136,209 @@ def _completion(cell, line, errors):
     return int(number), False
 
 
-def parse_workbook(upload):
+def _normalized_header(value):
+    return _text(value).casefold().replace("_", " ")
+
+
+def _report_header_row(sheet):
+    for line, row in enumerate(
+        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 30), max_col=5),
+        start=1,
+    ):
+        values = [_normalized_header(cell.value) for cell in row]
+        if all(
+            not values[index] or values[index] in _REPORT_HEADER_ALIASES[index]
+            for index in range(5)
+        ) and all(values[index] in _REPORT_HEADER_ALIASES[index] for index in range(3)):
+            return line
+    return None
+
+
+def _select_worksheet(workbook, project):
+    if len(workbook.worksheets) == 1:
+        sheet = workbook.worksheets[0]
+        return sheet, _report_header_row(sheet)
+    if project is None:
+        raise WorkImportError("Upload exactly one worksheet for one selected project.")
+
+    project_keys = {
+        slugify(project.code, allow_unicode=True),
+        slugify(project.name, allow_unicode=True),
+    }
+    report_sheets = [
+        (sheet, _report_header_row(sheet))
+        for sheet in workbook.worksheets
+    ]
+    report_matches = [
+        (sheet, header_row)
+        for sheet, header_row in report_sheets
+        if header_row is not None
+        and slugify(sheet.title, allow_unicode=True) in project_keys
+    ]
+    if len(report_matches) == 1:
+        return report_matches[0]
+
+    report_sheet_names = [
+        sheet.title
+        for sheet, header_row in report_sheets
+        if header_row is not None
+    ]
+    if report_sheet_names:
+        available = ", ".join(report_sheet_names[:12])
+        raise WorkImportError(
+            f"No report worksheet matches project {project.code} · {project.name}. "
+            f"Rename the correct sheet to the project code or name. Available report sheets: {available}."
+        )
+    raise WorkImportError("Upload exactly one worksheet for one selected project.")
+
+
+def _parse_progress_report(sheet, header_row):
+    errors = []
+    ordered = []
+    categories = {}
+    current = None
+    total_works = 0
+
+    for line, excel_row in enumerate(
+        sheet.iter_rows(min_row=header_row + 1, max_col=5),
+        start=header_row + 1,
+    ):
+        if all(_is_empty(cell) for cell in excel_row):
+            continue
+        for cell in excel_row:
+            if not _is_empty(cell):
+                _validate_text_cell(
+                    cell,
+                    line=line,
+                    column=cell.column_letter,
+                    errors=errors,
+                )
+        first = [_text(cell.value) for cell in excel_row]
+        normalized = [_normalized_header(cell.value) for cell in excel_row]
+        if all(
+            not normalized[index]
+            or normalized[index] in _REPORT_HEADER_ALIASES[index]
+            for index in range(5)
+        ) and all(
+            normalized[index] in _REPORT_HEADER_ALIASES[index]
+            for index in range(3)
+        ):
+            continue
+
+        if first[0] and not any(first[1:]):
+            if len(first[0]) > 120:
+                errors.append(f"Row {line}: Work Category name exceeds 120 characters.")
+                current = None
+                continue
+            key = slugify(first[0], allow_unicode=True)[:120]
+            if not key:
+                errors.append(f"Row {line}: Work Category must contain letters or numbers.")
+                current = None
+                continue
+            if key not in categories:
+                categories[key] = {
+                    "name": first[0],
+                    "code": key,
+                    "row": line,
+                    "works": [],
+                }
+                ordered.append(categories[key])
+            elif categories[key]["name"].casefold() != first[0].casefold():
+                errors.append(
+                    f"Row {line}: Work Category '{first[0]}' conflicts with "
+                    f"'{categories[key]['name']}' on row {categories[key]['row']}. "
+                    "Give these categories distinct names."
+                )
+            current = categories[key]
+            continue
+
+        if not first[1]:
+            errors.append(
+                f"Row {line}: expected a Work Category in column A or a work in column B."
+            )
+            continue
+        if first[0]:
+            errors.append(
+                f"Row {line}: work rows must leave Work Category blank in column A."
+            )
+            continue
+        if current is None:
+            errors.append(f"Row {line}: work row is missing a preceding Work Category heading.")
+            continue
+
+        match = _REPORT_WORK_PATTERN.match(first[1])
+        if not match:
+            errors.append(
+                f"Row {line}: Works must begin with an SN followed by ' - ', "
+                "for example '1.1 - Excavation'."
+            )
+            continue
+        serial, title = (_text(value) for value in match.groups())
+        if len(serial) > 48:
+            errors.append(f"Row {line}: SN exceeds 48 characters.")
+        if len(title) > 1000:
+            errors.append(f"Row {line}: Description exceeds 1,000 characters.")
+        percent, was_blank = _completion(excel_row[2], line, errors)
+        issues = _multiline_text(excel_row[3].value)
+        remarks = _multiline_text(excel_row[4].value)
+        description_parts = []
+        if issues:
+            description_parts.append(f"Issues:\n{issues}")
+        if remarks:
+            description_parts.append(f"Remarks:\n{remarks}")
+        description = "\n\n".join(description_parts)
+        if len(description) > 5000:
+            errors.append(f"Row {line}: Issues and Remarks exceed 5,000 characters.")
+        if serial and title:
+            current["works"].append({
+                "index": total_works,
+                "row": line,
+                "serial": serial,
+                "title": title,
+                "description": description,
+                "description_provided": True,
+                "unit": None,
+                "unit_provided": False,
+                "quantity": None,
+                "quantity_provided": False,
+                "progress": percent,
+                "blank_percent": was_blank,
+                "category_code": current["code"],
+                "category_name": current["name"],
+            })
+            total_works += 1
+        if total_works > MAX_WORKS:
+            raise WorkImportError(
+                f"More than {MAX_WORKS:,} works detected. Split into smaller project imports."
+            )
+
+    if not ordered or total_works == 0:
+        errors.append("No valid Work Category and Works rows were found in the project sheet.")
+    for category in ordered:
+        if not category["works"]:
+            errors.append(
+                f"Row {category['row']}: Work Category '{category['name']}' has no works."
+            )
+        seen = {}
+        for row in category["works"]:
+            key = row["serial"].casefold()
+            if key in seen:
+                errors.append(
+                    f"Row {row['row']}: duplicate SN '{row['serial']}' in "
+                    f"'{category['name']}' (first used on row {seen[key]})."
+                )
+            else:
+                seen[key] = row["row"]
+    return ordered, total_works, errors
+
+
+def parse_workbook(upload, project=None):
     """Return normalized categories + lines, with explicit validation errors.
 
-    A category row contains a name in column A only, followed by the exact
-    five-column header and one or more numbered work rows. Repeat sections
-    in the same sheet. The source Excel file is never modified.
+    Canonical single-sheet templates retain their original strict contract.
+    Multi-sheet Work Progress reports select the sheet matching the project
+    code/name and map their Category/Works/Completion/Issues/Remarks columns.
+    The source Excel file is never modified.
     """
     from openpyxl import load_workbook
 
@@ -145,13 +362,26 @@ def parse_workbook(upload):
     except Exception as exc:
         raise WorkImportError("The workbook cannot be read. Save a new, valid .xlsx file and retry.") from exc
     try:
-        if len(workbook.worksheets) != 1:
-            raise WorkImportError("Upload exactly one worksheet for one selected project.")
-        sheet = workbook.worksheets[0]
+        sheet, report_header = _select_worksheet(workbook, project)
         if (sheet.max_row or 0) > MAX_SHEET_ROWS:
             raise WorkImportError(f"The worksheet exceeds {MAX_SHEET_ROWS:,} rows. Remove unused rows.")
         if (sheet.max_column or 0) > 200:
-            raise WorkImportError("The worksheet contains too many columns. Keep only columns A–E.")
+            raise WorkImportError("The worksheet contains too many columns.")
+        if report_header is not None:
+            ordered, total_works, errors = _parse_progress_report(sheet, report_header)
+            if len(errors) > 150:
+                errors = errors[:150] + [
+                    "Additional validation errors omitted; correct the workbook and try again."
+                ]
+            return {
+                "filename": filename[:255],
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "worksheet": sheet.title,
+                "layout": "work_progress_report",
+                "categories": ordered,
+                "count": total_works,
+                "errors": errors,
+            }
         errors = []
         ordered = []
         categories = {}
@@ -228,7 +458,10 @@ def parse_workbook(upload):
             if serial and title:
                 current["works"].append({
                     "index": total_works, "row": line, "serial": serial, "title": title,
-                    "unit": first[2], "quantity": str(qty) if qty is not None else None,
+                    "description": None, "description_provided": False,
+                    "unit": first[2], "unit_provided": True,
+                    "quantity": str(qty) if qty is not None else None,
+                    "quantity_provided": True,
                     "progress": percent, "blank_percent": was_blank,
                     "category_code": current["code"], "category_name": current["name"],
                 })
@@ -248,6 +481,7 @@ def parse_workbook(upload):
                     seen[row["serial"].casefold()] = row["row"]
         return {
             "filename": filename[:255], "sha256": hashlib.sha256(raw).hexdigest(),
+            "worksheet": sheet.title, "layout": "canonical_template",
             "categories": ordered, "count": total_works, "errors": errors[:150],
         }
     finally:
@@ -255,7 +489,7 @@ def parse_workbook(upload):
 
 
 def _task_values(task):
-    return {"title": task.title, "unit": task.unit,
+    return {"title": task.title, "description": task.description, "unit": task.unit,
             "quantity": str(task.quantity) if task.quantity is not None else None,
             "progress": task.progress_percent, "status": task.status,
             "archived": bool(task.archived_at), "category_id": task.category_id,
@@ -305,9 +539,21 @@ def build_import_preview(project, parsed):
             current = _task_values(task) if task else None
             changes = []
             if current:
-                for field in ("title", "unit", "quantity", "progress"):
-                    if (current[field] if field != "quantity" else Decimal(current[field]) if current[field] is not None else None) != (row[field] if field != "quantity" else Decimal(row[field]) if row[field] is not None else None):
+                for field in ("title", "progress"):
+                    if current[field] != row[field]:
                         changes.append(field)
+                if row.get("unit_provided", True) and current["unit"] != row["unit"]:
+                    changes.append("unit")
+                if row.get("quantity_provided", True) and (
+                    Decimal(current["quantity"]) if current["quantity"] is not None else None
+                ) != (
+                    Decimal(row["quantity"]) if row["quantity"] is not None else None
+                ):
+                    changes.append("quantity")
+                if row.get("description_provided", False) and (
+                    current["description"] != row["description"]
+                ):
+                    changes.append("description")
             kind = "new" if not task else "changed" if changes else "unchanged"
             counts[kind] += 1
             work_items.append({**row, "kind": kind, "existing_id": task.pk if task else None,
@@ -315,6 +561,7 @@ def build_import_preview(project, parsed):
     if len(errors) > 150:
         errors = errors[:150] + ["Additional validation errors omitted; correct the workbook and try again."]
     return {"filename": parsed["filename"], "sha256": parsed["sha256"],
+            "worksheet": parsed.get("worksheet", ""), "layout": parsed.get("layout", "canonical_template"),
             "category_count": len(parsed["categories"]),
             "category_names": [{"name": c["name"], "code": c["code"]} for c in parsed["categories"]],
             "items": work_items, "counts": counts, "errors": errors}
@@ -379,7 +626,10 @@ def apply_work_import(*, actor, project_id, batch_id, decisions, request=None):
             raise ValidationError(f"Invalid selection on Excel row {item['row']}.")
         actions.append((item, choice))
         if (choice == "create" and item["progress"] != 0) or (
-            choice == "all" and item["before"] and item["before"]["progress"] != item["progress"]
+            choice == "all" and item["before"] and (
+                item["before"]["progress"] != item["progress"]
+                or item["before"]["status"] != status_for_percentage(item["progress"])
+            )
         ):
             progress_change = True
     if progress_change and not _has_progress_authority(actor):
@@ -407,7 +657,11 @@ def apply_work_import(*, actor, project_id, batch_id, decisions, request=None):
             )
         existing = matches[0] if matches else None
         if item["existing_id"]:
-            if not existing or existing.pk != item["existing_id"] or _task_values(existing) != item["before"]:
+            current_values = _task_values(existing) if existing else {}
+            if not existing or existing.pk != item["existing_id"] or any(
+                current_values.get(key) != value
+                for key, value in item["before"].items()
+            ):
                 raise ValidationError(f"Work on Excel row {item['row']} changed since preview. Upload the file again.")
         elif existing is not None:
             raise ValidationError(f"Work on Excel row {item['row']} now exists. Upload the file again.")
@@ -439,7 +693,9 @@ def apply_work_import(*, actor, project_id, batch_id, decisions, request=None):
         if choice == "create":
             task = PulseTask(
                 category=category, serial_number=item["serial"], title=item["title"],
-                unit=item["unit"], quantity=Decimal(item["quantity"]) if item["quantity"] is not None else None,
+                description=item.get("description") or "",
+                unit=item.get("unit") or "",
+                quantity=Decimal(item["quantity"]) if item.get("quantity") is not None else None,
                 status=status_for_percentage(item["progress"]),
                 progress_percent=item["progress"], sort_order=item["index"],
                 created_by=actor, last_import_batch=batch, import_row_number=item["row"],
@@ -457,8 +713,17 @@ def apply_work_import(*, actor, project_id, batch_id, decisions, request=None):
             task = PulseTask.objects.select_for_update().get(pk=item["existing_id"], category=category)
             before = _task_snapshot(task)
             old_status, old_percent = task.status, task.progress_percent
-            task.title, task.unit = item["title"], item["unit"]
-            task.quantity = Decimal(item["quantity"]) if item["quantity"] is not None else None
+            task.title = item["title"]
+            if item.get("description_provided", False):
+                task.description = item.get("description") or ""
+            if item.get("unit_provided", True):
+                task.unit = item.get("unit") or ""
+            if item.get("quantity_provided", True):
+                task.quantity = (
+                    Decimal(item["quantity"])
+                    if item.get("quantity") is not None
+                    else None
+                )
             if choice == "all":
                 task.progress_percent = item["progress"]
                 task.status = status_for_percentage(item["progress"])
@@ -484,7 +749,13 @@ def apply_work_import(*, actor, project_id, batch_id, decisions, request=None):
         company=project.company, area=AuditArea.PROJECTS, action="pulse.work_import.applied",
         object_type="project_pulse.PulseWorkImportBatch", object_id=batch.pk,
         object_label=f"{project.code} · {batch.filename}", actor_membership=actor,
-        before={}, after={"sha256": batch.sha256, "categories_created": len(created_categories), **counters},
+        before={}, after={
+            "sha256": batch.sha256,
+            "worksheet": preview.get("worksheet", ""),
+            "layout": preview.get("layout", "canonical_template"),
+            "categories_created": len(created_categories),
+            **counters,
+        },
         request=request,
     )
     return counters

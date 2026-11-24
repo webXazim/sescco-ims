@@ -481,6 +481,48 @@ class ProjectApprovalsTests(TestCase):
         self.assertContains(history, "Pending transfer approvals")
         self.assertContains(history, "?status=pending&amp;kind=transfer", html=False)
 
+    def test_approval_list_live_search_sort_and_simplified_columns(self):
+        from django.urls import reverse
+
+        self.requester.first_name = "Inventory"
+        self.requester.last_name = "Owner"
+        self.requester.save(update_fields=("first_name", "last_name"))
+        receipt = self._add(material_name="Searchable Cable").approval_request
+        self._approve(receipt, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(material_name="Searchable Cable")
+        transfer = transfer_stock(
+            user=self.requester,
+            idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(item, "new", Decimal("1"))],
+        ).approval_request
+        later_receipt = self._add(material_name="Unrelated Generator").approval_request
+        self.client.force_login(self.requester)
+        url = reverse("inventory:approval_list")
+
+        searched = self.client.get(url, {"q": "Searchable Cable"})
+        self.assertContains(searched, str(transfer.reference)[:8].upper())
+        self.assertNotContains(searched, str(later_receipt.reference)[:8].upper())
+        self.assertContains(searched, "data-live-filter-form")
+        self.assertContains(searched, "data-live-filter-search")
+        self.assertContains(searched, "data-filter-results")
+        self.assertNotContains(searched, "Project awaiting action")
+        self.assertNotContains(searched, "<th>Submitted</th>", html=True)
+        requester_search = self.client.get(url, {"q": "Inventory Owner"})
+        self.assertContains(requester_search, str(transfer.reference)[:8].upper())
+        self.assertContains(requester_search, str(later_receipt.reference)[:8].upper())
+
+        oldest = self.client.get(url, {"sort": "oldest"})
+        newest = self.client.get(url, {"sort": "newest"})
+        self.assertEqual(oldest.context["approvals"][0].pk, transfer.pk)
+        self.assertEqual(newest.context["approvals"][0].pk, later_receipt.pk)
+        by_project = self.client.get(url, {"sort": "project"})
+        self.assertEqual(by_project.context["approvals"][0].pk, later_receipt.pk)
+        fallback = self.client.get(url, {"sort": "not-a-sort"})
+        self.assertEqual(fallback.context["current_sort"], "newest")
+
     def test_transfer_only_can_submit_without_approval_permission(self):
         # Granting Transfer never grants Approve / Reject.
         user, _, _ = self._custom_user(
@@ -670,6 +712,75 @@ class ProjectApprovalsTests(TestCase):
         with self.assertRaises(InventoryOperationError):
             cancel_pending_transfer(request=cancelled, user=self.requester, reason='Again')
 
+    def test_company_owner_can_cancel_another_requesters_pending_transfer(self):
+        from django.urls import reverse
+
+        from ..services.approvals import cancel_pending_transfer, pending_visible_request_count
+
+        operator, _, _ = self._custom_user(
+            "owner-cancel-operator",
+            [AccessPermission.INVENTORY_STOCK_TRANSFER],
+        )
+        receipt = self._add().approval_request
+        self._approve(receipt, self.manager1, self.p1)
+        item = StockItem.objects.for_company(self.company).get(project=self.p1)
+        request = transfer_stock(
+            user=operator,
+            idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=self.p2.inventory_location,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(item, "new", Decimal("1"))],
+        ).approval_request
+        owner_membership = CompanyMembership.objects.get(
+            company=self.company,
+            user=self.requester,
+        )
+        owner_membership.project_scope_mode = ScopeMode.NONE
+        owner_membership.inventory_location_scope_mode = ScopeMode.NONE
+        owner_membership.save(
+            update_fields=(
+                "project_scope_mode",
+                "inventory_location_scope_mode",
+                "updated_at",
+            )
+        )
+        self.assertEqual(
+            pending_visible_request_count(
+                company=self.company,
+                user=self.requester,
+                membership=owner_membership,
+            ),
+            1,
+        )
+
+        self.client.force_login(self.requester)
+        list_response = self.client.get(reverse("inventory:approval_list"))
+        self.assertContains(list_response, str(request.reference)[:8].upper())
+        self.assertContains(list_response, "Cancel")
+        detail_url = reverse("inventory:approval_detail", args=[request.reference])
+        self.assertContains(self.client.get(detail_url), "Cancel pending transfer")
+        response = self.client.post(
+            reverse("inventory:approval_cancel", args=[request.reference]),
+            {"reason": "Cancelled by company administration"},
+        )
+        self.assertRedirects(response, detail_url)
+        request.refresh_from_db()
+        self.assertEqual(request.status, StockApprovalRequest.Status.CANCELLED)
+        self.assertEqual(request.cancelled_by, self.requester)
+        self.assertTrue(AuditEvent.objects.filter(
+            action="inventory.stock_approval.cancelled",
+            object_id=str(request.reference),
+            actor=self.requester,
+        ).exists())
+
+        with self.assertRaises(InventoryOperationError):
+            cancel_pending_transfer(
+                request=request,
+                user=operator,
+                reason="Already cancelled",
+            )
+
     def test_cancellation_requires_original_requester_reason_and_pending_transfer(self):
         from ..services.approvals import cancel_pending_transfer
         req, item = self._pending_project_transfer()
@@ -699,6 +810,7 @@ class ProjectApprovalsTests(TestCase):
 
     def test_cancel_page_and_pending_sidebar_counter_are_project_scoped(self):
         from django.urls import reverse
+
         from ..services.approvals import pending_visible_request_count
         req, _item = self._pending_project_transfer(destination=self.p2.inventory_location)
         member1 = CompanyMembership.objects.get(user=self.manager1, company=self.company)

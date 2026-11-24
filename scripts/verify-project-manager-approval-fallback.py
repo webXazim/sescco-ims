@@ -13,7 +13,7 @@ checks = {
         '_eligible_project_approvers', 'can_decide', 'can_decide_request',
         '_valid_approver_membership',
         'membership_allows_project', 'INVENTORY_STOCK_APPROVE',
-        '_require_projects', '_is_company_owner', '_required_decisions', 'is_required=True',
+        '_require_projects', 'is_company_owner', '_required_decisions', 'is_required=True',
         'if row.status != StockApprovalDecision.Status.APPROVED',
     ],
     'apps/inventory/services/transfers.py': [

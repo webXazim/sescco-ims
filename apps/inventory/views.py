@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import CharField, Count, Exists, F, OuterRef, Q, Sum
+from django.db.models import CharField, Count, Exists, F, Min, OuterRef, Q, Sum
 from django.db.models.functions import Cast
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,12 +19,21 @@ from django.views.generic import DetailView, ListView, UpdateView
 
 from apps.accounts.access_catalog import AccessPermission
 from apps.accounts.access_policy import membership_has_permission
-from apps.core.access import InventoryAdminRequiredMixin, InventoryPermissionRequiredMixin, InventoryWorkspaceMixin
+from apps.core.access import (
+    InventoryAdminRequiredMixin,
+    InventoryPermissionRequiredMixin,
+    InventoryWorkspaceMixin,
+)
 from apps.core.delete_dialog import delete_dialog_response, is_delete_dialog_request
 from apps.core.models import AuditArea, AuditEvent, TrashCascadeLink
 from apps.core.services.audit import record_audit_event
 from apps.core.services.lifecycle import LifecycleAction, lifecycle_decision
-from apps.core.trash import TRASH_RETENTION_DAYS, active_cascade_child_ids, active_trash, restore_from_trash
+from apps.core.trash import (
+    TRASH_RETENTION_DAYS,
+    active_cascade_child_ids,
+    active_trash,
+    restore_from_trash,
+)
 from apps.core.trash_purge import dismiss_trash_entry
 from apps.explorer.filtering import resolve_date_range
 from apps.explorer.forms import SavedViewCreateForm
@@ -58,8 +67,8 @@ from .forms import (
 )
 from .models import (
     InventoryLocation,
-    StockApprovalRequest,
     StockApprovalDecision,
+    StockApprovalRequest,
     StockDocument,
     StockItem,
     StockMovement,
@@ -77,7 +86,6 @@ from .selectors import (
     stock_items,
     stock_movements,
 )
-from .services.matching import find_stock_matches
 from .services.lifecycle import (
     archive_location,
     archive_stock_item,
@@ -92,6 +100,7 @@ from .services.lifecycle import (
     trash_unused_supplier,
     trash_unused_unit,
 )
+from .services.matching import find_stock_matches
 from .services.stock import (
     InventoryOperationError,
     add_stock,
@@ -2688,12 +2697,15 @@ class InventoryApprovalAccessMixin(InventoryWorkspaceMixin):
         ))
 
 
-# Project stock requests: visibility is limited to the requester and eligible
-# project-scoped approvers; all decisions are rechecked under row locks.
+# Company Owners see the company queue. Other users see their own requests and
+# eligible project-scoped approvals; decisions are rechecked under row locks.
 def _visible_stock_approvals(request):
     from apps.accounts.access_policy import restrict_projects
-    from .services.approvals import can_decide
+
+    from .services.approvals import can_decide, is_company_owner
     membership = getattr(request, "company_membership", None)
+    if is_company_owner(membership):
+        return StockApprovalRequest.objects.for_company(request.company)
     eligible_ids = []
     if membership and membership_has_permission(membership, AccessPermission.INVENTORY_STOCK_APPROVE):
         # Only evaluate projects that have approval decisions. Do not expose all
@@ -2713,34 +2725,192 @@ def _visible_stock_approvals(request):
     ).distinct()
 
 
+_APPROVAL_SORT_CHOICES = (
+    ("newest", "Newest first"),
+    ("oldest", "Oldest first"),
+    ("project", "Project A-Z"),
+    ("requester", "Requester A-Z"),
+    ("type", "Request type"),
+)
+
+
+def _search_stock_approvals(queryset, *, company, query):
+    query = " ".join((query or "").split())[:160]
+    if not query:
+        return queryset
+
+    location_ids = {
+        str(pk)
+        for pk in InventoryLocation.objects.for_company(company).filter(
+            Q(code__icontains=query)
+            | Q(name__icontains=query)
+            | Q(project__code__icontains=query)
+            | Q(project__name__icontains=query)
+        ).values_list("pk", flat=True)
+    }
+    stock_ids = {
+        str(pk)
+        for pk in StockItem.objects.for_company(company).filter(
+            Q(material_name__icontains=query)
+            | Q(description__icontains=query)
+            | Q(supplier_name__icontains=query)
+            | Q(supplier_phone__icontains=query)
+            | Q(unit__name__icontains=query)
+            | Q(unit__symbol__icontains=query)
+        ).values_list("pk", flat=True)
+    }
+    unit_ids = {
+        str(pk)
+        for pk in Unit.objects.for_company(company).filter(
+            Q(name__icontains=query) | Q(symbol__icontains=query)
+        ).values_list("pk", flat=True)
+    }
+    normalized_query = query.casefold()
+    payload_request_ids = []
+    search_rows = queryset.values(
+        "pk",
+        "kind",
+        "payload",
+        "requested_by__username",
+        "requested_by__first_name",
+        "requested_by__last_name",
+    ).distinct()
+    for row in search_rows.iterator(chunk_size=500):
+        payload = row["payload"] or {}
+        requester_name = " ".join(
+            value
+            for value in (
+                row["requested_by__first_name"],
+                row["requested_by__last_name"],
+            )
+            if value
+        )
+        values = [
+            payload.get("document_reference"),
+            payload.get("invoice_reference"),
+            payload.get("notes"),
+            row["requested_by__username"],
+            requester_name,
+            "Stock transfer" if row["kind"] == StockApprovalRequest.Kind.TRANSFER else "Stock receipt",
+        ]
+        matched = any(
+            normalized_query in str(value).casefold()
+            for value in values
+            if value not in (None, "")
+        )
+        if row["kind"] == StockApprovalRequest.Kind.RECEIPT:
+            matched = matched or any(
+                normalized_query in str(payload.get(field, "")).casefold()
+                for field in (
+                    "material_name",
+                    "description",
+                    "supplier_name",
+                    "supplier_phone",
+                    "supplier_location",
+                )
+            )
+            matched = matched or str(payload.get("unit_id")) in unit_ids
+        else:
+            matched = matched or any(
+                str(payload.get(field)) in location_ids
+                for field in ("source_location_id", "destination_location_id")
+            )
+            matched = matched or any(
+                str(line.get("stock_item_id")) in stock_ids
+                for line in payload.get("allocations", [])
+            )
+        if matched:
+            payload_request_ids.append(row["pk"])
+
+    return (
+        queryset.annotate(_approval_reference=Cast("reference", CharField()))
+        .filter(
+            Q(pk__in=payload_request_ids)
+            | Q(_approval_reference__icontains=query)
+            | Q(requested_by__username__icontains=query)
+            | Q(requested_by__first_name__icontains=query)
+            | Q(requested_by__last_name__icontains=query)
+            | Q(decisions__project__code__icontains=query)
+            | Q(decisions__project__name__icontains=query)
+            | Q(cancellation_reason__icontains=query)
+            | Q(status__icontains=query)
+            | Q(kind__icontains=query)
+        )
+        .distinct()
+    )
+
+
 class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
     template_name = "inventory/approval_list.html"
     context_object_name = "approvals"
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = _visible_stock_approvals(self.request).select_related("requested_by").prefetch_related("decisions__project")
+        queryset = _visible_stock_approvals(self.request).select_related("requested_by")
         status = self.request.GET.get("status", "pending")
         if status in StockApprovalRequest.Status.values:
             queryset = queryset.filter(status=status)
+            self.current_status = status
+        elif status == "all":
+            self.current_status = "all"
+        else:
+            queryset = queryset.filter(status=StockApprovalRequest.Status.PENDING)
+            self.current_status = StockApprovalRequest.Status.PENDING
         kind = self.request.GET.get("kind", "all")
         if kind in StockApprovalRequest.Kind.values:
             queryset = queryset.filter(kind=kind)
+            self.current_kind = kind
+        else:
+            self.current_kind = "all"
+        self.search_query = self.request.GET.get("q", "").strip()[:160]
+        queryset = _search_stock_approvals(
+            queryset,
+            company=self.request.company,
+            query=self.search_query,
+        )
+        requested_sort = self.request.GET.get("sort", "newest")
+        self.current_sort = (
+            requested_sort
+            if requested_sort in {value for value, _label in _APPROVAL_SORT_CHOICES}
+            else "newest"
+        )
+        if self.current_sort == "oldest":
+            return queryset.order_by("created_at", "pk")
+        if self.current_sort == "requester":
+            return queryset.order_by(
+                "requested_by__first_name",
+                "requested_by__last_name",
+                "requested_by__username",
+                "-created_at",
+                "-pk",
+            )
+        if self.current_sort == "type":
+            return queryset.order_by("kind", "-created_at", "-pk")
+        if self.current_sort == "project":
+            return queryset.annotate(
+                _approval_project=Min(
+                    "decisions__project__code",
+                    filter=Q(decisions__is_required=True),
+                )
+            ).order_by("_approval_project", "-created_at", "-pk")
         return queryset.order_by("-created_at", "-pk")
 
     def get_context_data(self, **kwargs):
+        from .services.approvals import can_cancel_pending_transfer
+
         ctx = super().get_context_data(**kwargs)
-        kind = self.request.GET.get("kind", "all")
-        current_status = self.request.GET.get("status", "pending")
         ctx.update(
             page_key="approvals",
             page_title="Stock requests and approvals",
             page_subtitle=(
-                "Review pending project receipts and incoming transfers. Company Owners can "
-                "approve their own transfer requests; other requesters need a separate approver."
+                "Search and review project receipts and incoming transfers. Company Owners can "
+                "cancel any pending transfer and approve their own transfer requests."
             ),
-            current_status=current_status,
-            current_kind=kind if kind in StockApprovalRequest.Kind.values else "all",
+            current_status=self.current_status,
+            current_kind=self.current_kind,
+            current_sort=self.current_sort,
+            search_query=self.search_query,
+            sort_choices=_APPROVAL_SORT_CHOICES,
             status_choices=[
                 ("pending", "Pending"),
                 ("approved", "Approved / applied"),
@@ -2805,31 +2975,16 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
 
         for approval in approvals:
             payload = approval.payload or {}
-            approval.can_cancel = (
-                approval.kind == StockApprovalRequest.Kind.TRANSFER
-                and approval.status == StockApprovalRequest.Status.PENDING
-                and approval.requested_by_id == self.request.user.pk
-                and not approval.applied_transfer_id
+            approval.can_cancel = can_cancel_pending_transfer(
+                self.request.user,
+                approval,
+                self.request.company_membership,
             )
             source = None
             destination = None
             if approval.kind == StockApprovalRequest.Kind.TRANSFER:
                 source = locations.get(payload.get("source_location_id"))
                 destination = locations.get(payload.get("destination_location_id"))
-            decision_rows = [row for row in approval.decisions.all() if row.is_required]
-            if destination and destination.project_id:
-                decision_rows = [
-                    row for row in decision_rows
-                    if row.project_id == destination.project_id
-                ]
-            pending_codes = [
-                row.project.code for row in decision_rows
-                if row.status == StockApprovalDecision.Status.PENDING
-            ]
-            approval.pending_project_summary = ", ".join(pending_codes) if pending_codes else "None"
-            approval.approval_project_summary = (
-                ", ".join(row.project.code for row in decision_rows) or "—"
-            )
             approval.item_count = 0
             approval.item_summary = "—"
             approval.quantity_summary = "—"
@@ -2873,7 +3028,7 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
         )
 
     def get_context_data(self, **kwargs):
-        from .services.approvals import can_decide_request
+        from .services.approvals import can_cancel_pending_transfer, can_decide_request
         ctx = super().get_context_data(**kwargs)
         ctx.update(
             page_key="approvals",
@@ -2883,11 +3038,10 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
                 "posted stock operation."
             ),
         )
-        ctx["can_cancel"] = (
-            self.object.kind == StockApprovalRequest.Kind.TRANSFER
-            and self.object.status == StockApprovalRequest.Status.PENDING
-            and self.object.requested_by_id == self.request.user.pk
-            and not self.object.applied_transfer_id
+        ctx["can_cancel"] = can_cancel_pending_transfer(
+            self.request.user,
+            self.object,
+            self.request.company_membership,
         )
         payload = self.object.payload
         required_project_id = None
@@ -3042,7 +3196,7 @@ class StockApprovalDecisionView(InventoryPermissionRequiredMixin, View):
 
 
 class StockApprovalCancelView(InventoryApprovalAccessMixin, View):
-    """POST-only cancellation by the original requester of an unposted transfer."""
+    """POST-only cancellation by the requester or a Company Owner."""
 
     def post(self, request, reference):
         from .services.approvals import cancel_pending_transfer
