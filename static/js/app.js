@@ -281,9 +281,6 @@
         results.innerHTML = nextResults.innerHTML;
         initResizableDescriptions(results);
         if (currentHead && nextHead) currentHead.replaceWith(nextHead);
-        const topSearch = document.querySelector('.top-search input[name="q"]');
-        const search = liveFilterForm.querySelector("[data-live-filter-search]");
-        if (topSearch && search) topSearch.value = search.value;
         window.history.replaceState({}, "", url);
         if (status) status.textContent = "Updated";
       } catch (error) {

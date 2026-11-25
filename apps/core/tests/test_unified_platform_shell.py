@@ -1,7 +1,7 @@
-from django.contrib.auth import get_user_model
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -9,7 +9,6 @@ from apps.accounts.models import CompanyMembership
 from apps.accounts.roles import AccessRole
 from apps.accounts.selectors import ACTIVE_COMPANY_SESSION_KEY
 from apps.core.models import Company
-
 
 User = get_user_model()
 
@@ -31,7 +30,7 @@ class UnifiedPlatformShellTests(TestCase):
         response = self.client.get(reverse("core:dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-platform-switchers')
+        self.assertContains(response, "data-platform-switchers")
         self.assertContains(response, "Inventory Management")
         self.assertContains(response, "Payroll Management")
         self.assertContains(response, "Administration")
@@ -40,8 +39,11 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertContains(response, "/static/platform/css/inventory-shell.css")
         self.assertContains(response, "/static/platform/js/inventory-shell.js")
         self.assertContains(response, 'class="inventory-shell-v2"')
-        self.assertContains(response, 'data-inventory-sidebar-collapse')
-        self.assertContains(response, 'data-inventory-sidebar-resize')
+        self.assertContains(response, "data-inventory-sidebar-collapse")
+        self.assertContains(response, "data-inventory-sidebar-resize")
+        self.assertContains(response, "data-inventory-breadcrumb")
+        self.assertContains(response, 'aria-current="page"')
+        self.assertNotContains(response, "Search allowed inventory")
         self.assertContains(response, "SESCCO MS")
         self.assertContains(response, "Management System")
         self.assertNotContains(response, "Switch business")
@@ -54,7 +56,7 @@ class UnifiedPlatformShellTests(TestCase):
         response = self.client.get(reverse("core:payroll"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-platform-switchers')
+        self.assertContains(response, "data-platform-switchers")
         self.assertContains(response, "Inventory Management")
         self.assertContains(response, "Payroll Management")
         self.assertContains(response, "Administration")
@@ -86,7 +88,9 @@ class UnifiedPlatformShellTests(TestCase):
         self.assertEqual([item["key"] for item in modules], ["payroll"])
 
     def test_timesheet_focus_mode_removes_v2_shell_offsets(self):
-        css = (Path(settings.BASE_DIR) / "static/platform/css/payroll-shell-fixes.css").read_text(encoding="utf-8")
+        css = (Path(settings.BASE_DIR) / "static/platform/css/payroll-shell-fixes.css").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("body.timesheet-focus-mode .ui-v2-app-shell > .ui-v2-sidebar", css)
         self.assertIn("body.timesheet-focus-mode .ui-v2-topbar", css)
         self.assertIn("margin-left: 0 !important;", css)
@@ -97,7 +101,9 @@ class UnifiedPlatformShellTests(TestCase):
         first = self.make_company("First Payroll", "first-payroll")
         second = self.make_company("Second Payroll", "second-payroll")
         user, _ = self.make_user("multi-payroll", first, AccessRole.INTERNAL_PAYROLL_OFFICER)
-        CompanyMembership.objects.create(company=second, user=user, role=AccessRole.RENTAL_MANPOWER_OFFICER)
+        CompanyMembership.objects.create(
+            company=second, user=user, role=AccessRole.RENTAL_MANPOWER_OFFICER
+        )
         self.client.force_login(user)
         session = self.client.session
         session[ACTIVE_COMPANY_SESSION_KEY] = str(first.id)
@@ -115,8 +121,12 @@ class UnifiedPlatformShellTests(TestCase):
     def test_company_switch_falls_back_when_destination_lacks_current_module(self):
         payroll_company = self.make_company("Payroll Co", "payroll-co")
         inventory_company = self.make_company("Inventory Co", "inventory-co")
-        user, _ = self.make_user("mixed-company-user", payroll_company, AccessRole.INTERNAL_PAYROLL_OFFICER)
-        CompanyMembership.objects.create(company=inventory_company, user=user, role=AccessRole.STOREKEEPER)
+        user, _ = self.make_user(
+            "mixed-company-user", payroll_company, AccessRole.INTERNAL_PAYROLL_OFFICER
+        )
+        CompanyMembership.objects.create(
+            company=inventory_company, user=user, role=AccessRole.STOREKEEPER
+        )
         self.client.force_login(user)
         session = self.client.session
         session[ACTIVE_COMPANY_SESSION_KEY] = str(payroll_company.id)

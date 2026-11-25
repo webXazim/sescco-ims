@@ -383,6 +383,153 @@
   border-radius: 7px;
 }
 
+/* Inventory navigation context and scroll-aware register chrome. */
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) {
+  --inventory-shell-topbar-height: 56px;
+  --inventory-sticky-top: var(--inventory-shell-topbar-height);
+}
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .inventory-topbar {
+  transform: translateY(0);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  will-change: transform;
+}
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1).inventory-topbar-hidden .inventory-topbar {
+  transform: translateY(calc(-100% - 1px));
+  box-shadow: none;
+}
+.inventory-shell-v2 .inventory-breadcrumb {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--inventory-shell-secondary);
+  white-space: nowrap;
+}
+.inventory-shell-v2 .inventory-breadcrumb__link,
+.inventory-shell-v2 .inventory-breadcrumb__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.inventory-shell-v2 .inventory-breadcrumb__link {
+  flex: 0 1 auto;
+  color: var(--inventory-shell-secondary);
+  font-weight: 560;
+  transition: color 120ms ease;
+}
+.inventory-shell-v2 .inventory-breadcrumb__link:hover {
+  color: var(--inventory-shell-text);
+}
+.inventory-shell-v2 .inventory-breadcrumb__link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--inventory-shell-focus);
+  outline-offset: 3px;
+}
+.inventory-shell-v2 .inventory-breadcrumb__root {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.inventory-shell-v2 .inventory-breadcrumb__root svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.inventory-shell-v2 .inventory-breadcrumb__separator {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  fill: none;
+  stroke: var(--inventory-shell-muted);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.inventory-shell-v2 .inventory-breadcrumb__current {
+  flex: 0 1 auto;
+  color: var(--inventory-shell-text);
+  font-weight: 680;
+}
+
+/* A filter can live in the same table card or in a preceding card. JavaScript
+   marks the correct carrier so both compositions share one sticky contract. */
+@media (min-width: 681px) {
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) [data-inventory-sticky-filter] {
+    position: sticky !important;
+    top: var(--inventory-sticky-top);
+    z-index: 32;
+    background: var(--inventory-shell-surface);
+    transition: top 180ms ease, box-shadow 140ms ease;
+  }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) [data-inventory-sticky-filter][data-inventory-stuck="true"] {
+    box-shadow: 0 8px 18px rgba(20,24,20,.07), 0 1px 0 var(--inventory-shell-border);
+  }
+}
+
+/* Overflow clipping on result/card wrappers prevents native position:sticky.
+   It is safe to release vertically; wide tables retain their own horizontal
+   viewport and receive a synchronized visual header below. */
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) [data-filter-results] {
+  overflow: visible;
+}
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .table-wrap[data-inventory-native-sticky="true"] {
+  overflow: visible;
+}
+.inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) .table-wrap[data-inventory-native-sticky="true"] thead th {
+  position: sticky;
+  top: var(--inventory-table-sticky-top, var(--inventory-sticky-top));
+  z-index: 29;
+  background: #fafafa;
+  box-shadow: inset 0 -1px var(--inventory-shell-border);
+  transition: top 180ms ease;
+}
+
+.inventory-shell-v2 .inventory-sticky-table-head {
+  position: fixed;
+  z-index: 30;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+  background: #fafafa;
+  box-shadow: 0 1px 0 var(--inventory-shell-border), 0 7px 15px rgba(20,24,20,.055);
+  transition: top 180ms ease;
+}
+.inventory-shell-v2 .inventory-sticky-table-head[hidden] {
+  display: none !important;
+}
+.inventory-shell-v2 .inventory-sticky-table-head__table {
+  width: auto;
+  margin: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  transform: translateX(0);
+  will-change: transform;
+}
+.inventory-shell-v2 .inventory-sticky-table-head__table thead,
+.inventory-shell-v2 .inventory-sticky-table-head__table tr {
+  background: #fafafa;
+}
+.inventory-shell-v2 .inventory-sticky-table-head__table th {
+  position: static !important;
+  box-sizing: border-box;
+  background: #fafafa;
+  box-shadow: none !important;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.inventory-shell-v2 .inventory-sticky-table-head__table .column-resize-handle {
+  display: none;
+}
+
 /* Desktop collapsed state follows Payroll's 64px rail. */
 .inventory-shell-v2 .app-shell[data-sidebar-collapsed="true"] .sidebar {
   width: var(--inventory-sidebar-collapsed);
@@ -492,11 +639,26 @@
 }
 @media (max-width: 680px) {
   .inventory-shell-v2 .topbar { height: 57px; padding: 0 12px; gap: 10px; }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) {
+    --inventory-shell-topbar-height: 57px;
+  }
+  .inventory-shell-v2 .inventory-breadcrumb { gap: 5px; }
+  .inventory-shell-v2 .inventory-breadcrumb__root span { display: none; }
+  .inventory-shell-v2 .inventory-breadcrumb__link,
+  .inventory-shell-v2 .inventory-breadcrumb__current { font-size: 12px; }
+  .inventory-shell-v2:not(.access-shell-v1):not(.sourcing-shell-v1) [data-inventory-sticky-filter] {
+    position: static !important;
+    box-shadow: none !important;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .inventory-shell-v2 .sidebar,
   .inventory-shell-v2 .main,
-  .inventory-shell-v2 .inventory-sidebar-resize-handle::after { transition: none; }
+  .inventory-shell-v2 .inventory-sidebar-resize-handle::after,
+  .inventory-shell-v2 .inventory-topbar,
+  .inventory-shell-v2 [data-inventory-sticky-filter],
+  .inventory-shell-v2 .table-wrap[data-inventory-native-sticky="true"] thead th,
+  .inventory-shell-v2 .inventory-sticky-table-head { transition: none; }
 }
 .inventory-shell-v2 .menu-button svg {
   width: 18px;

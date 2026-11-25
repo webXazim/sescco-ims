@@ -1,15 +1,19 @@
-<header class="topbar inventory-topbar">
+<header class="topbar inventory-topbar" data-inventory-topbar>
   <button class="menu-button" data-sidebar-toggle aria-label="Open navigation">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
   </button>
-  {% if page_key == 'inventory' %}
-    <div class="topbar-context"><strong>Inventory</strong><span>Live search and filters below</span></div>
-  {% elif "inventory.stock.view" in ACCESS_CONTEXT.effective_access.permissions %}
-    <form class="top-search" method="get" action="{% url 'inventory:list' %}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input name="q" placeholder="Search allowed inventory…" aria-label="Search allowed inventory">
-    </form>
-  {% else %}<div class="topbar-context"><strong>Inventory</strong><span>Scoped workspace</span></div>{% endif %}
+  <nav class="inventory-breadcrumb" aria-label="Breadcrumb" data-inventory-breadcrumb>
+    <a class="inventory-breadcrumb__link inventory-breadcrumb__root" href="{% url 'core:dashboard' %}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5M6.5 10v10h11V10M10 20v-6h4v6"/></svg>
+      <span>Inventory</span>
+    </a>
+    <svg class="inventory-breadcrumb__separator" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    {% if INVENTORY_BREADCRUMB_PARENT %}
+      <a class="inventory-breadcrumb__link" href="{{ INVENTORY_BREADCRUMB_PARENT.url }}">{{ INVENTORY_BREADCRUMB_PARENT.label }}</a>
+      <svg class="inventory-breadcrumb__separator" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    {% endif %}
+    <span class="inventory-breadcrumb__current" aria-current="page">{{ page_title|default:INVENTORY_BREADCRUMB_CURRENT }}</span>
+  </nav>
   <div class="top-actions">
     {% if "inventory.projects.view" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-sm" href="{% url 'projects:list' %}">Projects</a>{% endif %}
     {% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary btn-sm" href="{% url 'core:add_stock' %}">Add stock</a>{% endif %}
