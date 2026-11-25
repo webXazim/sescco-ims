@@ -22,6 +22,7 @@ from apps.inventory.models import (
 )
 from apps.inventory.services.approvals import decide_request
 from apps.inventory.services.stock import add_stock, use_stock
+from apps.inventory.services.transfers import TransferAllocation, transfer_stock
 from apps.projects.models import Project
 
 from ..models import ExportAudit
@@ -90,18 +91,13 @@ class TransferWorkbookTests(TestCase):
 
     def _export(self):
         response = self.client.get(
-            reverse("data_exchange:transfer_workbook_export", args=[self.p1.inventory_location.pk])
+            reverse(
+                "data_exchange:project_inventory_export",
+                args=[self.p1.code, "xlsx"],
+            )
         )
         self.assertEqual(response.status_code, 200)
         return response.content
-
-    def _completed_workbook(self, quantity):
-        workbook = load_workbook(io.BytesIO(self._export()))
-        workbook["Transfer Lines"]["H2"] = quantity
-        output = io.BytesIO()
-        workbook.save(output)
-        workbook.close()
-        return output.getvalue()
 
     @staticmethod
     def _upload(payload):
@@ -113,17 +109,16 @@ class TransferWorkbookTests(TestCase):
 
     def _post(self, payload, destination):
         return self.client.post(
-            reverse("data_exchange:transfer_workbook", args=[self.p1.inventory_location.pk]),
+            reverse("data_exchange:transfer_workbook", args=[destination.pk]),
             {
                 "source_file": self._upload(payload),
-                "destination_location": destination.pk,
                 "transfer_date": timezone.localdate().isoformat(),
                 "document_reference": "XLS-TRANSFER-1",
             },
         )
 
     def test_project_destination_queues_one_approval_then_posts(self):
-        payload = self._completed_workbook(3)
+        payload = self._export()
 
         response = self._post(payload, self.p2.inventory_location)
 
@@ -142,7 +137,7 @@ class TransferWorkbookTests(TestCase):
         ).exists())
         self.assertContains(
             self.client.get(reverse("inventory:approval_detail", args=[request.reference])),
-            "Excel transfer imported",
+            "Inventory Excel imported",
         )
 
         approved = decide_request(
@@ -153,14 +148,14 @@ class TransferWorkbookTests(TestCase):
         )
         self.item.refresh_from_db()
         self.assertEqual(approved.status, StockApprovalRequest.Status.APPROVED)
-        self.assertEqual(self.item.current_quantity, Decimal("7"))
+        self.assertEqual(self.item.current_quantity, Decimal("0"))
         self.assertEqual(
             approved.applied_transfer.lines.get().destination_stock_item.current_quantity,
-            Decimal("3"),
+            Decimal("10"),
         )
 
     def test_office_destination_posts_immediately(self):
-        response = self._post(self._completed_workbook(2), self.office)
+        response = self._post(self._export(), self.office)
 
         transfer = StockTransfer.objects.for_company(self.company).get()
         self.assertRedirects(
@@ -171,25 +166,123 @@ class TransferWorkbookTests(TestCase):
             StockApprovalRequest.objects.for_company(self.company).filter(kind="transfer").exists()
         )
         self.item.refresh_from_db()
-        self.assertEqual(self.item.current_quantity, Decimal("8"))
+        self.assertEqual(self.item.current_quantity, Decimal("0"))
         self.assertEqual(transfer.destination_location, self.office)
 
+    def test_normal_office_export_imports_to_project_with_approval(self):
+        office_item = add_stock(
+            user=self.owner,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("4"),
+            movement_date=timezone.localdate(),
+            location=self.office,
+            material_name="Office Drill",
+            supplier_name="Office Supplier",
+            supplier_phone="0501234555",
+            unit=self.unit,
+        ).movement.stock_item
+        exported = self.client.get(
+            reverse("data_exchange:inventory_export", args=["xlsx"]),
+            {"location": self.office.code},
+        )
+        self.assertEqual(exported.status_code, 200)
+
+        response = self._post(exported.content, self.p2.inventory_location)
+
+        request = StockApprovalRequest.objects.for_company(self.company).get(kind="transfer")
+        self.assertRedirects(
+            response,
+            reverse("inventory:approval_detail", args=[request.reference]),
+        )
+        self.assertEqual(request.decisions.get().project, self.p2)
+        decide_request(
+            request=request,
+            user=self.owner,
+            project_id=self.p2.pk,
+            decision="approve",
+        )
+        office_item.refresh_from_db()
+        self.assertEqual(office_item.current_quantity, Decimal("0"))
+        destination = StockItem.objects.for_company(self.company).get(
+            project=self.p2,
+            material_name="Office Drill",
+        )
+        self.assertEqual(destination.current_quantity, Decimal("4"))
+
+    def test_direct_export_preserves_legacy_no_value_condition(self):
+        transfer = transfer_stock(
+            user=self.owner,
+            idempotency_key=uuid.uuid4(),
+            source_location=self.p1.inventory_location,
+            destination_location=self.office,
+            transfer_date=timezone.localdate(),
+            allocations=[TransferAllocation(self.item, "no_value", Decimal("2"))],
+        ).transfer
+        office_item = transfer.lines.get().destination_stock_item
+        exported = self.client.get(
+            reverse("data_exchange:inventory_export", args=["xlsx"]),
+            {"location": self.office.code},
+        )
+
+        self._post(exported.content, self.p2.inventory_location)
+        request = StockApprovalRequest.objects.for_company(self.company).get(kind="transfer")
+        decide_request(
+            request=request,
+            user=self.owner,
+            project_id=self.p2.pk,
+            decision="approve",
+        )
+
+        office_item.refresh_from_db()
+        self.assertEqual(office_item.current_quantity, Decimal("0"))
+        destination = StockItem.objects.for_company(self.company).get(
+            project=self.p2,
+            material_name=self.item.material_name,
+            condition=StockItem.Condition.NO_VALUE,
+        )
+        self.assertEqual(destination.current_quantity, Decimal("2"))
+        self.assertEqual(destination.latest_unit_price, Decimal("0"))
+
     def test_reimporting_same_manifest_is_idempotent(self):
-        payload = self._completed_workbook(2)
+        payload = self._export()
 
         self.assertEqual(self._post(payload, self.office).status_code, 302)
         self.assertEqual(self._post(payload, self.office).status_code, 302)
 
         self.assertEqual(StockTransfer.objects.for_company(self.company).count(), 1)
         self.item.refresh_from_db()
-        self.assertEqual(self.item.current_quantity, Decimal("8"))
+        self.assertEqual(self.item.current_quantity, Decimal("0"))
         self.assertEqual(
             AuditEvent.objects.filter(action="inventory.transfer_workbook.imported").count(),
             1,
         )
 
+    def test_mixed_location_export_is_not_importable_as_one_transfer(self):
+        add_stock(
+            user=self.owner,
+            idempotency_key=uuid.uuid4(),
+            quantity=Decimal("1"),
+            movement_date=timezone.localdate(),
+            location=self.office,
+            material_name="Office Mixed Item",
+            supplier_name="Office Supplier",
+            supplier_phone="0501234666",
+            unit=self.unit,
+        )
+        exported = self.client.get(
+            reverse("data_exchange:inventory_export", args=["xlsx"])
+        )
+        workbook = load_workbook(io.BytesIO(exported.content), data_only=True)
+        self.assertNotIn("SESCCO Transfer Manifest", workbook.sheetnames)
+        workbook.close()
+
+        response = self._post(exported.content, self.p2.inventory_location)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "not a verifiable SESCCO inventory export", status_code=400)
+
     def test_stale_source_balance_requires_fresh_export(self):
-        payload = self._completed_workbook(2)
+        payload = self._export()
         use_stock(
             stock_item=self.item,
             user=self.owner,
@@ -202,13 +295,12 @@ class TransferWorkbookTests(TestCase):
         response = self._post(payload, self.office)
 
         self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "source balance changed after export", status_code=400)
+        self.assertContains(response, "source balance or identity changed", status_code=400)
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
 
-    def test_modified_protected_row_is_rejected(self):
+    def test_modified_signed_manifest_is_rejected(self):
         workbook = load_workbook(io.BytesIO(self._export()))
-        workbook["Transfer Lines"]["B2"] = "Different material"
-        workbook["Transfer Lines"]["H2"] = 1
+        workbook["SESCCO Transfer Manifest"]["A5"] = "changed-token"
         output = io.BytesIO()
         workbook.save(output)
         workbook.close()
@@ -216,12 +308,12 @@ class TransferWorkbookTests(TestCase):
         response = self._post(output.getvalue(), self.office)
 
         self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "protected stock fields were changed", status_code=400)
+        self.assertContains(response, "inventory export rows were changed", status_code=400)
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
 
-    def test_formula_quantity_is_rejected(self):
+    def test_removing_an_exported_row_is_rejected(self):
         workbook = load_workbook(io.BytesIO(self._export()))
-        workbook["Transfer Lines"]["H2"] = "=1+1"
+        workbook["SESCCO Transfer Manifest"].delete_rows(5)
         output = io.BytesIO()
         workbook.save(output)
         workbook.close()
@@ -229,12 +321,12 @@ class TransferWorkbookTests(TestCase):
         response = self._post(output.getvalue(), self.office)
 
         self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "formulas are not allowed", status_code=400)
+        self.assertContains(response, "Rows were added to or removed", status_code=400)
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
 
     def test_sparse_oversized_worksheet_is_rejected(self):
         workbook = load_workbook(io.BytesIO(self._export()))
-        workbook["Transfer Lines"]["H5003"] = 1
+        workbook["SESCCO Transfer Manifest"]["A5005"] = "extra"
         output = io.BytesIO()
         workbook.save(output)
         workbook.close()
@@ -242,7 +334,7 @@ class TransferWorkbookTests(TestCase):
         response = self._post(output.getvalue(), self.office)
 
         self.assertEqual(response.status_code, 400)
-        self.assertContains(response, "at most 5000 stock rows", status_code=400)
+        self.assertContains(response, "invalid size", status_code=400)
         self.assertFalse(StockTransfer.objects.for_company(self.company).exists())
 
     def test_export_records_manifest_audit(self):
@@ -250,25 +342,29 @@ class TransferWorkbookTests(TestCase):
         workbook = load_workbook(io.BytesIO(payload), data_only=True)
         self.assertEqual(
             workbook.sheetnames,
-            ["Instructions", "Transfer Lines", "SESCCO Metadata"],
+            ["Results", "Export Information", "SESCCO Transfer Manifest"],
         )
-        self.assertEqual(workbook["Transfer Lines"]["A2"].value, str(self.item.reference))
+        self.assertEqual(workbook["Results"]["A1"].value, "Material")
+        self.assertEqual(workbook["Results"]["A2"].value, self.item.material_name)
+        self.assertEqual(workbook["SESCCO Transfer Manifest"].sheet_state, "veryHidden")
         workbook.close()
-        audit = ExportAudit.objects.get(dataset=ExportAudit.Dataset.TRANSFER_WORKSHEET)
+        audit = ExportAudit.objects.get(dataset=ExportAudit.Dataset.PROJECT_INVENTORY)
         self.assertEqual(audit.row_count, 1)
-        self.assertEqual(audit.scope_reference, str(self.p1.inventory_location.reference))
+        self.assertEqual(audit.scope_reference, self.p1.code)
 
     def test_excel_transfer_entry_points_render(self):
         transfer_url = reverse(
             "data_exchange:transfer_workbook",
-            args=[self.p1.inventory_location.pk],
+            args=[self.p2.inventory_location.pk],
         )
-        self.assertContains(self.client.get(transfer_url), "Download fresh worksheet")
+        import_page = self.client.get(transfer_url)
+        self.assertContains(import_page, "Exported inventory workbook")
+        self.assertContains(import_page, self.p2.inventory_location.code)
+        self.assertNotContains(import_page, "Send stock to")
         self.assertContains(
-            self.client.get(reverse("projects:detail", args=[self.p1.code])),
+            self.client.get(reverse("projects:detail", args=[self.p2.code])),
             transfer_url,
         )
-        self.assertContains(
-            self.client.get(reverse("inventory:office")),
-            "Excel transfer",
-        )
+        office_page = self.client.get(reverse("inventory:office"))
+        self.assertContains(office_page, "Import inventory Excel")
+        self.assertContains(office_page, "Excel workbook")

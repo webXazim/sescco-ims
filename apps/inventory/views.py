@@ -1172,6 +1172,10 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        export_query = self.request.GET.copy()
+        export_query.pop("page", None)
+        if self.office:
+            export_query["location"] = self.office.code
         context.update(
             page_key="office",
             page_title=self.office.name if self.office else "Office stock",
@@ -1187,6 +1191,7 @@ class OfficeInventoryView(InventoryPermissionRequiredMixin, ListView):
             filter_chips=_stock_filter_chips(self.request, self.filter_data) if self.filter_data else [],
             custom_date_open=self.filter_data.get("date_preset") == "custom",
             advanced_open=not self.filter_form.is_valid(),
+            office_export_query=export_query.urlencode(),
             clear_url=(
                 f"{reverse('inventory:office')}?{urlencode({'location': self.office.code})}"
                 if self.office and self.request.GET.get("location") else reverse("inventory:office")
@@ -3121,7 +3126,7 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
         }
         action_labels = {
             "inventory.stock_approval.submitted": "Request submitted",
-            "inventory.transfer_workbook.imported": "Excel transfer imported",
+            "inventory.transfer_workbook.imported": "Inventory Excel imported",
             "inventory.stock_approval.approved": "Request approved",
             "inventory.stock_approval.rejected": "Request rejected",
             "inventory.stock_approval.cancelled": "Request cancelled",

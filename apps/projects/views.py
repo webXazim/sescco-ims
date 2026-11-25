@@ -422,6 +422,22 @@ class ProjectDetailView(InventoryPermissionRequiredMixin, DetailView):
                 and self.object.end_date is None
                 and not all_project_items.filter(current_quantity__gt=0).exists()
             ),
+            inventory_location_id=(
+                restrict_inventory_location_queryset(
+                    InventoryLocation.objects.for_company(self.request.company),
+                    self.request.company_membership,
+                )
+                .filter(
+                    project=self.object,
+                    is_active=True,
+                    archived_at__isnull=True,
+                    deleted_at__isnull=True,
+                )
+                .values_list("pk", flat=True)
+                .first()
+                if self.object.accepts_stock_activity
+                else None
+            ),
             transfer_source_location_id=(
                 restrict_inventory_location_queryset(
                     InventoryLocation.objects.for_company(self.request.company),

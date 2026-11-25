@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views import View
 from django.views.generic import ListView
 
@@ -50,7 +53,6 @@ from .services.importing import (
 from .services.transfer_workbooks import (
     TransferWorkbookError,
     parse_transfer_workbook,
-    transfer_workbook_response,
 )
 
 
@@ -157,11 +159,14 @@ class TransferWorkbookExportView(InventoryPermissionRequiredMixin, View):
 
     def get(self, request, location_id):
         source = get_object_or_404(_active_transfer_locations(request), pk=location_id)
-        try:
-            return transfer_workbook_response(source_location=source, user=request.user)
-        except TransferWorkbookError as exc:
-            messages.error(request, str(exc))
-            return redirect("data_exchange:transfer_workbook", location_id=source.pk)
+        if source.project_id:
+            return redirect(
+                "data_exchange:project_inventory_export",
+                code=source.project.code,
+                file_format="xlsx",
+            )
+        url = reverse("data_exchange:inventory_export", args=["xlsx"])
+        return redirect(f"{url}?{urlencode({'location': source.code})}")
 
 
 class TransferWorkbookImportView(InventoryPermissionRequiredMixin, View):
@@ -177,46 +182,46 @@ class TransferWorkbookImportView(InventoryPermissionRequiredMixin, View):
             )
         )
 
-    def _source(self, request, location_id):
+    def _destination(self, request, location_id):
         return get_object_or_404(_active_transfer_locations(request), pk=location_id)
 
-    def _form(self, request, source, *, data=None, files=None):
-        return TransferWorkbookUploadForm(
-            data,
-            files,
-            company=request.company,
-            membership=request.company_membership,
-            source_location=source,
-        )
+    def _form(self, *, data=None, files=None):
+        return TransferWorkbookUploadForm(data, files)
 
-    def _context(self, source, form):
+    def _context(self, destination, form):
         return {
             "page_key": "transfers",
-            "page_title": "Transfer stock with Excel",
+            "page_title": "Import inventory Excel",
             "page_subtitle": (
-                "Export this location's current balances, enter transfer quantities, "
-                "then upload the worksheet to a project or office."
+                "Upload an unchanged inventory Excel export to transfer all exported "
+                "positive balances into this destination."
             ),
-            "source": source,
+            "destination": destination,
             "form": form,
         }
 
     def get(self, request, location_id):
-        source = self._source(request, location_id)
-        return render(request, self.template_name, self._context(source, self._form(request, source)))
+        destination = self._destination(request, location_id)
+        return render(request, self.template_name, self._context(destination, self._form()))
 
     def post(self, request, location_id):
-        source = self._source(request, location_id)
-        form = self._form(request, source, data=request.POST, files=request.FILES)
+        destination = self._destination(request, location_id)
+        form = self._form(data=request.POST, files=request.FILES)
         if form.is_valid():
             try:
                 with transaction.atomic():
                     parsed = parse_transfer_workbook(
                         source_file=form.cleaned_data["source_file"],
                         company=request.company,
-                        source_location=source,
                     )
-                    destination = form.cleaned_data["destination_location"]
+                    source = get_object_or_404(
+                        _active_transfer_locations(request),
+                        pk=parsed.source_location.pk,
+                    )
+                    if source.pk == destination.pk:
+                        raise TransferWorkbookError(
+                            "The exported source and selected destination must be different."
+                        )
                     result = transfer_stock(
                         user=request.user,
                         idempotency_key=parsed.manifest_id,
@@ -229,7 +234,7 @@ class TransferWorkbookImportView(InventoryPermissionRequiredMixin, View):
                     )
                     target = result.approval_request or result.transfer
                     if target is None:
-                        raise InventoryOperationError("The Excel transfer did not create a result.")
+                        raise InventoryOperationError("The inventory Excel import did not create a result.")
                     if not result.duplicate_submission:
                         record_audit_event(
                             company=request.company,
@@ -260,17 +265,17 @@ class TransferWorkbookImportView(InventoryPermissionRequiredMixin, View):
                 elif result.approval_request:
                     messages.success(
                         request,
-                        "Excel transfer submitted for destination-project approval. No balances changed yet.",
+                        "Inventory export submitted for destination-project approval. No balances changed yet.",
                     )
                 else:
-                    messages.success(request, "Excel transfer posted successfully.")
+                    messages.success(request, "Exported inventory transferred successfully.")
                 if result.approval_request:
                     return redirect(
                         "inventory:approval_detail",
                         reference=result.approval_request.reference,
                     )
                 return redirect("inventory:transfer_detail", reference=result.transfer.reference)
-        return render(request, self.template_name, self._context(source, form), status=400)
+        return render(request, self.template_name, self._context(destination, form), status=400)
 
 
 class ImportJobListView(InventoryPermissionRequiredMixin, ListView):

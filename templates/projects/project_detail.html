@@ -20,8 +20,8 @@
     {% if transfer_source_location_id and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}
     <a class="btn" href="{% url 'inventory:transfer_create' %}?source={{ transfer_source_location_id }}">Transfer stock</a>
     {% endif %}
-    {% if transfer_source_location_id and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions and "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions and "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}
-    <a class="btn" href="{% url 'data_exchange:transfer_workbook' transfer_source_location_id %}">Excel transfer</a>
+    {% if inventory_location_id and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions and "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions %}
+    <a class="btn" href="{% url 'data_exchange:transfer_workbook' inventory_location_id %}">Import inventory Excel</a>
     {% endif %}
     {% if project.accepts_stock_activity and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}
     <a class="btn btn-primary" href="{% url 'core:add_stock' %}?project={{ project.code }}">Add stock</a>

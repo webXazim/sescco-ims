@@ -4,10 +4,11 @@
   <div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div>
   <div class="head-actions">
     <a class="btn" href="{% url 'inventory:transfer_list' %}">Transfer history</a>
+    {% if office and "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}{% url 'data_exchange:inventory_export' 'xlsx' as office_xlsx_url %}{% url 'data_exchange:inventory_export' 'csv' as office_csv_url %}{% include "partials/export_menu.html" with export_count=paginator.count export_query=office_export_query xlsx_url=office_xlsx_url csv_url=office_csv_url %}{% endif %}
     {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'inventory:transfer_create' %}?destination={{ office.pk }}">Return stock from project</a>{% endif %}
     {% if office and "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:office_add' %}?location={{ office.code|urlencode }}">Add office stock</a>{% endif %}
     {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn btn-primary" href="{% url 'inventory:transfer_create' %}?source={{ office.pk }}">Transfer from office</a>{% endif %}
-    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions and "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions and "inventory.export.execute" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'data_exchange:transfer_workbook' office.pk %}">Excel transfer</a>{% endif %}
+    {% if office and "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions and "inventory.import.execute" in ACCESS_CONTEXT.effective_access.permissions %}<a class="btn" href="{% url 'data_exchange:transfer_workbook' office.pk %}">Import inventory Excel</a>{% endif %}
   </div>
 </div>
 {% if not office %}

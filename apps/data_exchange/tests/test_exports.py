@@ -89,7 +89,11 @@ class FilteredExportTests(TestCase):
             {"project": self.project.code, "columns": ["material", "price"]},
         )
         workbook = load_workbook(io.BytesIO(response.content), data_only=True)
-        self.assertEqual(workbook.sheetnames, ["Results", "Export Information"])
+        self.assertEqual(
+            workbook.sheetnames,
+            ["Results", "Export Information", "SESCCO Transfer Manifest"],
+        )
+        self.assertEqual(workbook["SESCCO Transfer Manifest"].sheet_state, "veryHidden")
         self.assertEqual(workbook["Results"]["A1"].value, "Material")
         self.assertEqual(workbook["Results"]["B2"].value, 24.5)
         metadata = {
@@ -112,7 +116,7 @@ class FilteredExportTests(TestCase):
 
     def test_inventory_export_defaults_newest_first_and_honors_selected_sort(self):
         older_item = self.add(index=1)
-        newer_item = self.add(index=2)
+        self.add(index=2)
         older_timestamp = timezone.now() - timedelta(days=10)
         older_item.__class__.objects.filter(pk=older_item.pk).update(created_at=older_timestamp)
         export_url = reverse("data_exchange:inventory_export", args=["csv"])

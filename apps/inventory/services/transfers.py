@@ -151,6 +151,7 @@ def transfer_stock(
         StockTransferLine.Outcome.NEW,
         StockTransferLine.Outcome.USED,
         StockTransferLine.Outcome.DAMAGED,
+        StockTransferLine.Outcome.NO_VALUE,
         StockTransferLine.Outcome.LOST,
     )
     for allocation in allocations:

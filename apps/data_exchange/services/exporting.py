@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
+import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -517,7 +518,7 @@ def _metadata_rows(dataset: ExportDataset, user, row_count: int) -> list[tuple[s
     return rows
 
 
-def _xlsx_payload(dataset: ExportDataset, user, row_count: int) -> bytes:
+def _xlsx_payload(dataset: ExportDataset, user, row_count: int, manifest_id) -> bytes:
     workbook = Workbook(write_only=True)
     results = workbook.create_sheet("Results")
     results.freeze_panes = "A2"
@@ -551,6 +552,14 @@ def _xlsx_payload(dataset: ExportDataset, user, row_count: int) -> bytes:
         info.append([label, _cell_value(value)])
     info.column_dimensions["A"].width = 26
     info.column_dimensions["B"].width = 72
+
+    from .transfer_workbooks import append_standard_transfer_manifest
+
+    append_standard_transfer_manifest(
+        workbook,
+        dataset=dataset,
+        manifest_id=manifest_id,
+    )
 
     output = BytesIO()
     workbook.save(output)
@@ -598,13 +607,15 @@ def export_response(
     if file_format not in ExportAudit.Format.values:
         raise ValueError("Unsupported export format.")
     row_count = dataset.queryset.count()
+    export_reference = uuid.uuid4()
     if file_format == ExportAudit.Format.XLSX:
-        payload = _xlsx_payload(dataset, user, row_count)
+        payload = _xlsx_payload(dataset, user, row_count, export_reference)
         content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         payload = _csv_payload(dataset)
         content_type = "text/csv; charset=utf-8"
     ExportAudit.objects.create(
+        reference=export_reference,
         company=company,
         dataset=dataset.audit_dataset,
         file_format=file_format,

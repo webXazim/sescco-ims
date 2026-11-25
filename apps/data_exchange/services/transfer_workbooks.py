@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
+import hashlib
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -14,6 +15,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from apps.inventory.models import (
+    InventoryLocation,
     StockApprovalRequest,
     StockItem,
     StockTransfer,
@@ -28,6 +30,8 @@ from .workbook_security import WorkbookArchiveError, validate_workbook_archive
 TRANSFER_SCHEMA = "sescco-stock-transfer-v1"
 TRANSFER_SHEET = "Transfer Lines"
 METADATA_SHEET = "SESCCO Metadata"
+STANDARD_EXPORT_SCHEMA = "sescco-inventory-export-transfer-v2"
+STANDARD_MANIFEST_SHEET = "SESCCO Transfer Manifest"
 MAX_TRANSFER_ROWS = 5_000
 MAX_QUANTITY = Decimal("9999999999999.999")
 TRANSFER_HEADERS = (
@@ -52,6 +56,7 @@ OUTCOME_COLUMNS = (
 )
 _FILENAME_CLEANER = re.compile(r"[^a-z0-9-]+")
 _ROW_SIGNING_SALT = "sescco.inventory.transfer-workbook.v1"
+_MANIFEST_SIGNING_SALT = "sescco.inventory.standard-export.v2"
 
 
 class TransferWorkbookError(ValueError):
@@ -61,6 +66,7 @@ class TransferWorkbookError(ValueError):
 @dataclass(frozen=True, slots=True)
 class ParsedTransferWorkbook:
     manifest_id: uuid.UUID
+    source_location: InventoryLocation
     allocations: tuple[TransferAllocation, ...]
     selected_rows: int
 
@@ -79,6 +85,57 @@ def _row_snapshot(*, item, manifest_id, source_location):
         "unit_id": item.unit_id,
         "unit": str(safe_text(item.unit.symbol)),
     }
+
+
+def append_standard_transfer_manifest(workbook, *, dataset, manifest_id):
+    """Add an authoritative hidden transfer manifest to a single-location export."""
+    if dataset.audit_dataset not in {
+        ExportAudit.Dataset.INVENTORY,
+        ExportAudit.Dataset.PROJECT_INVENTORY,
+    }:
+        return False
+    location_ids = list(
+        dataset.queryset.order_by().values_list("location_id", flat=True).distinct()[:2]
+    )
+    if len(location_ids) != 1:
+        return False
+    items = list(dataset.queryset.select_related("unit", "location").order_by("pk"))
+    if not items or len(items) > MAX_TRANSFER_ROWS:
+        return False
+    source_location = items[0].location
+
+    row_tokens = [
+        signing.dumps(
+            _row_snapshot(
+                item=item,
+                manifest_id=manifest_id,
+                source_location=source_location,
+            ),
+            salt=_ROW_SIGNING_SALT,
+            compress=True,
+        )
+        for item in items
+    ]
+    token_digest = hashlib.sha256("\n".join(row_tokens).encode("utf-8")).hexdigest()
+    manifest = {
+        "schema": STANDARD_EXPORT_SCHEMA,
+        "manifest_id": str(manifest_id),
+        "company_id": str(source_location.company_id),
+        "source_location_reference": str(source_location.reference),
+        "row_count": len(row_tokens),
+        "row_tokens_sha256": token_digest,
+    }
+    sheet = workbook.create_sheet(STANDARD_MANIFEST_SHEET)
+    sheet.append(["SESCCO signed inventory export"])
+    sheet.append([
+        signing.dumps(manifest, salt=_MANIFEST_SIGNING_SALT, compress=True)
+    ])
+    sheet.append([])
+    sheet.append(["Signed stock rows"])
+    for token in row_tokens:
+        sheet.append([token])
+    sheet.sheet_state = "veryHidden"
+    return True
 
 
 def transfer_workbook_response(*, source_location, user) -> HttpResponse:
@@ -238,7 +295,147 @@ def _quantity(cell, *, row_number: int, label: str) -> Decimal:
     return quantity
 
 
-def parse_transfer_workbook(*, source_file, company, source_location):
+def _source_location_from_reference(*, company, reference):
+    source = (
+        InventoryLocation.objects.for_company(company)
+        .select_related("project")
+        .filter(reference=reference)
+        .first()
+    )
+    if source is None:
+        raise TransferWorkbookError("The exported source location no longer exists.")
+    return source
+
+
+def _parse_standard_export(workbook, *, company):
+    sheet = workbook[STANDARD_MANIFEST_SHEET]
+    if (sheet.max_column or 1) > 1 or (sheet.max_row or 0) > MAX_TRANSFER_ROWS + 4:
+        raise TransferWorkbookError("The signed export manifest has an invalid size.")
+    manifest_cell = sheet.cell(row=2, column=1)
+    if manifest_cell.data_type == "f":
+        raise TransferWorkbookError("Formulas are not allowed in the signed export manifest.")
+    try:
+        manifest = signing.loads(
+            str(manifest_cell.value or ""),
+            salt=_MANIFEST_SIGNING_SALT,
+        )
+        manifest_id = uuid.UUID(manifest["manifest_id"])
+    except (KeyError, TypeError, ValueError, signing.BadSignature) as exc:
+        raise TransferWorkbookError("The signed export manifest is invalid.") from exc
+    if manifest.get("schema") != STANDARD_EXPORT_SCHEMA:
+        raise TransferWorkbookError("This inventory export version is not supported.")
+    if manifest.get("company_id") != str(company.pk):
+        raise TransferWorkbookError("This inventory export belongs to another company.")
+    audit = ExportAudit.objects.for_company(company).filter(
+        reference=manifest_id,
+        dataset__in=(
+            ExportAudit.Dataset.INVENTORY,
+            ExportAudit.Dataset.PROJECT_INVENTORY,
+        ),
+        file_format=ExportAudit.Format.XLSX,
+    ).first()
+    if audit is None:
+        raise TransferWorkbookError("The inventory export cannot be verified.")
+    source_location = _source_location_from_reference(
+        company=company,
+        reference=manifest.get("source_location_reference"),
+    )
+    tokens = []
+    for row in sheet.iter_rows(min_row=5, max_col=2):
+        if row[1].value not in (None, ""):
+            raise TransferWorkbookError("The signed export manifest has unexpected columns.")
+        if row[0].value not in (None, ""):
+            tokens.append(str(row[0].value))
+            if len(tokens) > MAX_TRANSFER_ROWS:
+                raise TransferWorkbookError("The signed export manifest has an invalid size.")
+    expected_count = manifest.get("row_count")
+    if (
+        not isinstance(expected_count, int)
+        or expected_count != len(tokens)
+        or audit.row_count != len(tokens)
+    ):
+        raise TransferWorkbookError("Rows were added to or removed from the inventory export.")
+    digest = hashlib.sha256("\n".join(tokens).encode("utf-8")).hexdigest()
+    if digest != manifest.get("row_tokens_sha256"):
+        raise TransferWorkbookError("The inventory export rows were changed.")
+
+    already_imported = (
+        StockApprovalRequest.objects.for_company(company)
+        .filter(kind=StockApprovalRequest.Kind.TRANSFER, idempotency_key=manifest_id)
+        .exists()
+        or StockTransfer.objects.for_company(company)
+        .filter(idempotency_key=manifest_id)
+        .exists()
+    )
+    if already_imported:
+        return ParsedTransferWorkbook(
+            manifest_id=manifest_id,
+            source_location=source_location,
+            allocations=(),
+            selected_rows=0,
+        )
+
+    snapshots = []
+    references = set()
+    for index, token in enumerate(tokens, start=1):
+        try:
+            snapshot = signing.loads(token, salt=_ROW_SIGNING_SALT)
+            reference = uuid.UUID(snapshot["stock_reference"])
+            available = Decimal(snapshot["available"])
+        except (KeyError, InvalidOperation, TypeError, ValueError, signing.BadSignature) as exc:
+            raise TransferWorkbookError(
+                f"Signed stock row {index} is invalid. Export the inventory again."
+            ) from exc
+        if (
+            snapshot.get("manifest_id") != str(manifest_id)
+            or snapshot.get("company_id") != str(company.pk)
+            or snapshot.get("source_location_reference") != str(source_location.reference)
+        ):
+            raise TransferWorkbookError(
+                f"Signed stock row {index} belongs to another inventory export."
+            )
+        if reference in references:
+            raise TransferWorkbookError("The inventory export contains a duplicate stock row.")
+        references.add(reference)
+        snapshots.append((index, reference, available, snapshot))
+
+    items = StockItem.objects.for_company(company).select_related("unit", "location").filter(
+        location=source_location,
+        reference__in=references,
+        status=StockItem.Status.ACTIVE,
+        deleted_at__isnull=True,
+    )
+    item_map = {item.reference: item for item in items}
+    allocations = []
+    for index, reference, available, snapshot in snapshots:
+        item = item_map.get(reference)
+        if item is None:
+            raise TransferWorkbookError(
+                f"Exported stock row {index} is no longer active at the source location."
+            )
+        expected_snapshot = _row_snapshot(
+            item=item,
+            manifest_id=manifest_id,
+            source_location=source_location,
+        )
+        if snapshot != expected_snapshot or available != item.current_quantity:
+            raise TransferWorkbookError(
+                f"The source balance or identity changed for {item.material_name}. "
+                "Export the inventory again."
+            )
+        if available > 0:
+            allocations.append(TransferAllocation(item, item.condition, available))
+    if not allocations:
+        raise TransferWorkbookError("The inventory export contains no positive stock to transfer.")
+    return ParsedTransferWorkbook(
+        manifest_id=manifest_id,
+        source_location=source_location,
+        allocations=tuple(allocations),
+        selected_rows=len(allocations),
+    )
+
+
+def parse_transfer_workbook(*, source_file, company, source_location=None):
     payload = source_file.read()
     try:
         source_file.seek(0)
@@ -254,9 +451,11 @@ def parse_transfer_workbook(*, source_file, company, source_location):
         raise TransferWorkbookError("The Excel workbook could not be read safely.") from exc
 
     try:
+        if STANDARD_MANIFEST_SHEET in workbook.sheetnames:
+            return _parse_standard_export(workbook, company=company)
         if TRANSFER_SHEET not in workbook.sheetnames or METADATA_SHEET not in workbook.sheetnames:
             raise TransferWorkbookError(
-                "This is not a SESCCO stock transfer worksheet. Download a fresh worksheet."
+                "This is not a verifiable SESCCO inventory export. Export a new Excel workbook first."
             )
         metadata_sheet = workbook[METADATA_SHEET]
         if metadata_sheet.max_row > 20 or metadata_sheet.max_column > 2:
@@ -274,8 +473,13 @@ def parse_transfer_workbook(*, source_file, company, source_location):
             raise TransferWorkbookError("The transfer worksheet manifest ID is invalid.") from exc
         if metadata.get("Company ID") != str(company.pk):
             raise TransferWorkbookError("This transfer worksheet belongs to another company.")
-        if metadata.get("Source Location Reference") != str(source_location.reference):
+        exported_source = _source_location_from_reference(
+            company=company,
+            reference=metadata.get("Source Location Reference"),
+        )
+        if source_location is not None and exported_source.pk != source_location.pk:
             raise TransferWorkbookError("This worksheet was exported from another source location.")
+        source_location = exported_source
 
         already_imported = (
             StockApprovalRequest.objects.for_company(company)
@@ -288,6 +492,7 @@ def parse_transfer_workbook(*, source_file, company, source_location):
         if already_imported:
             return ParsedTransferWorkbook(
                 manifest_id=manifest_id,
+                source_location=source_location,
                 allocations=(),
                 selected_rows=0,
             )
@@ -438,6 +643,7 @@ def parse_transfer_workbook(*, source_file, company, source_location):
                     allocations.append(TransferAllocation(item, outcome, quantity))
         return ParsedTransferWorkbook(
             manifest_id=manifest_id,
+            source_location=source_location,
             allocations=tuple(allocations),
             selected_rows=len(selected),
         )
