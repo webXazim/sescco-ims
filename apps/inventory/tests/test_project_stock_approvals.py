@@ -396,8 +396,12 @@ class ProjectApprovalsTests(TestCase):
         inbox = self.client.get(reverse('inventory:approval_list'))
         self.assertEqual(inbox.status_code, 200)
         self.assertContains(inbox, str(req.reference)[:8].upper())
+        self.assertContains(inbox, "data-row-primary")
+        self.assertNotContains(inbox, "Company Owners can cancel any pending transfer")
         detail = self.client.get(reverse('inventory:approval_detail', args=[req.reference]))
         self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "approval-detail-layout")
+        self.assertContains(detail, "approval-timeline")
         self.assertContains(detail, 'Approve for this project')
         action = self.client.post(reverse('inventory:approval_decide', args=[req.reference]), {
             'project_id': self.p1.pk, 'decision': 'approve',

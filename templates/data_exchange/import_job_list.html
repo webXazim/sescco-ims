@@ -14,7 +14,7 @@
   <div class="card-head"><div><h2 class="card-title">Import history</h2><div class="card-meta">Administrator-only previews and results</div></div></div>
   <div class="table-wrap"><table><thead><tr><th>Workbook</th><th>Type</th><th>Status</th><th>Rows</th><th>Result</th><th>Created</th><th></th></tr></thead><tbody>
   {% for job in import_jobs %}<tr>
-    <td><a class="row-link" href="{% url 'data_exchange:import_detail' job.reference %}">{{ job.original_filename }}</a>{% if job.project %}<div class="cell-sub">{{ job.project.code }} · {{ job.project.name }}</div>{% endif %}</td>
+    <td><a class="row-link" data-row-primary href="{% url 'data_exchange:import_detail' job.reference %}">{{ job.original_filename }}</a>{% if job.project %}<div class="cell-sub">{{ job.project.code }} · {{ job.project.name }}</div>{% endif %}</td>
     <td>{{ job.get_import_type_display }}</td>
     <td><span class="status {% if job.status == 'completed' %}status-good{% elif job.status == 'failed' %}status-out{% elif job.status == 'preview' %}status-low{% else %}status-neutral{% endif %}">{{ job.get_status_display }}</span></td>
     <td>{{ job.total_rows }}<div class="cell-sub">{{ job.valid_rows }} valid · {{ job.warning_rows }} warning · {{ job.error_rows }} error</div></td>

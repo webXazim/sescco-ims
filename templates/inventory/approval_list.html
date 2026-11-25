@@ -8,10 +8,9 @@
 </div>
 
 <section class="card">
-  <div class="card-body">
-    <form method="get" class="explorer-toolbar" aria-label="Filter stock requests" data-live-filter-form data-default-status="pending" data-default-sort="newest">
-      <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" maxlength="160" placeholder="Search request, route, item, project, or requester…" aria-label="Search stock requests" autocomplete="off" data-live-filter-search></div>
-      <div class="quick-filters">
+  <form method="get" class="explorer-toolbar" aria-label="Filter stock requests" data-live-filter-form data-default-status="pending" data-default-sort="newest">
+    <div class="search-field"><span class="search-glyph" aria-hidden="true"></span><input class="input" type="search" name="q" value="{{ search_query }}" maxlength="160" placeholder="Search request, route, item, project, or requester…" aria-label="Search stock requests" autocomplete="off" data-live-filter-search></div>
+    <div class="quick-filters">
         <select class="filter-select" id="approval-status" name="status" aria-label="Filter by status">
           {% for value, label in status_choices %}
             <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
@@ -28,10 +27,8 @@
         <button class="btn btn-sm" type="submit">Apply</button>
         <a class="btn btn-ghost btn-sm" href="{% url 'inventory:approval_list' %}">Reset</a>
         <span class="filter-live-status" data-filter-live-status aria-live="polite"></span>
-      </div>
-    </form>
-    <p class="micro section-gap">Company Owners can cancel any pending transfer. Other users can cancel only their own pending transfers. Approval still requires the correct permission and project scope.</p>
-  </div>
+    </div>
+  </form>
 </section>
 
 <section class="card section-gap" data-filter-results aria-live="polite">
@@ -51,7 +48,7 @@
         {% for approval in approvals %}
           <tr>
             <td>
-              <a class="row-link" href="{% url 'inventory:approval_detail' approval.reference %}">{{ approval.reference|stringformat:"s"|slice:":8"|upper }}</a>
+              <a class="row-link" data-row-primary href="{% url 'inventory:approval_detail' approval.reference %}">{{ approval.reference|stringformat:"s"|slice:":8"|upper }}</a>
               <div class="cell-sub">{{ approval.get_kind_display }} · {{ approval.created_at|date:"d M Y H:i" }}</div>
             </td>
             <td>
@@ -63,7 +60,7 @@
               <div class="cell-sub">{{ approval.quantity_summary }}</div>
             </td>
             <td>{{ approval.requested_by.display_name }}</td>
-            <td><span class="status">{{ approval.get_status_display }}</span></td>
+            <td><span class="status {% if approval.status == 'approved' %}status-good{% elif approval.status == 'pending' %}status-low{% elif approval.status == 'rejected' %}status-out{% else %}status-neutral{% endif %}">{{ approval.get_status_display }}</span></td>
             <td><a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}">Review</a>{% if approval.can_cancel %} <a class="btn btn-sm" href="{% url 'inventory:approval_detail' approval.reference %}#cancel-transfer">Cancel</a>{% endif %}</td>
           </tr>
         {% empty %}

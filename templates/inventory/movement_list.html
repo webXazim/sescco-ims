@@ -62,7 +62,7 @@
   {% if "price" in visible_columns %}<td>{% if movement.unit_price is not None %}{{ movement.unit_price }}{% else %}—{% endif %}</td>{% endif %}
   {% if "reference" in visible_columns %}<td>{{ movement.invoice_reference|default:movement.purpose|default:movement.recipient|default:movement.reason|default:"—" }}{% if movement.invoice_reference and movement.purpose %}<div class="cell-sub">{{ movement.purpose }}</div>{% endif %}</td>{% endif %}
   {% if "user" in visible_columns %}<td>{% if movement.created_by %}{{ movement.created_by.display_name }}{% else %}—{% endif %}</td>{% endif %}
-  <td><a class="btn btn-sm" href="{% url 'inventory:movement_detail' movement.reference %}">Open</a></td>
+  <td><a class="btn btn-sm" data-row-primary href="{% url 'inventory:movement_detail' movement.reference %}">Open</a></td>
 </tr>{% empty %}<tr><td colspan="20"><div class="empty-state"><div class="empty-icon">↕</div><h2>No matching movements</h2><p>Change or clear the current filters.</p></div></td></tr>{% endfor %}</tbody></table></div>
 {% include "partials/pagination.html" %}
 </div>

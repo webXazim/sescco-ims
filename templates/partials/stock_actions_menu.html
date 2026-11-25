@@ -2,7 +2,7 @@
   <summary class="btn btn-sm row-actions-trigger" aria-label="Actions for {{ item.material_name }}"><span>Actions</span><span class="row-actions-chevron" aria-hidden="true"></span></summary>
   <div class="row-actions-menu">
     <div class="row-actions-head"><span>{{ item.location.code }}</span><strong>{{ item.material_name }}</strong></div>
-    <a class="row-action-option" href="{% url 'inventory:detail' item.reference %}"><span>Open details</span><small>View balance and history</small></a>
+    <a class="row-action-option" data-row-primary href="{% url 'inventory:detail' item.reference %}"><span>Open details</span><small>View balance and history</small></a>
     {% if item.project and "inventory.stock.adjust" in ACCESS_CONTEXT.effective_access.permissions %}<a class="row-action-option" href="{% url 'inventory:edit' item.reference %}"><span>Edit record</span><small>Identity, document and notes</small></a>{% endif %}
     {% if item.status == 'active' and item.location.accepts_stock_activity and item.unit.is_active %}
       {% if "inventory.stock.receive" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.issue" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.transfer" in ACCESS_CONTEXT.effective_access.permissions or "inventory.stock.adjust" in ACCESS_CONTEXT.effective_access.permissions %}<div class="row-action-divider"></div>{% endif %}

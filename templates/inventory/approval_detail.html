@@ -1,59 +1,142 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head"><div><h1 class="page-title">{{ page_title }}</h1><p class="page-subtitle">{{ page_subtitle }}</p></div><a class="btn" href="{% url 'inventory:approval_list' %}">Back to approvals</a></div>
-<section class="card"><div class="card-head"><h2 class="card-title">{{ approval.get_kind_display }} — {{ approval.get_status_display }}</h2></div>
-<div class="card-body">
-<p><strong>Submitted:</strong> {{ approval.created_at|date:"d M Y H:i" }} &nbsp; <strong>Requested by:</strong> {{ approval.requested_by.display_name }}</p>
-{% if approval.status == 'pending' %}<p class="micro">No stock balances have changed. {% if approval.kind == 'transfer' %}Only the destination project's approval is required before posting.{% else %}The project's approval is required before posting.{% endif %}</p>{% endif %}
-{% if approval.kind == 'receipt' %}
-<div class="table-wrap"><table class="data-table"><thead><tr><th>Project</th><th>Material</th><th>Condition</th><th>Quantity</th><th>Unit</th><th>Unit price</th></tr></thead><tbody>
-<tr><td>{{ receipt_project.code|default:"Unavailable" }}</td><td><strong>{{ approval.payload.material_name }}</strong><div class="cell-sub">{{ approval.payload.description }}</div></td>
-<td>{{ approval.payload.condition }}</td><td>{{ approval.payload.quantity|floatformat:"-3" }}</td><td>{{ receipt_unit.symbol|default:"Unavailable" }}</td><td>{{ approval.payload.unit_price|default_if_none:"Not provided" }}</td></tr>
-</tbody></table></div>
-<p><strong>Supplier:</strong> {{ approval.payload.supplier_name }} · {{ approval.payload.supplier_phone }} &nbsp; <strong>Invoice:</strong> {{ approval.payload.invoice_reference|default:"—" }} &nbsp; <strong>Receipt date:</strong> {{ approval.payload.movement_date }}</p>
-{% else %}
-<p><strong>Source:</strong> {{ transfer_source.code|default:"Unavailable" }} &nbsp; <strong>Destination:</strong> {{ transfer_destination.code|default:"Unavailable" }} &nbsp; <strong>Transfer date:</strong> {{ approval.payload.transfer_date }}</p>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>Item</th><th>Condition outcome</th><th>Quantity</th><th>Unit</th></tr></thead><tbody>
-{% for line in transfer_allocations %}<tr><td>{% if line.stock %}{{ line.stock.material_name }} · {{ line.stock.supplier_name }}{% else %}Stock record unavailable{% endif %}</td><td>{{ line.outcome }}</td><td>{{ line.quantity|floatformat:"-3" }}</td><td>{{ line.stock.unit.symbol|default:"—" }}</td></tr>{% endfor %}
-</tbody></table></div><p><strong>Reference:</strong> {{ approval.payload.document_reference|default:"—" }}</p>
-{% endif %}
-{% if approval.payload.notes %}<p><strong>Notes:</strong> {{ approval.payload.notes }}</p>{% endif %}
-{% if approval.status == 'cancelled' %}
-<p><strong>Cancelled by:</strong> {{ approval.cancelled_by.display_name|default:"Unavailable" }} &nbsp; <strong>Cancelled on:</strong> {{ approval.decided_at|date:"d M Y H:i" }}</p>
-<p><strong>Cancellation reason:</strong> {{ approval.cancellation_reason|default:"—" }}</p>
-<p class="micro">This request was cancelled before posting. No stock quantities were changed by this request.</p>
-{% endif %}
-{% if can_cancel %}
-<div class="form-section" id="cancel-transfer">
-  <h3>Cancel pending transfer</h3>
-  <p class="micro">The original requester or a Company Owner can cancel this pending transfer. Any project decisions remain in history. This action cannot be undone.</p>
-  <form method="post" action="{% url 'inventory:approval_cancel' approval.reference %}">
-    {% csrf_token %}
-    <div class="field"><label class="field-label" for="cancel-transfer-reason">Cancellation reason <span aria-hidden="true">*</span></label>
-      <textarea class="input" id="cancel-transfer-reason" name="reason" rows="2" maxlength="500" required></textarea>
+<div class="approval-detail-page">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">{{ page_title }}</h1>
+      <p class="page-subtitle">{{ page_subtitle }}</p>
     </div>
-    <button type="submit" class="btn">Cancel this pending transfer</button>
-  </form>
+    <a class="btn" href="{% url 'inventory:approval_list' %}">← All approvals</a>
+  </div>
+
+  <div class="approval-detail-layout">
+    <div class="approval-detail-main">
+      <section class="card approval-request-card">
+        <div class="approval-request-head">
+          <div>
+            <span class="approval-eyebrow">Request {{ approval.reference|stringformat:"s"|slice:":8"|upper }}</span>
+            <h2>{{ approval.get_kind_display }}</h2>
+          </div>
+          <span class="status {% if approval.status == 'approved' %}status-good{% elif approval.status == 'pending' %}status-low{% elif approval.status == 'rejected' %}status-out{% else %}status-neutral{% endif %}">{{ approval.get_status_display }}</span>
+        </div>
+
+        <dl class="approval-request-meta">
+          <div><dt>Submitted</dt><dd>{{ approval.created_at|date:"d M Y, H:i" }}</dd></div>
+          <div><dt>Requested by</dt><dd>{{ approval.requested_by.display_name }}</dd></div>
+          <div><dt>Posting state</dt><dd>{% if approval.status == 'approved' %}Stock posted{% elif approval.status == 'pending' %}Awaiting approval{% elif approval.status == 'cancelled' %}Cancelled before posting{% else %}Not posted{% endif %}</dd></div>
+        </dl>
+
+        {% if approval.status == 'pending' %}
+        <div class="approval-state-banner">
+          <span class="approval-state-banner__dot" aria-hidden="true"></span>
+          <div><strong>Not posted yet</strong><span>{% if approval.kind == 'transfer' %}The destination project must approve this transfer before stock changes.{% else %}The project must approve this receipt before stock changes.{% endif %}</span></div>
+        </div>
+        {% endif %}
+
+        <div class="approval-content-section">
+          <div class="approval-section-heading">
+            <div><span class="approval-eyebrow">Request contents</span><h3>{% if approval.kind == 'receipt' %}Stock to receive{% else %}Stock to transfer{% endif %}</h3></div>
+          </div>
+
+          {% if approval.kind == 'receipt' %}
+          <div class="table-wrap"><table class="data-table approval-items-table"><thead><tr><th>Project</th><th>Material</th><th>Condition</th><th>Quantity</th><th>Unit</th><th>Unit price</th></tr></thead><tbody>
+            <tr>
+              <td>{% if receipt_project %}<a class="row-link" href="{% url 'projects:detail' receipt_project.code %}">{{ receipt_project.code }}</a><div class="cell-sub">{{ receipt_project.name }}</div>{% else %}Unavailable{% endif %}</td>
+              <td><strong>{{ approval.payload.material_name }}</strong>{% if approval.payload.description %}<div class="cell-sub">{{ approval.payload.description }}</div>{% endif %}</td>
+              <td><span class="status status-neutral">{{ approval.payload.condition|title }}</span></td>
+              <td class="qty">{{ approval.payload.quantity|floatformat:"-3" }}</td>
+              <td>{{ receipt_unit.symbol|default:"Unavailable" }}</td>
+              <td>{{ approval.payload.unit_price|default_if_none:"Not provided" }}</td>
+            </tr>
+          </tbody></table></div>
+          <dl class="approval-facts">
+            <div><dt>Supplier</dt><dd>{{ approval.payload.supplier_name|default:"—" }}</dd></div>
+            <div><dt>Supplier phone</dt><dd>{{ approval.payload.supplier_phone|default:"—" }}</dd></div>
+            <div><dt>Invoice reference</dt><dd>{{ approval.payload.invoice_reference|default:"—" }}</dd></div>
+            <div><dt>Receipt date</dt><dd>{{ approval.payload.movement_date|default:"—" }}</dd></div>
+          </dl>
+          {% else %}
+          <dl class="approval-facts approval-facts--route">
+            <div><dt>Source</dt><dd>{{ transfer_source.code|default:"Unavailable" }}{% if transfer_source.name %}<span>{{ transfer_source.name }}</span>{% endif %}</dd></div>
+            <div><dt>Destination</dt><dd>{{ transfer_destination.code|default:"Unavailable" }}{% if transfer_destination.name %}<span>{{ transfer_destination.name }}</span>{% endif %}</dd></div>
+            <div><dt>Transfer date</dt><dd>{{ approval.payload.transfer_date|default:"—" }}</dd></div>
+            <div><dt>Reference</dt><dd>{{ approval.payload.document_reference|default:"—" }}</dd></div>
+          </dl>
+          <div class="table-wrap"><table class="data-table approval-items-table"><thead><tr><th>Item</th><th>Condition outcome</th><th>Quantity</th><th>Unit</th></tr></thead><tbody>
+            {% for line in transfer_allocations %}<tr><td>{% if line.stock %}<a class="row-link" data-row-primary href="{% url 'inventory:detail' line.stock.reference %}">{{ line.stock.material_name }}</a><div class="cell-sub">{{ line.stock.supplier_name }}</div>{% else %}Stock record unavailable{% endif %}</td><td><span class="status status-neutral">{{ line.outcome|title }}</span></td><td class="qty">{{ line.quantity|floatformat:"-3" }}</td><td>{{ line.stock.unit.symbol|default:"—" }}</td></tr>{% endfor %}
+          </tbody></table></div>
+          {% endif %}
+
+          {% if approval.payload.notes %}<div class="approval-notes"><span>Notes</span><p>{{ approval.payload.notes|linebreaksbr }}</p></div>{% endif %}
+
+          {% if approval.status == 'cancelled' %}
+          <div class="approval-cancelled-panel">
+            <strong>Cancelled before posting</strong>
+            <span>{{ approval.cancelled_by.display_name|default:"Unavailable" }} · {{ approval.decided_at|date:"d M Y, H:i" }}</span>
+            <p>{{ approval.cancellation_reason|default:"No cancellation reason provided." }}</p>
+          </div>
+          {% endif %}
+
+          {% if approval.attachment or approval.applied_movement or approval.applied_transfer %}
+          <div class="approval-resource-actions">
+            {% if approval.attachment %}<a class="btn btn-sm" href="{% url 'inventory:approval_attachment' approval.reference %}">Supporting attachment</a>{% endif %}
+            {% if approval.applied_movement %}<a class="btn btn-sm" href="{% url 'inventory:movement_detail' approval.applied_movement.reference %}">Approved stock movement</a>{% endif %}
+            {% if approval.applied_transfer %}<a class="btn btn-sm" href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">Completed stock transfer</a>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if can_cancel %}
+      <section class="card approval-cancel-card" id="cancel-transfer">
+        <div class="card-head"><div><h2 class="card-title">Cancel pending transfer</h2><div class="card-meta">Available to the original requester or a Company Owner</div></div></div>
+        <div class="card-body">
+          <form method="post" action="{% url 'inventory:approval_cancel' approval.reference %}">
+            {% csrf_token %}
+            <div class="field"><label class="field-label" for="cancel-transfer-reason">Cancellation reason <span aria-hidden="true">*</span></label><textarea class="input" id="cancel-transfer-reason" name="reason" rows="2" maxlength="500" required></textarea></div>
+            <div class="approval-form-actions"><button type="submit" class="btn btn-danger">Cancel this pending transfer</button></div>
+          </form>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+
+    <aside class="approval-detail-side">
+      <section class="card approval-decision-card">
+        <div class="card-head"><div><h2 class="card-title">Required project approval</h2><div class="card-meta">{{ decisions|length }} required decision{{ decisions|length|pluralize }}</div></div></div>
+        <div class="approval-decision-list">
+          {% for entry in decisions %}
+          <article class="approval-decision">
+            <header>
+              <div><span class="approval-eyebrow">Project</span><strong>{{ entry.row.project.code }}</strong><small>{{ entry.row.project.name }}</small></div>
+              <span class="status {% if entry.row.status == 'approved' %}status-good{% elif entry.row.status == 'rejected' %}status-out{% else %}status-low{% endif %}">{{ entry.row.get_status_display }}</span>
+            </header>
+            {% if entry.row.decided_by %}<p class="approval-decision-meta">Decided by <strong>{{ entry.row.decided_by.display_name }}</strong><br>{{ entry.row.decided_at|date:"d M Y, H:i" }}</p>{% elif approval.status == 'cancelled' %}<p class="approval-decision-meta">No decision was recorded before cancellation.</p>{% elif approval.status != 'pending' %}<p class="approval-decision-meta">The request closed before this decision was recorded.</p>{% elif not entry.can_decide %}<p class="approval-decision-meta">Awaiting an authorized approver for this project.</p>{% endif %}
+            {% if entry.row.reason %}<div class="approval-decision-reason"><span>Reason</span><p>{{ entry.row.reason }}</p></div>{% endif %}
+            {% if entry.can_decide %}
+            <form class="approval-decision-form" method="post" action="{% url 'inventory:approval_decide' approval.reference %}">
+              {% csrf_token %}<input type="hidden" name="project_id" value="{{ entry.row.project_id }}">
+              <div class="field"><label class="field-label" for="reason-{{ entry.row.pk }}">Rejection reason <span>Required only when rejecting</span></label><textarea class="input" rows="2" maxlength="500" id="reason-{{ entry.row.pk }}" name="reason"></textarea></div>
+              <div class="approval-form-actions"><button class="btn btn-primary" type="submit" name="decision" value="approve">Approve for this project</button><button class="btn" type="submit" name="decision" value="reject">Reject request</button></div>
+            </form>
+            {% endif %}
+          </article>
+          {% empty %}<div class="empty-compact">No project decision is required.</div>{% endfor %}
+        </div>
+      </section>
+
+      <section class="card approval-activity-card">
+        <div class="card-head"><div><h2 class="card-title">Activity history</h2><div class="card-meta">Permanent request trail</div></div></div>
+        <ol class="approval-timeline">
+          {% for event in approval_activity %}
+          <li>
+            <span class="approval-timeline__marker" aria-hidden="true"></span>
+            <div class="approval-timeline__content"><div><strong>{{ event.activity_label }}</strong><time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|date:"d M Y, H:i" }}</time></div><span>By {{ event.activity_actor }}</span>{% if event.activity_detail %}<p>{{ event.activity_detail }}</p>{% endif %}</div>
+          </li>
+          {% empty %}<li class="approval-timeline__empty">No activity recorded.</li>{% endfor %}
+        </ol>
+      </section>
+    </aside>
+  </div>
 </div>
-{% endif %}
-{% if approval.attachment %}<p><a href="{% url 'inventory:approval_attachment' approval.reference %}">View supporting attachment</a></p>{% endif %}
-{% if approval.applied_movement %}<p><a href="{% url 'inventory:movement_detail' approval.applied_movement.reference %}">View approved stock movement</a></p>{% endif %}
-{% if approval.applied_transfer %}<p><a href="{% url 'inventory:transfer_detail' approval.applied_transfer.reference %}">View completed stock transfer</a></p>{% endif %}
-</div></section>
-<section class="card section-gap"><div class="card-head"><h2 class="card-title">Required project approval</h2></div><div class="card-body">
-{% for entry in decisions %}<div class="form-section"><strong>{{ entry.row.project.code }} · {{ entry.row.project.name }}</strong> — {{ entry.row.get_status_display }} <span class="micro">Approval requires the Inventory Approve / Reject permission and this project in scope</span>
-{% if entry.row.decided_by %}<span class="micro"> by {{ entry.row.decided_by.display_name }} on {{ entry.row.decided_at|date:"d M Y H:i" }}</span>{% endif %}
-{% if entry.row.reason %}<p class="micro">Reason: {{ entry.row.reason }}</p>{% endif %}
-{% if entry.can_decide %}
-<form method="post" action="{% url 'inventory:approval_decide' approval.reference %}">{% csrf_token %}<input type="hidden" name="project_id" value="{{ entry.row.project_id }}">
-<div class="form-grid"><div class="field"><label class="field-label" for="reason-{{ entry.row.pk }}">Rejection reason (required to reject)</label><textarea class="input" rows="2" maxlength="500" id="reason-{{ entry.row.pk }}" name="reason"></textarea></div></div>
-<button class="btn btn-primary" type="submit" name="decision" value="approve">Approve for this project</button>
-<button class="btn" type="submit" name="decision" value="reject">Reject request</button>
-</form>{% endif %}
-</div>{% endfor %}</div></section>
-<section class="card section-gap"><div class="card-head"><h2 class="card-title">Activity history</h2></div><div class="card-body">
-{% for event in approval_activity %}<div class="form-section"><strong>{{ event.activity_label }}</strong><span class="micro"> by {{ event.activity_actor }} on {{ event.created_at|date:"d M Y H:i" }}</span>
-{% if event.activity_detail %}<p class="micro">{{ event.activity_detail }}</p>{% endif %}</div>
-{% empty %}<div class="empty-state"><strong>No activity recorded.</strong></div>{% endfor %}
-</div></section>
 {% endblock %}

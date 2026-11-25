@@ -2907,10 +2907,7 @@ class StockApprovalListView(InventoryApprovalAccessMixin, ListView):
         ctx.update(
             page_key="approvals",
             page_title="Stock requests and approvals",
-            page_subtitle=(
-                "Search and review project receipts and incoming transfers. Company Owners can "
-                "cancel any pending transfer and approve their own transfer requests."
-            ),
+            page_subtitle="Review project stock receipts and incoming transfers.",
             current_status=self.current_status,
             current_kind=self.current_kind,
             current_sort=self.current_sort,
@@ -3038,10 +3035,7 @@ class StockApprovalDetailView(InventoryApprovalAccessMixin, DetailView):
         ctx.update(
             page_key="approvals",
             page_title=f"Approval {str(self.object.reference)[:8].upper()}",
-            page_subtitle=(
-                "Review the submitted quantities, project decision and resulting "
-                "posted stock operation."
-            ),
+            page_subtitle="Review the request, required project decision, and posting outcome.",
         )
         ctx["can_cancel"] = can_cancel_pending_transfer(
             self.request.user,

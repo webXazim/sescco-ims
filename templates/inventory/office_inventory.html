@@ -69,7 +69,7 @@
     {% include "partials/filter_chips.html" %}
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Material</th><th>Supplier</th><th>Condition</th><th>Quantity</th><th>Estimated unit value</th><th>Updated</th></tr></thead><tbody>
       {% for item in stock_items %}<tr>
-        <td><a class="row-link" href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60 }}</div></td>
+        <td><a class="row-link" data-row-primary href="{% url 'inventory:detail' item.reference %}">{{ item.material_name }}</a><div class="cell-sub">{{ item.description|truncatechars:60 }}</div></td>
         <td>{{ item.supplier_name }}</td>
         <td><span class="status status-neutral">{{ item.get_condition_display }}</span></td>
         <td class="qty">{{ item.quantity_display }}</td>

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}{{ page_title|default:APP_NAME }}{% endblock %} · {{ APP_NAME }}</title>
   <link rel="icon" type="image/webp" href="{% static 'platform/brand-sescco-mark.webp' %}">
-  <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'css/styles.css' %}?v={{ APP_VERSION }}-approval-rows">
   <link rel="stylesheet" href="{% static 'platform/css/shell-switchers.css' %}">
   <link rel="stylesheet" href="{% static 'platform/css/inventory-shell.css' %}?v={{ APP_VERSION }}">
   <link rel="stylesheet" href="{% static 'platform/css/select-controls.css' %}">
@@ -34,7 +34,7 @@
 <div class="toast-stack" id="toastStack"></div>
 {% include "partials/delete_confirmation_dialog.html" %}
 <script src="{% static 'platform/js/form-validation.js' %}"></script>
-<script src="{% static 'js/app.js' %}"></script>
+<script src="{% static 'js/app.js' %}?v={{ APP_VERSION }}-approval-rows"></script>
 <script src="{% static 'platform/js/delete-confirmation-dialog.js' %}?v=1.0.3"></script>
 <script src="{% static 'platform/js/shell-switchers.js' %}"></script>
 <script src="{% static 'platform/js/inventory-shell.js' %}?v={{ APP_VERSION }}"></script>

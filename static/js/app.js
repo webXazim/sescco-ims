@@ -115,6 +115,33 @@
     }
   });
 
+  // A row is navigable only when its template explicitly identifies one
+  // primary link. Controls and text selection keep their native behavior.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const row = target?.closest(".table-wrap tbody tr");
+    const primaryLink = row?.querySelector("a[data-row-primary]");
+    if (!row || !primaryLink) return;
+    if (target.closest(
+      "a, button, input, select, textarea, label, form, summary, details, " +
+      "[role='button'], [contenteditable='true']",
+    )) return;
+    const selection = window.getSelection?.();
+    if (
+      selection &&
+      !selection.isCollapsed &&
+      ((selection.anchorNode && row.contains(selection.anchorNode)) ||
+        (selection.focusNode && row.contains(selection.focusNode)))
+    ) return;
+    if (event.altKey || event.shiftKey) return;
+    if (event.ctrlKey || event.metaKey) {
+      window.open(primaryLink.href, "_blank", "noopener");
+      return;
+    }
+    window.location.assign(primaryLink.href);
+  });
+
   const positionRowActions = (details) => {
     const trigger = details.querySelector("summary");
     const menu = details.querySelector(".row-actions-menu");
